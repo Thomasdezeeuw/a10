@@ -1,0 +1,17 @@
+[package]
+name          = "a10"
+description   = "A10 is an io_uring library."
+version       = "0.1.0"
+authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
+license       = "MIT"
+documentation = "https://docs.rs/a10"
+repository    = "https://github.com/Thomasdezeeuw/a10"
+readme        = "README.md"
+keywords      = ["io_uring", "io", "async", "non-blocking"]
+categories    = ["asynchronous"]
+include       = ["/Cargo.toml", "/src/**/*.rs", "/README.md", "/LICENSE"]
+edition       = "2018"
+
+[dependencies]
+libc = { version = "0.2.98", default-features = false }
+log  = { version = "0.4.14", default-features = false }
