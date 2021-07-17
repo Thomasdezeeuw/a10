@@ -1,6 +1,7 @@
 use std::mem::size_of;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::{io, ptr};
 
 use crate::{libc, CompletionQueue, Ring, SubmissionQueue};
@@ -108,7 +109,12 @@ impl Config {
         let sq = mmap_submission_queue(fd, &parameters)?;
         // FIXME: close `fd` on error.
         let cq = mmap_completion_queue(fd, &parameters)?;
-        Ok(Ring { fd, sq, cq })
+        let submission_tail = sq.pending_tail.load(Ordering::Relaxed);
+        Ok(Ring {
+            sq: Arc::new(sq),
+            cq,
+            submission_tail,
+        })
     }
 }
 
@@ -138,12 +144,14 @@ fn mmap_submission_queue(
 
     unsafe {
         Ok(SubmissionQueue {
+            ring_fd,
             ptr: submission_queue,
             size,
             // Fields are constant, so we load them once.
             len: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize)),
             ring_mask: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_mask as usize)),
-            pending_tail: 0,
+            pending_tail: AtomicU32::new(0),
+            pending_index: AtomicU32::new(0),
             // Fields are shared with the kernel.
             head: submission_queue.add(parameters.sq_off.head as usize).cast(),
             tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),

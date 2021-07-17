@@ -27,6 +27,7 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::unix::io::{AsRawFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use std::{fmt, io, ptr, slice};
 
 use log::error;
@@ -53,21 +54,40 @@ pub use config::Config;
 
 #[derive(Debug)]
 pub struct Ring {
-    fd: RawFd,
-    sq: SubmissionQueue,
+    /// # Notes
+    ///
+    /// `CompletionQueue` musted be dropped before the `SubmissionQueue` because
+    /// the `ring_fd` in `SubmissionQueue` is used in the memory mappings
+    /// backing `CompletionQueue`.
     cq: CompletionQueue,
+    /// Shared between this `Ring` and all types that queue any operations.
+    ///
+    /// Because it depends on memory mapping from the file descriptor of the
+    /// ring the file descriptor is stored in the `SubmissionQueue` itself.
+    sq: Arc<SubmissionQueue>,
+    /// Tail of the `SubmissionQueue` we've submitted to the kernel using
+    /// `io_uring_enter(2)`.
+    submission_tail: u32,
 }
 
 #[derive(Debug)]
 struct SubmissionQueue {
+    /// File descriptor of the I/O ring.
+    ring_fd: RawFd,
+
     /// Mmap-ed pointer.
     ptr: *mut libc::c_void,
     /// Mmap-ed size in bytes.
     size: libc::c_uint,
 
     /// Local version of `tail`.
-    /// Increased in `queue` and synced with the kernel (`tail`) in `wait`.
-    pending_tail: u32,
+    /// Increased in `queue` to give the caller mutable access to a
+    /// [`Submission`] in `entries`.
+    /// NOTE: this does not mean that `pending_tail` number of submissions are
+    /// ready, this is determined by `tail`.
+    pending_tail: AtomicU32,
+    /// Variable used to get an index into `array`.
+    pending_index: AtomicU32,
 
     // NOTE: the following two fields are constant. we read them once from the
     // mmap area and then copied them here to avoid the need for the atomics.
@@ -93,6 +113,96 @@ struct SubmissionQueue {
     /// Array of `len` indices (into `entries`) shared with the kernel. We're
     /// the only one modifiying the structures, but the kernel can read from it.
     array: *mut AtomicU32,
+}
+
+impl SubmissionQueue {
+    /// Add a submission to the queue.
+    ///
+    /// Returns an error if the submission queue is full. To fix this call
+    /// [`Ring::wait_for`] (and handle the completed operations) and try
+    /// queueing again.
+    fn add<F>(&self, submit: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut Submission),
+    {
+        // First we need to acquire mutable access to an `Submission` entry in
+        // the `entries` array.
+        //
+        // We do this by increasing `pending_tail` by 1, reserving
+        // `entries[pending_tail]` for ourselves, while ensuring we don't go
+        // beyond what the kernel has processed by checking `tail - head` is
+        // less then the length of the submission queue.
+        let head = self.head();
+        let tail = self
+            .pending_tail
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
+                if tail - head < self.len {
+                    // Still an entry available.
+                    Some(tail + 1) // TODO: handle overflows.
+                } else {
+                    None
+                }
+            });
+
+        if let Ok(tail) = tail {
+            // SAFETY: the `ring_mask` ensures we can never get an index larger
+            // then the size of the queue. Above we've already ensured that
+            // we're the only thread  with mutable access to the entry.
+            let submission_index = tail & self.ring_mask;
+            let submission = unsafe { &mut *self.entries.add(submission_index as usize) };
+
+            // Let the caller fill the `submission`.
+            #[cfg(debug_assertions)]
+            submission.reset();
+            submit(submission);
+            debug_assert!(!submission.is_unchanged());
+
+            // Now that we've written our submission we need add it to the
+            // `array` so that the kernel can process it.
+            let array_tail = self.pending_index.fetch_add(1, Ordering::AcqRel);
+            let array_index = (array_tail & self.ring_mask) as usize;
+            // SAFETY: `idx` is masked above to be within the correct bounds.
+            // As we have unique access `Relaxed` is acceptable.
+            unsafe { (&*self.array.add(array_index)).store(submission_index, Ordering::Relaxed) }
+
+            // FIXME: doesn't work. Can have a gap in the `self.array` the
+            // kernel will then assume to be filled.
+            unsafe { &*self.tail }.fetch_add(1, Ordering::AcqRel);
+
+            Ok(())
+        } else {
+            Err(QueueFull(()))
+        }
+    }
+
+    /// Returns `self.head`.
+    fn head(&self) -> u32 {
+        // SAFETY: this written to by the kernel so we need to use `Acquire`
+        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (&*self.head).load(Ordering::Acquire) }
+    }
+
+    /// Returns `self.tail`.
+    fn tail(&self) -> u32 {
+        // SAFETY: need to sync with other application thread  so we need
+        // `Acquire`. The pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (&*self.tail).load(Ordering::Acquire) }
+    }
+}
+
+/// Error returned by [`Ring::queue`] when the submission queue is full.
+pub struct QueueFull(());
+
+impl fmt::Debug for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QueueFull").finish()
+    }
+}
+
+impl fmt::Display for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("`a10::Ring` submission queue is full")
+    }
 }
 
 #[derive(Debug)]
@@ -143,32 +253,7 @@ impl Ring {
         // functions?
         F: FnOnce(&mut Submission),
     {
-        let head = self.submission_head();
-        let tail = self.sq.pending_tail;
-        let next = tail + 1; // TODO: handle overflows.
-
-        if next - head <= self.sq.len {
-            // SAFETY: the `ring_mask` ensures we can never get an `idx` larger
-            // then the size of the queue. We checked above that the kernel
-            // isn't reading from the struct and we can safely write to it.
-            let idx = (tail & self.sq.ring_mask) as usize;
-            let submission = unsafe { &mut *self.sq.entries.add(idx) };
-
-            // Let the user fill the submission.
-            #[cfg(debug_assertions)]
-            submission.reset();
-            submit(submission);
-            debug_assert!(!submission.is_unchanged());
-
-            // Mark the submission as filled with the kernel.
-            // SAFETY: `idx` is masked above to be within the correct bounds.
-            // TODO: why is Relaxed acceptable?
-            unsafe { (&*self.sq.array.add(idx)).store(idx as u32, Ordering::Relaxed) }
-            self.sq.pending_tail = next;
-            Ok(())
-        } else {
-            Err(QueueFull(()))
-        }
+        self.sq.add(submit)
     }
 
     /// Submit all submissions and wait for at least one completion.
@@ -183,24 +268,22 @@ impl Ring {
     /// Setting `n` to zero will submit all queued operations and return any
     /// completions, without blocking.
     pub fn wait_for(&mut self, n: u32) -> io::Result<Completions> {
-        let to_submit = {
-            let pending_tail = self.sq.pending_tail;
-            let tail = self.submission_tail();
-            let to_submit = pending_tail - tail;
-            if to_submit != 0 {
-                // Let the kernel know we've submitted some events.
-                // SAFETY: the kernel needs to read the value so we need `Release`.
-                // The pointer itself is valid as long as `Ring.fd` is alive.
-                unsafe { (&*self.sq.tail).store(pending_tail, Ordering::Release) }
-            }
-            to_submit
-        };
+        let submitted_tail = self.submission_tail;
+        let queued_tail = self.sq.tail();
+        let to_submit = queued_tail - submitted_tail;
 
         // TODO: reread manual when using `IORING_SETUP_IOPOLL`.
         // TODO: reread manual when using `IORING_ENTER_SQ_WAIT`.
         // TODO: reread manual when using `IORING_SETUP_SQPOLL`, using `IORING_ENTER_SQ_WAKEUP`.
         let flags = libc::IORING_ENTER_GETEVENTS; // Wait for at least `n` events.
-        let n = syscall!(io_uring_enter(self.fd, to_submit, n, flags, ptr::null(), 0))?;
+        let n = syscall!(io_uring_enter(
+            self.sq.ring_fd,
+            to_submit,
+            n,
+            flags,
+            ptr::null(),
+            0
+        ))?;
 
         // TODO: check `overflow`?
 
@@ -215,20 +298,6 @@ impl Ring {
             ring_mask: self.cq.ring_mask,
             _lifetime: PhantomData,
         })
-    }
-
-    /// Returns `SubmissionQueue.head`.
-    fn submission_head(&self) -> u32 {
-        // SAFETY: this written to by the kernel so we need to use `Acquire`
-        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.sq.head).load(Ordering::Acquire) }
-    }
-
-    /// Returns `SubmissionQueue.tail`.
-    fn submission_tail(&self) -> u32 {
-        // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
-        // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.sq.tail).load(Ordering::Relaxed) }
     }
 
     /// Returns `CompletionQueue.head`.
@@ -246,38 +315,18 @@ impl Ring {
     }
 }
 
-impl Drop for Ring {
-    fn drop(&mut self) {
-        if let Err(err) = syscall!(close(self.fd)) {
-            error!("error closing io_uring: {}", err);
-        }
-    }
-}
-
 impl Drop for SubmissionQueue {
     fn drop(&mut self) {
         // FIXME: do we need to unmap here? Or is closing the fd enough.
+        if let Err(err) = syscall!(close(self.ring_fd)) {
+            error!("error closing io_uring: {}", err);
+        }
     }
 }
 
 impl Drop for CompletionQueue {
     fn drop(&mut self) {
         // FIXME: do we need to unmap here? Or is closing the fd enough.
-    }
-}
-
-/// Error returned by [`Ring::queue`] when the submission queue is full.
-pub struct QueueFull(());
-
-impl fmt::Debug for QueueFull {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("QueueFull").finish()
-    }
-}
-
-impl fmt::Display for QueueFull {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("io_uring submission queue is full")
     }
 }
 
