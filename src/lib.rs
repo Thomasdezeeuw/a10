@@ -30,8 +30,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{fmt, io, ptr, slice};
 
-use log::error;
-
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)* ) ) => {{
@@ -336,7 +334,7 @@ impl Drop for SubmissionQueue {
     fn drop(&mut self) {
         // FIXME: do we need to unmap here? Or is closing the fd enough.
         if let Err(err) = syscall!(close(self.ring_fd)) {
-            error!("error closing io_uring: {}", err);
+            log::error!("error closing io_uring: {}", err);
         }
     }
 }
@@ -458,6 +456,13 @@ impl Submission {
         self.inner.user_data = token.0;
     }
 
+    /// Close the `fd`.
+    unsafe fn close_fd(&mut self, fd: RawFd) {
+        self.inner.opcode = Operation::Close as u8;
+        self.inner.fd = fd;
+        self.inner.user_data = 0;
+    }
+
     // TODO: add other operations, see `io_uring_enter` manual.
 
     /// Set the I/O priority.
@@ -527,6 +532,8 @@ enum Operation {
     Connect = libc::IORING_OP_CONNECT as u8,
     Fallocate = libc::IORING_OP_FALLOCATE as u8,
     Openat = libc::IORING_OP_OPENAT as u8,
+    /// Issue the equivalent of a `close(2)` system call.
+    #[doc(alias = "IORING_OP_CLOSE")]
     Close = libc::IORING_OP_CLOSE as u8,
     FilesUpdate = libc::IORING_OP_FILES_UPDATE as u8,
     Statx = libc::IORING_OP_STATX as u8,
