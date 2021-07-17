@@ -92,6 +92,7 @@ impl Config {
     // TODO: add method for `IORING_SETUP_R_DISABLED`.
 
     /// Build a new [`Ring`].
+    #[doc(alias = "io_uring_setup")]
     pub fn build(self) -> io::Result<Ring> {
         let mut parameters = libc::io_uring_params::default();
         if let Some(completion_entries) = self.completion_entries {

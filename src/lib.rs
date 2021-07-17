@@ -237,6 +237,7 @@ impl Ring {
     /// Create a new `Ring`.
     ///
     /// For more configuration options see [`Config`].
+    #[doc(alias = "io_uring_setup")]
     pub fn new(entries: u32) -> io::Result<Ring> {
         Config::new(entries).build()
     }
@@ -259,6 +260,7 @@ impl Ring {
     /// Submit all submissions and wait for at least one completion.
     ///
     /// Also see [`Ring::wait_for`].
+    #[doc(alias = "io_uring_enter")]
     pub fn wait(&mut self) -> io::Result<Completions> {
         self.wait_for(1)
     }
@@ -267,6 +269,7 @@ impl Ring {
     ///
     /// Setting `n` to zero will submit all queued operations and return any
     /// completions, without blocking.
+    #[doc(alias = "io_uring_enter")]
     pub fn wait_for(&mut self, n: u32) -> io::Result<Completions> {
         let submitted_tail = self.submission_tail;
         let queued_tail = self.sq.tail();
