@@ -391,6 +391,17 @@ impl Submission {
     }
     */
 
+    pub unsafe fn read_vectored<F>(
+        &mut self,
+        token: Token,
+        fd: &F,
+        bufs: &mut [MaybeUninitSlice<'_>], // FIXME: lifetime.
+    ) where
+        F: io::Read + AsRawFd,
+    {
+        self.read_vectored_at(token, fd, bufs, NO_OFFSET)
+    }
+
     pub unsafe fn read_vectored_at<F>(
         &mut self,
         token: Token,
