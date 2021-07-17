@@ -22,11 +22,10 @@
 // Review atomic ordering.
 
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
-use std::{fmt, io, ptr, slice};
+use std::{fmt, ptr};
 
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
@@ -42,6 +41,7 @@ macro_rules! syscall {
 
 mod config;
 pub mod fs;
+pub mod io;
 mod op;
 
 // TODO: replace this with definitions from the `libc` crate once available.
@@ -419,37 +419,5 @@ impl fmt::Debug for Completion {
             .field("res", &self.inner.res)
             .field("flags", &self.inner.flags)
             .finish()
-    }
-}
-
-#[repr(transparent)]
-pub struct MaybeUninitSlice<'a> {
-    vec: libc::iovec,
-    _lifetime: PhantomData<&'a mut [MaybeUninit<u8>]>,
-}
-
-impl<'a> MaybeUninitSlice<'a> {
-    pub fn new(buf: &'a mut [MaybeUninit<u8>]) -> MaybeUninitSlice<'a> {
-        MaybeUninitSlice {
-            vec: libc::iovec {
-                iov_base: buf.as_mut_ptr().cast(),
-                iov_len: buf.len(),
-            },
-            _lifetime: PhantomData,
-        }
-    }
-
-    pub fn as_slice(&self) -> &[MaybeUninit<u8>] {
-        unsafe { slice::from_raw_parts(self.vec.iov_base.cast(), self.vec.iov_len) }
-    }
-
-    pub fn as_mut_slice(&mut self) -> &mut [MaybeUninit<u8>] {
-        unsafe { slice::from_raw_parts_mut(self.vec.iov_base.cast(), self.vec.iov_len) }
-    }
-}
-
-impl<'a> fmt::Debug for MaybeUninitSlice<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.as_slice().fmt(f)
     }
 }
