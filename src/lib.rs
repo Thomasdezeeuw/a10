@@ -41,6 +41,7 @@ macro_rules! syscall {
 }
 
 mod config;
+pub mod fs;
 mod op;
 
 // TODO: replace this with definitions from the `libc` crate once available.
