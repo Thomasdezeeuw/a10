@@ -252,9 +252,6 @@ impl Ring {
     /// queueing again.
     pub fn queue<F>(&mut self, submit: F) -> Result<(), QueueFull>
     where
-        // TODO: how do we force the user to change the submission?
-        // Maybe create a opeque type returned by `submission` modifying
-        // functions?
         F: FnOnce(&mut Submission),
     {
         self.sq.add(submit)
