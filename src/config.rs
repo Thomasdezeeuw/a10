@@ -15,10 +15,7 @@ pub struct Config {
 }
 
 impl Config {
-    /// Create a `Config`.
-    ///
-    /// `entries` must be a power of two and in the range 1..=4096.
-    pub const fn new(entries: u32) -> Config {
+    pub(crate) const fn new(entries: u32) -> Config {
         Config {
             submission_entries: entries,
             completion_entries: None,

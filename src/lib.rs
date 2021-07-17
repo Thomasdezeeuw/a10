@@ -234,6 +234,19 @@ struct CompletionQueue {
 }
 
 impl Ring {
+    /// Configure a `Ring`.
+    ///
+    /// `entries` must be a power of two and in the range 1..=4096.
+    ///
+    /// # Notes
+    ///
+    /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
+    /// to work correctly. Furthermore the use needs the `CAP_SYS_NICE`
+    /// capability.
+    pub const fn config(entries: u32) -> Config {
+        Config::new(entries)
+    }
+
     /// Create a new `Ring`.
     ///
     /// For more configuration options see [`Config`].
