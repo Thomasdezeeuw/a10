@@ -65,9 +65,6 @@ pub struct Ring {
     /// Because it depends on memory mapping from the file descriptor of the
     /// ring the file descriptor is stored in the `SubmissionQueue` itself.
     sq: Arc<SubmissionQueue>,
-    /// Tail of the `SubmissionQueue` we've submitted to the kernel using
-    /// `io_uring_enter(2)`.
-    submission_tail: u32,
 }
 
 #[derive(Debug)]
@@ -105,6 +102,8 @@ struct SubmissionQueue {
     tail: *mut AtomicU32,
     /// Number of invalid entries dropped by the kernel.
     dropped: *const AtomicU32,
+    /// Flags set by the kernel to communicate state information.
+    flags: *const AtomicU32,
     /// Array of `len` submission entries shared with the kernel. We're the only
     /// one modifiying the structures, but the kernel can read from it.
     ///
@@ -181,13 +180,6 @@ impl SubmissionQueue {
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (&*self.head).load(Ordering::Acquire) }
     }
-
-    /// Returns `self.tail`.
-    fn tail(&self) -> u32 {
-        // SAFETY: need to sync with other application thread  so we need
-        // `Acquire`. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.tail).load(Ordering::Acquire) }
-    }
 }
 
 /// Error returned by [`Ring::queue`] when the submission queue is full.
@@ -226,8 +218,6 @@ struct CompletionQueue {
     head: *mut AtomicU32,
     /// Incremented by the kernel when I/O has been completed.
     tail: *const AtomicU32,
-    /// Number of completion events lost because the queue was full.
-    overflow: *const AtomicU32,
     /// Array of `len` completion entries shared with the kernel. The kernel
     /// modifies this array, we're only reading from it.
     entries: *const Completion,
@@ -284,28 +274,42 @@ impl Ring {
     /// completions, without blocking.
     #[doc(alias = "io_uring_enter")]
     pub fn wait_for(&mut self, n: u32) -> io::Result<Completions> {
-        let submitted_tail = self.submission_tail;
-        let queued_tail = self.sq.tail();
-        let to_submit = queued_tail - submitted_tail;
+        // First we check if there are already completions events queued.
+        let head = self.completion_head();
+        let tail = self.completion_tail();
+        if head != tail {
+            return Ok(Completions {
+                entries: self.cq.entries,
+                local_head: head,
+                head: self.cq.head,
+                tail,
+                ring_mask: self.cq.ring_mask,
+                _lifetime: PhantomData,
+            });
+        }
 
-        // TODO: reread manual when using `IORING_SETUP_IOPOLL`.
-        // TODO: reread manual when using `IORING_ENTER_SQ_WAIT`.
-        // TODO: reread manual when using `IORING_SETUP_SQPOLL`, using `IORING_ENTER_SQ_WAKEUP`.
-        let flags = libc::IORING_ENTER_GETEVENTS; // Wait for at least `n` events.
+        // If not we need to check if the kernel thread is stil awake. If the
+        // kernel thread is not awake we'll need to wake it.
+        let mut enter_flags = libc::IORING_ENTER_GETEVENTS;
+        let submission_flags = unsafe { &*self.sq.flags }.load(Ordering::Acquire);
+        if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
+            log::debug!("waking kernel thread");
+            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
+        }
+
         let n = syscall!(io_uring_enter(
             self.sq.ring_fd,
-            to_submit,
-            n,
-            flags,
+            0, // We've already queued and submitted our submissions.
+            n, // Wait for at least one completion.
+            enter_flags,
             ptr::null(),
             0
         ))?;
+        log::debug!("waited for {} completion events", n);
 
-        // TODO: check `overflow`?
-
-        let head = self.completion_head();
+        // NOTE: we're the only onces writing to the completion head so we don't
+        // need to read it again.
         let tail = self.completion_tail();
-        debug_assert_eq!(head + n as u32, tail);
         Ok(Completions {
             entries: self.cq.entries,
             local_head: head,
@@ -317,7 +321,7 @@ impl Ring {
     }
 
     /// Returns `CompletionQueue.head`.
-    fn completion_head(&self) -> u32 {
+    fn completion_head(&mut self) -> u32 {
         // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
         // pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (&*self.cq.head).load(Ordering::Relaxed) }

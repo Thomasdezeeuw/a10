@@ -14,6 +14,19 @@ pub struct Config {
     clamp: bool,
 }
 
+macro_rules! check_feature {
+    ($features: expr, $required: ident $(,)*) => {{
+        assert!(
+            $features & libc::$required != 0,
+            concat!(
+                "Kernel doesn't have required `",
+                stringify!($required),
+                "` feature"
+            )
+        );
+    }};
+}
+
 impl Config {
     pub(crate) const fn new(entries: u32) -> Config {
         Config {
@@ -67,21 +80,7 @@ impl Config {
     }
     */
 
-    /*
-     * TODO: document the required permissions.
-     * TODO: read the manual carefull and see what changes are required.
-     * TODO: add support for `IORING_SETUP_SQ_AFF` flag as well.
-    /// When this flag is specified, a kernel thread is created to perform
-    /// submission queue polling. A [`Ring`] instance configured in this way
-    /// enables an application to issue I/O without ever context switching into
-    /// the kernel.
-    ///
-    /// Uses `IORING_SETUP_SQPOLL`, added in Linux kernel 5.1.
-    #[doc(alias = "IORING_SETUP_SQPOLL")]
-    pub fn with_kernel_polling(mut self) -> Self {
-        todo!("Config::with_kernel_thread")
-    }
-    */
+    // TODO: add support for `IORING_SETUP_SQ_AFF` flag.
 
     // TODO: add method for `IORING_SETUP_ATTACH_WQ`, required access to the fd
     // in an existing `Ring`.
@@ -92,6 +91,7 @@ impl Config {
     #[doc(alias = "io_uring_setup")]
     pub fn build(self) -> io::Result<Ring> {
         let mut parameters = libc::io_uring_params::default();
+        parameters.flags = libc::IORING_SETUP_SQPOLL;
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -101,18 +101,15 @@ impl Config {
         }
 
         let fd = syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
-        // TODO: check the `parameters.features` flags set by the kernel.
+        check_feature!(parameters.features, IORING_FEAT_NODROP);
+        check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS);
+        check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED);
 
         // FIXME: close `fd` on error.
-        let sq = mmap_submission_queue(fd, &parameters)?;
+        let sq = Arc::new(mmap_submission_queue(fd, &parameters)?);
         // FIXME: close `fd` on error.
         let cq = mmap_completion_queue(fd, &parameters)?;
-        let submission_tail = sq.pending_tail.load(Ordering::Relaxed);
-        Ok(Ring {
-            sq: Arc::new(sq),
-            cq,
-            submission_tail,
-        })
+        Ok(Ring { sq, cq })
     }
 }
 
@@ -156,6 +153,9 @@ fn mmap_submission_queue(
             dropped: submission_queue
                 .add(parameters.sq_off.dropped as usize)
                 .cast(),
+            flags: submission_queue
+                .add(parameters.sq_off.flags as usize)
+                .cast(),
             entries: submission_queue_entries.cast(),
             array: submission_queue
                 .add(parameters.sq_off.array as usize)
@@ -190,9 +190,6 @@ fn mmap_completion_queue(
             // Fields are shared with the kernel.
             head: completion_queue.add(parameters.cq_off.head as usize).cast(),
             tail: completion_queue.add(parameters.cq_off.tail as usize).cast(),
-            overflow: completion_queue
-                .add(parameters.cq_off.overflow as usize)
-                .cast(),
             entries: completion_queue.add(parameters.cq_off.cqes as usize).cast(),
         })
     }
