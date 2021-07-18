@@ -7,6 +7,8 @@ use std::{io, ptr};
 use crate::{libc, CompletionQueue, Ring, SubmissionQueue};
 
 /// Configuration for a [`Ring`].
+///
+/// Created by calling [`Ring::config`].
 #[derive(Debug)]
 pub struct Config {
     submission_entries: u32,
@@ -39,7 +41,7 @@ impl Config {
     /// Set the size of the completion queue.
     ///
     /// By default the kernel will use a completion twice as large as the
-    /// submission queue (`entries` in the call to [`Config::new`]).
+    /// submission queue (`entries` in the call to [`Ring::config`]).
     ///
     /// Uses `IORING_SETUP_CQSIZE`, added in Linux kernel 5.5.
     #[doc(alias = "IORING_SETUP_CQSIZE")]

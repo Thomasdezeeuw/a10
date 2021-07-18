@@ -181,7 +181,9 @@ impl SubmissionQueue {
     }
 }
 
-/// Error returned by [`Ring::queue`] when the submission queue is full.
+/// Error returned when the submission queue is full.
+///
+/// To resolve this issue call [`Ring::poll`].
 pub struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
@@ -237,7 +239,7 @@ impl Ring {
     /// # Notes
     ///
     /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
-    /// to work correctly. Furthermore the use needs the `CAP_SYS_NICE`
+    /// to work correctly. Furthermore the user needs the `CAP_SYS_NICE`
     /// capability.
     pub const fn config(entries: u32) -> Config {
         Config::new(entries)
