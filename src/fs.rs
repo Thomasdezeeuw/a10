@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::task::Poll;
 
 use crate::op::SharedOperationState;
-use crate::{libc, QueueFull, Ring};
+use crate::{libc, QueueFull, SubmissionQueue};
 
 #[derive(Debug)]
 pub struct File {
@@ -19,11 +19,11 @@ pub struct File {
 
 impl File {
     /// Open `path` for reading.
-    pub fn open(ring: &Ring, path: PathBuf) -> Result<Open, QueueFull> {
+    pub fn open(queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
         let path = path.into_os_string().into_vec();
         let path = unsafe { CString::from_vec_unchecked(path) };
 
-        let state = SharedOperationState::new(ring.submission_queue());
+        let state = SharedOperationState::new(queue);
         state.start(|submission| unsafe {
             let flags = libc::O_RDONLY | libc::O_CLOEXEC;
             submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, 0)

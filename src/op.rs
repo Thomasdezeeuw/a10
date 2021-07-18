@@ -23,7 +23,7 @@ const IN_PROGRESS: i32 = i32::MIN + 1;
 /// State of an asynchronous operation.
 struct OperationState {
     /// Submission queue to submit operations to.
-    sq: Arc<SubmissionQueue>,
+    sq: SubmissionQueue,
     /// Result of the operation.
     /// Two special states:
     /// * [`NO_OP`] menas no operation is being executed.
@@ -36,7 +36,7 @@ struct OperationState {
 
 impl SharedOperationState {
     /// Create a new `SharedOperationState`.
-    pub(crate) fn new(sq: Arc<SubmissionQueue>) -> SharedOperationState {
+    pub(crate) fn new(sq: SubmissionQueue) -> SharedOperationState {
         SharedOperationState {
             inner: Arc::new(Mutex::new(OperationState { sq, result: NO_OP })),
         }

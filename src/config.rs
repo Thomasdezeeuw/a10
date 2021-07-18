@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{io, ptr};
 
-use crate::{libc, CompletionQueue, Ring, SubmissionQueue};
+use crate::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
 
 /// Configuration for a [`Ring`].
 ///
@@ -108,7 +108,7 @@ impl Config {
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED);
 
         // FIXME: close `fd` on error.
-        let sq = Arc::new(mmap_submission_queue(fd, &parameters)?);
+        let sq = mmap_submission_queue(fd, &parameters)?;
         // FIXME: close `fd` on error.
         let cq = mmap_completion_queue(fd, &parameters)?;
         Ok(Ring { sq, cq })
@@ -141,27 +141,31 @@ fn mmap_submission_queue(
 
     unsafe {
         Ok(SubmissionQueue {
-            ring_fd,
-            ptr: submission_queue,
-            size,
-            // Fields are constant, so we load them once.
-            len: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize)),
-            ring_mask: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_mask as usize)),
-            pending_tail: AtomicU32::new(0),
-            pending_index: AtomicU32::new(0),
-            // Fields are shared with the kernel.
-            head: submission_queue.add(parameters.sq_off.head as usize).cast(),
-            tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
-            dropped: submission_queue
-                .add(parameters.sq_off.dropped as usize)
-                .cast(),
-            flags: submission_queue
-                .add(parameters.sq_off.flags as usize)
-                .cast(),
-            entries: submission_queue_entries.cast(),
-            array: submission_queue
-                .add(parameters.sq_off.array as usize)
-                .cast(),
+            shared: Arc::new(SharedSubmissionQueue {
+                ring_fd,
+                ptr: submission_queue,
+                size,
+                // Fields are constant, so we load them once.
+                len: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize)),
+                ring_mask: load_atomic_u32(
+                    submission_queue.add(parameters.sq_off.ring_mask as usize),
+                ),
+                pending_tail: AtomicU32::new(0),
+                pending_index: AtomicU32::new(0),
+                // Fields are shared with the kernel.
+                head: submission_queue.add(parameters.sq_off.head as usize).cast(),
+                tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
+                dropped: submission_queue
+                    .add(parameters.sq_off.dropped as usize)
+                    .cast(),
+                flags: submission_queue
+                    .add(parameters.sq_off.flags as usize)
+                    .cast(),
+                entries: submission_queue_entries.cast(),
+                array: submission_queue
+                    .add(parameters.sq_off.array as usize)
+                    .cast(),
+            }),
         })
     }
 }

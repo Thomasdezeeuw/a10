@@ -10,7 +10,7 @@ fn main() -> io::Result<()> {
 
     // Asynchronously open a file for reading.
     let path = env::args().nth(1).expect("missing argument");
-    let mut open_file = File::open(&ring, path.into())?;
+    let mut open_file = File::open(ring.submission_queue().clone(), path.into())?;
 
     // Poll the ring and check if the file is opened.
     ring.poll()?;

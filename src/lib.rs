@@ -63,11 +63,18 @@ pub struct Ring {
     ///
     /// Because it depends on memory mapping from the file descriptor of the
     /// ring the file descriptor is stored in the `SubmissionQueue` itself.
-    sq: Arc<SubmissionQueue>,
+    sq: SubmissionQueue,
 }
 
+/// Queue to submit asynchronous submissions to.
+#[derive(Debug, Clone)]
+pub struct SubmissionQueue {
+    shared: Arc<SharedSubmissionQueue>,
+}
+
+/// Shared internals of [`SubmissionQueue`].
 #[derive(Debug)]
-struct SubmissionQueue {
+struct SharedSubmissionQueue {
     /// File descriptor of the I/O ring.
     ring_fd: RawFd,
 
@@ -131,23 +138,24 @@ impl SubmissionQueue {
         // beyond what the kernel has processed by checking `tail - head` is
         // less then the length of the submission queue.
         let head = self.head();
-        let tail = self
-            .pending_tail
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                if tail - head < self.len {
-                    // Still an entry available.
-                    Some(tail + 1) // TODO: handle overflows.
-                } else {
-                    None
-                }
-            });
+        let tail =
+            self.shared
+                .pending_tail
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
+                    if tail - head < self.shared.len {
+                        // Still an entry available.
+                        Some(tail + 1) // TODO: handle overflows.
+                    } else {
+                        None
+                    }
+                });
 
         if let Ok(tail) = tail {
             // SAFETY: the `ring_mask` ensures we can never get an index larger
             // then the size of the queue. Above we've already ensured that
             // we're the only thread  with mutable access to the entry.
-            let submission_index = tail & self.ring_mask;
-            let submission = unsafe { &mut *self.entries.add(submission_index as usize) };
+            let submission_index = tail & self.shared.ring_mask;
+            let submission = unsafe { &mut *self.shared.entries.add(submission_index as usize) };
 
             // Let the caller fill the `submission`.
             #[cfg(debug_assertions)]
@@ -157,15 +165,17 @@ impl SubmissionQueue {
 
             // Now that we've written our submission we need add it to the
             // `array` so that the kernel can process it.
-            let array_tail = self.pending_index.fetch_add(1, Ordering::AcqRel);
-            let array_index = (array_tail & self.ring_mask) as usize;
+            let array_tail = self.shared.pending_index.fetch_add(1, Ordering::AcqRel);
+            let array_index = (array_tail & self.shared.ring_mask) as usize;
             // SAFETY: `idx` is masked above to be within the correct bounds.
             // As we have unique access `Relaxed` is acceptable.
-            unsafe { (&*self.array.add(array_index)).store(submission_index, Ordering::Relaxed) }
+            unsafe {
+                (&*self.shared.array.add(array_index)).store(submission_index, Ordering::Relaxed)
+            }
 
             // FIXME: doesn't work. Can have a gap in the `self.array` the
             // kernel will then assume to be filled.
-            unsafe { &*self.tail }.fetch_add(1, Ordering::AcqRel);
+            unsafe { &*self.shared.tail }.fetch_add(1, Ordering::AcqRel);
 
             Ok(())
         } else {
@@ -177,7 +187,7 @@ impl SubmissionQueue {
     fn head(&self) -> u32 {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.head).load(Ordering::Acquire) }
+        unsafe { (&*self.shared.head).load(Ordering::Acquire) }
     }
 }
 
@@ -253,6 +263,13 @@ impl Ring {
         Config::new(entries).build()
     }
 
+    /// Returns a reference to the `SubmissionQueue`.
+    ///
+    /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
+    pub fn submission_queue(&self) -> &SubmissionQueue {
+        &self.sq
+    }
+
     /// Poll the ring for completions.
     ///
     /// This will alert all completed operations of the result of their
@@ -295,14 +312,14 @@ impl Ring {
         // If not we need to check if the kernel thread is stil awake. If the
         // kernel thread is not awake we'll need to wake it.
         let mut enter_flags = libc::IORING_ENTER_GETEVENTS;
-        let submission_flags = unsafe { &*self.sq.flags }.load(Ordering::Acquire);
+        let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
         if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
             log::debug!("waking kernel thread");
             enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
         }
 
         let n = syscall!(io_uring_enter(
-            self.sq.ring_fd,
+            self.sq.shared.ring_fd,
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
             enter_flags,
@@ -324,11 +341,6 @@ impl Ring {
         })
     }
 
-    /// Clone the `SubmissionQueue`.
-    pub(crate) fn submission_queue(&self) -> Arc<SubmissionQueue> {
-        self.sq.clone()
-    }
-
     /// Returns `CompletionQueue.head`.
     fn completion_head(&mut self) -> u32 {
         // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
@@ -344,18 +356,11 @@ impl Ring {
     }
 }
 
-impl Drop for SubmissionQueue {
+impl Drop for SharedSubmissionQueue {
     fn drop(&mut self) {
-        // FIXME: do we need to unmap here? Or is closing the fd enough.
         if let Err(err) = syscall!(close(self.ring_fd)) {
             log::error!("error closing io_uring: {}", err);
         }
-    }
-}
-
-impl Drop for CompletionQueue {
-    fn drop(&mut self) {
-        // FIXME: do we need to unmap here? Or is closing the fd enough.
     }
 }
 
