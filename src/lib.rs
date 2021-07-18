@@ -191,6 +191,18 @@ impl SubmissionQueue {
     }
 }
 
+unsafe impl Send for SharedSubmissionQueue {}
+
+unsafe impl Sync for SharedSubmissionQueue {}
+
+impl Drop for SharedSubmissionQueue {
+    fn drop(&mut self) {
+        if let Err(err) = syscall!(close(self.ring_fd)) {
+            log::error!("error closing io_uring: {}", err);
+        }
+    }
+}
+
 /// Error returned when the submission queue is full.
 ///
 /// To resolve this issue call [`Ring::poll`].
@@ -240,6 +252,10 @@ struct CompletionQueue {
     /// modifies this array, we're only reading from it.
     entries: *const Completion,
 }
+
+unsafe impl Send for CompletionQueue {}
+
+unsafe impl Sync for CompletionQueue {}
 
 impl Ring {
     /// Configure a `Ring`.
@@ -353,14 +369,6 @@ impl Ring {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (&*self.cq.tail).load(Ordering::Acquire) }
-    }
-}
-
-impl Drop for SharedSubmissionQueue {
-    fn drop(&mut self) {
-        if let Err(err) = syscall!(close(self.ring_fd)) {
-            log::error!("error closing io_uring: {}", err);
-        }
     }
 }
 
