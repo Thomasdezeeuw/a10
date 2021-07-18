@@ -270,7 +270,7 @@ impl Ring {
     /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
     /// to work correctly. Furthermore the user needs the `CAP_SYS_NICE`
     /// capability.
-    pub const fn config(entries: u32) -> Config {
+    pub const fn config(entries: u32) -> Config<'static> {
         Config::new(entries)
     }
 

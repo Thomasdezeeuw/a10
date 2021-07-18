@@ -12,10 +12,11 @@ use crate::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue}
 ///
 /// Created by calling [`Ring::config`].
 #[derive(Debug)]
-pub struct Config {
+pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
     clamp: bool,
+    attach: Option<&'r Ring>,
 }
 
 macro_rules! check_feature {
@@ -31,13 +32,14 @@ macro_rules! check_feature {
     }};
 }
 
-impl Config {
+impl<'r> Config<'r> {
     /// Create a new `Config`.
-    pub(crate) const fn new(entries: u32) -> Config {
+    pub(crate) const fn new(entries: u32) -> Config<'static> {
         Config {
             submission_entries: entries,
             completion_entries: None,
             clamp: false,
+            attach: None,
         }
     }
 
@@ -87,8 +89,18 @@ impl Config {
 
     // TODO: add support for `IORING_SETUP_SQ_AFF` flag.
 
-    // TODO: add method for `IORING_SETUP_ATTACH_WQ`, required access to the fd
-    // in an existing `Ring`.
+    /// Attach the new (to be created) ring to `other_ring`.
+    ///
+    /// This will cause the `Ring` being created to share the asynchronous
+    /// worker thread backend of the specified `other_ring`, rather than create
+    /// a new separate thread pool.
+    ///
+    /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
+    #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
+    pub fn attach(mut self, other_ring: &'r Ring) -> Self {
+        self.attach = Some(other_ring);
+        self
+    }
 
     // TODO: add method for `IORING_SETUP_R_DISABLED`.
 
@@ -102,6 +114,10 @@ impl Config {
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
         }
         if self.clamp {
+            parameters.flags |= libc::IORING_SETUP_CLAMP;
+        }
+        if let Some(other_ring) = self.attach {
+            parameters.wq_fd = other_ring.sq.shared.ring_fd as u32;
             parameters.flags |= libc::IORING_SETUP_CLAMP;
         }
 
