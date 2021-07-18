@@ -52,27 +52,24 @@ impl SharedOperationState {
         F: FnOnce(&mut Submission),
     {
         let mut this = self.inner.lock();
-        // FIXME: this is not required if `user_data` is set to 0 by `submit`.
-        assert!(this.result == NO_OP);
-        let user_data = self.as_user_data();
+        let user_data = Arc::as_ptr(&self.inner) as u64;
         this.sq.add(|submission| {
             // SAFETY: we set the `user_data` before calling `submit` because
             // for some operations we don't want a callback, e.g. `close_fd`.
             submission.inner.user_data = user_data;
             submit(submission);
+            if submission.inner.user_data != 0 {
+                // If we do want a callback we need to clone the `inner` as it's
+                // now owned by the submission (i.e. the kernel).
+                let user_data = Arc::into_raw(self.inner.clone()) as u64;
+                assert!(submission.inner.user_data == user_data);
+                // Can't have two concurrent operations overwrite the result.
+                debug_assert!(Arc::strong_count(&self.inner) == 2);
+                assert!(this.result == NO_OP);
+            }
         })?;
         this.result = IN_PROGRESS;
         Ok(())
-    }
-
-    /// Clone `self` into user data passed to a submission.
-    ///
-    /// # Panics
-    ///
-    /// Panics if this state is already used.
-    fn as_user_data(&self) -> u64 {
-        debug_assert!(Arc::strong_count(&self.inner) == 1);
-        Arc::into_raw(self.inner.clone()) as _
     }
 
     /// Mark the asynchronous operation as complete with `result`.

@@ -78,7 +78,7 @@ fn test_read(ring: &mut Ring, test_file: &TestFile, buf_size: usize) -> io::Resu
 
         ring.poll()?;
         buf = match read.check() {
-            Poll::Ready(Ok(file)) => file,
+            Poll::Ready(Ok(buf)) => buf,
             Poll::Ready(Err(err)) => return Err(err),
             Poll::Pending => panic!("reading the file is not done"),
         };
@@ -149,7 +149,7 @@ fn test_read_at(
 
         ring.poll()?;
         buf = match read.check() {
-            Poll::Ready(Ok(file)) => file,
+            Poll::Ready(Ok(buf)) => buf,
             Poll::Ready(Err(err)) => return Err(err),
             Poll::Pending => panic!("reading the file is not done"),
         };

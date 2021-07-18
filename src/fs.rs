@@ -214,7 +214,6 @@ impl Drop for File {
     fn drop(&mut self) {
         let result = self
             .state
-            // TODO: check if no operation is in progress.
             .start(|submission| unsafe { submission.close_fd(self.fd) });
         if let Err(err) = result {
             log::error!("error closing file: {}", err);
@@ -259,8 +258,8 @@ impl Drop for Open {
 /// [`Future`] to read from a [`File`].
 #[derive(Debug)]
 pub struct Read<'f> {
-    /// Buffer to write into, need to stay in memory so the kernel can access it
-    /// safely.
+    /// Buffer to write into, needs to stay in memory so the kernel can access
+    /// it safely.
     buf: Option<Vec<u8>>,
     file: &'f File,
 }
