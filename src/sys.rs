@@ -8,6 +8,7 @@
     unused_qualifications
 )]
 #![allow(clippy::unreadable_literal, clippy::missing_safety_doc)]
+#![cfg_attr(test, allow(unused_qualifications, unaligned_references))]
 
 pub use libc::*;
 
