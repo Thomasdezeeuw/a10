@@ -11,6 +11,153 @@ use std::task::Poll;
 use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{libc, QueueFull, SubmissionQueue};
 
+/// Options used to configure how a file is opened.
+#[derive(Clone, Debug)]
+pub struct OpenOptions {
+    flags: libc::c_int,
+    mode: libc::mode_t,
+}
+
+impl OpenOptions {
+    /// Empty `OpenOptions`.
+    const fn new() -> OpenOptions {
+        OpenOptions {
+            flags: libc::O_CLOEXEC,
+            mode: 0,
+        }
+    }
+
+    /// Enable read access.
+    #[doc(alias = "O_RDONLY")]
+    #[doc(alias = "O_RDWR")]
+    pub fn read(mut self) -> Self {
+        if self.flags & libc::O_WRONLY != 0 {
+            self.flags &= !libc::O_WRONLY;
+            self.flags |= libc::O_RDWR;
+        } else {
+            self.flags |= libc::O_RDONLY;
+        }
+        self
+    }
+
+    /// Enable write access.
+    #[doc(alias = "O_WRONLY")]
+    #[doc(alias = "O_RDWR")]
+    pub fn write(mut self) -> Self {
+        if self.flags & libc::O_RDONLY != 0 {
+            self.flags &= !libc::O_RDONLY;
+            self.flags |= libc::O_RDWR;
+        } else {
+            self.flags |= libc::O_WRONLY;
+        }
+        self
+    }
+
+    /// Set writing to append only mode.
+    ///
+    /// # Notes
+    ///
+    /// This requires [writing access] to be enabled.
+    ///
+    /// [writing access]: OpenOptions::write
+    #[doc(alias = "O_APPEND")]
+    pub fn append(mut self) -> Self {
+        self.flags |= libc::O_APPEND;
+        self
+    }
+
+    /// Truncate the file if it exists.
+    #[doc(alias = "O_TRUNC")]
+    pub fn truncate(mut self) -> Self {
+        self.flags |= libc::O_TRUNC;
+        self
+    }
+
+    /// If the file doesn't exist create it.
+    pub fn create(mut self) -> Self {
+        self.flags |= libc::O_CREAT;
+        self
+    }
+
+    /// Force a file to be created, failing if a file already exists.
+    ///
+    /// This options implies [`OpenOptions::create`].
+    #[doc(alias = "O_EXCL")]
+    #[doc(alias = "O_CREAT")]
+    pub fn create_new(mut self) -> Self {
+        self.flags |= libc::O_CREAT | libc::O_EXCL;
+        self
+    }
+
+    /// Write operations on the file will complete according to the requirements
+    /// of synchronized I/O *data* integrity completion.
+    ///
+    /// By the time `write(2)` (and similar) return, the output data has been
+    /// transferred to the underlying hardware, along with any file metadata
+    /// that would be required to retrieve that data (i.e., as though each
+    /// `write(2)` was followed by a call to `fdatasync(2)`).
+    #[doc(alias = "O_DSYNC")]
+    pub fn data_sync(mut self) -> Self {
+        self.flags |= libc::O_DSYNC;
+        self
+    }
+
+    /// Write operations on the file will complete according to the requirements
+    /// of synchronized I/O *file* integrity completion (by contrast with the
+    /// synchronized I/O data integrity completion provided by
+    /// [`OpenOptions::data_sync`].)
+    ///
+    /// By the time `write(2)` (or similar) returns, the output data and
+    /// associated file metadata have been transferred to the underlying
+    /// hardware (i.e., as though each `write(2)` was followed by a call to
+    /// `fsync(2)`).
+    #[doc(alias = "O_SYNC")]
+    pub fn sync(mut self) -> Self {
+        self.flags |= libc::O_SYNC;
+        self
+    }
+
+    /// Sets the mode bits that a new file will be created with.
+    pub fn mode(mut self, mode: libc::mode_t) -> Self {
+        self.mode = mode;
+        self
+    }
+
+    /// Create an unnamed temporary regular file. The `dir` argument specifies a
+    /// directory; an unnamed inode will be created in that directory's
+    /// filesystem. Anything written to the resulting file will be lost when the
+    /// last file descriptor is closed, unless the file is given a name.
+    ///
+    /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
+    /// used to make the temporary file permanent.
+    #[doc(alias = "O_TMPFILE")]
+    pub fn open_temp_file(
+        mut self,
+        queue: SubmissionQueue,
+        dir: PathBuf,
+    ) -> Result<Open, QueueFull> {
+        self.flags |= libc::O_TMPFILE;
+        self.open(queue, dir)
+    }
+
+    /// Open `path`.
+    #[doc(alias = "openat")]
+    pub fn open(self, queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
+        let path = path.into_os_string().into_vec();
+        let path = unsafe { CString::from_vec_unchecked(path) };
+
+        let state = SharedOperationState::new(queue);
+        state.start(|submission| unsafe {
+            submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode)
+        })?;
+
+        Ok(Open {
+            path,
+            state: Some(state),
+        })
+    }
+}
+
 /// A reference to an open file on the filesystem.
 ///
 /// See [`std::fs::File`] for more documentation.
@@ -21,21 +168,14 @@ pub struct File {
 }
 
 impl File {
-    /// Open `path` for reading.
+    /// Configure how to open a file.
+    pub const fn config() -> OpenOptions {
+        OpenOptions::new()
+    }
+
+    /// Open `path` for reading only.
     pub fn open(queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
-        let path = path.into_os_string().into_vec();
-        let path = unsafe { CString::from_vec_unchecked(path) };
-
-        let state = SharedOperationState::new(queue);
-        state.start(|submission| unsafe {
-            let flags = libc::O_RDONLY | libc::O_CLOEXEC;
-            submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, 0)
-        })?;
-
-        Ok(Open {
-            path,
-            state: Some(state),
-        })
+        File::config().read().open(queue, path)
     }
 
     /// Read from this file into `buf`.
