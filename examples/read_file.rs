@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
     let mut open_file = File::open(ring.submission_queue(), path.into())?;
 
     // Poll the ring and check if the file is opened.
-    ring.poll()?;
+    ring.poll(None)?;
     let file = match open_file.check() {
         Poll::Ready(Ok(file)) => file,
         Poll::Ready(Err(err)) => return Err(err),
@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
     let mut read = file.read(buf)?;
 
     // Same pattern as above; poll and check the result.
-    ring.poll()?;
+    ring.poll(None)?;
     let buf = match read.check() {
         Poll::Ready(Ok(file)) => file,
         Poll::Ready(Err(err)) => return Err(err),

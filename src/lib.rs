@@ -25,6 +25,7 @@ use std::marker::PhantomData;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 use std::{fmt, ptr};
 
 /// Helper macro to execute a system call that returns an `io::Result`.
@@ -294,8 +295,8 @@ impl Ring {
     /// This will alert all completed operations of the result of their
     /// operation.
     #[doc(alias = "io_uring_enter")]
-    pub fn poll(&mut self) -> io::Result<()> {
-        for completion in self.completions()? {
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        for completion in self.completions(timeout)? {
             log::trace!("got completion: {:?}", completion);
             let user_data = completion.inner.user_data;
             if user_data == 0 {
@@ -313,7 +314,7 @@ impl Ring {
     /// Setting `n` to zero will submit all queued operations and return any
     /// completions, without blocking.
     #[doc(alias = "io_uring_enter")]
-    fn completions(&mut self) -> io::Result<Completions> {
+    fn completions(&mut self, timeout: Option<Duration>) -> io::Result<Completions> {
         // First we check if there are already completions events queued.
         let head = self.completion_head();
         let tail = self.completion_tail();
@@ -326,6 +327,20 @@ impl Ring {
                 ring_mask: self.cq.ring_mask,
                 _lifetime: PhantomData,
             });
+        }
+
+        let timeout = timeout.map(|to| libc::__kernel_timespec {
+            tv_sec: to.as_secs() as libc::__kernel_time64_t,
+            // `Duration::subsec_nanos` is guaranteed to be less than one
+            // billion (the number of nanoseconds in a second), making the
+            // cast to i32 safe. The cast itself is needed for platforms
+            // where C's long is only 32 bits.
+            tv_nsec: libc::c_longlong::from(to.subsec_nanos()),
+        });
+
+        if let Some(timeout) = timeout {
+            self.sq
+                .add(|submission| unsafe { submission.timeout(&timeout) })?;
         }
 
         // If not we need to check if the kernel thread is stil awake. If the

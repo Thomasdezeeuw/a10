@@ -198,6 +198,20 @@ impl Submission {
     }
     */
 
+    /// Create a timeout submission waiting for at least one completion or
+    /// triggers a timeout.
+    ///
+    /// Avaialable since Linux kernel 5.4.
+    pub(crate) unsafe fn timeout(&mut self, ts: *const libc::__kernel_timespec) {
+        self.inner.opcode = OperationCode::Timeout as u8;
+        self.inner.fd = -1;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: 1 };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ts as _ };
+        self.inner.len = 1;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { timeout_flags: 0 };
+        self.inner.user_data = 0;
+    }
+
     /// Create a read submission starting at `offset`.
     ///
     /// Avaialable since Linux kernel 5.6.
@@ -303,8 +317,12 @@ pub(crate) enum OperationCode {
     SyncFileRange = libc::IORING_OP_SYNC_FILE_RANGE as u8,
     Sendmsg = libc::IORING_OP_SENDMSG as u8,
     Recvmsg = libc::IORING_OP_RECVMSG as u8,
+    /// Register a timeout operation.
+    #[doc(alias = "IORING_OP_TIMEOUT")]
     Timeout = libc::IORING_OP_TIMEOUT as u8,
-    TimeoutFemove = libc::IORING_OP_TIMEOUT_REMOVE as u8,
+    /// Remove an existing timeout operation.
+    #[doc(alias = "IORING_OP_TIMEOUT_REMOVE")]
+    TimeoutRemove = libc::IORING_OP_TIMEOUT_REMOVE as u8,
     Accept = libc::IORING_OP_ACCEPT as u8,
     AsyncCancel = libc::IORING_OP_ASYNC_CANCEL as u8,
     LinkTimeout = libc::IORING_OP_LINK_TIMEOUT as u8,
@@ -354,7 +372,7 @@ impl OperationCode {
             libc::IORING_OP_SENDMSG => OperationCode::Sendmsg,
             libc::IORING_OP_RECVMSG => OperationCode::Recvmsg,
             libc::IORING_OP_TIMEOUT => OperationCode::Timeout,
-            libc::IORING_OP_TIMEOUT_REMOVE => OperationCode::TimeoutFemove,
+            libc::IORING_OP_TIMEOUT_REMOVE => OperationCode::TimeoutRemove,
             libc::IORING_OP_ACCEPT => OperationCode::Accept,
             libc::IORING_OP_ASYNC_CANCEL => OperationCode::AsyncCancel,
             libc::IORING_OP_LINK_TIMEOUT => OperationCode::LinkTimeout,

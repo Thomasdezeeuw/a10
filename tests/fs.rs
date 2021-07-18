@@ -63,7 +63,7 @@ fn test_read(ring: &mut Ring, test_file: &TestFile, buf_size: usize) -> io::Resu
     let path = test_file.path.into();
     let mut open_file = File::open(ring.submission_queue(), path)?;
 
-    ring.poll()?;
+    ring.poll(None)?;
     let file = match open_file.check() {
         Poll::Ready(Ok(file)) => file,
         Poll::Ready(Err(err)) => return Err(err),
@@ -76,7 +76,7 @@ fn test_read(ring: &mut Ring, test_file: &TestFile, buf_size: usize) -> io::Resu
         buf.clear();
         let mut read = file.read(buf)?;
 
-        ring.poll()?;
+        ring.poll(None)?;
         buf = match read.check() {
             Poll::Ready(Ok(buf)) => buf,
             Poll::Ready(Err(err)) => return Err(err),
@@ -134,7 +134,7 @@ fn test_read_at(
     let path = test_file.path.into();
     let mut open_file = File::open(ring.submission_queue(), path)?;
 
-    ring.poll()?;
+    ring.poll(None)?;
     let file = match open_file.check() {
         Poll::Ready(Ok(file)) => file,
         Poll::Ready(Err(err)) => return Err(err),
@@ -147,7 +147,7 @@ fn test_read_at(
         buf.clear();
         let mut read = file.read_at(buf, offset)?;
 
-        ring.poll()?;
+        ring.poll(None)?;
         buf = match read.check() {
             Poll::Ready(Ok(buf)) => buf,
             Poll::Ready(Err(err)) => return Err(err),
