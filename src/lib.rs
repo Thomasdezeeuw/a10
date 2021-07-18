@@ -282,11 +282,11 @@ impl Ring {
         Config::new(entries).build()
     }
 
-    /// Returns a reference to the `SubmissionQueue`.
+    /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
-    pub fn submission_queue(&self) -> &SubmissionQueue {
-        &self.sq
+    pub fn submission_queue(&self) -> SubmissionQueue {
+        self.sq.clone()
     }
 
     /// Poll the ring for completions.
