@@ -1,3 +1,5 @@
+//! Configuration of a [`Ring`].
+
 use std::mem::size_of;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -30,6 +32,7 @@ macro_rules! check_feature {
 }
 
 impl Config {
+    /// Create a new `Config`.
     pub(crate) const fn new(entries: u32) -> Config {
         Config {
             submission_entries: entries,
@@ -40,7 +43,7 @@ impl Config {
 
     /// Set the size of the completion queue.
     ///
-    /// By default the kernel will use a completion twice as large as the
+    /// By default the kernel will use a completion queue twice as large as the
     /// submission queue (`entries` in the call to [`Ring::config`]).
     ///
     /// Uses `IORING_SETUP_CQSIZE`, added in Linux kernel 5.5.

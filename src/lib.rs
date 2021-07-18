@@ -124,8 +124,8 @@ impl SubmissionQueue {
     /// Add a submission to the queue.
     ///
     /// Returns an error if the submission queue is full. To fix this call
-    /// [`Ring::wait_for`] (and handle the completed operations) and try
-    /// queueing again.
+    /// [`Ring::poll`] (and handle the completed operations) and try queueing
+    /// again.
     fn add<F>(&self, submit: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Submission),
@@ -206,6 +206,8 @@ impl Drop for SharedSubmissionQueue {
 /// Error returned when the submission queue is full.
 ///
 /// To resolve this issue call [`Ring::poll`].
+///
+/// Can be convert into [`io::Error`].
 pub struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
@@ -227,6 +229,7 @@ impl fmt::Display for QueueFull {
     }
 }
 
+/// Queue of completion events.
 #[derive(Debug)]
 struct CompletionQueue {
     /// Mmap-ed pointer to the completion queue.

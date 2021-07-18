@@ -11,6 +11,9 @@ use std::task::Poll;
 use crate::op::SharedOperationState;
 use crate::{libc, QueueFull, SubmissionQueue};
 
+/// A reference to an open file on the filesystem.
+///
+/// See [`std::fs::File`] for more documentation.
 #[derive(Debug)]
 pub struct File {
     fd: RawFd,
@@ -40,7 +43,7 @@ impl File {
     /// # Notes
     ///
     /// This leave the current contents of `buf` untouched and only uses the
-    /// space capacity.
+    /// spare capacity.
     pub fn read<'f>(&'f self, mut buf: Vec<u8>) -> Result<Read<'f>, QueueFull> {
         self.state
             .start(|submission| unsafe { submission.read(self.fd, buf.spare_capacity_mut()) })?;
