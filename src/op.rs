@@ -135,7 +135,7 @@ pub(crate) struct Submission {
 /// > position, like the read(2) and write(2) system calls.
 ///
 /// `-1` cast as `unsigned long long` in C is the same as as `u64::MAX`.
-const NO_OFFSET: u64 = u64::MAX;
+pub(crate) const NO_OFFSET: u64 = u64::MAX;
 
 impl Submission {
     /// Reset the submission.
@@ -192,12 +192,14 @@ impl Submission {
     }
     */
 
+    /*
     /// Create a read submission.
     ///
     /// Avaialable since Linux kernel 5.6.
     pub(crate) unsafe fn read(&mut self, fd: RawFd, buf: &mut [MaybeUninit<u8>]) {
         self.read_at(fd, buf, NO_OFFSET)
     }
+    */
 
     /// Create a read submission starting at `offset`.
     ///

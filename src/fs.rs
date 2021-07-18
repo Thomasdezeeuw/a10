@@ -8,7 +8,7 @@ use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::task::Poll;
 
-use crate::op::SharedOperationState;
+use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{libc, QueueFull, SubmissionQueue};
 
 /// A reference to an open file on the filesystem.
@@ -44,9 +44,24 @@ impl File {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read<'f>(&'f self, mut buf: Vec<u8>) -> Result<Read<'f>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.read(self.fd, buf.spare_capacity_mut()) })?;
+    pub fn read<'f>(&'f self, buf: Vec<u8>) -> Result<Read<'f>, QueueFull> {
+        self.read_at(buf, NO_OFFSET)
+    }
+
+    /// Read from this file into `buf` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
+    /// continue reading at 2kb in the next call to `read`.
+    ///
+    /// # Notes
+    ///
+    /// This leave the current contents of `buf` untouched and only uses the
+    /// spare capacity.
+    pub fn read_at<'f>(&'f self, mut buf: Vec<u8>, offset: u64) -> Result<Read<'f>, QueueFull> {
+        self.state.start(|submission| unsafe {
+            submission.read_at(self.fd, buf.spare_capacity_mut(), offset)
+        })?;
 
         Ok(Read {
             buf: Some(buf),
