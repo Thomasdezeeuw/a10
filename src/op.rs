@@ -226,6 +226,20 @@ impl Submission {
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
     }
 
+    /// Create a write submission starting at `offset`.
+    ///
+    /// Avaialable since Linux kernel 5.6.
+    pub(crate) unsafe fn write_at(&mut self, fd: RawFd, buf: &[u8], offset: u64) {
+        self.inner.opcode = OperationCode::Write as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: buf.as_ptr() as _,
+        };
+        self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
+    }
+
     /// Open a file by `pathname` in directory `dir_fd`.
     pub(crate) unsafe fn open_at(
         &mut self,
@@ -336,7 +350,11 @@ pub(crate) enum OperationCode {
     Close = libc::IORING_OP_CLOSE as u8,
     FilesUpdate = libc::IORING_OP_FILES_UPDATE as u8,
     Statx = libc::IORING_OP_STATX as u8,
+    /// Issue the equivalent of a `pread(2)` system call.
+    #[doc(alias = "IORING_OP_READ")]
     Read = libc::IORING_OP_READ as u8,
+    /// Issue the equivalent of a `pwrite(2)` system call.
+    #[doc(alias = "IORING_OP_WRITE")]
     Write = libc::IORING_OP_WRITE as u8,
     Fadvise = libc::IORING_OP_FADVISE as u8,
     Madvise = libc::IORING_OP_MADVISE as u8,

@@ -208,6 +208,24 @@ impl File {
             file: &self,
         })
     }
+
+    /// Write `buf` to this file.
+    pub fn write<'f>(&'f self, buf: Vec<u8>) -> Result<Write<'f>, QueueFull> {
+        self.write_at(buf, NO_OFFSET)
+    }
+
+    /// Write `buf` to this file.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn write_at<'f>(&'f self, buf: Vec<u8>, offset: u64) -> Result<Write<'f>, QueueFull> {
+        self.state
+            .start(|submission| unsafe { submission.write_at(self.fd, &buf, offset) })?;
+
+        Ok(Write {
+            buf: Some(buf),
+            file: &self,
+        })
+    }
 }
 
 impl Drop for File {
@@ -284,6 +302,39 @@ impl<'f> Drop for Read<'f> {
     fn drop(&mut self) {
         if let Some(buf) = take(&mut self.buf) {
             log::debug!("dropped `a10::fs::Read` before completion, leaking buffer");
+            leak(buf);
+        }
+    }
+}
+
+/// [`Future`] to write to a [`File`].
+#[derive(Debug)]
+pub struct Write<'f> {
+    /// Buffer to read from, needs to stay in memory so the kernel can access it
+    /// safely.
+    buf: Option<Vec<u8>>,
+    file: &'f File,
+}
+
+impl<'f> Write<'f> {
+    // TODO: replace with `Future` impl.
+    pub fn check(&mut self) -> Poll<io::Result<(Vec<u8>, usize)>> {
+        let result = self.file.state.take_result();
+        match result {
+            None => Poll::Pending,
+            Some(Ok(n)) => Poll::Ready(Ok({
+                let buf = self.buf.take().unwrap();
+                (buf, n as usize)
+            })),
+            Some(Err(err)) => Poll::Ready(Err(err)),
+        }
+    }
+}
+
+impl<'f> Drop for Write<'f> {
+    fn drop(&mut self) {
+        if let Some(buf) = take(&mut self.buf) {
+            log::debug!("dropped `a10::fs::Write` before completion, leaking buffer");
             leak(buf);
         }
     }

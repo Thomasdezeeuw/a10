@@ -2,12 +2,16 @@
 
 #![feature(once_cell)]
 
+use std::env::temp_dir;
+use std::fs::remove_file;
 use std::lazy::SyncLazy;
 use std::task::Poll;
 use std::{io, str};
 
 use a10::fs::File;
 use a10::Ring;
+
+const PAGE_SIZE: usize = 4096;
 
 struct TestFile {
     path: &'static str,
@@ -164,5 +168,106 @@ fn test_read_at(
         if expected.is_empty() {
             return Ok(());
         }
+    }
+}
+
+#[test]
+fn write_hello_world() -> io::Result<()> {
+    let mut ring = test_ring(1)?;
+    let bufs = vec![b"Hello world".to_vec()];
+    test_write("a10.write_hello_world", &mut ring, bufs)
+}
+
+#[test]
+fn write_one_page() -> io::Result<()> {
+    let mut ring = test_ring(1)?;
+    let bufs = vec![b"a".repeat(PAGE_SIZE)];
+    test_write("a10.write_one_page", &mut ring, bufs)
+}
+
+#[test]
+fn write_multiple_pages_one_write() -> io::Result<()> {
+    let mut ring = test_ring(1)?;
+    let bufs = vec![b"b".repeat(4 * PAGE_SIZE)];
+    test_write("a10.write_multiple_pages_one_write", &mut ring, bufs)
+}
+
+#[test]
+fn write_multiple_pages_mulitple_writes() -> io::Result<()> {
+    let mut ring = test_ring(1)?;
+    let bufs = vec![b"b".repeat(PAGE_SIZE), b"c".repeat(PAGE_SIZE)];
+    test_write("a10.write_multiple_pages_mulitple_writes", &mut ring, bufs)
+}
+
+#[test]
+fn write_multiple_pages_mulitple_writes_unaligned() -> io::Result<()> {
+    let mut ring = test_ring(1)?;
+    let bufs = vec![
+        b"Hello unalignment!".to_vec(),
+        b"b".repeat(PAGE_SIZE),
+        b"c".repeat(PAGE_SIZE),
+    ];
+    test_write(
+        "a10.write_multiple_pages_mulitple_writes_unaligned",
+        &mut ring,
+        bufs,
+    )
+}
+
+fn test_write(name: &str, ring: &mut Ring, bufs: Vec<Vec<u8>>) -> io::Result<()> {
+    let mut path = temp_dir();
+    path.push(name);
+
+    let p = path.clone();
+    let _d = defer(move || remove_file(p).unwrap());
+
+    let mut open_file = File::config()
+        .write()
+        .create()
+        .truncate()
+        .open(ring.submission_queue(), path.clone())?;
+
+    ring.poll(None)?;
+    let file = match open_file.check() {
+        Poll::Ready(Ok(file)) => file,
+        Poll::Ready(Err(err)) => return Err(err),
+        Poll::Pending => panic!("opening the file is not done"),
+    };
+
+    let mut expected = Vec::new();
+    for buf in bufs {
+        expected.extend(&buf);
+        let expected_len = buf.len();
+        let mut write = file.write(buf).expect("b");
+
+        ring.poll(None).expect("d");
+        let (buf, n) = match write.check() {
+            Poll::Ready(Ok(ok)) => ok,
+            Poll::Ready(Err(err)) => return Err(err),
+            Poll::Pending => panic!("reading the file is not done"),
+        };
+
+        assert_eq!(n, expected_len);
+        assert_eq!(buf.len(), expected_len);
+    }
+    drop(file);
+
+    let got = std::fs::read(path)?;
+    assert!(got == expected, "file can't be read back");
+
+    Ok(())
+}
+
+fn defer<F: FnOnce()>(f: F) -> Defer<F> {
+    Defer { f: Some(f) }
+}
+
+struct Defer<F: FnOnce()> {
+    f: Option<F>,
+}
+
+impl<F: FnOnce()> Drop for Defer<F> {
+    fn drop(&mut self) {
+        (self.f.take().unwrap())()
     }
 }
