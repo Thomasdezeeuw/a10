@@ -1,4 +1,6 @@
-use std::task::Poll;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{self, Poll};
 use std::{env, io, str};
 
 use a10::fs::File;
@@ -10,27 +12,19 @@ fn main() -> io::Result<()> {
 
     // Asynchronously open a file for reading.
     let path = env::args().nth(1).expect("missing argument");
-    let mut open_file = File::open(ring.submission_queue(), path.into())?;
+    let open_file = File::open(ring.submission_queue(), path.into())?;
 
     // Poll the ring and check if the file is opened.
     ring.poll(None)?;
-    let file = match open_file.check() {
-        Poll::Ready(Ok(file)) => file,
-        Poll::Ready(Err(err)) => return Err(err),
-        Poll::Pending => todo!(),
-    };
+    let file = block_on(open_file)?;
 
     // Start aysynchronously reading from the file.
     let buf = Vec::with_capacity(4096);
-    let mut read = file.read(buf)?;
+    let read = file.read(buf)?;
 
     // Same pattern as above; poll and check the result.
     ring.poll(None)?;
-    let buf = match read.check() {
-        Poll::Ready(Ok(file)) => file,
-        Poll::Ready(Err(err)) => return Err(err),
-        Poll::Pending => todo!(),
-    };
+    let buf = block_on(read)?;
 
     // Done reading, we'll print the result (using ol' fashioned blocking I/O).
     let data = str::from_utf8(&buf).map_err(|err| {
@@ -42,4 +36,31 @@ fn main() -> io::Result<()> {
     println!("{}", data);
 
     Ok(())
+}
+
+/// Replace this with your favorite [`Future`] runtime.
+fn block_on<Fut>(mut fut: Fut) -> Fut::Output
+where
+    Fut: Future + Unpin,
+{
+    let waker = noop_waker();
+    let mut ctx = task::Context::from_waker(&waker);
+    let mut fut = Pin::new(&mut fut);
+    loop {
+        if let Poll::Ready(result) = fut.as_mut().poll(&mut ctx) {
+            return result;
+        }
+    }
+}
+
+fn noop_waker() -> task::Waker {
+    use std::ptr;
+    use std::task::{RawWaker, RawWakerVTable};
+    static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
+        |_| RawWaker::new(ptr::null(), &WAKER_VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
+    unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) }
 }

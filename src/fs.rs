@@ -1,12 +1,14 @@
 //! Asynchronous filesystem manipulation operations.
 
 use std::ffi::CString;
+use std::future::Future;
 use std::io;
 use std::mem::{forget as leak, take};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
-use std::task::Poll;
+use std::pin::Pin;
+use std::task::{self, Poll};
 
 use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{libc, QueueFull, SubmissionQueue};
@@ -248,18 +250,14 @@ pub struct Open {
     state: Option<SharedOperationState>,
 }
 
-impl Open {
-    // TODO: replace with `Future` impl.
-    pub fn check(&mut self) -> Poll<io::Result<File>> {
-        let result = self.state.as_mut().unwrap().take_result();
-        match result {
-            None => Poll::Pending,
-            Some(Ok(fd)) => Poll::Ready(Ok(File {
-                fd,
-                state: self.state.take().unwrap(),
-            })),
-            Some(Err(err)) => Poll::Ready(Err(err)),
-        }
+impl Future for Open {
+    type Output = io::Result<File>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| File {
+            fd,
+            state: self.state.take().unwrap(),
+        })
     }
 }
 
@@ -282,19 +280,15 @@ pub struct Read<'f> {
     file: &'f File,
 }
 
-impl<'f> Read<'f> {
-    // TODO: replace with `Future` impl.
-    pub fn check(&mut self) -> Poll<io::Result<Vec<u8>>> {
-        let result = self.file.state.take_result();
-        match result {
-            None => Poll::Pending,
-            Some(Ok(n)) => Poll::Ready(Ok({
-                let mut buf = self.buf.take().unwrap();
-                unsafe { buf.set_len(buf.len() + n as usize) };
-                buf
-            })),
-            Some(Err(err)) => Poll::Ready(Err(err)),
-        }
+impl<'f> Future for Read<'f> {
+    type Output = io::Result<Vec<u8>>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.file.state.poll(ctx).map_ok(|n| {
+            let mut buf = self.buf.take().unwrap();
+            unsafe { buf.set_len(buf.len() + n as usize) };
+            buf
+        })
     }
 }
 
@@ -316,18 +310,14 @@ pub struct Write<'f> {
     file: &'f File,
 }
 
-impl<'f> Write<'f> {
-    // TODO: replace with `Future` impl.
-    pub fn check(&mut self) -> Poll<io::Result<(Vec<u8>, usize)>> {
-        let result = self.file.state.take_result();
-        match result {
-            None => Poll::Pending,
-            Some(Ok(n)) => Poll::Ready(Ok({
-                let buf = self.buf.take().unwrap();
-                (buf, n as usize)
-            })),
-            Some(Err(err)) => Poll::Ready(Err(err)),
-        }
+impl<'f> Future for Write<'f> {
+    type Output = io::Result<(Vec<u8>, usize)>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.file.state.poll(ctx).map_ok(|n| {
+            let buf = self.buf.take().unwrap();
+            (buf, n as usize)
+        })
     }
 }
 

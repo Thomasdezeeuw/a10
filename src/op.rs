@@ -4,6 +4,7 @@ use std::cmp::min;
 use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
 use std::sync::Arc;
+use std::task::{self, Poll};
 use std::{fmt, io};
 
 use parking_lot::Mutex;
@@ -32,13 +33,18 @@ struct OperationState {
     /// errno, positive a succesfull result.
     result: i32,
     // TODO: add flags once there used.
+    waker: Option<task::Waker>,
 }
 
 impl SharedOperationState {
     /// Create a new `SharedOperationState`.
     pub(crate) fn new(sq: SubmissionQueue) -> SharedOperationState {
         SharedOperationState {
-            inner: Arc::new(Mutex::new(OperationState { sq, result: NO_OP })),
+            inner: Arc::new(Mutex::new(OperationState {
+                sq,
+                result: NO_OP,
+                waker: None,
+            })),
         }
     }
 
@@ -62,9 +68,9 @@ impl SharedOperationState {
                 // If we do want a callback we need to clone the `inner` as it's
                 // now owned by the submission (i.e. the kernel).
                 let user_data = Arc::into_raw(self.inner.clone()) as u64;
-                assert!(submission.inner.user_data == user_data);
+                debug_assert_eq!(submission.inner.user_data, user_data);
                 // Can't have two concurrent operations overwrite the result.
-                debug_assert!(Arc::strong_count(&self.inner) == 2);
+                debug_assert_eq!(Arc::strong_count(&self.inner), 2);
                 assert!(this.result == NO_OP);
             }
         })?;
@@ -81,22 +87,35 @@ impl SharedOperationState {
     pub(crate) unsafe fn complete(user_data: u64, result: i32) {
         let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
         debug_assert!(Arc::strong_count(&state) == 2);
-        let res = replace(&mut state.lock().result, result);
+        let mut state = state.lock();
+        let res = replace(&mut state.result, result);
         assert!(res == IN_PROGRESS);
+        if let Some(waker) = &state.waker {
+            waker.wake_by_ref();
+        }
     }
 
-    /// Take the result of the operation, if any.
-    pub(crate) fn take_result(&self) -> Option<io::Result<i32>> {
-        // TODO: handle `-EBUSY` on operations.
-        // TODO: handle I/O uring specific errors here, read CQE ERRORS in the
-        // manual.
-        let res = replace(&mut self.inner.lock().result, NO_OP);
-        if res == IN_PROGRESS || res == NO_OP {
-            None
-        } else if res.is_negative() {
-            Some(Err(io::Error::from_raw_os_error(-res)))
+    /// Poll the operation check if it's ready.
+    pub(crate) fn poll(&self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
+        let mut this = self.inner.lock();
+        let res = this.result;
+        debug_assert!(res != NO_OP, "a10::OperationState in invalid state");
+        if res == IN_PROGRESS {
+            let waker = ctx.waker();
+            if !matches!(&this.waker, Some(w) if w.will_wake(waker)) {
+                this.waker = Some(waker.clone());
+            }
+            return Poll::Pending;
+        }
+
+        this.result = NO_OP;
+        if res.is_negative() {
+            // TODO: handle `-EBUSY` on operations.
+            // TODO: handle I/O uring specific errors here, read CQE ERRORS in
+            // the manual.
+            Poll::Ready(Err(io::Error::from_raw_os_error(-res)))
         } else {
-            Some(Ok(res))
+            Poll::Ready(Ok(res))
         }
     }
 }
