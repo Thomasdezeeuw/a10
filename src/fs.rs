@@ -23,7 +23,7 @@ impl OpenOptions {
     const fn new() -> OpenOptions {
         OpenOptions {
             flags: libc::O_CLOEXEC,
-            mode: 0,
+            mode: 0o666,
         }
     }
 
