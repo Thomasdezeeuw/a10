@@ -331,10 +331,6 @@ impl Ring {
 
         let timeout = timeout.map(|to| libc::__kernel_timespec {
             tv_sec: to.as_secs() as libc::__kernel_time64_t,
-            // `Duration::subsec_nanos` is guaranteed to be less than one
-            // billion (the number of nanoseconds in a second), making the
-            // cast to i32 safe. The cast itself is needed for platforms
-            // where C's long is only 32 bits.
             tv_nsec: libc::c_longlong::from(to.subsec_nanos()),
         });
 
