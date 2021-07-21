@@ -271,61 +271,78 @@ impl Drop for Open {
     }
 }
 
-/// [`Future`] to read from a [`File`].
-#[derive(Debug)]
-pub struct Read<'f> {
-    /// Buffer to write into, needs to stay in memory so the kernel can access
-    /// it safely.
-    buf: Option<Vec<u8>>,
-    file: &'f File,
-}
-
-impl<'f> Future for Read<'f> {
-    type Output = io::Result<Vec<u8>>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.file.state.poll(ctx).map_ok(|n| {
-            let mut buf = self.buf.take().unwrap();
-            unsafe { buf.set_len(buf.len() + n as usize) };
-            buf
-        })
-    }
-}
-
-impl<'f> Drop for Read<'f> {
-    fn drop(&mut self) {
-        if let Some(buf) = take(&mut self.buf) {
-            log::debug!("dropped `a10::fs::Read` before completion, leaking buffer");
-            leak(buf);
+macro_rules! op_future {
+    (
+        // Function name.
+        fn $fn: ident,
+        // Future structure.
+        struct $name: ident {
+                // Field passed to I/O uring, must be an `Option`.
+                $(#[ $field_doc: meta ])*
+                $field: ident : $value: ty,
+        },
+        // Mapping functin for `SharedOperationState::poll` result.
+        |$self: ident, $n: ident| -> $result: ty $map_result: block,
+        // Message logged when leaking `$field`.
+        drop: $drop_msg: expr,
+    ) => {
+        #[doc = "[`Future`] to "]
+        #[doc = stringify!($fn)]
+        #[doc = " from a [`File`]."]
+        #[derive(Debug)]
+        pub struct $name<'f> {
+            $(#[ $field_doc ])*
+            $field: $value,
+            file: &'f File,
         }
-    }
-}
 
-/// [`Future`] to write to a [`File`].
-#[derive(Debug)]
-pub struct Write<'f> {
-    /// Buffer to read from, needs to stay in memory so the kernel can access it
-    /// safely.
-    buf: Option<Vec<u8>>,
-    file: &'f File,
-}
+        impl<'f> Future for $name<'f> {
+            type Output = io::Result<$result>;
 
-impl<'f> Future for Write<'f> {
-    type Output = io::Result<(Vec<u8>, usize)>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.file.state.poll(ctx).map_ok(|n| {
-            let buf = self.buf.take().unwrap();
-            (buf, n as usize)
-        })
-    }
-}
-
-impl<'f> Drop for Write<'f> {
-    fn drop(&mut self) {
-        if let Some(buf) = take(&mut self.buf) {
-            log::debug!("dropped `a10::fs::Write` before completion, leaking buffer");
-            leak(buf);
+            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+                self.file.state.poll(ctx).map_ok(|$n| {
+                    let $self = &mut self;
+                    $map_result
+                })
+            }
         }
-    }
+
+        impl<'f> Drop for $name<'f> {
+            fn drop(&mut self) {
+                if let Some($field) = take(&mut self.$field) {
+                    log::debug!($drop_msg);
+                    leak($field);
+                }
+            }
+        }
+    };
+}
+
+op_future! {
+    fn read,
+    struct Read {
+        /// Buffer to write into, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: Option<Vec<u8>>,
+    },
+    |this, n| -> Vec<u8> {
+        let mut buf = this.buf.take().unwrap();
+        unsafe { buf.set_len(buf.len() + n as usize) };
+        buf
+    },
+    drop: "dropped `a10::fs::Read` before completion, leaking buffer",
+}
+
+op_future! {
+    fn write,
+    struct Write {
+        /// Buffer to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: Option<Vec<u8>>,
+    },
+    |this, n| -> (Vec<u8>, usize) {
+        let buf = this.buf.take().unwrap();
+        (buf, n as usize)
+    },
+    drop: "dropped `a10::fs::Write` before completion, leaking buffer",
 }
