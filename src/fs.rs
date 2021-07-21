@@ -241,7 +241,9 @@ impl Drop for File {
     }
 }
 
-/// [`Future`] to open a [`File`].
+/// [`Future`] to [`open`] a [`File`].
+///
+/// [`open`]: File::open
 #[derive(Debug)]
 pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can
@@ -286,9 +288,9 @@ macro_rules! op_future {
         // Message logged when leaking `$field`.
         drop: $drop_msg: expr,
     ) => {
-        #[doc = "[`Future`] to "]
-        #[doc = stringify!($fn)]
-        #[doc = " from a [`File`]."]
+        #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`File`].")]
+        #[doc = ""]
+        #[doc = concat!("[`", stringify!($fn), "`]: File::", stringify!($fn))]
         #[derive(Debug)]
         pub struct $name<'f> {
             $(#[ $field_doc ])*
