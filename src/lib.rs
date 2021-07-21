@@ -334,12 +334,12 @@ impl Ring {
             });
         }
 
-        let timeout = timeout.map(|to| libc::__kernel_timespec {
-            tv_sec: to.as_secs() as libc::__kernel_time64_t,
-            tv_nsec: libc::c_longlong::from(to.subsec_nanos()),
-        });
-
         if let Some(timeout) = timeout {
+            let timeout = libc::__kernel_timespec {
+                tv_sec: timeout.as_secs() as libc::__kernel_time64_t,
+                tv_nsec: libc::c_longlong::from(timeout.subsec_nanos()),
+            };
+
             self.sq
                 .add(|submission| unsafe { submission.timeout(&timeout) })?;
         }
