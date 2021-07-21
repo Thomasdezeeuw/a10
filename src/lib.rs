@@ -294,6 +294,11 @@ impl Ring {
     ///
     /// This will alert all completed operations of the result of their
     /// operation.
+    ///
+    /// If a `timeout` of `Some(Duration::ZERO)`, i.e. a zero duration timeout,
+    /// is passed this function will only wake all already completed operations.
+    /// It guarantees to not make a system call, but it also means it doesn't
+    /// gurantee at least one completion was processed.
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         for completion in self.completions(timeout)? {
@@ -318,7 +323,7 @@ impl Ring {
         // First we check if there are already completions events queued.
         let head = self.completion_head();
         let tail = self.completion_tail();
-        if head != tail {
+        if head != tail || matches!(timeout, Some(Duration::ZERO)) {
             return Ok(Completions {
                 entries: self.cq.entries,
                 local_head: head,
