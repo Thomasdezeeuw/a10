@@ -69,7 +69,7 @@ impl SharedOperationState {
                 // now owned by the submission (i.e. the kernel).
                 let user_data = Arc::into_raw(self.inner.clone()) as u64;
                 debug_assert_eq!(submission.inner.user_data, user_data);
-                // Can't have two concurrent operations overwrite the result.
+                // Can't have two concurrent operations overwriting the result.
                 debug_assert_eq!(Arc::strong_count(&self.inner), 2);
                 assert!(this.result == NO_OP);
             }
@@ -82,8 +82,8 @@ impl SharedOperationState {
     ///
     /// # Safety
     ///
-    /// Caller must ensure the `user_data` was created using
-    /// [`SharedOperationState::as_user_data`].
+    /// Caller must ensure the `user_data` was created in
+    /// [`SharedOperationState::start`].
     pub(crate) unsafe fn complete(user_data: u64, result: i32) {
         let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
         debug_assert!(Arc::strong_count(&state) == 2);
