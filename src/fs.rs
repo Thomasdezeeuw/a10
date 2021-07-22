@@ -276,7 +276,7 @@ impl Drop for Open {
 macro_rules! op_future {
     (
         // Function name.
-        fn $fn: ident,
+        fn $fn: ident -> $result: ty,
         // Future structure.
         struct $name: ident {
                 // Field passed to I/O uring, must be an `Option`.
@@ -284,7 +284,7 @@ macro_rules! op_future {
                 $field: ident : $value: ty,
         },
         // Mapping functin for `SharedOperationState::poll` result.
-        |$self: ident, $n: ident| -> $result: ty $map_result: block,
+        |$self: ident, $n: ident| $map_result: block,
         // Message logged when leaking `$field`.
         drop: $drop_msg: expr,
     ) => {
@@ -321,13 +321,13 @@ macro_rules! op_future {
 }
 
 op_future! {
-    fn read,
+    fn read -> Vec<u8>,
     struct Read {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
         buf: Option<Vec<u8>>,
     },
-    |this, n| -> Vec<u8> {
+    |this, n| {
         let mut buf = this.buf.take().unwrap();
         unsafe { buf.set_len(buf.len() + n as usize) };
         buf
@@ -336,13 +336,13 @@ op_future! {
 }
 
 op_future! {
-    fn write,
+    fn write -> (Vec<u8>, usize),
     struct Write {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
         buf: Option<Vec<u8>>,
     },
-    |this, n| -> (Vec<u8>, usize) {
+    |this, n| {
         let buf = this.buf.take().unwrap();
         (buf, n as usize)
     },
