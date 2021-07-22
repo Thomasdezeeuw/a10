@@ -228,6 +228,18 @@ impl File {
             file: &self,
         })
     }
+
+    /// Sync all OS-internal metadata to disk.
+    ///
+    /// # Notes
+    ///
+    /// Any un-completed writes may not be synced to disk.
+    pub fn sync_all<'f>(&'f self) -> Result<SyncAll<'f>, QueueFull> {
+        self.state
+            .start(|submission| unsafe { submission.sync_all(self.fd) })?;
+
+        Ok(SyncAll { file: &self })
+    }
 }
 
 impl Drop for File {
@@ -279,22 +291,26 @@ macro_rules! op_future {
         fn $fn: ident -> $result: ty,
         // Future structure.
         struct $name: ident {
+            $(
                 // Field passed to I/O uring, must be an `Option`.
+                // Syntax is the same a struct definition, with `$drop_msg`
+                // being the message logged when leaking `$field`.
                 $(#[ $field_doc: meta ])*
-                $field: ident : $value: ty,
+                $field: ident : $value: ty, $drop_msg: expr,
+            )*
         },
         // Mapping functin for `SharedOperationState::poll` result.
-        |$self: ident, $n: ident| $map_result: block,
-        // Message logged when leaking `$field`.
-        drop: $drop_msg: expr,
+        |$self: ident, $n: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`File`].")]
         #[doc = ""]
         #[doc = concat!("[`", stringify!($fn), "`]: File::", stringify!($fn))]
         #[derive(Debug)]
         pub struct $name<'f> {
-            $(#[ $field_doc ])*
-            $field: $value,
+            $(
+                $(#[ $field_doc ])*
+                $field: $value,
+            )*
             file: &'f File,
         }
 
@@ -311,11 +327,34 @@ macro_rules! op_future {
 
         impl<'f> Drop for $name<'f> {
             fn drop(&mut self) {
+                $(
                 if let Some($field) = take(&mut self.$field) {
                     log::debug!($drop_msg);
                     leak($field);
                 }
+                )*
             }
+        }
+    };
+    (
+        fn $fn: ident -> $result: ty,
+        struct $name: ident {
+            $(
+                $(#[ $field_doc: meta ])*
+                $field: ident : $value: ty, $drop_msg: expr,
+            )*
+        },
+        |$n: ident| $map_result: expr,
+    ) => {
+        op_future!{
+            fn $fn -> $result,
+            struct $name {
+                $(
+                    $(#[ $field_doc ])*
+                    $field: $value, $drop_msg
+                )*
+            },
+            |_unused_this, $n| $map_result,
         }
     };
 }
@@ -325,14 +364,13 @@ op_future! {
     struct Read {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Option<Vec<u8>>,
+        buf: Option<Vec<u8>>, "dropped `a10::fs::Read` before completion, leaking buffer",
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap();
         unsafe { buf.set_len(buf.len() + n as usize) };
         buf
     },
-    drop: "dropped `a10::fs::Read` before completion, leaking buffer",
 }
 
 op_future! {
@@ -340,11 +378,18 @@ op_future! {
     struct Write {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Option<Vec<u8>>,
+        buf: Option<Vec<u8>>, "dropped `a10::fs::Write` before completion, leaking buffer",
     },
     |this, n| {
         let buf = this.buf.take().unwrap();
         (buf, n as usize)
     },
-    drop: "dropped `a10::fs::Write` before completion, leaking buffer",
+}
+
+op_future! {
+    fn sync_all -> (),
+    struct SyncAll {
+        // Doesn't need any fields.
+    },
+    |n| debug_assert!(n == 0),
 }
