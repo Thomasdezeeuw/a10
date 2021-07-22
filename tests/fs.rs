@@ -263,6 +263,37 @@ fn sync_all() -> io::Result<()> {
     Ok(())
 }
 
+#[test]
+fn sync_data() -> io::Result<()> {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("sync_all");
+
+    let p = path.clone();
+    let _d = defer(move || remove_file(p).unwrap());
+
+    let open_file = File::config()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone())?;
+    let file = waker.block_on(open_file)?;
+
+    let write = file.write(b"Hello world".to_vec())?;
+    let (buf, n) = waker.block_on(write)?;
+    assert_eq!(n, 11);
+
+    waker.block_on(file.sync_data()?)?;
+    drop(file);
+
+    let got = std::fs::read(path)?;
+    assert!(got == buf, "file can't be read back");
+
+    Ok(())
+}
+
 /// Waker that blocks the current thread.
 struct Waker {
     handle: Thread,

@@ -234,11 +234,32 @@ impl File {
     /// # Notes
     ///
     /// Any un-completed writes may not be synced to disk.
+    #[doc(alias = "fsync")]
     pub fn sync_all<'f>(&'f self) -> Result<SyncAll<'f>, QueueFull> {
         self.state
             .start(|submission| unsafe { submission.sync_all(self.fd) })?;
 
         Ok(SyncAll { file: &self })
+    }
+
+    /// This function is similar to [`sync_all`], except that it may not
+    /// synchronize file metadata to the filesystem.
+    ///
+    /// This is intended for use cases that must synchronize content, but don’t
+    /// need the metadata on disk. The goal of this method is to reduce disk
+    /// operations.
+    ///
+    /// [`sync_all`]: File::sync_all
+    ///
+    /// # Notes
+    ///
+    /// Any un-completed writes may not be synced to disk.
+    #[doc(alias = "fdatasync")]
+    pub fn sync_data<'f>(&'f self) -> Result<SyncData<'f>, QueueFull> {
+        self.state
+            .start(|submission| unsafe { submission.sync_data(self.fd) })?;
+
+        Ok(SyncData { file: &self })
     }
 }
 
@@ -389,6 +410,14 @@ op_future! {
 op_future! {
     fn sync_all -> (),
     struct SyncAll {
+        // Doesn't need any fields.
+    },
+    |n| debug_assert!(n == 0),
+}
+
+op_future! {
+    fn sync_data -> (),
+    struct SyncData {
         // Doesn't need any fields.
     },
     |n| debug_assert!(n == 0),
