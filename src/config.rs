@@ -50,7 +50,7 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_CQSIZE`, added in Linux kernel 5.5.
     #[doc(alias = "IORING_SETUP_CQSIZE")]
-    pub fn with_completion_queue_size(mut self, entries: u32) -> Self {
+    pub const fn with_completion_queue_size(mut self, entries: u32) -> Self {
         self.completion_entries = Some(entries);
         self
     }
@@ -62,7 +62,7 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_CLAMP`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_CLAMP")]
-    pub fn clamp_queue_sizes(mut self) -> Self {
+    pub const fn clamp_queue_sizes(mut self) -> Self {
         self.clamp = true;
         self
     }
@@ -82,7 +82,7 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_IOPOLL`, added in Linux kernel 5.1.
     #[doc(alias = "IORING_SETUP_IOPOLL")]
-    pub fn io_polling(mut self) -> Self {
+    pub const fn io_polling(mut self) -> Self {
         todo!("Config::io_polling")
     }
     */
@@ -97,7 +97,7 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub fn attach(mut self, other_ring: &'r Ring) -> Self {
+    pub const fn attach(mut self, other_ring: &'r Ring) -> Self {
         self.attach = Some(other_ring);
         self
     }
