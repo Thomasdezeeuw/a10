@@ -1,26 +1,5 @@
 #![feature(vec_spare_capacity)]
 
-// # NOTES
-//
-// This code references the "io_uring paper" which is "Efficient IO with
-// io_uring" by Jens Axboe.
-//
-// SQ  -> submission queue.
-// SQE -> submission queue event.
-// CQ  -> completion queue.
-// CQE -> completion queue event.
-//
-// `io_uring_sqe` -> submission queue event structure.
-// `io_uring_cqe` -> completion queue event structure.
-//
-// Code:
-// https://github.com/torvalds/linux/blob/c288d9cd710433e5991d58a0764c4d08a933b871/include/uapi/linux/io_uring.h
-// https://github.com/torvalds/linux/blob/50be9417e23af5a8ac860d998e1e3f06b8fd79d7/fs/io_uring.c
-
-// # TODO
-//
-// Review atomic ordering.
-
 use std::marker::PhantomData;
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
