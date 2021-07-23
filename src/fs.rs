@@ -1,4 +1,7 @@
 //! Asynchronous filesystem manipulation operations.
+//!
+//! The main type is [`File`], which can be opened using [`OpenOptions`]. All
+//! functions on `File` are asynchronous and return a [`Future`].
 
 use std::ffi::CString;
 use std::future::Future;
@@ -22,7 +25,7 @@ const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MTIME
     | libc::STATX_BTIME;
 
-/// Options used to configure how a file is opened.
+/// Options used to configure how a [`File`] is opened.
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
     flags: libc::c_int,
