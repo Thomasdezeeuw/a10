@@ -302,6 +302,24 @@ impl Submission {
         self.inner.user_data = 0; // Don't want a callback.
     }
 
+    /// Call `statx(2)` on `fd`, where `fd` points to a file.
+    ///
+    /// Avaialable since Linux kernel 5.6.
+    pub(crate) unsafe fn statx_file(&mut self, fd: RawFd, statx: &mut libc::statx, flags: u32) {
+        self.inner.opcode = OperationCode::Statx as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: statx as *mut _ as _,
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: "\0".as_ptr() as _, // Not using a path.
+        };
+        self.inner.len = flags;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            statx_flags: libc::AT_EMPTY_PATH as _,
+        };
+    }
+
     // TODO: add other operations, see `io_uring_enter` manual.
 
     /*
@@ -387,6 +405,8 @@ pub(crate) enum OperationCode {
     #[doc(alias = "IORING_OP_CLOSE")]
     Close = libc::IORING_OP_CLOSE as u8,
     FilesUpdate = libc::IORING_OP_FILES_UPDATE as u8,
+    /// Issue the equivalent of a `statx(2)` system call.
+    #[doc(alias = "IORING_OP_STATX")]
     Statx = libc::IORING_OP_STATX as u8,
     /// Issue the equivalent of a `pread(2)` system call.
     #[doc(alias = "IORING_OP_READ")]

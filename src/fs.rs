@@ -2,16 +2,25 @@
 
 use std::ffi::CString;
 use std::future::Future;
-use std::io;
-use std::mem::{forget as leak, take};
+use std::mem::{forget as leak, take, zeroed};
 use std::os::unix::ffi::OsStringExt;
 use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{self, Poll};
+use std::time::{Duration, SystemTime};
+use std::{fmt, io, str};
 
 use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{libc, QueueFull, SubmissionQueue};
+
+const METADATA_FLAGS: u32 = libc::STATX_TYPE
+    | libc::STATX_MODE
+    | libc::STATX_SIZE
+    | libc::STATX_BLOCKS
+    | libc::STATX_ATIME
+    | libc::STATX_MTIME
+    | libc::STATX_BTIME;
 
 /// Options used to configure how a file is opened.
 #[derive(Clone, Debug)]
@@ -261,6 +270,23 @@ impl File {
 
         Ok(SyncData { file: &self })
     }
+
+    /// Retrieve metadata about the file.
+    #[doc(alias = "statx")]
+    pub fn metadata<'f>(&'f self) -> Result<Stat<'f>, QueueFull> {
+        let mut metadata = Box::new(Metadata {
+            // SAFETY: all zero values are valid representations.
+            inner: unsafe { zeroed() },
+        });
+        self.state.start(|submission| unsafe {
+            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS)
+        })?;
+
+        Ok(Stat {
+            metadata: Some(metadata),
+            file: &self,
+        })
+    }
 }
 
 impl Drop for File {
@@ -372,7 +398,7 @@ macro_rules! op_future {
             struct $name {
                 $(
                     $(#[ $field_doc ])*
-                    $field: $value, $drop_msg
+                    $field: $value, $drop_msg,
                 )*
             },
             |_unused_this, $n| $map_result,
@@ -421,4 +447,289 @@ op_future! {
         // Doesn't need any fields.
     },
     |n| debug_assert!(n == 0),
+}
+
+/// Metadata information about a [`File`].
+#[repr(transparent)]
+pub struct Metadata {
+    inner: libc::statx,
+}
+
+impl Metadata {
+    /// Returns the file type for this metadata.
+    pub fn file_type(&self) -> FileType {
+        FileType(self.inner.stx_mode)
+    }
+
+    /// Returns `true` if this represents a directory.
+    #[doc(alias = "S_IFDIR")]
+    pub fn is_dir(&self) -> bool {
+        self.file_type().is_dir()
+    }
+
+    /// Returns `true` if this represents a file.
+    #[doc(alias = "S_IFREG")]
+    pub fn is_file(&self) -> bool {
+        self.file_type().is_file()
+    }
+
+    /// Returns `true` if this represents a symbolic link.
+    #[doc(alias = "S_IFLNK")]
+    pub fn is_symlink(&self) -> bool {
+        self.file_type().is_symlink()
+    }
+
+    /// Returns the size of the file, in bytes, this metadata is for.
+    pub fn len(&self) -> u64 {
+        self.inner.stx_size
+    }
+
+    /// The "preferred" block size for efficient filesystem I/O.
+    pub fn block_size(&self) -> u32 {
+        self.inner.stx_blksize
+    }
+
+    /// Returns the permissions of the file this metadata is for.
+    pub fn permissions(&self) -> Permissions {
+        Permissions(self.inner.stx_mode)
+    }
+
+    /// Returns the time this file was last modified.
+    pub fn modified(&self) -> SystemTime {
+        timestamp(&self.inner.stx_mtime)
+    }
+
+    /// Returns the time this file was last accessed.
+    ///
+    /// # Notes
+    ///
+    /// It's possible to disable keeping track of this access time, which makes
+    /// this function return an invalid value.
+    pub fn accessed(&self) -> SystemTime {
+        timestamp(&self.inner.stx_atime)
+    }
+
+    /// Returns the time this file was created.
+    pub fn created(&self) -> SystemTime {
+        timestamp(&self.inner.stx_btime)
+    }
+}
+
+fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
+    SystemTime::UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec)
+}
+
+impl fmt::Debug for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Metadata")
+            .field("file_type", &self.file_type())
+            .field("len", &self.len())
+            .field("block_size", &self.block_size())
+            .field("permissions", &self.permissions())
+            .field("modified", &self.modified())
+            .field("accessed", &self.accessed())
+            .field("created", &self.created())
+            .finish()
+    }
+}
+
+/// A structure representing a type of file with accessors for each file type.
+#[derive(Copy, Clone)]
+pub struct FileType(u16);
+
+impl FileType {
+    /// Returns `true` if this represents a directory.
+    #[doc(alias = "S_IFDIR")]
+    pub fn is_dir(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFDIR as u16
+    }
+
+    /// Returns `true` if this represents a file.
+    #[doc(alias = "S_IFREG")]
+    pub fn is_file(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFREG as u16
+    }
+
+    /// Returns `true` if this represents a symbolic link.
+    #[doc(alias = "S_IFLNK")]
+    pub fn is_symlink(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFLNK as u16
+    }
+
+    /// Returns `true` if this represents a socket.
+    #[doc(alias = "S_IFSOCK")]
+    pub fn is_socket(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFSOCK as u16
+    }
+
+    /// Returns `true` if this represents a block device.
+    #[doc(alias = "S_IFBLK")]
+    pub fn is_block_device(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFBLK as u16
+    }
+
+    /// Returns `true` if this represents a character device.
+    #[doc(alias = "S_IFCHR")]
+    pub fn is_character_device(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFCHR as u16
+    }
+
+    /// Returns `true` if this represents a named fifo pipe.
+    #[doc(alias = "S_IFIFO")]
+    pub fn is_named_pipe(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFIFO as u16
+    }
+}
+
+impl fmt::Debug for FileType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ty = if f.alternate() {
+            if self.is_dir() {
+                "directory"
+            } else if self.is_file() {
+                "file"
+            } else if self.is_symlink() {
+                "symbolic link"
+            } else if self.is_socket() {
+                "socket"
+            } else if self.is_block_device() {
+                "block device"
+            } else if self.is_character_device() {
+                "character device"
+            } else if self.is_named_pipe() {
+                "named pipe"
+            } else {
+                "unknown"
+            }
+        } else {
+            if self.is_dir() {
+                "d"
+            } else if self.is_file() {
+                "-"
+            } else if self.is_symlink() {
+                "l"
+            } else if self.is_socket() {
+                "s"
+            } else if self.is_block_device() {
+                "b"
+            } else if self.is_character_device() {
+                "c"
+            } else if self.is_named_pipe() {
+                "p"
+            } else {
+                "?"
+            }
+        };
+        f.debug_tuple("FileType").field(&ty).finish()
+    }
+}
+
+/// Access permissions.
+#[derive(Copy, Clone)]
+pub struct Permissions(u16);
+
+impl Permissions {
+    /// Return `true` if the owner has read permission.
+    #[doc(alias = "S_IRUSR")]
+    pub fn owner_can_read(&self) -> bool {
+        self.0 & libc::S_IRUSR as u16 != 0
+    }
+
+    /// Return `true` if the owner has write permission.
+    #[doc(alias = "S_IWUSR")]
+    pub fn owner_can_write(&self) -> bool {
+        self.0 & libc::S_IWUSR as u16 != 0
+    }
+
+    /// Return `true` if the owner has execute permission.
+    #[doc(alias = "S_IXUSR")]
+    pub fn owner_can_execute(&self) -> bool {
+        self.0 & libc::S_IXUSR as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has read permission.
+    #[doc(alias = "S_IRGRP")]
+    pub fn group_can_read(&self) -> bool {
+        self.0 & libc::S_IRGRP as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has write permission.
+    #[doc(alias = "S_IWGRP")]
+    pub fn group_can_write(&self) -> bool {
+        self.0 & libc::S_IWGRP as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has execute permission.
+    #[doc(alias = "S_IXGRP")]
+    pub fn group_can_execute(&self) -> bool {
+        self.0 & libc::S_IXGRP as u16 != 0
+    }
+
+    /// Return `true` if others have read permission.
+    #[doc(alias = "S_IROTH")]
+    pub fn others_can_read(&self) -> bool {
+        self.0 & libc::S_IROTH as u16 != 0
+    }
+
+    /// Return `true` if others have write permission.
+    #[doc(alias = "S_IWOTH")]
+    pub fn others_can_write(&self) -> bool {
+        self.0 & libc::S_IWOTH as u16 != 0
+    }
+
+    /// Return `true` if others have execute permission.
+    #[doc(alias = "S_IXOTH")]
+    pub fn others_can_execute(&self) -> bool {
+        self.0 & libc::S_IXOTH as u16 != 0
+    }
+}
+
+impl fmt::Debug for Permissions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Create the same format as `ls(1)` uses.
+        let mut buf = [b'-'; 9];
+        if self.owner_can_read() {
+            buf[0] = b'r'
+        }
+        if self.owner_can_write() {
+            buf[1] = b'w'
+        }
+        if self.owner_can_execute() {
+            buf[2] = b'x'
+        }
+        if self.group_can_read() {
+            buf[3] = b'r'
+        }
+        if self.group_can_write() {
+            buf[4] = b'w'
+        }
+        if self.group_can_execute() {
+            buf[5] = b'x'
+        }
+        if self.others_can_read() {
+            buf[6] = b'r'
+        }
+        if self.others_can_write() {
+            buf[7] = b'w'
+        }
+        if self.others_can_execute() {
+            buf[8] = b'x'
+        }
+        let permissions = str::from_utf8(&buf).unwrap();
+        f.debug_tuple("Permissions").field(&permissions).finish()
+    }
+}
+
+op_future! {
+    fn metadata -> Box<Metadata>,
+    struct Stat {
+        /// Buffer to write the statx data into.
+        metadata: Option<Box<Metadata>>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
+    },
+    |this, n| {
+        debug_assert!(n == 0);
+        let metadata = this.metadata.take().unwrap();
+        assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
+        metadata
+    },
 }

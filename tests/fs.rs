@@ -10,6 +10,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
+use std::time::{Duration, SystemTime};
 use std::{io, str};
 
 use a10::fs::File;
@@ -290,6 +291,48 @@ fn sync_data() -> io::Result<()> {
 
     let got = std::fs::read(path)?;
     assert!(got == buf, "file can't be read back");
+
+    Ok(())
+}
+
+#[test]
+fn metadata_small() -> io::Result<()> {
+    let created = SystemTime::UNIX_EPOCH + Duration::new(1626523515, 19551854);
+    test_metadata(&LOREM_IPSUM_5, created)
+}
+
+#[test]
+fn metadata_big() -> io::Result<()> {
+    let created = SystemTime::UNIX_EPOCH + Duration::new(1626602057, 795679901);
+    test_metadata(&LOREM_IPSUM_50, created)
+}
+
+fn test_metadata(test_file: &TestFile, created: SystemTime) -> io::Result<()> {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = File::open(sq, test_file.path.into())?;
+    let file = waker.block_on(open_file)?;
+
+    let metadata = waker.block_on(file.metadata()?)?;
+    assert!(metadata.file_type().is_file());
+    assert!(metadata.is_file());
+    assert!(!metadata.is_dir());
+    assert!(!metadata.is_symlink());
+    assert_eq!(metadata.len(), test_file.content.len() as u64);
+    let permissions = metadata.permissions();
+    assert!(permissions.owner_can_read());
+    assert!(permissions.owner_can_write());
+    assert!(!permissions.owner_can_execute());
+    assert!(permissions.group_can_read());
+    assert!(permissions.group_can_write());
+    assert!(!permissions.group_can_execute());
+    assert!(permissions.others_can_read());
+    assert!(!permissions.others_can_write());
+    assert!(!permissions.others_can_execute());
+    // Can never get `accessed` right and `modified` is too much of a moving
+    // target.
+    assert_eq!(metadata.created(), created);
 
     Ok(())
 }
