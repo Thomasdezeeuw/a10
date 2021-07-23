@@ -41,7 +41,7 @@ impl OpenOptions {
     /// Enable read access.
     #[doc(alias = "O_RDONLY")]
     #[doc(alias = "O_RDWR")]
-    pub fn read(mut self) -> Self {
+    pub const fn read(mut self) -> Self {
         if self.flags & libc::O_WRONLY != 0 {
             self.flags &= !libc::O_WRONLY;
             self.flags |= libc::O_RDWR;
@@ -54,7 +54,7 @@ impl OpenOptions {
     /// Enable write access.
     #[doc(alias = "O_WRONLY")]
     #[doc(alias = "O_RDWR")]
-    pub fn write(mut self) -> Self {
+    pub const fn write(mut self) -> Self {
         if self.flags & libc::O_RDONLY != 0 {
             self.flags &= !libc::O_RDONLY;
             self.flags |= libc::O_RDWR;
@@ -72,20 +72,20 @@ impl OpenOptions {
     ///
     /// [writing access]: OpenOptions::write
     #[doc(alias = "O_APPEND")]
-    pub fn append(mut self) -> Self {
+    pub const fn append(mut self) -> Self {
         self.flags |= libc::O_APPEND;
         self
     }
 
     /// Truncate the file if it exists.
     #[doc(alias = "O_TRUNC")]
-    pub fn truncate(mut self) -> Self {
+    pub const fn truncate(mut self) -> Self {
         self.flags |= libc::O_TRUNC;
         self
     }
 
     /// If the file doesn't exist create it.
-    pub fn create(mut self) -> Self {
+    pub const fn create(mut self) -> Self {
         self.flags |= libc::O_CREAT;
         self
     }
@@ -95,7 +95,7 @@ impl OpenOptions {
     /// This options implies [`OpenOptions::create`].
     #[doc(alias = "O_EXCL")]
     #[doc(alias = "O_CREAT")]
-    pub fn create_new(mut self) -> Self {
+    pub const fn create_new(mut self) -> Self {
         self.flags |= libc::O_CREAT | libc::O_EXCL;
         self
     }
@@ -108,7 +108,7 @@ impl OpenOptions {
     /// that would be required to retrieve that data (i.e., as though each
     /// `write(2)` was followed by a call to `fdatasync(2)`).
     #[doc(alias = "O_DSYNC")]
-    pub fn data_sync(mut self) -> Self {
+    pub const fn data_sync(mut self) -> Self {
         self.flags |= libc::O_DSYNC;
         self
     }
@@ -123,13 +123,13 @@ impl OpenOptions {
     /// hardware (i.e., as though each `write(2)` was followed by a call to
     /// `fsync(2)`).
     #[doc(alias = "O_SYNC")]
-    pub fn sync(mut self) -> Self {
+    pub const fn sync(mut self) -> Self {
         self.flags |= libc::O_SYNC;
         self
     }
 
     /// Sets the mode bits that a new file will be created with.
-    pub fn mode(mut self, mode: libc::mode_t) -> Self {
+    pub const fn mode(mut self, mode: libc::mode_t) -> Self {
         self.mode = mode;
         self
     }
@@ -457,40 +457,40 @@ pub struct Metadata {
 
 impl Metadata {
     /// Returns the file type for this metadata.
-    pub fn file_type(&self) -> FileType {
+    pub const fn file_type(&self) -> FileType {
         FileType(self.inner.stx_mode)
     }
 
     /// Returns `true` if this represents a directory.
     #[doc(alias = "S_IFDIR")]
-    pub fn is_dir(&self) -> bool {
+    pub const fn is_dir(&self) -> bool {
         self.file_type().is_dir()
     }
 
     /// Returns `true` if this represents a file.
     #[doc(alias = "S_IFREG")]
-    pub fn is_file(&self) -> bool {
+    pub const fn is_file(&self) -> bool {
         self.file_type().is_file()
     }
 
     /// Returns `true` if this represents a symbolic link.
     #[doc(alias = "S_IFLNK")]
-    pub fn is_symlink(&self) -> bool {
+    pub const fn is_symlink(&self) -> bool {
         self.file_type().is_symlink()
     }
 
     /// Returns the size of the file, in bytes, this metadata is for.
-    pub fn len(&self) -> u64 {
+    pub const fn len(&self) -> u64 {
         self.inner.stx_size
     }
 
     /// The "preferred" block size for efficient filesystem I/O.
-    pub fn block_size(&self) -> u32 {
+    pub const fn block_size(&self) -> u32 {
         self.inner.stx_blksize
     }
 
     /// Returns the permissions of the file this metadata is for.
-    pub fn permissions(&self) -> Permissions {
+    pub const fn permissions(&self) -> Permissions {
         Permissions(self.inner.stx_mode)
     }
 
@@ -540,43 +540,43 @@ pub struct FileType(u16);
 impl FileType {
     /// Returns `true` if this represents a directory.
     #[doc(alias = "S_IFDIR")]
-    pub fn is_dir(&self) -> bool {
+    pub const fn is_dir(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFDIR as u16
     }
 
     /// Returns `true` if this represents a file.
     #[doc(alias = "S_IFREG")]
-    pub fn is_file(&self) -> bool {
+    pub const fn is_file(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFREG as u16
     }
 
     /// Returns `true` if this represents a symbolic link.
     #[doc(alias = "S_IFLNK")]
-    pub fn is_symlink(&self) -> bool {
+    pub const fn is_symlink(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFLNK as u16
     }
 
     /// Returns `true` if this represents a socket.
     #[doc(alias = "S_IFSOCK")]
-    pub fn is_socket(&self) -> bool {
+    pub const fn is_socket(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFSOCK as u16
     }
 
     /// Returns `true` if this represents a block device.
     #[doc(alias = "S_IFBLK")]
-    pub fn is_block_device(&self) -> bool {
+    pub const fn is_block_device(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFBLK as u16
     }
 
     /// Returns `true` if this represents a character device.
     #[doc(alias = "S_IFCHR")]
-    pub fn is_character_device(&self) -> bool {
+    pub const fn is_character_device(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFCHR as u16
     }
 
     /// Returns `true` if this represents a named fifo pipe.
     #[doc(alias = "S_IFIFO")]
-    pub fn is_named_pipe(&self) -> bool {
+    pub const fn is_named_pipe(&self) -> bool {
         (self.0 & libc::S_IFMT as u16) == libc::S_IFIFO as u16
     }
 }
@@ -631,55 +631,55 @@ pub struct Permissions(u16);
 impl Permissions {
     /// Return `true` if the owner has read permission.
     #[doc(alias = "S_IRUSR")]
-    pub fn owner_can_read(&self) -> bool {
+    pub const fn owner_can_read(&self) -> bool {
         self.0 & libc::S_IRUSR as u16 != 0
     }
 
     /// Return `true` if the owner has write permission.
     #[doc(alias = "S_IWUSR")]
-    pub fn owner_can_write(&self) -> bool {
+    pub const fn owner_can_write(&self) -> bool {
         self.0 & libc::S_IWUSR as u16 != 0
     }
 
     /// Return `true` if the owner has execute permission.
     #[doc(alias = "S_IXUSR")]
-    pub fn owner_can_execute(&self) -> bool {
+    pub const fn owner_can_execute(&self) -> bool {
         self.0 & libc::S_IXUSR as u16 != 0
     }
 
     /// Return `true` if the group the file belongs to has read permission.
     #[doc(alias = "S_IRGRP")]
-    pub fn group_can_read(&self) -> bool {
+    pub const fn group_can_read(&self) -> bool {
         self.0 & libc::S_IRGRP as u16 != 0
     }
 
     /// Return `true` if the group the file belongs to has write permission.
     #[doc(alias = "S_IWGRP")]
-    pub fn group_can_write(&self) -> bool {
+    pub const fn group_can_write(&self) -> bool {
         self.0 & libc::S_IWGRP as u16 != 0
     }
 
     /// Return `true` if the group the file belongs to has execute permission.
     #[doc(alias = "S_IXGRP")]
-    pub fn group_can_execute(&self) -> bool {
+    pub const fn group_can_execute(&self) -> bool {
         self.0 & libc::S_IXGRP as u16 != 0
     }
 
     /// Return `true` if others have read permission.
     #[doc(alias = "S_IROTH")]
-    pub fn others_can_read(&self) -> bool {
+    pub const fn others_can_read(&self) -> bool {
         self.0 & libc::S_IROTH as u16 != 0
     }
 
     /// Return `true` if others have write permission.
     #[doc(alias = "S_IWOTH")]
-    pub fn others_can_write(&self) -> bool {
+    pub const fn others_can_write(&self) -> bool {
         self.0 & libc::S_IWOTH as u16 != 0
     }
 
     /// Return `true` if others have execute permission.
     #[doc(alias = "S_IXOTH")]
-    pub fn others_can_execute(&self) -> bool {
+    pub const fn others_can_execute(&self) -> bool {
         self.0 & libc::S_IXOTH as u16 != 0
     }
 }
