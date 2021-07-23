@@ -33,9 +33,9 @@ use op::{SharedOperationState, Submission};
 
 /// This type represents the user space side of an I/O uring.
 ///
-/// An I/O uring is split into to queues; the submissions and completions queue.
-/// The [`SubmissionQueue`] is public, but doesn't provide any methods. The
-/// `SubmissionQueue` is only used by I/O type in the crate to schedule
+/// An I/O uring is split into two queues; the submissions and completions
+/// queue. The [`SubmissionQueue`] is public, but doesn't provide any methods.
+/// The `SubmissionQueue` is only used by I/O types in the crate to schedule
 /// asynchronous operations.
 ///
 /// The completions queue is not exposed by the crate and only used internally.
@@ -352,6 +352,7 @@ impl Ring {
             enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
         }
 
+        log::debug!("waiting for completion events");
         let n = syscall!(io_uring_enter(
             self.sq.shared.ring_fd,
             0, // We've already queued and submitted our submissions.
@@ -360,7 +361,7 @@ impl Ring {
             ptr::null(),
             0
         ))?;
-        log::debug!("waited for {} completion events", n);
+        log::trace!("got {} completion events", n);
 
         // NOTE: we're the only onces writing to the completion head so we don't
         // need to read it again.
