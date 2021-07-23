@@ -31,6 +31,20 @@ use sys as libc;
 pub use config::Config;
 use op::{SharedOperationState, Submission};
 
+/// This type represents the user space side of an I/O uring.
+///
+/// An I/O uring is split into to queues; the submissions and completions queue.
+/// The [`SubmissionQueue`] is public, but doesn't provide any methods. The
+/// `SubmissionQueue` is only used by I/O type in the crate to schedule
+/// asynchronous operations.
+///
+/// The completions queue is not exposed by the crate and only used internally.
+/// Instead it will wake the [`Future`]s exposed by the various I/O type, such
+/// as [`File::write`]'s [`Write`] `Future`.
+///
+/// [`Future`]: std::future::Future
+/// [`File::write`]: fs::File::write
+/// [`Write`]: fs::Write
 #[derive(Debug)]
 pub struct Ring {
     /// # Notes
@@ -46,7 +60,13 @@ pub struct Ring {
     sq: SubmissionQueue,
 }
 
-/// Queue to submit asynchronous submissions to.
+/// Queue to submit asynchronous operations to.
+///
+/// This type doesn't have any public methods, but is used by all I/O types,
+/// such as [`File`], to queue asynchronous operations. The queue can be
+/// acquired by using [`Ring::submission_queue`].
+///
+/// [`File`]: fs::File
 #[derive(Debug, Clone)]
 pub struct SubmissionQueue {
     shared: Arc<SharedSubmissionQueue>,
@@ -274,10 +294,10 @@ impl Ring {
     /// This will alert all completed operations of the result of their
     /// operation.
     ///
-    /// If a `timeout` of `Some(Duration::ZERO)`, i.e. a zero duration timeout,
-    /// is passed this function will only wake all already completed operations.
-    /// It guarantees to not make a system call, but it also means it doesn't
-    /// gurantee at least one completion was processed.
+    /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
+    /// function will only wake all already completed operations. It guarantees
+    /// to not make a system call, but it also means it doesn't gurantee at
+    /// least one completion was processed.
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         for completion in self.completions(timeout)? {
