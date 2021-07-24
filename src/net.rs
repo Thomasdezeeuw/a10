@@ -1,0 +1,202 @@
+//! Networking primitives.
+
+use std::future::Future;
+use std::io;
+use std::mem::{forget as leak, size_of, take, MaybeUninit};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::os::unix::io::RawFd;
+use std::pin::Pin;
+use std::task::{self, Poll};
+
+use crate::op::SharedOperationState;
+use crate::{libc, QueueFull};
+
+/// A TCP socket server, listening for connections.
+#[derive(Debug)]
+pub struct TcpListener {
+    fd: RawFd,
+    state: SharedOperationState,
+}
+
+impl TcpListener {
+    /// Bind a new TCP listener to the specified `address` to receive new
+    /// connections.
+    pub fn bind(address: SocketAddr) -> io::Result<TcpListener> {
+        todo!("TcpListener::bind({})", address)
+    }
+
+    /// Returns the local socket address of this listener.
+    pub fn local_addr(&self) -> io::Result<SocketAddr> {
+        todo!("TcpListener::local_addr()")
+    }
+
+    /// Accept a new [`TcpStream`].
+    ///
+    /// If an accepted stream is returned, the remote address of the peer is
+    /// returned along with it.
+    pub fn accept<'l>(&'l self) -> Result<Accept<'l>, QueueFull> {
+        let address: MaybeUninit<libc::sockaddr_storage> = MaybeUninit::uninit();
+        let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
+        let mut address = Box::new((address, length));
+
+        self.state.start(|submission| unsafe {
+            submission.accept(self.fd, &mut address.0, &mut address.1, libc::SOCK_CLOEXEC)
+        })?;
+
+        Ok(Accept {
+            address: Some(address),
+            socket: self,
+        })
+    }
+}
+
+impl Drop for TcpListener {
+    fn drop(&mut self) {
+        let result = self
+            .state
+            .start(|submission| unsafe { submission.close_fd(self.fd) });
+        if let Err(err) = result {
+            log::error!("error closing TCP listener: {}", err);
+        }
+    }
+}
+
+macro_rules! op_future {
+    (
+        // Function name.
+        fn $socket: ident :: $fn: ident -> $result: ty,
+        // Future structure.
+        struct $name: ident {
+            $(
+                // Field passed to I/O uring, must be an `Option`.
+                // Syntax is the same a struct definition, with `$drop_msg`
+                // being the message logged when leaking `$field`.
+                $(#[ $field_doc: meta ])*
+                $field: ident : $value: ty, $drop_msg: expr,
+            )?
+        },
+        // Mapping function for `SharedOperationState::poll` result.
+        |$self: ident, $n: ident| $map_result: expr,
+    ) => {
+        #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`", stringify!($socket), "`].")]
+        #[doc = ""]
+        #[doc = concat!("[`", stringify!($fn), "`]: ", stringify!($socket), "::", stringify!($fn))]
+        #[derive(Debug)]
+        pub struct $name<'s> {
+            $(
+                $(#[ $field_doc ])*
+                $field: $value,
+            )*
+            socket: &'s $socket,
+        }
+
+        impl<'f> Future for $name<'f> {
+            type Output = io::Result<$result>;
+
+            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+                match self.socket.state.poll(ctx) {
+                    Poll::Ready(Ok($n)) => Poll::Ready({
+                        let $self = &mut self;
+                        $map_result
+                    }),
+                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        }
+
+        impl<'f> Drop for $name<'f> {
+            fn drop(&mut self) {
+                $(
+                if let Some($field) = take(&mut self.$field) {
+                    log::debug!($drop_msg);
+                    leak($field);
+                }
+                )*
+            }
+        }
+    };
+    (
+        fn $fn: ident -> $result: ty,
+        struct $name: ident {
+            $(
+                $(#[ $field_doc: meta ])*
+                $field: ident : $value: ty, $drop_msg: expr,
+            )?
+        },
+        |$n: ident| $map_result: expr,
+    ) => {
+        op_future!{
+            fn $socket :: $fn -> $result,
+            struct $name {
+                $(
+                    $(#[ $field_doc ])*
+                    $field: $value, $drop_msg,
+                )*
+            },
+            |_unused_this, $n| $map_result,
+        }
+    };
+}
+
+op_future! {
+    fn TcpListener::accept -> (TcpStream, SocketAddr),
+    struct Accept {
+        /// Address for the accepted connection, needs to stay in memory so the
+        /// kernel can access it safely.
+        address: Option<Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>>, "dropped `a10::net::Accept` before completion, leaking address buffer",
+    },
+    |this, fd| {
+        let sq = this.socket.state.submission_queue().clone();
+        let state = SharedOperationState::new(sq);
+        let stream = TcpStream { fd, state };
+
+        let address = this.address.take().unwrap();
+        let storage = unsafe { address.0.assume_init_ref() };
+        let address_length = address.1 as usize;
+        let address = match storage.ss_family as libc::c_int {
+            libc::AF_INET => {
+                // Safety: if the ss_family field is `AF_INET` then storage
+                // must be a `sockaddr_in`.
+                debug_assert!(address_length == size_of::<libc::sockaddr_in>());
+                let addr: &libc::sockaddr_in = unsafe { &*(storage as *const _ as *const libc::sockaddr_in) };
+                let ip = Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes());
+                let port = u16::from_be(addr.sin_port);
+                Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
+            }
+            libc::AF_INET6 => {
+                // Safety: if the ss_family field is `AF_INET6` then storage
+                // must be a `sockaddr_in6`.
+                debug_assert!(address_length == size_of::<libc::sockaddr_in6>());
+                let addr: &libc::sockaddr_in6 = unsafe { &*(storage as *const _ as *const libc::sockaddr_in6) };
+                let ip = Ipv6Addr::from(addr.sin6_addr.s6_addr);
+                let port = u16::from_be(addr.sin6_port);
+                Ok(SocketAddr::V6(SocketAddrV6::new(
+                    ip,
+                    port,
+                    addr.sin6_flowinfo,
+                    addr.sin6_scope_id,
+                )))
+            }
+            _ => Err(io::ErrorKind::InvalidInput.into()),
+        };
+
+        address.map(|address| (stream, address))
+    },
+}
+
+pub struct TcpStream {
+    fd: RawFd,
+    state: SharedOperationState,
+}
+
+impl Drop for TcpStream {
+    fn drop(&mut self) {
+        let result = self
+            .state
+            .start(|submission| unsafe { submission.close_fd(self.fd) });
+        if let Err(err) = result {
+            log::error!("error closing TCP stream: {}", err);
+        }
+    }
+}

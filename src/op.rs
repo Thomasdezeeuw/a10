@@ -48,6 +48,10 @@ impl SharedOperationState {
         }
     }
 
+    pub(crate) fn submission_queue(&self) -> SubmissionQueue {
+        self.inner.lock().sq.clone()
+    }
+
     /// Start a new operation by calling [`SubmissionQueue.add`].
     ///
     /// # Panics
@@ -275,6 +279,31 @@ impl Submission {
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
     }
 
+    /// Create a accept submission starting.
+    ///
+    /// Avaialable since Linux kernel 5.5.
+    pub(crate) unsafe fn accept(
+        &mut self,
+        fd: RawFd,
+        address: &mut MaybeUninit<libc::sockaddr_storage>,
+        address_length: &mut libc::socklen_t,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = OperationCode::Accept as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            addr2: address_length as *mut _ as _,
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: address as *mut _ as _,
+        };
+
+        self.inner.len = 0;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            accept_flags: flags as _,
+        };
+    }
+
     /// Open a file by `pathname` in directory `dir_fd`.
     pub(crate) unsafe fn open_at(
         &mut self,
@@ -393,6 +422,8 @@ pub(crate) enum OperationCode {
     /// Remove an existing timeout operation.
     #[doc(alias = "IORING_OP_TIMEOUT_REMOVE")]
     TimeoutRemove = libc::IORING_OP_TIMEOUT_REMOVE as u8,
+    /// Issue the equivalent of a `accept4(2)` system call.
+    #[doc(alias = "IORING_OP_ACCEPT")]
     Accept = libc::IORING_OP_ACCEPT as u8,
     AsyncCancel = libc::IORING_OP_ASYNC_CANCEL as u8,
     LinkTimeout = libc::IORING_OP_LINK_TIMEOUT as u8,
