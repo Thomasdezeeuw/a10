@@ -37,9 +37,7 @@ macro_rules! op_future {
         // Mapping function for `SharedOperationState::poll` result.
         |$self: ident, $n: ident| $map_result: expr,
     ) => {
-        #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`", stringify!($f), "`].")]
-        #[doc = ""]
-        #[doc = concat!("[`", stringify!($fn), "`]: ", stringify!($f), "::", stringify!($fn))]
+        #[doc = concat!("[`Future`] behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
         pub struct $name<$lifetime> {
             $(
