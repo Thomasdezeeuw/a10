@@ -1,4 +1,4 @@
-#![feature(vec_spare_capacity)]
+#![feature(vec_spare_capacity, io_error_more)]
 
 use std::marker::PhantomData;
 use std::os::unix::io::RawFd;
@@ -290,8 +290,7 @@ pub struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
     fn from(_: QueueFull) -> io::Error {
-        // TODO: maybe use `ResourceBusy`.
-        io::Error::new(io::ErrorKind::Other, "submission queue is full")
+        io::Error::new(io::ErrorKind::ResourceBusy, "submission queue is full")
     }
 }
 
