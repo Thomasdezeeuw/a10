@@ -107,6 +107,7 @@ op_future! {
     },
 }
 
+/// A TCP stream between a local socket and a remote socket.
 pub struct TcpStream {
     fd: RawFd,
     state: SharedOperationState,
