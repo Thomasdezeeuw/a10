@@ -342,14 +342,14 @@ macro_rules! op_future {
         // Future structure.
         struct $name: ident {
             $(
-                // Field passed to I/O uring, must be an `Option`.
-                // Syntax is the same a struct definition, with `$drop_msg`
-                // being the message logged when leaking `$field`.
-                $(#[ $field_doc: meta ])*
-                $field: ident : $value: ty, $drop_msg: expr,
-            )*
+            // Field passed to I/O uring, must be an `Option`. Syntax is the
+            // same a struct definition, with `$drop_msg` being the message
+            // logged when leaking `$field`.
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty, $drop_msg: expr,
+            )?
         },
-        // Mapping functin for `SharedOperationState::poll` result.
+        // Mapping function for `SharedOperationState::poll` result.
         |$self: ident, $n: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`File`].")]
@@ -358,9 +358,9 @@ macro_rules! op_future {
         #[derive(Debug)]
         pub struct $name<'f> {
             $(
-                $(#[ $field_doc ])*
-                $field: $value,
-            )*
+            $(#[ $field_doc ])*
+            $field: $value,
+            )?
             file: &'f File,
         }
 
@@ -382,7 +382,7 @@ macro_rules! op_future {
                     log::debug!($drop_msg);
                     leak($field);
                 }
-                )*
+                )?
             }
         }
     };
@@ -390,9 +390,9 @@ macro_rules! op_future {
         fn $fn: ident -> $result: ty,
         struct $name: ident {
             $(
-                $(#[ $field_doc: meta ])*
-                $field: ident : $value: ty, $drop_msg: expr,
-            )*
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty, $drop_msg: expr,
+            )?
         },
         |$n: ident| $map_result: expr,
     ) => {
@@ -400,9 +400,9 @@ macro_rules! op_future {
             fn $fn -> $result,
             struct $name {
                 $(
-                    $(#[ $field_doc ])*
-                    $field: $value, $drop_msg,
-                )*
+                $(#[ $field_doc ])*
+                $field: $value, $drop_msg,
+                )?
             },
             |_unused_this, $n| $map_result,
         }
