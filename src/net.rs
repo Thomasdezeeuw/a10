@@ -45,7 +45,7 @@ impl TcpListener {
 
         Ok(Accept {
             address: Some(address),
-            socket: self,
+            file: self,
         })
     }
 }
@@ -61,93 +61,15 @@ impl Drop for TcpListener {
     }
 }
 
-macro_rules! op_future {
-    (
-        // Function name.
-        fn $socket: ident :: $fn: ident -> $result: ty,
-        // Future structure.
-        struct $name: ident {
-            $(
-                // Field passed to I/O uring, must be an `Option`.
-                // Syntax is the same a struct definition, with `$drop_msg`
-                // being the message logged when leaking `$field`.
-                $(#[ $field_doc: meta ])*
-                $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        // Mapping function for `SharedOperationState::poll` result.
-        |$self: ident, $n: ident| $map_result: expr,
-    ) => {
-        #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`", stringify!($socket), "`].")]
-        #[doc = ""]
-        #[doc = concat!("[`", stringify!($fn), "`]: ", stringify!($socket), "::", stringify!($fn))]
-        #[derive(Debug)]
-        pub struct $name<'s> {
-            $(
-                $(#[ $field_doc ])*
-                $field: $value,
-            )*
-            socket: &'s $socket,
-        }
-
-        impl<'f> Future for $name<'f> {
-            type Output = io::Result<$result>;
-
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-                match self.socket.state.poll(ctx) {
-                    Poll::Ready(Ok($n)) => Poll::Ready({
-                        let $self = &mut self;
-                        $map_result
-                    }),
-                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
-
-        impl<'f> Drop for $name<'f> {
-            fn drop(&mut self) {
-                $(
-                if let Some($field) = take(&mut self.$field) {
-                    log::debug!($drop_msg);
-                    leak($field);
-                }
-                )*
-            }
-        }
-    };
-    (
-        fn $fn: ident -> $result: ty,
-        struct $name: ident {
-            $(
-                $(#[ $field_doc: meta ])*
-                $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        |$n: ident| $map_result: expr,
-    ) => {
-        op_future!{
-            fn $socket :: $fn -> $result,
-            struct $name {
-                $(
-                    $(#[ $field_doc ])*
-                    $field: $value, $drop_msg,
-                )*
-            },
-            |_unused_this, $n| $map_result,
-        }
-    };
-}
-
 op_future! {
     fn TcpListener::accept -> (TcpStream, SocketAddr),
-    struct Accept {
+    struct Accept<'l> {
         /// Address for the accepted connection, needs to stay in memory so the
         /// kernel can access it safely.
         address: Option<Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>>, "dropped `a10::net::Accept` before completion, leaking address buffer",
     },
     |this, fd| {
-        let sq = this.socket.state.submission_queue().clone();
+        let sq = this.file.state.submission_queue().clone();
         let state = SharedOperationState::new(sq);
         let stream = TcpStream { fd, state };
 

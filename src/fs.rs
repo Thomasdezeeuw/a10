@@ -219,7 +219,7 @@ impl File {
 
         Ok(Read {
             buf: Some(buf),
-            file: &self,
+            file: self,
         })
     }
 
@@ -237,7 +237,7 @@ impl File {
 
         Ok(Write {
             buf: Some(buf),
-            file: &self,
+            file: self,
         })
     }
 
@@ -251,7 +251,7 @@ impl File {
         self.state
             .start(|submission| unsafe { submission.sync_all(self.fd) })?;
 
-        Ok(SyncAll { file: &self })
+        Ok(SyncAll { file: self })
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -271,7 +271,7 @@ impl File {
         self.state
             .start(|submission| unsafe { submission.sync_data(self.fd) })?;
 
-        Ok(SyncData { file: &self })
+        Ok(SyncData { file: self })
     }
 
     /// Retrieve metadata about the file.
@@ -287,7 +287,7 @@ impl File {
 
         Ok(Stat {
             metadata: Some(metadata),
-            file: &self,
+            file: self,
         })
     }
 }
@@ -335,83 +335,9 @@ impl Drop for Open {
     }
 }
 
-macro_rules! op_future {
-    (
-        // Function name.
-        fn $fn: ident -> $result: ty,
-        // Future structure.
-        struct $name: ident {
-            $(
-            // Field passed to I/O uring, must be an `Option`. Syntax is the
-            // same a struct definition, with `$drop_msg` being the message
-            // logged when leaking `$field`.
-            $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        // Mapping function for `SharedOperationState::poll` result.
-        |$self: ident, $n: ident| $map_result: expr,
-    ) => {
-        #[doc = concat!("[`Future`] to [`", stringify!($fn), "`] from a [`File`].")]
-        #[doc = ""]
-        #[doc = concat!("[`", stringify!($fn), "`]: File::", stringify!($fn))]
-        #[derive(Debug)]
-        pub struct $name<'f> {
-            $(
-            $(#[ $field_doc ])*
-            $field: $value,
-            )?
-            file: &'f File,
-        }
-
-        impl<'f> Future for $name<'f> {
-            type Output = io::Result<$result>;
-
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-                self.file.state.poll(ctx).map_ok(|$n| {
-                    let $self = &mut self;
-                    $map_result
-                })
-            }
-        }
-
-        impl<'f> Drop for $name<'f> {
-            fn drop(&mut self) {
-                $(
-                if let Some($field) = take(&mut self.$field) {
-                    log::debug!($drop_msg);
-                    leak($field);
-                }
-                )?
-            }
-        }
-    };
-    (
-        fn $fn: ident -> $result: ty,
-        struct $name: ident {
-            $(
-            $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        |$n: ident| $map_result: expr,
-    ) => {
-        op_future!{
-            fn $fn -> $result,
-            struct $name {
-                $(
-                $(#[ $field_doc ])*
-                $field: $value, $drop_msg,
-                )?
-            },
-            |_unused_this, $n| $map_result,
-        }
-    };
-}
-
 op_future! {
-    fn read -> Vec<u8>,
-    struct Read {
+    fn File::read -> Vec<u8>,
+    struct Read<'f> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
         buf: Option<Vec<u8>>, "dropped `a10::fs::Read` before completion, leaking buffer",
@@ -419,37 +345,37 @@ op_future! {
     |this, n| {
         let mut buf = this.buf.take().unwrap();
         unsafe { buf.set_len(buf.len() + n as usize) };
-        buf
+        Ok(buf)
     },
 }
 
 op_future! {
-    fn write -> (Vec<u8>, usize),
-    struct Write {
+    fn File::write -> (Vec<u8>, usize),
+    struct Write<'f> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
         buf: Option<Vec<u8>>, "dropped `a10::fs::Write` before completion, leaking buffer",
     },
     |this, n| {
         let buf = this.buf.take().unwrap();
-        (buf, n as usize)
+        Ok((buf, n as usize))
     },
 }
 
 op_future! {
-    fn sync_all -> (),
-    struct SyncAll {
+    fn File::sync_all -> (),
+    struct SyncAll<'a> {
         // Doesn't need any fields.
     },
-    |n| debug_assert!(n == 0),
+    |n| Ok(debug_assert!(n == 0)),
 }
 
 op_future! {
-    fn sync_data -> (),
-    struct SyncData {
+    fn File::sync_data -> (),
+    struct SyncData<'a> {
         // Doesn't need any fields.
     },
-    |n| debug_assert!(n == 0),
+    |n| Ok(debug_assert!(n == 0)),
 }
 
 /// Metadata information about a [`File`].
@@ -724,8 +650,8 @@ impl fmt::Debug for Permissions {
 }
 
 op_future! {
-    fn metadata -> Box<Metadata>,
-    struct Stat {
+    fn File::metadata -> Box<Metadata>,
+    struct Stat<'f> {
         /// Buffer to write the statx data into.
         metadata: Option<Box<Metadata>>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
     },
@@ -733,6 +659,6 @@ op_future! {
         debug_assert!(n == 0);
         let metadata = this.metadata.take().unwrap();
         assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
-        metadata
+        Ok(metadata)
     },
 }
