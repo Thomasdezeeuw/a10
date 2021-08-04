@@ -69,12 +69,19 @@ impl SharedOperationState {
             submission.inner.user_data = user_data;
             submit(submission);
             if submission.inner.user_data != 0 {
-                // If we do want a callback we need to clone the `inner` as it's
-                // now owned by the submission (i.e. the kernel).
+                // If we do want a callback we need to clone the `inner` as it
+                // will owned by the submission (i.e. the kernel).
                 let user_data = Arc::into_raw(self.inner.clone()) as u64;
                 debug_assert_eq!(submission.inner.user_data, user_data);
                 // Can't have two concurrent operations overwriting the result.
-                debug_assert_eq!(Arc::strong_count(&self.inner), 2);
+                // However because we wake the waker before we reduce the strong
+                // count (in `complete`) there is a small gap where the the lock
+                // is unlocked, but the strong count isn't reduced yet. In that
+                // gap as stricter assertion (count == 2) would fail.
+                debug_assert!({
+                    let count = Arc::strong_count(&self.inner);
+                    count == 2 || count == 3
+                });
                 assert!(this.result == NO_OP);
             }
         })?;
