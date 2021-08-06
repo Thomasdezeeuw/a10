@@ -172,7 +172,7 @@ fn mmap_submission_queue(
                 pending_tail: AtomicU32::new(0),
                 pending_index: AtomicU32::new(0),
                 // Fields are shared with the kernel.
-                head: submission_queue.add(parameters.sq_off.head as usize).cast(),
+                kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
                 tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
                 dropped: submission_queue
                     .add(parameters.sq_off.dropped as usize)

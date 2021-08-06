@@ -180,8 +180,9 @@ struct SharedSubmissionQueue {
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
     // FIXME: I think the following fields need `UnsafeCell`.
-    /// Incremented by the kernel when I/O has succesfully been submitted.
-    head: *const AtomicU32,
+    /// Head to queue, i.e. the submussions read by the kernel. Incremented by
+    /// the kernel when I/O has succesfully been submitted.
+    kernel_read: *const AtomicU32,
     /// Incremented by us when submitting new I/O.
     tail: *mut AtomicU32,
     /// Number of invalid entries dropped by the kernel.
@@ -213,14 +214,14 @@ impl SubmissionQueue {
         //
         // We do this by increasing `pending_tail` by 1, reserving
         // `entries[pending_tail]` for ourselves, while ensuring we don't go
-        // beyond what the kernel has processed by checking `tail - head` is
-        // less then the length of the submission queue.
-        let head = self.head();
+        // beyond what the kernel has processed by checking `tail - kernel_read`
+        // is less then the length of the submission queue.
+        let kernel_read = self.kernel_read();
         let tail =
             self.shared
                 .pending_tail
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                    if tail - head < self.shared.len {
+                    if tail - kernel_read < self.shared.len {
                         // Still an entry available.
                         Some(tail + 1) // TODO: handle overflows.
                     } else {
@@ -261,11 +262,11 @@ impl SubmissionQueue {
         }
     }
 
-    /// Returns `self.head`.
-    fn head(&self) -> u32 {
+    /// Returns `self.kernel_read`.
+    fn kernel_read(&self) -> u32 {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.shared.head).load(Ordering::Acquire) }
+        unsafe { (&*self.shared.kernel_read).load(Ordering::Acquire) }
     }
 }
 
