@@ -7,6 +7,7 @@ use std::fs::remove_file;
 use std::future::Future;
 use std::lazy::SyncLazy;
 use std::pin::Pin;
+use std::path::Path;
 use std::sync::Arc;
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
@@ -205,8 +206,7 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) -> io::Result
     let mut path = temp_dir();
     path.push(name);
 
-    let p = path.clone();
-    let _d = defer(move || remove_file(p).unwrap());
+    let _d = defer(|| remove_test_file(&path));
 
     let open_file = File::config()
         .write()
@@ -227,7 +227,7 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) -> io::Result
     }
     drop(file);
 
-    let got = std::fs::read(path)?;
+    let got = std::fs::read(&path)?;
     assert!(got == expected, "file can't be read back");
 
     Ok(())
@@ -241,8 +241,7 @@ fn sync_all() -> io::Result<()> {
     let mut path = temp_dir();
     path.push("sync_all");
 
-    let p = path.clone();
-    let _d = defer(move || remove_file(p).unwrap());
+    let _d = defer(|| remove_test_file(&path));
 
     let open_file = File::config()
         .write()
@@ -258,7 +257,7 @@ fn sync_all() -> io::Result<()> {
     waker.block_on(file.sync_all()?)?;
     drop(file);
 
-    let got = std::fs::read(path)?;
+    let got = std::fs::read(&path)?;
     assert!(got == buf, "file can't be read back");
 
     Ok(())
@@ -272,8 +271,7 @@ fn sync_data() -> io::Result<()> {
     let mut path = temp_dir();
     path.push("sync_all");
 
-    let p = path.clone();
-    let _d = defer(move || remove_file(p).unwrap());
+    let _d = defer(|| remove_test_file(&path));
 
     let open_file = File::config()
         .write()
@@ -289,7 +287,7 @@ fn sync_data() -> io::Result<()> {
     waker.block_on(file.sync_data()?)?;
     drop(file);
 
-    let got = std::fs::read(path)?;
+    let got = std::fs::read(&path)?;
     assert!(got == buf, "file can't be read back");
 
     Ok(())
@@ -393,5 +391,13 @@ struct Defer<F: FnOnce()> {
 impl<F: FnOnce()> Drop for Defer<F> {
     fn drop(&mut self) {
         (self.f.take().unwrap())()
+    }
+}
+
+fn remove_test_file(path: &Path) {
+    match remove_file(path) {
+        Ok(()) => {},
+        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {},
+        Err(err) => panic!("unexpected error removing test file: {}", err),
     }
 }
