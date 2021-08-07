@@ -8,10 +8,10 @@ fn polling_timeout() -> io::Result<()> {
     const TIMEOUT: Duration = Duration::from_millis(400);
     const MARGIN: Duration = Duration::from_millis(10);
 
-    let mut ring = Ring::new(1)?;
+    let mut ring = Ring::new(1).unwrap();
 
     let start = Instant::now();
-    ring.poll(Some(TIMEOUT))?;
+    ring.poll(Some(TIMEOUT)).unwrap();
     let elapsed = start.elapsed();
     assert!(
         elapsed >= TIMEOUT && elapsed <= (TIMEOUT + MARGIN),
