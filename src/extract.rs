@@ -21,9 +21,12 @@
 /// operation, e.g. for performance reasons. This trait allow you to do just
 /// that: extract the input arguments from `Future` operations.
 ///
+/// See the list of [supported operations below].
+///
 /// [`Future`]: std::future::Future
 /// [`fs::File::open`]: crate::fs::File::open
 /// [`File`]: crate::fs::File
+/// [supported operations below]: #implementors
 pub trait Extract {
     /// Extract input arguments from the future.
     fn extract(self) -> Extractor<Self>
