@@ -231,10 +231,8 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
         expected.extend(&buf);
         let expected_len = buf.len();
         let write = file.write(buf).unwrap();
-        let (buf, n) = waker.block_on(write).unwrap();
-
+        let n = waker.block_on(write).unwrap();
         assert_eq!(n, expected_len);
-        assert_eq!(buf.len(), expected_len);
     }
     drop(file);
 
@@ -260,7 +258,7 @@ fn sync_all() {
         .unwrap();
     let file = waker.block_on(open_file).unwrap();
 
-    let write = file.write(b"Hello world".to_vec()).unwrap();
+    let write = file.write(b"Hello world".to_vec()).unwrap().extract();
     let (buf, n) = waker.block_on(write).unwrap();
     assert_eq!(n, 11);
 
@@ -289,7 +287,7 @@ fn sync_data() {
         .unwrap();
     let file = waker.block_on(open_file).unwrap();
 
-    let write = file.write(b"Hello world".to_vec()).unwrap();
+    let write = file.write(b"Hello world".to_vec()).unwrap().extract();
     let (buf, n) = waker.block_on(write).unwrap();
     assert_eq!(n, 11);
 

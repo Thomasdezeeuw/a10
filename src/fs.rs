@@ -368,16 +368,17 @@ op_future! {
 }
 
 op_future! {
-    fn File::write -> (Vec<u8>, usize),
+    fn File::write -> usize,
     struct Write<'f> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
         buf: Option<Vec<u8>>, "dropped `a10::fs::Write` before completion, leaking buffer",
     },
-    |this, n| {
+    |n| Ok(n as usize),
+    extract: |this, n| -> (Vec<u8>, usize) {
         let buf = this.buf.take().unwrap();
         Ok((buf, n as usize))
-    },
+    }
 }
 
 op_future! {
