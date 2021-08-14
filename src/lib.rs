@@ -97,6 +97,7 @@ macro_rules! op_future {
 }
 
 mod config;
+mod extract;
 pub mod fs;
 pub mod io;
 pub mod net;
@@ -107,6 +108,7 @@ mod sys;
 use sys as libc;
 
 pub use config::Config;
+pub use extract::{Extract, Extractor};
 use op::{SharedOperationState, Submission};
 
 /// This type represents the user space side of an I/O uring.
