@@ -35,7 +35,9 @@ macro_rules! op_future {
             )?
         },
         // Mapping function for `SharedOperationState::poll` result.
-        |$self: ident, $n: ident| $map_result: expr,
+        |$self: ident, $arg: ident| $map_result: expr,
+        // Mapping function for `Extractor` implementation.
+        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )*
     ) => {
         #[doc = concat!("[`Future`] behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
@@ -52,7 +54,7 @@ macro_rules! op_future {
 
             fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
                 match self.file.state.poll(ctx) {
-                    Poll::Ready(Ok($n)) => Poll::Ready({
+                    Poll::Ready(Ok($arg)) => Poll::Ready({
                         let $self = &mut self;
                         $map_result
                     }),
@@ -61,6 +63,25 @@ macro_rules! op_future {
                 }
             }
         }
+
+        $(
+        impl<'f> Extract for $name<'f> {}
+
+        impl<'f> Future for Extractor<$name<'f>> {
+            type Output = io::Result<$extract_result>;
+
+            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+                match self.fut.file.state.poll(ctx) {
+                    Poll::Ready(Ok($extract_arg)) => Poll::Ready({
+                        let $extract_self = &mut self.fut;
+                        $extract_map
+                    }),
+                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        }
+        )*
 
         impl<'f> Drop for $name<'f> {
             fn drop(&mut self) {
@@ -82,6 +103,7 @@ macro_rules! op_future {
             )?
         },
         |$n: ident| $map_result: expr,
+        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )*
     ) => {
         op_future!{
             fn $f :: $fn -> $result,
@@ -92,6 +114,7 @@ macro_rules! op_future {
                 )?
             },
             |_unused_this, $n| $map_result,
+            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )*
         }
     };
 }
