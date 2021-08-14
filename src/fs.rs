@@ -3,7 +3,7 @@
 //! The main type is [`File`], which can be opened using [`OpenOptions`]. All
 //! functions on `File` are asynchronous and return a [`Future`].
 
-use std::ffi::CString;
+use std::ffi::{CString, OsString};
 use std::future::Future;
 use std::mem::{forget as leak, take, zeroed};
 use std::os::unix::ffi::OsStringExt;
@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::op::{SharedOperationState, NO_OFFSET};
-use crate::{libc, QueueFull, SubmissionQueue};
+use crate::{libc, Extract, Extractor, QueueFull, SubmissionQueue};
 
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MODE
@@ -166,7 +166,7 @@ impl OpenOptions {
         })?;
 
         Ok(Open {
-            path,
+            path: Some(path),
             state: Some(state),
         })
     }
@@ -310,7 +310,7 @@ impl Drop for File {
 pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can
     /// access it safely.
-    path: CString,
+    path: Option<CString>,
     state: Option<SharedOperationState>,
 }
 
@@ -325,10 +325,28 @@ impl Future for Open {
     }
 }
 
+impl Extract for Open {}
+
+impl Future for Extractor<Open> {
+    type Output = io::Result<(File, PathBuf)>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.fut.state.as_ref().unwrap().poll(ctx).map_ok(|fd| {
+            let file = File {
+                fd,
+                state: self.fut.state.take().unwrap(),
+            };
+            let path_bytes = self.fut.path.take().unwrap().into_bytes();
+            let path = OsString::from_vec(path_bytes).into();
+            (file, path)
+        })
+    }
+}
+
 impl Drop for Open {
     fn drop(&mut self) {
         if self.state.is_some() {
-            let path = take(&mut self.path);
+            let path = self.path.take().unwrap();
             log::debug!("dropped `a10::fs::Open` before completion, leaking path");
             leak(path);
         }

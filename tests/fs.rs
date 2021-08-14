@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 use std::{io, str};
 
 use a10::fs::File;
-use a10::{Ring, SubmissionQueue};
+use a10::{Extract, Ring, SubmissionQueue};
 
 const PAGE_SIZE: usize = 4096;
 
@@ -47,6 +47,21 @@ fn test_queue() -> SubmissionQueue {
         sq
     });
     TEST_SQ.clone()
+}
+
+#[test]
+fn open_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = File::open(sq, LOREM_IPSUM_5.path.into()).unwrap();
+    // Extract the file path.
+    let open_file = open_file.extract();
+    let (_, path) = waker.block_on(open_file).unwrap();
+
+    let got: &Path = path.as_ref();
+    let expected: &Path = LOREM_IPSUM_5.path.as_ref();
+    assert_eq!(got, expected);
 }
 
 #[test]
