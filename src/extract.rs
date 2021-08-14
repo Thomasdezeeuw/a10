@@ -20,6 +20,10 @@
 /// In some cases though we would like to get back the input arguments from the
 /// operation, e.g. for performance reasons. This trait allow you to do just
 /// that: extract the input arguments from `Future` operations.
+///
+/// [`Future`]: std::future::Future
+/// [`fs::File::open`]: crate::fs::File::open
+/// [`File`]: crate::fs::File
 pub trait Extract {
     /// Extract input arguments from the future.
     fn extract(self) -> Extractor<Self>
@@ -33,6 +37,8 @@ pub trait Extract {
 /// [`Future`] wrapper to extract input arguments from a `Future` operation.
 ///
 /// See the [`Extract`] trait for more information.
+///
+/// [`Future`]: std::future::Future
 pub struct Extractor<Fut> {
     pub(crate) fut: Fut,
 }
