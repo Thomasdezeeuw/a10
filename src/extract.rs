@@ -1,4 +1,6 @@
-//! [`Extract`] trait.
+//! Extraction of input arguments.
+//!
+//! See the [`Extract`] trait for more information.
 
 /// Extract input arguments from operations.
 ///

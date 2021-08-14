@@ -14,8 +14,9 @@ use std::task::{self, Poll};
 use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
+use crate::extract::Extractor;
 use crate::op::{SharedOperationState, NO_OFFSET};
-use crate::{libc, Extract, Extractor, QueueFull, SubmissionQueue};
+use crate::{libc, Extract, QueueFull, SubmissionQueue};
 
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MODE
