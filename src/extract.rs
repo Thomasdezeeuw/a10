@@ -4,10 +4,10 @@
 
 /// Extract input arguments from operations.
 ///
-/// Because of the way that iouring works the kernel needs mutable access to the
-/// input to a systemcall for entire duration the operation is in progress. For
-/// example when reading into a buffer the buffer needs to stay alive until the
-/// kernel has written into it, or until the kernel knows the operation is
+/// Because of the way that io_uring works the kernel needs mutable access to
+/// the input to a system call for entire duration the operation is in progress.
+/// For example when reading into a buffer the buffer needs to stay alive until
+/// the kernel has written into it, or until the kernel knows the operation is
 /// canceled and won't write into the buffer anymore. If we can't ensure this
 /// the kernel might write into memory we don't own causing write-after-free
 /// bugs.
@@ -45,13 +45,13 @@
 /// async fn write_all_to_file(sq: SubmissionQueue, path: PathBuf, buf: Vec<u8>) -> io::Result<(PathBuf, Vec<u8>)> {
 ///     // This `Future` returns just the opened file.
 ///     let open_file_future = File::open(sq, path)?;
-///     // Calling `extract` and awaiting that will return both the file and the
-///     // path.
+///     // Calling `extract` and awaiting that will returns both the file and
+///     // the path buffer.
 ///     let (file, path) = open_file_future.extract().await?;
 ///
-///     // This just returned the number of bytes written.
+///     // This just returns the number of bytes written.
 ///     let write_future = file.write(buf)?;
-///     // When extracing it also returns the buffer.
+///     // When extracting it also returns the buffer.
 ///     let (buf, n) = write_future.extract().await?;
 ///
 ///     if n != buf.len() {
@@ -66,7 +66,10 @@
 ///
 /// [`fs::File::write`]: crate::fs::File::write
 pub trait Extract {
-    /// Extract input arguments from the future.
+    /// Returns a [`Future`] that returns the input arguments in addition to the
+    /// regular return value(s).
+    ///
+    /// [`Future`]: std::future::Future
     fn extract(self) -> Extractor<Self>
     where
         Self: Sized,

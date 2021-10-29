@@ -246,7 +246,7 @@ impl File {
     ///
     /// # Notes
     ///
-    /// Any un-completed writes may not be synced to disk.
+    /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fsync")]
     pub fn sync_all<'f>(&'f self) -> Result<SyncAll<'f>, QueueFull> {
         self.state
@@ -266,7 +266,7 @@ impl File {
     ///
     /// # Notes
     ///
-    /// Any un-completed writes may not be synced to disk.
+    /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fdatasync")]
     pub fn sync_data<'f>(&'f self) -> Result<SyncData<'f>, QueueFull> {
         self.state

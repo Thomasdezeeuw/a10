@@ -137,7 +137,7 @@ use op::{SharedOperationState, Submission};
 
 /// This type represents the user space side of an I/O uring.
 ///
-/// An I/O uring is split into two queues; the submissions and completions
+/// An I/O uring is split into two queues: the submissions and completions
 /// queue. The [`SubmissionQueue`] is public, but doesn't provide any methods.
 /// The `SubmissionQueue` is only used by I/O types in the crate to schedule
 /// asynchronous operations.
@@ -378,7 +378,7 @@ impl Ring {
         Config::new(entries)
     }
 
-    /// Create a new `Ring`.
+    /// Create a new `Ring` with the default configuration.
     ///
     /// For more configuration options see [`Config`].
     #[doc(alias = "io_uring_setup")]
@@ -395,13 +395,15 @@ impl Ring {
 
     /// Poll the ring for completions.
     ///
-    /// This will alert all completed operations of the result of their
+    /// This will wake all completed [`Future`]s of the result of their
     /// operation.
     ///
     /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
     /// function will only wake all already completed operations. It guarantees
     /// to not make a system call, but it also means it doesn't gurantee at
     /// least one completion was processed.
+    ///
+    /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         for completion in self.completions(timeout)? {
