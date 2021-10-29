@@ -12,7 +12,7 @@ use std::sync::LazyLock;
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::time::{Duration, SystemTime};
-use std::{io, str};
+use std::{io, panic, process, str};
 
 use a10::fs::OpenOptions;
 use a10::{Extract, Ring, SubmissionQueue};
@@ -41,8 +41,35 @@ fn test_queue() -> SubmissionQueue {
     static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
         let mut ring = Ring::new(128).expect("failed to create test ring");
         let sq = ring.submission_queue();
-        thread::spawn(move || loop {
-            ring.poll(None).expect("failed to poll ring");
+        thread::spawn(move || {
+            let res = panic::catch_unwind(move || loop {
+                ring.poll(None).expect("failed to poll ring");
+            });
+            match res {
+                Ok(()) => (),
+                Err(err) => {
+                    let msg = match err.downcast_ref::<&'static str>() {
+                        Some(s) => *s,
+                        None => match err.downcast_ref::<String>() {
+                            Some(s) => &**s,
+                            None => "<unknown>",
+                        },
+                    };
+                    let msg = format!("Polling thread panicked: {}", msg);
+
+                    // Bypass the buffered output and write directly to standard
+                    // error.
+                    let stderr = io::stderr();
+                    let guard = stderr.lock();
+                    let _ =
+                        unsafe { libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len()) };
+                    drop(guard);
+
+                    // Since all the tests depend on this thread we'll abort the
+                    // process since otherwise they'll wait for ever.
+                    process::abort()
+                }
+            }
         });
         sq
     });
