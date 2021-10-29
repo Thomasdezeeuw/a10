@@ -34,7 +34,7 @@ macro_rules! check_feature {
 
 impl<'r> Config<'r> {
     /// Create a new `Config`.
-    pub(crate) const fn new(entries: u32) -> Config<'static> {
+    pub(crate) const fn new(entries: u32) -> Config<'r> {
         Config {
             submission_entries: entries,
             completion_entries: None,
