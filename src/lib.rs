@@ -183,8 +183,10 @@ struct SharedSubmissionQueue {
     ring_fd: RawFd,
 
     /// Mmap-ed pointer.
+    #[allow(dead_code)]
     ptr: *mut libc::c_void,
     /// Mmap-ed size in bytes.
+    #[allow(dead_code)]
     size: libc::c_uint,
 
     /// Local version of `tail`.
@@ -212,6 +214,7 @@ struct SharedSubmissionQueue {
     /// Incremented by us when submitting new I/O.
     tail: *mut AtomicU32,
     /// Number of invalid entries dropped by the kernel.
+    #[allow(dead_code)]
     dropped: *const AtomicU32,
     /// Flags set by the kernel to communicate state information.
     flags: *const AtomicU32,
@@ -337,13 +340,16 @@ impl fmt::Display for QueueFull {
 #[derive(Debug)]
 struct CompletionQueue {
     /// Mmap-ed pointer to the completion queue.
+    #[allow(dead_code)]
     ptr: *mut libc::c_void,
     /// Mmap-ed size in bytes.
+    #[allow(dead_code)]
     size: libc::c_uint,
 
     // NOTE: the following two fields are constant. we read them once from the
     // mmap area and then copied them here to avoid the need for the atomics.
     /// Number of entries in the queue.
+    #[allow(dead_code)]
     len: u32,
     /// Mask used to index into the `sqes` queue.
     ring_mask: u32,
