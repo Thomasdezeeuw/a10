@@ -99,9 +99,15 @@ impl<'r> Config<'r> {
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let fd = libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
-        // SAFETY: just created the fd (and checked the error).
-        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
+        let fd = match libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
+            // SAFETY: just created the fd (and checked the error).
+            Ok(fd) => unsafe { OwnedFd::from_raw_fd(fd) },
+            Err(ref err) if io::ErrorKind::PermissionDenied == err.kind() => return Err(io::Error::new(
+                err.kind(),
+                "failed to create `a10::Ring`. Do have you a Linux kernel version 5.11 or higher?",
+            )),
+            Err(err) => return Err(err),
+        };
         check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.
         check_feature!(parameters.features, IORING_FEAT_SUBMIT_STABLE); // All data for async offload must be consumed.
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
