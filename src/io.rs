@@ -5,6 +5,7 @@ use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::{fmt, slice};
 
+// Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
 #[doc(no_inline)]
@@ -21,11 +22,7 @@ pub struct MaybeUninitSlice<'a> {
 
 impl<'a> MaybeUninitSlice<'a> {
     /// Creates a new `MaybeUninitSlice` wrapping a byte slice.
-    ///
-    /// # Panics
-    ///
-    /// Panics on Windows if the slice is larger than 4GB.
-    pub fn new(buf: &'a mut [MaybeUninit<u8>]) -> MaybeUninitSlice<'a> {
+    pub const fn new(buf: &'a mut [MaybeUninit<u8>]) -> MaybeUninitSlice<'a> {
         MaybeUninitSlice {
             vec: libc::iovec {
                 iov_base: buf.as_mut_ptr().cast(),
