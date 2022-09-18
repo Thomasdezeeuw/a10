@@ -5,7 +5,7 @@
 use std::env::temp_dir;
 use std::fs::remove_file;
 use std::future::Future;
-use std::lazy::SyncLazy;
+use std::sync::LazyLock;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -38,7 +38,7 @@ static LOREM_IPSUM_50: TestFile = TestFile {
 /// queue.
 /// Create a [`Ring`] for testing.
 fn test_queue() -> SubmissionQueue {
-    static TEST_SQ: SyncLazy<SubmissionQueue> = SyncLazy::new(|| {
+    static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
         let mut ring = Ring::new(128).expect("failed to create test ring");
         let sq = ring.submission_queue();
         thread::spawn(move || loop {

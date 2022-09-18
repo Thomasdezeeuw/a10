@@ -1,4 +1,4 @@
-#![feature(const_mut_refs, const_ptr_offset, vec_spare_capacity, io_error_more)]
+#![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
 use std::os::unix::io::RawFd;
