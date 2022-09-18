@@ -85,7 +85,8 @@ impl<'r> Config<'r> {
     pub fn build(self) -> io::Result<Ring> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
-        parameters.flags = libc::IORING_SETUP_SQPOLL;
+        parameters.flags = libc::IORING_SETUP_SQPOLL // Kernel thread for polling.
+            | libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -95,15 +96,16 @@ impl<'r> Config<'r> {
         }
         if let Some(other_ring) = self.attach {
             parameters.wq_fd = other_ring.sq.shared.ring_fd.as_raw_fd() as u32;
-            parameters.flags |= libc::IORING_SETUP_CLAMP;
+            parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
         let fd = syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
         // SAFETY: just created the fd (and checked the error).
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
-        check_feature!(parameters.features, IORING_FEAT_NODROP);
-        check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS);
-        check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED);
+        check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.
+        check_feature!(parameters.features, IORING_FEAT_SUBMIT_STABLE); // All data for async offload must be consumed.
+        check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
+        check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED); // No need for fixed files.
 
         let cq = mmap_completion_queue(fd.as_fd(), &parameters)?;
         let sq = mmap_submission_queue(fd, &parameters)?;
