@@ -5,7 +5,7 @@
 
 use std::ffi::{CString, OsString};
 use std::future::Future;
-use std::mem::{forget as leak, take, zeroed};
+use std::mem::{forget as leak, zeroed};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::pin::Pin;

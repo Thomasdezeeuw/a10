@@ -552,46 +552,46 @@ macro_rules! op_future {
             fd: &$lifetime $f,
         }
 
-        impl<$lifetime> Future for $name<$lifetime> {
-            type Output = io::Result<$result>;
+        impl<$lifetime> std::future::Future for $name<$lifetime> {
+            type Output = std::io::Result<$result>;
 
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
                 match self.fd.state.poll(ctx) {
-                    Poll::Ready(Ok($arg)) => Poll::Ready({
+                    std::task::Poll::Ready(std::result::Result::Ok($arg)) => std::task::Poll::Ready({
                         let $self = &mut self;
                         $map_result
                     }),
-                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
+                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                    std::task::Poll::Pending => std::task::Poll::Pending,
                 }
             }
         }
 
         $(
-        impl<$lifetime> Extract for $name<$lifetime> {}
+        impl<$lifetime> $crate::Extract for $name<$lifetime> {}
 
-        impl<$lifetime> Future for Extractor<$name<$lifetime>> {
-            type Output = io::Result<$extract_result>;
+        impl<$lifetime> std::future::Future for Extractor<$name<$lifetime>> {
+            type Output = std::io::Result<$extract_result>;
 
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
                 match self.fut.fd.state.poll(ctx) {
-                    Poll::Ready(Ok($extract_arg)) => Poll::Ready({
+                    std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
                         let $extract_self = &mut self.fut;
                         $extract_map
                     }),
-                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
+                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                    std::task::Poll::Pending => std::task::Poll::Pending,
                 }
             }
         }
         )?
 
-        impl<$lifetime> Drop for $name<$lifetime> {
+        impl<$lifetime> std::ops::Drop for $name<$lifetime> {
             fn drop(&mut self) {
                 $(
-                if let Some($field) = take(&mut self.$field) {
+                if let Some($field) = std::mem::take(&mut self.$field) {
                     log::debug!($drop_msg);
-                    leak($field);
+                    std::mem::forget($field);
                 }
                 )?
             }

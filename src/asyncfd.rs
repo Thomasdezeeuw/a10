@@ -1,15 +1,10 @@
 //! Module with [`AsyncFd`].
 
-use std::future::Future;
-use std::io;
-use std::mem::{forget as leak, take};
 use std::os::unix::io::RawFd;
-use std::pin::Pin;
-use std::task::{self, Poll};
 
 use crate::extract::Extractor;
 use crate::op::{SharedOperationState, NO_OFFSET};
-use crate::{Extract, QueueFull};
+use crate::QueueFull;
 
 /// An open file descriptor.
 ///

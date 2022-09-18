@@ -1,12 +1,9 @@
 //! Networking primitives.
 
-use std::future::Future;
 use std::io;
-use std::mem::{forget as leak, size_of, take, MaybeUninit};
+use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::os::unix::io::RawFd;
-use std::pin::Pin;
-use std::task::{self, Poll};
 
 use crate::op::SharedOperationState;
 use crate::{libc, QueueFull};
