@@ -8,7 +8,7 @@
 /// the input to a system call for entire duration the operation is in progress.
 /// For example when reading into a buffer the buffer needs to stay alive until
 /// the kernel has written into it, or until the kernel knows the operation is
-/// canceled and won't write into the buffer anymore. If we can't ensure this
+/// canceled and won't write into the buffer any more. If we can't ensure this
 /// the kernel might write into memory we don't own causing write-after-free
 /// bugs.
 ///
