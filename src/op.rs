@@ -25,7 +25,7 @@ struct OperationState {
     sq: SubmissionQueue,
     /// Result of the operation.
     /// Two special states:
-    /// * [`NO_OP`] menas no operation is being executed.
+    /// * [`NO_OP`] means no operation is being executed.
     /// * [`IN_PROGRESS`] means the operation is waiting.
     /// Other values mean a result from the operation; negative is a (negative)
     /// errno, positive a succesfull result.
@@ -517,4 +517,106 @@ impl OperationCode {
             _ => OperationCode::Unknown,
         }
     }
+}
+
+/// Macro to create an operation [`Future`] structure.
+#[macro_export]
+macro_rules! op_future {
+    (
+        // File type and function name.
+        fn $f: ident :: $fn: ident -> $result: ty,
+        // Future structure.
+        struct $name: ident < $lifetime: lifetime > {
+            $(
+            // Field passed to I/O uring, must be an `Option`. Syntax is the
+            // same a struct definition, with `$drop_msg` being the message
+            // logged when leaking `$field`.
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty, $drop_msg: expr,
+            )?
+        },
+        // Mapping function for `SharedOperationState::poll` result.
+        |$self: ident, $arg: ident| $map_result: expr,
+        // Mapping function for `Extractor` implementation.
+        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
+    ) => {
+        #[doc = concat!("[`Future`] behind [`", stringify!($f), "::", stringify!($fn), "`].")]
+        #[derive(Debug)]
+        pub struct $name<$lifetime> {
+            $(
+            $(#[ $field_doc ])*
+            $field: $value,
+            )?
+            fd: &$lifetime $f,
+        }
+
+        impl<$lifetime> Future for $name<$lifetime> {
+            type Output = io::Result<$result>;
+
+            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+                match self.fd.state.poll(ctx) {
+                    Poll::Ready(Ok($arg)) => Poll::Ready({
+                        let $self = &mut self;
+                        $map_result
+                    }),
+                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        }
+
+        $(
+        impl<$lifetime> Extract for $name<$lifetime> {}
+
+        impl<$lifetime> Future for Extractor<$name<$lifetime>> {
+            type Output = io::Result<$extract_result>;
+
+            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+                match self.fut.fd.state.poll(ctx) {
+                    Poll::Ready(Ok($extract_arg)) => Poll::Ready({
+                        let $extract_self = &mut self.fut;
+                        $extract_map
+                    }),
+                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
+                }
+            }
+        }
+        )?
+
+        impl<$lifetime> Drop for $name<$lifetime> {
+            fn drop(&mut self) {
+                $(
+                if let Some($field) = take(&mut self.$field) {
+                    log::debug!($drop_msg);
+                    leak($field);
+                }
+                )?
+            }
+        }
+    };
+    // Version that doesn't need `self` (this) in `$map_result`.
+    (
+        fn $f: ident :: $fn: ident -> $result: ty,
+        struct $name: ident < $lifetime: lifetime > {
+            $(
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty, $drop_msg: expr,
+            )?
+        },
+        |$n: ident| $map_result: expr, // Only difference: 1 argument.
+        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
+    ) => {
+        op_future!{
+            fn $f :: $fn -> $result,
+            struct $name<$lifetime> {
+                $(
+                $(#[ $field_doc ])*
+                $field: $value, $drop_msg,
+                )?
+            },
+            |_unused_this, $n| $map_result,
+            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )*
+        }
+    };
 }
