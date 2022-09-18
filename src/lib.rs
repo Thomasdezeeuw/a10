@@ -119,6 +119,7 @@ macro_rules! op_future {
     };
 }
 
+pub mod asyncfd;
 mod config;
 pub mod extract;
 pub mod fs;
@@ -130,6 +131,7 @@ mod op;
 mod sys;
 use sys as libc;
 
+pub use asyncfd::AsyncFd;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
