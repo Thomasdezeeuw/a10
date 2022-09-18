@@ -14,7 +14,7 @@ use std::thread::{self, Thread};
 use std::time::{Duration, SystemTime};
 use std::{io, str};
 
-use a10::fs::File;
+use a10::fs::OpenOptions;
 use a10::{Extract, Ring, SubmissionQueue};
 
 const PAGE_SIZE: usize = 4096;
@@ -54,7 +54,9 @@ fn open_extractor() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = File::open(sq, LOREM_IPSUM_5.path.into()).unwrap();
+    let open_file = OpenOptions::new()
+        .open(sq, LOREM_IPSUM_5.path.into())
+        .unwrap();
     // Extract the file path.
     let open_file = open_file.extract();
     let (_, path) = waker.block_on(open_file).unwrap();
@@ -94,7 +96,7 @@ fn test_read(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize) {
     let waker = Waker::new();
 
     let path = test_file.path.into();
-    let open_file = File::open(sq, path).unwrap();
+    let open_file = OpenOptions::new().open(sq, path).unwrap();
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
@@ -144,7 +146,7 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
     let waker = Waker::new();
 
     let path = test_file.path.into();
-    let open_file = File::open(sq, path).unwrap();
+    let open_file = OpenOptions::new().open(sq, path).unwrap();
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
@@ -218,7 +220,7 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = File::config()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -250,7 +252,7 @@ fn sync_all() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = File::config()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -279,7 +281,7 @@ fn sync_data() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = File::config()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -314,7 +316,7 @@ fn test_metadata(test_file: &TestFile, created: SystemTime) {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = File::open(sq, test_file.path.into()).unwrap();
+    let open_file = OpenOptions::new().open(sq, test_file.path.into()).unwrap();
     let file = waker.block_on(open_file).unwrap();
 
     let metadata = waker.block_on(file.metadata().unwrap()).unwrap();
