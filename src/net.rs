@@ -1,37 +1,19 @@
-//! Networking primitives.
+//! Asynchronous networking.
 
 use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::os::unix::io::RawFd;
 
 use crate::op::SharedOperationState;
-use crate::{libc, QueueFull};
+use crate::{libc, AsyncFd, QueueFull};
 
-/// A TCP socket server, listening for connections.
-#[derive(Debug)]
-pub struct TcpListener {
-    fd: RawFd,
-    state: SharedOperationState,
-}
-
-impl TcpListener {
-    /// Bind a new TCP listener to the specified `address` to receive new
-    /// connections.
-    pub fn bind(address: SocketAddr) -> io::Result<TcpListener> {
-        todo!("TcpListener::bind({})", address)
-    }
-
-    /// Returns the local socket address of this listener.
-    pub fn local_addr(&self) -> io::Result<SocketAddr> {
-        todo!("TcpListener::local_addr()")
-    }
-
-    /// Accept a new [`TcpStream`].
+/// Socket related system calls.
+impl AsyncFd {
+    /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
-    pub fn accept<'l>(&'l self) -> Result<Accept<'l>, QueueFull> {
+    pub fn accept<'fd>(&'fd self) -> Result<Accept<'fd>, QueueFull> {
         let address: MaybeUninit<libc::sockaddr_storage> = MaybeUninit::uninit();
         let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
         let mut address = Box::new((address, length));
@@ -47,20 +29,9 @@ impl TcpListener {
     }
 }
 
-impl Drop for TcpListener {
-    fn drop(&mut self) {
-        let result = self
-            .state
-            .start(|submission| unsafe { submission.close_fd(self.fd) });
-        if let Err(err) = result {
-            log::error!("error closing TCP listener: {}", err);
-        }
-    }
-}
-
 op_future! {
-    fn TcpListener::accept -> (TcpStream, SocketAddr),
-    struct Accept<'l> {
+    fn AsyncFd::accept -> (AsyncFd, SocketAddr),
+    struct Accept<'fd> {
         /// Address for the accepted connection, needs to stay in memory so the
         /// kernel can access it safely.
         address: Option<Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>>, "dropped `a10::net::Accept` before completion, leaking address buffer",
@@ -68,7 +39,7 @@ op_future! {
     |this, fd| {
         let sq = this.fd.state.submission_queue();
         let state = SharedOperationState::new(sq);
-        let stream = TcpStream { fd, state };
+        let stream = AsyncFd { fd, state };
 
         let address = this.address.take().unwrap();
         let storage = unsafe { address.0.assume_init_ref() };
@@ -103,21 +74,4 @@ op_future! {
 
         address.map(|address| (stream, address))
     },
-}
-
-/// A TCP stream between a local socket and a remote socket.
-pub struct TcpStream {
-    fd: RawFd,
-    state: SharedOperationState,
-}
-
-impl Drop for TcpStream {
-    fn drop(&mut self) {
-        let result = self
-            .state
-            .start(|submission| unsafe { submission.close_fd(self.fd) });
-        if let Err(err) = result {
-            log::error!("error closing TCP stream: {}", err);
-        }
-    }
 }
