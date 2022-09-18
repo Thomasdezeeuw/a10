@@ -20,7 +20,7 @@ pub struct Config<'r> {
 }
 
 macro_rules! check_feature {
-    ($features: expr, $required: ident $(,)*) => {{
+    ($features: expr, $required: ident $(,)?) => {{
         assert!(
             $features & libc::$required != 0,
             concat!(
