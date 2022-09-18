@@ -9,6 +9,8 @@ use crate::QueueFull;
 /// An open file descriptor.
 ///
 /// All functions on `AsyncFd` are asynchronous and return a [`Future`].
+///
+/// [`Future`]: std::future::Future
 #[derive(Debug)]
 pub struct AsyncFd {
     pub(crate) fd: RawFd,

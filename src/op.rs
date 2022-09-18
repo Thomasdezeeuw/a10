@@ -542,7 +542,7 @@ macro_rules! op_future {
         // Mapping function for `Extractor` implementation.
         $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
     ) => {
-        #[doc = concat!("[`Future`] behind [`", stringify!($f), "::", stringify!($fn), "`].")]
+        #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
         pub struct $name<$lifetime> {
             $(
