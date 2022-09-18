@@ -109,7 +109,7 @@ impl<'r> Config<'r> {
 
         let cq = mmap_completion_queue(fd.as_fd(), &parameters)?;
         let sq = mmap_submission_queue(fd, &parameters)?;
-        Ok(Ring { sq, cq })
+        Ok(Ring { cq, sq })
     }
 }
 
@@ -215,5 +215,5 @@ fn mmap(
 
 /// Load a `u32` using relaxed ordering from `ptr`.
 unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-    (&*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed)
+    (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed)
 }

@@ -255,7 +255,7 @@ impl Ring {
         let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
         if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
             log::debug!("waking kernel thread");
-            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
+            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP;
         }
 
         log::debug!("waiting for completion events");
@@ -286,14 +286,14 @@ impl Ring {
     fn completion_head(&mut self) -> u32 {
         // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
         // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.cq.head).load(Ordering::Relaxed) }
+        unsafe { (*self.cq.head).load(Ordering::Relaxed) }
     }
 
     /// Returns `CompletionQueue.tail`.
     fn completion_tail(&self) -> u32 {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.cq.tail).load(Ordering::Acquire) }
+        unsafe { (*self.cq.tail).load(Ordering::Acquire) }
     }
 }
 
@@ -411,7 +411,7 @@ impl SubmissionQueue {
             // SAFETY: `idx` is masked above to be within the correct bounds.
             // As we have unique access `Relaxed` is acceptable.
             unsafe {
-                (&*self.shared.array.add(array_index)).store(submission_index, Ordering::Relaxed)
+                (*self.shared.array.add(array_index)).store(submission_index, Ordering::Relaxed);
             }
 
             // FIXME: doesn't work. Can have a gap in the `self.array` the
@@ -428,7 +428,7 @@ impl SubmissionQueue {
     fn kernel_read(&self) -> u32 {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.shared.kernel_read).load(Ordering::Acquire) }
+        unsafe { (*self.shared.kernel_read).load(Ordering::Acquire) }
     }
 }
 
@@ -540,7 +540,7 @@ impl<'ring> Drop for Completions<'ring> {
         // Let the kernel know we've read the completions.
         // SAFETY: the kernel needs to read the value so we need `Release`. The
         // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.head).store(self.local_head, Ordering::Release) }
+        unsafe { (*self.head).store(self.local_head, Ordering::Release) }
     }
 }
 

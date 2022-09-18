@@ -5,10 +5,10 @@
 use std::env::temp_dir;
 use std::fs::remove_file;
 use std::future::Future;
-use std::sync::LazyLock;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::time::{Duration, SystemTime};

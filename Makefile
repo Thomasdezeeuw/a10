@@ -12,6 +12,10 @@ test:
 check:
 	cargo check --all-targets
 
+# TODO: Review and fix:
+# * cast-possible-wrap
+# * cast-sign-loss
+# * cast-possible-truncation
 lint: clippy
 clippy:
 	cargo clippy --all-features --workspace -- \
@@ -26,9 +30,17 @@ clippy:
 		--allow clippy::needless-lifetimes \
 		--allow clippy::match-bool \
 		--allow clippy::use-self \
+		--allow clippy::must-use-candidate \
+		--allow clippy::return-self-not-must-use \
+		--allow clippy::redundant-pub-crate \
+		--allow clippy::len-without-is-empty \
 		--allow clippy::single-match-else \
 		--allow clippy::missing-errors-doc \
-		--allow clippy::missing-panics-doc
+		--allow clippy::missing-panics-doc \
+		--allow clippy::cast-possible-wrap \
+		--allow clippy::cast-sign-loss \
+		--allow clippy::cast-lossless \
+		--allow clippy::cast-possible-truncation \
 
 doc_private:
 	cargo doc --document-private-items

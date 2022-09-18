@@ -5,7 +5,7 @@ use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
-use std::{fmt, io};
+use std::{fmt, io, ptr};
 
 use crate::{libc, QueueFull, SubmissionQueue};
 
@@ -167,14 +167,18 @@ impl Submission {
     #[cfg(debug_assertions)]
     pub(crate) fn reset(&mut self) {
         debug_assert!(OperationCode::Nop as u8 == 0);
-        unsafe { (&mut self.inner as *mut libc::io_uring_sqe).write_bytes(0, 1) }
+        unsafe {
+            ptr::addr_of_mut!(self.inner)
+                .cast::<libc::io_uring_sqe>()
+                .write_bytes(0, 1);
+        }
     }
 
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
     #[cfg(debug_assertions)]
-    pub(crate) fn is_unchanged(&self) -> bool {
+    pub(crate) const fn is_unchanged(&self) -> bool {
         self.inner.opcode == OperationCode::Nop as u8
             && self.inner.flags == 0
             && self.inner.user_data == 0

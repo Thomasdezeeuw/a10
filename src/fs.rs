@@ -46,11 +46,11 @@ impl OpenOptions {
     #[doc(alias = "O_RDONLY")]
     #[doc(alias = "O_RDWR")]
     pub const fn read(mut self) -> Self {
-        if self.flags & libc::O_WRONLY != 0 {
+        if self.flags & libc::O_WRONLY == 0 {
+            self.flags |= libc::O_RDONLY;
+        } else {
             self.flags &= !libc::O_WRONLY;
             self.flags |= libc::O_RDWR;
-        } else {
-            self.flags |= libc::O_RDONLY;
         }
         self
     }
@@ -59,11 +59,11 @@ impl OpenOptions {
     #[doc(alias = "O_WRONLY")]
     #[doc(alias = "O_RDWR")]
     pub const fn write(mut self) -> Self {
-        if self.flags & libc::O_RDONLY != 0 {
+        if self.flags & libc::O_RDONLY == 0 {
+            self.flags |= libc::O_WRONLY;
+        } else {
             self.flags &= !libc::O_RDONLY;
             self.flags |= libc::O_RDWR;
-        } else {
-            self.flags |= libc::O_WRONLY;
         }
         self
     }
@@ -163,7 +163,7 @@ impl OpenOptions {
 
         let state = SharedOperationState::new(queue);
         state.start(|submission| unsafe {
-            submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode)
+            submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode);
         })?;
 
         Ok(Open {
@@ -215,7 +215,7 @@ impl File {
     /// spare capacity.
     pub fn read_at<'f>(&'f self, mut buf: Vec<u8>, offset: u64) -> Result<Read<'f>, QueueFull> {
         self.state.start(|submission| unsafe {
-            submission.read_at(self.fd, buf.spare_capacity_mut(), offset)
+            submission.read_at(self.fd, buf.spare_capacity_mut(), offset);
         })?;
 
         Ok(Read {
@@ -283,7 +283,7 @@ impl File {
             inner: unsafe { zeroed() },
         });
         self.state.start(|submission| unsafe {
-            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS)
+            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
         })?;
 
         Ok(Stat {
@@ -550,24 +550,22 @@ impl fmt::Debug for FileType {
             } else {
                 "unknown"
             }
+        } else if self.is_dir() {
+            "d"
+        } else if self.is_file() {
+            "-"
+        } else if self.is_symlink() {
+            "l"
+        } else if self.is_socket() {
+            "s"
+        } else if self.is_block_device() {
+            "b"
+        } else if self.is_character_device() {
+            "c"
+        } else if self.is_named_pipe() {
+            "p"
         } else {
-            if self.is_dir() {
-                "d"
-            } else if self.is_file() {
-                "-"
-            } else if self.is_symlink() {
-                "l"
-            } else if self.is_socket() {
-                "s"
-            } else if self.is_block_device() {
-                "b"
-            } else if self.is_character_device() {
-                "c"
-            } else if self.is_named_pipe() {
-                "p"
-            } else {
-                "?"
-            }
+            "?"
         };
         f.debug_tuple("FileType").field(&ty).finish()
     }
@@ -638,31 +636,31 @@ impl fmt::Debug for Permissions {
         // Create the same format as `ls(1)` uses.
         let mut buf = [b'-'; 9];
         if self.owner_can_read() {
-            buf[0] = b'r'
+            buf[0] = b'r';
         }
         if self.owner_can_write() {
-            buf[1] = b'w'
+            buf[1] = b'w';
         }
         if self.owner_can_execute() {
-            buf[2] = b'x'
+            buf[2] = b'x';
         }
         if self.group_can_read() {
-            buf[3] = b'r'
+            buf[3] = b'r';
         }
         if self.group_can_write() {
-            buf[4] = b'w'
+            buf[4] = b'w';
         }
         if self.group_can_execute() {
-            buf[5] = b'x'
+            buf[5] = b'x';
         }
         if self.others_can_read() {
-            buf[6] = b'r'
+            buf[6] = b'r';
         }
         if self.others_can_write() {
-            buf[7] = b'w'
+            buf[7] = b'w';
         }
         if self.others_can_execute() {
-            buf[8] = b'x'
+            buf[8] = b'x';
         }
         let permissions = str::from_utf8(&buf).unwrap();
         f.debug_tuple("Permissions").field(&permissions).finish()
