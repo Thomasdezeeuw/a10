@@ -1,13 +1,12 @@
 //! Asynchronous filesystem manipulation operations.
 //!
-//! The main type is [`File`], which can be opened using [`OpenOptions`]. All
-//! functions on `File` are asynchronous and return a [`Future`].
+//! The main type is [`OpenOptions`], which can be used to open a file
+//! ([`AsyncFd`]).
 
 use std::ffi::{CString, OsString};
 use std::future::Future;
 use std::mem::{forget as leak, take, zeroed};
 use std::os::unix::ffi::OsStringExt;
-use std::os::unix::io::RawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{self, Poll};
@@ -15,9 +14,10 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::extract::Extractor;
-use crate::op::{SharedOperationState, NO_OFFSET};
-use crate::{libc, Extract, QueueFull, SubmissionQueue};
+use crate::op::SharedOperationState;
+use crate::{libc, AsyncFd, Extract, QueueFull, SubmissionQueue};
 
+/// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MODE
     | libc::STATX_SIZE
@@ -26,7 +26,7 @@ const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MTIME
     | libc::STATX_BTIME;
 
-/// Options used to configure how a [`File`] is opened.
+/// Options used to configure how a file ([`AsyncFd`]) is opened.
 #[derive(Clone, Debug)]
 pub struct OpenOptions {
     flags: libc::c_int,
@@ -35,10 +35,10 @@ pub struct OpenOptions {
 
 impl OpenOptions {
     /// Empty `OpenOptions`.
-    const fn new() -> OpenOptions {
+    pub const fn new() -> OpenOptions {
         OpenOptions {
             flags: libc::O_CLOEXEC,
-            mode: 0o666,
+            mode: 0o666, // Same as in std lib.
         }
     }
 
@@ -173,140 +173,13 @@ impl OpenOptions {
     }
 }
 
-/// A reference to an open file on the filesystem.
+/// [`Future`] to [`open`] an asynchronous file ([`AsyncFd`]).
 ///
-/// See [`std::fs::File`] for more documentation.
-#[derive(Debug)]
-pub struct File {
-    fd: RawFd,
-    state: SharedOperationState,
-}
-
-impl File {
-    /// Configure how to open a file.
-    pub const fn config() -> OpenOptions {
-        OpenOptions::new()
-    }
-
-    /// Open `path` for reading only.
-    pub fn open(queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
-        File::config().read().open(queue, path)
-    }
-
-    /// Read from this file into `buf`.
-    ///
-    /// # Notes
-    ///
-    /// This leave the current contents of `buf` untouched and only uses the
-    /// spare capacity.
-    pub fn read<'f>(&'f self, buf: Vec<u8>) -> Result<Read<'f>, QueueFull> {
-        self.read_at(buf, NO_OFFSET)
-    }
-
-    /// Read from this file into `buf` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function. This means
-    /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
-    /// continue reading at 2kb in the next call to `read`.
-    ///
-    /// # Notes
-    ///
-    /// This leave the current contents of `buf` untouched and only uses the
-    /// spare capacity.
-    pub fn read_at<'f>(&'f self, mut buf: Vec<u8>, offset: u64) -> Result<Read<'f>, QueueFull> {
-        self.state.start(|submission| unsafe {
-            submission.read_at(self.fd, buf.spare_capacity_mut(), offset);
-        })?;
-
-        Ok(Read {
-            buf: Some(buf),
-            fd: self,
-        })
-    }
-
-    /// Write `buf` to this file.
-    pub fn write<'f>(&'f self, buf: Vec<u8>) -> Result<Write<'f>, QueueFull> {
-        self.write_at(buf, NO_OFFSET)
-    }
-
-    /// Write `buf` to this file.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_at<'f>(&'f self, buf: Vec<u8>, offset: u64) -> Result<Write<'f>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.write_at(self.fd, &buf, offset) })?;
-
-        Ok(Write {
-            buf: Some(buf),
-            fd: self,
-        })
-    }
-
-    /// Sync all OS-internal metadata to disk.
-    ///
-    /// # Notes
-    ///
-    /// Any uncompleted writes may not be synced to disk.
-    #[doc(alias = "fsync")]
-    pub fn sync_all<'f>(&'f self) -> Result<SyncAll<'f>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.sync_all(self.fd) })?;
-
-        Ok(SyncAll { fd: self })
-    }
-
-    /// This function is similar to [`sync_all`], except that it may not
-    /// synchronize file metadata to the filesystem.
-    ///
-    /// This is intended for use cases that must synchronize content, but don’t
-    /// need the metadata on disk. The goal of this method is to reduce disk
-    /// operations.
-    ///
-    /// [`sync_all`]: File::sync_all
-    ///
-    /// # Notes
-    ///
-    /// Any uncompleted writes may not be synced to disk.
-    #[doc(alias = "fdatasync")]
-    pub fn sync_data<'f>(&'f self) -> Result<SyncData<'f>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.sync_data(self.fd) })?;
-
-        Ok(SyncData { fd: self })
-    }
-
-    /// Retrieve metadata about the file.
-    #[doc(alias = "statx")]
-    pub fn metadata<'f>(&'f self) -> Result<Stat<'f>, QueueFull> {
-        let mut metadata = Box::new(Metadata {
-            // SAFETY: all zero values are valid representations.
-            inner: unsafe { zeroed() },
-        });
-        self.state.start(|submission| unsafe {
-            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
-        })?;
-
-        Ok(Stat {
-            metadata: Some(metadata),
-            fd: self,
-        })
-    }
-}
-
-impl Drop for File {
-    fn drop(&mut self) {
-        let result = self
-            .state
-            .start(|submission| unsafe { submission.close_fd(self.fd) });
-        if let Err(err) = result {
-            log::error!("error closing file: {}", err);
-        }
-    }
-}
-
-/// [`Future`] to [`open`] a [`File`].
+/// [`open`]: OpenOptions::open
 ///
-/// [`open`]: File::open
+/// # Notes
+///
+/// Implements [`Extract`] to retrieve the path buffer.
 #[derive(Debug)]
 pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can
@@ -316,10 +189,10 @@ pub struct Open {
 }
 
 impl Future for Open {
-    type Output = io::Result<File>;
+    type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| File {
+        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| AsyncFd {
             fd,
             state: self.state.take().unwrap(),
         })
@@ -329,11 +202,11 @@ impl Future for Open {
 impl Extract for Open {}
 
 impl Future for Extractor<Open> {
-    type Output = io::Result<(File, PathBuf)>;
+    type Output = io::Result<(AsyncFd, PathBuf)>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         self.fut.state.as_ref().unwrap().poll(ctx).map_ok(|fd| {
-            let file = File {
+            let file = AsyncFd {
                 fd,
                 state: self.fut.state.take().unwrap(),
             };
@@ -354,51 +227,95 @@ impl Drop for Open {
     }
 }
 
-op_future! {
-    fn File::read -> Vec<u8>,
-    struct Read<'f> {
-        /// Buffer to write into, needs to stay in memory so the kernel can
-        /// access it safely.
-        buf: Option<Vec<u8>>, "dropped `a10::fs::Read` before completion, leaking buffer",
-    },
-    |this, n| {
-        let mut buf = this.buf.take().unwrap();
-        unsafe { buf.set_len(buf.len() + n as usize) };
-        Ok(buf)
-    },
-}
+/// File(system) related system calls.
+impl AsyncFd {
+    /// Sync all OS-internal metadata to disk.
+    ///
+    /// # Notes
+    ///
+    /// Any uncompleted writes may not be synced to disk.
+    #[doc(alias = "fsync")]
+    pub fn sync_all<'fd>(&'fd self) -> Result<SyncAll<'fd>, QueueFull> {
+        self.state
+            .start(|submission| unsafe { submission.sync_all(self.fd) })?;
 
-op_future! {
-    fn File::write -> usize,
-    struct Write<'f> {
-        /// Buffer to read from, needs to stay in memory so the kernel can
-        /// access it safely.
-        buf: Option<Vec<u8>>, "dropped `a10::fs::Write` before completion, leaking buffer",
-    },
-    |n| Ok(n as usize),
-    extract: |this, n| -> (Vec<u8>, usize) {
-        let buf = this.buf.take().unwrap();
-        Ok((buf, n as usize))
+        Ok(SyncAll { fd: self })
+    }
+
+    /// This function is similar to [`sync_all`], except that it may not
+    /// synchronize file metadata to the filesystem.
+    ///
+    /// This is intended for use cases that must synchronize content, but don’t
+    /// need the metadata on disk. The goal of this method is to reduce disk
+    /// operations.
+    ///
+    /// [`sync_all`]: AsyncFd::sync_all
+    ///
+    /// # Notes
+    ///
+    /// Any uncompleted writes may not be synced to disk.
+    #[doc(alias = "fdatasync")]
+    pub fn sync_data<'fd>(&'fd self) -> Result<SyncData<'fd>, QueueFull> {
+        self.state
+            .start(|submission| unsafe { submission.sync_data(self.fd) })?;
+
+        Ok(SyncData { fd: self })
+    }
+
+    /// Retrieve metadata about the file.
+    #[doc(alias = "statx")]
+    pub fn metadata<'fd>(&'fd self) -> Result<Stat<'fd>, QueueFull> {
+        let mut metadata = Box::new(Metadata {
+            // SAFETY: all zero values are valid representations.
+            inner: unsafe { zeroed() },
+        });
+        self.state.start(|submission| unsafe {
+            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
+        })?;
+
+        Ok(Stat {
+            metadata: Some(metadata),
+            fd: self,
+        })
     }
 }
 
+// Sync_all.
 op_future! {
-    fn File::sync_all -> (),
-    struct SyncAll<'a> {
+    fn AsyncFd::sync_all -> (),
+    struct SyncAll<'fd> {
         // Doesn't need any fields.
     },
     |n| Ok(debug_assert!(n == 0)),
 }
 
+// Sync_data.
 op_future! {
-    fn File::sync_data -> (),
-    struct SyncData<'a> {
+    fn AsyncFd::sync_data -> (),
+    struct SyncData<'fd> {
         // Doesn't need any fields.
     },
     |n| Ok(debug_assert!(n == 0)),
 }
 
-/// Metadata information about a [`File`].
+// Metadata.
+op_future! {
+    fn AsyncFd::metadata -> Box<Metadata>,
+    struct Stat<'fd> {
+        /// Buffer to write the statx data into.
+        metadata: Option<Box<Metadata>>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
+    },
+    |this, n| {
+        debug_assert!(n == 0);
+        let metadata = this.metadata.take().unwrap();
+        assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
+        Ok(metadata)
+    },
+}
+
+/// Metadata information about a file.
+///
+/// See [`AsyncFd::metadata`] and [`Stat`].
 #[repr(transparent)]
 pub struct Metadata {
     inner: libc::statx,
@@ -483,6 +400,8 @@ impl fmt::Debug for Metadata {
 }
 
 /// A structure representing a type of file with accessors for each file type.
+///
+/// See [`Metadata`].
 #[derive(Copy, Clone)]
 pub struct FileType(u16);
 
@@ -572,6 +491,8 @@ impl fmt::Debug for FileType {
 }
 
 /// Access permissions.
+///
+/// See [`Metadata`].
 #[derive(Copy, Clone)]
 pub struct Permissions(u16);
 
@@ -665,18 +586,4 @@ impl fmt::Debug for Permissions {
         let permissions = str::from_utf8(&buf).unwrap();
         f.debug_tuple("Permissions").field(&permissions).finish()
     }
-}
-
-op_future! {
-    fn File::metadata -> Box<Metadata>,
-    struct Stat<'f> {
-        /// Buffer to write the statx data into.
-        metadata: Option<Box<Metadata>>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
-    },
-    |this, n| {
-        debug_assert!(n == 0);
-        let metadata = this.metadata.take().unwrap();
-        assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
-        Ok(metadata)
-    },
 }

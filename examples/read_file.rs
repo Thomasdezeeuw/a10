@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{env, io, str};
 
-use a10::fs::File;
+use a10::fs::OpenOptions;
 use a10::Ring;
 
 fn main() -> io::Result<()> {
@@ -12,7 +12,7 @@ fn main() -> io::Result<()> {
 
     // Asynchronously open a file for reading.
     let path = env::args().nth(1).expect("missing argument");
-    let open_file = File::open(ring.submission_queue(), path.into())?;
+    let open_file = OpenOptions::new().open(ring.submission_queue(), path.into())?;
 
     // Poll the ring and check if the file is opened.
     ring.poll(None)?;
