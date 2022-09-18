@@ -10,7 +10,7 @@ readme        = "README.md"
 keywords      = ["io_uring", "io", "async", "non-blocking"]
 categories    = ["asynchronous"]
 include       = ["/Cargo.toml", "/src/**/*.rs", "/README.md", "/LICENSE"]
-edition       = "2018"
+edition       = "2021"
 
 [dependencies]
 libc         = { version = "0.2.132", default-features = false }
