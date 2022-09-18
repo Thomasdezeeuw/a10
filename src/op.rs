@@ -3,11 +3,9 @@
 use std::cmp::min;
 use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::{fmt, io};
-
-use parking_lot::Mutex;
 
 use crate::{libc, QueueFull, SubmissionQueue};
 
@@ -49,7 +47,7 @@ impl SharedOperationState {
     }
 
     pub(crate) fn submission_queue(&self) -> SubmissionQueue {
-        self.inner.lock().sq.clone()
+        self.inner.lock().unwrap().sq.clone()
     }
 
     /// Start a new operation by calling [`SubmissionQueue.add`].
@@ -61,7 +59,7 @@ impl SharedOperationState {
     where
         F: FnOnce(&mut Submission),
     {
-        let mut this = self.inner.lock();
+        let mut this = self.inner.lock().unwrap();
         let user_data = Arc::as_ptr(&self.inner) as u64;
         this.sq.add(|submission| {
             // SAFETY: we set the `user_data` before calling `submit` because
@@ -98,7 +96,7 @@ impl SharedOperationState {
     pub(crate) unsafe fn complete(user_data: u64, result: i32) {
         let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
         debug_assert!(Arc::strong_count(&state) == 2);
-        let mut state = state.lock();
+        let mut state = state.lock().unwrap();
         let res = replace(&mut state.result, result);
         assert!(res == IN_PROGRESS);
         if let Some(waker) = &state.waker {
@@ -108,7 +106,7 @@ impl SharedOperationState {
 
     /// Poll the operation check if it's ready.
     pub(crate) fn poll(&self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
-        let mut this = self.inner.lock();
+        let mut this = self.inner.lock().unwrap();
         let res = this.result;
         debug_assert!(res != NO_OP, "a10::OperationState in invalid state");
         if res == IN_PROGRESS {
@@ -133,7 +131,7 @@ impl SharedOperationState {
 
 impl fmt::Debug for SharedOperationState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let state = self.inner.lock().result;
+        let state = self.inner.lock().unwrap().result;
         let mut d = f.debug_struct("SharedOperationState");
         if state == NO_OP {
             d.field("result", &"no operation");
