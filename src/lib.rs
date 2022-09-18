@@ -19,105 +19,8 @@ macro_rules! syscall {
     }};
 }
 
-/// Macro to create a [`Future`] structure.
-macro_rules! op_future {
-    (
-        // File type and function name.
-        fn $f: ident :: $fn: ident -> $result: ty,
-        // Future structure.
-        struct $name: ident < $lifetime: lifetime > {
-            $(
-            // Field passed to I/O uring, must be an `Option`. Syntax is the
-            // same a struct definition, with `$drop_msg` being the message
-            // logged when leaking `$field`.
-            $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        // Mapping function for `SharedOperationState::poll` result.
-        |$self: ident, $arg: ident| $map_result: expr,
-        // Mapping function for `Extractor` implementation.
-        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )*
-    ) => {
-        #[doc = concat!("[`Future`] behind [`", stringify!($f), "::", stringify!($fn), "`].")]
-        #[derive(Debug)]
-        pub struct $name<$lifetime> {
-            $(
-            $(#[ $field_doc ])*
-            $field: $value,
-            )?
-            file: &$lifetime $f,
-        }
-
-        impl<'f> Future for $name<'f> {
-            type Output = io::Result<$result>;
-
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-                match self.file.state.poll(ctx) {
-                    Poll::Ready(Ok($arg)) => Poll::Ready({
-                        let $self = &mut self;
-                        $map_result
-                    }),
-                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
-
-        $(
-        impl<'f> Extract for $name<'f> {}
-
-        impl<'f> Future for Extractor<$name<'f>> {
-            type Output = io::Result<$extract_result>;
-
-            fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-                match self.fut.file.state.poll(ctx) {
-                    Poll::Ready(Ok($extract_arg)) => Poll::Ready({
-                        let $extract_self = &mut self.fut;
-                        $extract_map
-                    }),
-                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-                    Poll::Pending => Poll::Pending,
-                }
-            }
-        }
-        )*
-
-        impl<'f> Drop for $name<'f> {
-            fn drop(&mut self) {
-                $(
-                if let Some($field) = take(&mut self.$field) {
-                    log::debug!($drop_msg);
-                    leak($field);
-                }
-                )?
-            }
-        }
-    };
-    (
-        fn $f: ident :: $fn: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime > {
-            $(
-            $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
-            )?
-        },
-        |$n: ident| $map_result: expr,
-        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )*
-    ) => {
-        op_future!{
-            fn $f :: $fn -> $result,
-            struct $name<$lifetime> {
-                $(
-                $(#[ $field_doc ])*
-                $field: $value, $drop_msg,
-                )?
-            },
-            |_unused_this, $n| $map_result,
-            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )*
-        }
-    };
-}
+#[macro_use]
+mod op;
 
 pub mod asyncfd;
 mod config;
@@ -125,7 +28,6 @@ pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod net;
-mod op;
 
 // TODO: replace this with definitions from the `libc` crate once available.
 mod sys;

@@ -220,7 +220,7 @@ impl File {
 
         Ok(Read {
             buf: Some(buf),
-            file: self,
+            fd: self,
         })
     }
 
@@ -238,7 +238,7 @@ impl File {
 
         Ok(Write {
             buf: Some(buf),
-            file: self,
+            fd: self,
         })
     }
 
@@ -252,7 +252,7 @@ impl File {
         self.state
             .start(|submission| unsafe { submission.sync_all(self.fd) })?;
 
-        Ok(SyncAll { file: self })
+        Ok(SyncAll { fd: self })
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -272,7 +272,7 @@ impl File {
         self.state
             .start(|submission| unsafe { submission.sync_data(self.fd) })?;
 
-        Ok(SyncData { file: self })
+        Ok(SyncData { fd: self })
     }
 
     /// Retrieve metadata about the file.
@@ -288,7 +288,7 @@ impl File {
 
         Ok(Stat {
             metadata: Some(metadata),
-            file: self,
+            fd: self,
         })
     }
 }

@@ -45,7 +45,7 @@ impl TcpListener {
 
         Ok(Accept {
             address: Some(address),
-            file: self,
+            fd: self,
         })
     }
 }
@@ -69,7 +69,7 @@ op_future! {
         address: Option<Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>>, "dropped `a10::net::Accept` before completion, leaking address buffer",
     },
     |this, fd| {
-        let sq = this.file.state.submission_queue();
+        let sq = this.fd.state.submission_queue();
         let state = SharedOperationState::new(sq);
         let stream = TcpStream { fd, state };
 
