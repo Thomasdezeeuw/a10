@@ -48,11 +48,11 @@ use op::{SharedOperationState, Submission};
 ///
 /// The completions queue is not exposed by the crate and only used internally.
 /// Instead it will wake the [`Future`]s exposed by the various I/O type, such
-/// as [`File::write`]'s [`Write`] `Future`.
+/// as [`AsyncFd::write`]'s [`Write`] `Future`.
 ///
 /// [`Future`]: std::future::Future
-/// [`File::write`]: fs::File::write
-/// [`Write`]: fs::Write
+/// [`AsyncFd::write`]: AsyncFd::write
+/// [`Write`]: asyncfd::Write
 #[derive(Debug)]
 pub struct Ring {
     /// # Notes
@@ -204,10 +204,10 @@ impl Ring {
 /// Queue to submit asynchronous operations to.
 ///
 /// This type doesn't have any public methods, but is used by all I/O types,
-/// such as [`File`], to queue asynchronous operations. The queue can be
+/// such as [`OpenOptions`], to queue asynchronous operations. The queue can be
 /// acquired by using [`Ring::submission_queue`].
 ///
-/// [`File`]: fs::File
+/// [`OpenOptions`]: fs::OpenOptions
 #[derive(Debug, Clone)]
 pub struct SubmissionQueue {
     shared: Arc<SharedSubmissionQueue>,
