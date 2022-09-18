@@ -179,7 +179,7 @@ impl OpenOptions {
 ///
 /// # Notes
 ///
-/// Implements [`Extract`] to retrieve the path buffer.
+/// Implements [`Extract`] to extract the path buffer.
 #[derive(Debug)]
 pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can

@@ -16,8 +16,8 @@
 /// and leaks the inputs when a [`Future`] operation is dropped before
 /// completion. However to give the `Future`s a nice API we don't return the
 /// input arguments and try to match the APIs that don't take ownership of
-/// arguments, e.g [`fs::File::open`] just returns a [`File`] not the path
-/// argument.
+/// arguments, e.g [`fs::OpenOptions::open`] just returns a [`AsyncFd`] not the
+/// path argument.
 ///
 /// In some cases though we would like to get back the input arguments from the
 /// operation, e.g. for performance reasons. This trait allow you to do just
@@ -26,25 +26,27 @@
 /// See the list of [supported operations below].
 ///
 /// [`Future`]: std::future::Future
-/// [`fs::File::open`]: crate::fs::File::open
-/// [`File`]: crate::fs::File
+/// [`fs::OpenOptions::open`]: crate::fs::OpenOptions::open
+/// [`AsyncFd`]: crate::AsyncFd
 /// [supported operations below]: #implementors
 ///
 /// # Examples
 ///
-/// Extracting the argument from [`fs::File::open`] and [`fs::File::write`]
-/// operations.
+/// Extracting the argument from [`fs::OpenOptions::open`] and
+/// [`AsyncFd::write`] operations.
+///
+/// [`AsyncFd::write`]: crate::AsyncFd::write
 ///
 /// ```
 /// use std::io;
 /// use std::path::PathBuf;
 ///
-/// use a10::fs::File;
+/// use a10::fs::OpenOptions;
 /// use a10::{SubmissionQueue, Extract};
 ///
 /// async fn write_all_to_file(sq: SubmissionQueue, path: PathBuf, buf: Vec<u8>) -> io::Result<(PathBuf, Vec<u8>)> {
 ///     // This `Future` returns just the opened file.
-///     let open_file_future = File::open(sq, path)?;
+///     let open_file_future = OpenOptions::new().open(sq, path)?;
 ///     // Calling `extract` and awaiting that will returns both the file and
 ///     // the path buffer.
 ///     let (file, path) = open_file_future.extract().await?;
@@ -63,8 +65,6 @@
 ///     Ok((path, buf))
 /// }
 /// ```
-///
-/// [`fs::File::write`]: crate::fs::File::write
 pub trait Extract {
     /// Returns a [`Future`] that returns the input arguments in addition to the
     /// regular return value(s).
