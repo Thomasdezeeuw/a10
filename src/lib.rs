@@ -164,6 +164,139 @@ pub struct Ring {
     sq: SubmissionQueue,
 }
 
+impl Ring {
+    /// Configure a `Ring`.
+    ///
+    /// `entries` must be a power of two and in the range 1..=4096.
+    ///
+    /// # Notes
+    ///
+    /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
+    /// to work correctly. Furthermore the user needs the `CAP_SYS_NICE`
+    /// capability.
+    pub const fn config<'r>(entries: u32) -> Config<'r> {
+        Config::new(entries)
+    }
+
+    /// Create a new `Ring` with the default configuration.
+    ///
+    /// For more configuration options see [`Config`].
+    #[doc(alias = "io_uring_setup")]
+    pub fn new(entries: u32) -> io::Result<Ring> {
+        Config::new(entries).build()
+    }
+
+    /// Returns the `SubmissionQueue` used by this ring.
+    ///
+    /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
+    pub fn submission_queue(&self) -> SubmissionQueue {
+        self.sq.clone()
+    }
+
+    /// Poll the ring for completions.
+    ///
+    /// This will wake all completed [`Future`]s of the result of their
+    /// operation.
+    ///
+    /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
+    /// function will only wake all already completed operations. It guarantees
+    /// to not make a system call, but it also means it doesn't gurantee at
+    /// least one completion was processed.
+    ///
+    /// [`Future`]: std::future::Future
+    #[doc(alias = "io_uring_enter")]
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        for completion in self.completions(timeout)? {
+            log::trace!("got completion: {:?}", completion);
+            let user_data = completion.inner.user_data;
+            if user_data == 0 {
+                // No callback.
+                continue;
+            }
+
+            unsafe { SharedOperationState::complete(user_data, completion.inner.res) }
+        }
+        Ok(())
+    }
+
+    /// Submit all submissions and wait for at least `n` completions.
+    ///
+    /// Setting `n` to zero will submit all queued operations and return any
+    /// completions, without blocking.
+    #[doc(alias = "io_uring_enter")]
+    fn completions(&mut self, timeout: Option<Duration>) -> io::Result<Completions> {
+        // First we check if there are already completions events queued.
+        let head = self.completion_head();
+        let tail = self.completion_tail();
+        if head != tail || matches!(timeout, Some(Duration::ZERO)) {
+            return Ok(Completions {
+                entries: self.cq.entries,
+                local_head: head,
+                head: self.cq.head,
+                tail,
+                ring_mask: self.cq.ring_mask,
+                _lifetime: PhantomData,
+            });
+        }
+
+        if let Some(timeout) = timeout {
+            let timeout = libc::__kernel_timespec {
+                tv_sec: timeout.as_secs() as libc::__kernel_time64_t,
+                tv_nsec: libc::c_longlong::from(timeout.subsec_nanos()),
+            };
+
+            self.sq
+                .add(|submission| unsafe { submission.timeout(&timeout) })?;
+        }
+
+        // If not we need to check if the kernel thread is stil awake. If the
+        // kernel thread is not awake we'll need to wake it.
+        let mut enter_flags = libc::IORING_ENTER_GETEVENTS;
+        let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
+        if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
+            log::debug!("waking kernel thread");
+            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
+        }
+
+        log::debug!("waiting for completion events");
+        let n = syscall!(io_uring_enter(
+            self.sq.shared.ring_fd,
+            0, // We've already queued and submitted our submissions.
+            1, // Wait for at least one completion.
+            enter_flags,
+            ptr::null(),
+            0
+        ))?;
+        log::trace!("got {} completion events", n);
+
+        // NOTE: we're the only onces writing to the completion head so we don't
+        // need to read it again.
+        let tail = self.completion_tail();
+        Ok(Completions {
+            entries: self.cq.entries,
+            local_head: head,
+            head: self.cq.head,
+            tail,
+            ring_mask: self.cq.ring_mask,
+            _lifetime: PhantomData,
+        })
+    }
+
+    /// Returns `CompletionQueue.head`.
+    fn completion_head(&mut self) -> u32 {
+        // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
+        // pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (&*self.cq.head).load(Ordering::Relaxed) }
+    }
+
+    /// Returns `CompletionQueue.tail`.
+    fn completion_tail(&self) -> u32 {
+        // SAFETY: this written to by the kernel so we need to use `Acquire`
+        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (&*self.cq.tail).load(Ordering::Acquire) }
+    }
+}
+
 /// Queue to submit asynchronous operations to.
 ///
 /// This type doesn't have any public methods, but is used by all I/O types,
@@ -369,139 +502,6 @@ struct CompletionQueue {
 unsafe impl Send for CompletionQueue {}
 
 unsafe impl Sync for CompletionQueue {}
-
-impl Ring {
-    /// Configure a `Ring`.
-    ///
-    /// `entries` must be a power of two and in the range 1..=4096.
-    ///
-    /// # Notes
-    ///
-    /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
-    /// to work correctly. Furthermore the user needs the `CAP_SYS_NICE`
-    /// capability.
-    pub const fn config<'r>(entries: u32) -> Config<'r> {
-        Config::new(entries)
-    }
-
-    /// Create a new `Ring` with the default configuration.
-    ///
-    /// For more configuration options see [`Config`].
-    #[doc(alias = "io_uring_setup")]
-    pub fn new(entries: u32) -> io::Result<Ring> {
-        Config::new(entries).build()
-    }
-
-    /// Returns the `SubmissionQueue` used by this ring.
-    ///
-    /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
-    pub fn submission_queue(&self) -> SubmissionQueue {
-        self.sq.clone()
-    }
-
-    /// Poll the ring for completions.
-    ///
-    /// This will wake all completed [`Future`]s of the result of their
-    /// operation.
-    ///
-    /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
-    /// function will only wake all already completed operations. It guarantees
-    /// to not make a system call, but it also means it doesn't gurantee at
-    /// least one completion was processed.
-    ///
-    /// [`Future`]: std::future::Future
-    #[doc(alias = "io_uring_enter")]
-    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        for completion in self.completions(timeout)? {
-            log::trace!("got completion: {:?}", completion);
-            let user_data = completion.inner.user_data;
-            if user_data == 0 {
-                // No callback.
-                continue;
-            }
-
-            unsafe { SharedOperationState::complete(user_data, completion.inner.res) }
-        }
-        Ok(())
-    }
-
-    /// Submit all submissions and wait for at least `n` completions.
-    ///
-    /// Setting `n` to zero will submit all queued operations and return any
-    /// completions, without blocking.
-    #[doc(alias = "io_uring_enter")]
-    fn completions(&mut self, timeout: Option<Duration>) -> io::Result<Completions> {
-        // First we check if there are already completions events queued.
-        let head = self.completion_head();
-        let tail = self.completion_tail();
-        if head != tail || matches!(timeout, Some(Duration::ZERO)) {
-            return Ok(Completions {
-                entries: self.cq.entries,
-                local_head: head,
-                head: self.cq.head,
-                tail,
-                ring_mask: self.cq.ring_mask,
-                _lifetime: PhantomData,
-            });
-        }
-
-        if let Some(timeout) = timeout {
-            let timeout = libc::__kernel_timespec {
-                tv_sec: timeout.as_secs() as libc::__kernel_time64_t,
-                tv_nsec: libc::c_longlong::from(timeout.subsec_nanos()),
-            };
-
-            self.sq
-                .add(|submission| unsafe { submission.timeout(&timeout) })?;
-        }
-
-        // If not we need to check if the kernel thread is stil awake. If the
-        // kernel thread is not awake we'll need to wake it.
-        let mut enter_flags = libc::IORING_ENTER_GETEVENTS;
-        let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
-        if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
-            log::debug!("waking kernel thread");
-            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP
-        }
-
-        log::debug!("waiting for completion events");
-        let n = syscall!(io_uring_enter(
-            self.sq.shared.ring_fd,
-            0, // We've already queued and submitted our submissions.
-            1, // Wait for at least one completion.
-            enter_flags,
-            ptr::null(),
-            0
-        ))?;
-        log::trace!("got {} completion events", n);
-
-        // NOTE: we're the only onces writing to the completion head so we don't
-        // need to read it again.
-        let tail = self.completion_tail();
-        Ok(Completions {
-            entries: self.cq.entries,
-            local_head: head,
-            head: self.cq.head,
-            tail,
-            ring_mask: self.cq.ring_mask,
-            _lifetime: PhantomData,
-        })
-    }
-
-    /// Returns `CompletionQueue.head`.
-    fn completion_head(&mut self) -> u32 {
-        // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
-        // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.cq.head).load(Ordering::Relaxed) }
-    }
-
-    /// Returns `CompletionQueue.tail`.
-    fn completion_tail(&self) -> u32 {
-        // SAFETY: this written to by the kernel so we need to use `Acquire`
-        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (&*self.cq.tail).load(Ordering::Acquire) }
-    }
-}
 
 /// Iterator of completed operations.
 struct Completions<'ring> {
