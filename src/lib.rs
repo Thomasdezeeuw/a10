@@ -1,7 +1,7 @@
 #![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -260,7 +260,7 @@ impl Ring {
 
         log::debug!("waiting for completion events");
         let n = syscall!(io_uring_enter(
-            self.sq.shared.ring_fd,
+            self.sq.shared.ring_fd.as_raw_fd(),
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
             enter_flags,
@@ -313,7 +313,7 @@ pub struct SubmissionQueue {
 #[derive(Debug)]
 struct SharedSubmissionQueue {
     /// File descriptor of the I/O ring.
-    ring_fd: RawFd,
+    ring_fd: OwnedFd,
 
     /// Mmap-ed pointer.
     #[allow(dead_code)]
@@ -435,14 +435,6 @@ impl SubmissionQueue {
 unsafe impl Send for SharedSubmissionQueue {}
 
 unsafe impl Sync for SharedSubmissionQueue {}
-
-impl Drop for SharedSubmissionQueue {
-    fn drop(&mut self) {
-        if let Err(err) = syscall!(close(self.ring_fd)) {
-            log::error!("error closing io_uring: {}", err);
-        }
-    }
-}
 
 /// Error returned when the submission queue is full.
 ///

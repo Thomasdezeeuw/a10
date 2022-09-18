@@ -1,7 +1,7 @@
 //! Configuration of a [`Ring`].
 
 use std::mem::{self, size_of};
-use std::os::unix::io::RawFd;
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::{io, ptr};
@@ -118,26 +118,26 @@ impl<'r> Config<'r> {
             parameters.flags |= libc::IORING_SETUP_CLAMP;
         }
         if let Some(other_ring) = self.attach {
-            parameters.wq_fd = other_ring.sq.shared.ring_fd as u32;
+            parameters.wq_fd = other_ring.sq.shared.ring_fd.as_raw_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_CLAMP;
         }
 
         let fd = syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
+        // SAFETY: just created the fd (and checked the error).
+        let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         check_feature!(parameters.features, IORING_FEAT_NODROP);
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS);
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED);
 
-        // FIXME: close `fd` on error.
+        let cq = mmap_completion_queue(fd.as_fd(), &parameters)?;
         let sq = mmap_submission_queue(fd, &parameters)?;
-        // FIXME: close `fd` on error.
-        let cq = mmap_completion_queue(fd, &parameters)?;
         Ok(Ring { sq, cq })
     }
 }
 
 /// Memory-map the submission queue.
 fn mmap_submission_queue(
-    ring_fd: RawFd,
+    ring_fd: OwnedFd,
     parameters: &libc::io_uring_params,
 ) -> io::Result<SubmissionQueue> {
     let size = parameters.sq_off.array + parameters.sq_entries * (size_of::<libc::__u32>() as u32);
@@ -146,7 +146,7 @@ fn mmap_submission_queue(
         size as usize,
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd,
+        ring_fd.as_raw_fd(),
         libc::IORING_OFF_SQ_RING as libc::off_t,
     )?;
 
@@ -155,7 +155,7 @@ fn mmap_submission_queue(
         parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>(),
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd,
+        ring_fd.as_raw_fd(),
         libc::IORING_OFF_SQES as libc::off_t,
     )?;
 
@@ -192,7 +192,7 @@ fn mmap_submission_queue(
 
 /// Memory-map the completion queue.
 fn mmap_completion_queue(
-    ring_fd: RawFd,
+    ring_fd: BorrowedFd<'_>,
     parameters: &libc::io_uring_params,
 ) -> io::Result<CompletionQueue> {
     let size =
@@ -202,7 +202,7 @@ fn mmap_completion_queue(
         size as usize,
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd,
+        ring_fd.as_raw_fd(),
         libc::IORING_OFF_CQ_RING as libc::off_t,
     )?;
 
