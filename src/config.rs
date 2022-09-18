@@ -1,6 +1,6 @@
 //! Configuration of a [`Ring`].
 
-use std::mem::size_of;
+use std::mem::{self, size_of};
 use std::os::unix::io::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
@@ -107,7 +107,8 @@ impl<'r> Config<'r> {
     /// Build a new [`Ring`].
     #[doc(alias = "io_uring_setup")]
     pub fn build(self) -> io::Result<Ring> {
-        let mut parameters = libc::io_uring_params::default();
+        // SAFETY: all zero is valid for `io_uring_params`.
+        let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
         parameters.flags = libc::IORING_SETUP_SQPOLL;
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;

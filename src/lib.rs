@@ -240,8 +240,8 @@ impl Ring {
         }
 
         if let Some(timeout) = timeout {
-            let timeout = libc::__kernel_timespec {
-                tv_sec: timeout.as_secs() as libc::__kernel_time64_t,
+            let timeout = libc::timespec {
+                tv_sec: timeout.as_secs() as _,
                 tv_nsec: libc::c_longlong::from(timeout.subsec_nanos()),
             };
 

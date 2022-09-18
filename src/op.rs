@@ -246,7 +246,7 @@ impl Submission {
     /// triggers a timeout.
     ///
     /// Avaialable since Linux kernel 5.4.
-    pub(crate) unsafe fn timeout(&mut self, ts: *const libc::__kernel_timespec) {
+    pub(crate) unsafe fn timeout(&mut self, ts: *const libc::timespec) {
         self.inner.opcode = OperationCode::Timeout as u8;
         self.inner.fd = -1;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: 1 };
