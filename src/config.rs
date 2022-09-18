@@ -67,28 +67,6 @@ impl<'r> Config<'r> {
         self
     }
 
-    /*
-    /// Perform busy-waiting for an I/O completion, as opposed to getting
-    /// notifications via an asynchronous IRQ (Interrupt Request). The file
-    /// system (if any) and block device must support polling in order for this
-    /// to work.
-    ///
-    /// Busy-waiting provides lower latency, but may consume more CPU resources
-    /// than interrupt driven I/O. Currently, this feature is usable only on a
-    /// file descriptor opened using the `O_DIRECT` flag. When a read or write
-    /// is submitted to a polled context, the application must poll for
-    /// completions on the CQ ring by calling [`Ring::sumbit`]. It is illegal to
-    /// mix and match polled and non-polled I/O on an io_uring instance.
-    ///
-    /// Uses `IORING_SETUP_IOPOLL`, added in Linux kernel 5.1.
-    #[doc(alias = "IORING_SETUP_IOPOLL")]
-    pub const fn io_polling(mut self) -> Self {
-        todo!("Config::io_polling")
-    }
-    */
-
-    // TODO: add support for `IORING_SETUP_SQ_AFF` flag.
-
     /// Attach the new (to be created) ring to `other_ring`.
     ///
     /// This will cause the `Ring` being created to share the asynchronous
@@ -101,8 +79,6 @@ impl<'r> Config<'r> {
         self.attach = Some(other_ring);
         self
     }
-
-    // TODO: add method for `IORING_SETUP_R_DISABLED`.
 
     /// Build a new [`Ring`].
     #[doc(alias = "io_uring_setup")]
@@ -229,7 +205,6 @@ fn mmap(
     fd: libc::c_int,
     offset: libc::off_t,
 ) -> io::Result<*mut libc::c_void> {
-    // FIXME: use `MADV_DONTFORK`.
     match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
         libc::MAP_FAILED => Err(io::Error::last_os_error()),
         ptr => Ok(ptr),
