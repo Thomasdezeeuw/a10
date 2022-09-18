@@ -12,10 +12,12 @@ use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{Extract, QueueFull};
 
 /// An open file descriptor.
+///
+/// All functions on `AsyncFd` are asynchronous and return a [`Future`].
 #[derive(Debug)]
 pub struct AsyncFd {
-    fd: RawFd,
-    state: SharedOperationState,
+    pub(crate) fd: RawFd,
+    pub(crate) state: SharedOperationState,
 }
 
 impl Drop for AsyncFd {
@@ -37,7 +39,7 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read<'f>(&'f self, buf: Vec<u8>) -> Result<Read<'f>, QueueFull> {
+    pub fn read<'fd>(&'fd self, buf: Vec<u8>) -> Result<Read<'fd>, QueueFull> {
         self.read_at(buf, NO_OFFSET)
     }
 
@@ -51,7 +53,7 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read_at<'f>(&'f self, mut buf: Vec<u8>, offset: u64) -> Result<Read<'f>, QueueFull> {
+    pub fn read_at<'fd>(&'fd self, mut buf: Vec<u8>, offset: u64) -> Result<Read<'fd>, QueueFull> {
         self.state.start(|submission| unsafe {
             submission.read_at(self.fd, buf.spare_capacity_mut(), offset);
         })?;
@@ -63,14 +65,14 @@ impl AsyncFd {
     }
 
     /// Write `buf` to this file.
-    pub fn write<'f>(&'f self, buf: Vec<u8>) -> Result<Write<'f>, QueueFull> {
+    pub fn write<'fd>(&'fd self, buf: Vec<u8>) -> Result<Write<'fd>, QueueFull> {
         self.write_at(buf, NO_OFFSET)
     }
 
     /// Write `buf` to this file.
     ///
     /// The current file cursor is not affected by this function.
-    pub fn write_at<'f>(&'f self, buf: Vec<u8>, offset: u64) -> Result<Write<'f>, QueueFull> {
+    pub fn write_at<'fd>(&'fd self, buf: Vec<u8>, offset: u64) -> Result<Write<'fd>, QueueFull> {
         self.state
             .start(|submission| unsafe { submission.write_at(self.fd, &buf, offset) })?;
 
