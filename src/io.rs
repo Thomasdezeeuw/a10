@@ -8,9 +8,6 @@ use std::{fmt, slice};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
-#[doc(no_inline)]
-pub use std::io::{Error, IoSlice, Result};
-
 /// A version of [`IoSliceMut`] that allows the buffer to be uninitialised.
 ///
 /// [`IoSliceMut`]: std::io::IoSliceMut
