@@ -50,7 +50,7 @@ use op::{SharedOperationState, Submission};
 ///
 /// [`Future`]: std::future::Future
 /// [`AsyncFd::write`]: AsyncFd::write
-/// [`Write`]: asyncfd::Write
+/// [`Write`]: io::Write
 #[derive(Debug)]
 pub struct Ring {
     /// # Notes

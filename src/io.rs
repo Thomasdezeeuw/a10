@@ -12,7 +12,7 @@ use crate::{AsyncFd, QueueFull};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
-/// Generic system calls.
+/// I/O system calls.
 impl AsyncFd {
     /// Read from this fd into `buf`.
     ///
