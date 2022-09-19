@@ -14,23 +14,26 @@ pub(crate) struct SharedOperationState {
     inner: Arc<Mutex<OperationState>>,
 }
 
-/// No operation is queued.
-const NO_OP: i32 = i32::MIN;
-/// Operation is in progress, waiting on result.
-const IN_PROGRESS: i32 = i32::MIN + 1;
-
 /// State of an asynchronous operation.
 struct OperationState {
     /// Submission queue to submit operations to.
     sq: SubmissionQueue,
     /// Result of the operation.
-    /// Two special states:
-    /// * [`NO_OP`] means no operation is being executed.
-    /// * [`IN_PROGRESS`] means the operation is waiting.
-    /// Other values mean a result from the operation; negative is a (negative)
-    /// errno, positive a succesfull result.
-    result: i32,
+    result: OperationResult,
     waker: Option<task::Waker>,
+}
+
+#[derive(Copy, Clone, Debug)]
+enum OperationResult {
+    /// No operation queued.
+    NotStarted,
+    /// Operation is in progress, waiting on result.
+    InProgress,
+    /// Operation done.
+    ///
+    /// Value is the result from the operation; negative is a (negative) errno,
+    /// positive a successful result.
+    Done(i32),
 }
 
 impl SharedOperationState {
@@ -39,7 +42,7 @@ impl SharedOperationState {
         SharedOperationState {
             inner: Arc::new(Mutex::new(OperationState {
                 sq,
-                result: NO_OP,
+                result: OperationResult::NotStarted,
                 waker: None,
             })),
         }
@@ -79,10 +82,10 @@ impl SharedOperationState {
                     let count = Arc::strong_count(&self.inner);
                     count == 2 || count == 3
                 });
-                assert!(this.result == NO_OP);
+                assert!(matches!(this.result, OperationResult::NotStarted));
             }
         })?;
-        this.result = IN_PROGRESS;
+        this.result = OperationResult::InProgress;
         Ok(())
     }
 
@@ -96,8 +99,8 @@ impl SharedOperationState {
         let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
         debug_assert!(Arc::strong_count(&state) == 2);
         let mut state = state.lock().unwrap();
-        let res = replace(&mut state.result, result);
-        assert!(res == IN_PROGRESS);
+        let res = replace(&mut state.result, OperationResult::Done(result));
+        assert!(matches!(res, OperationResult::InProgress));
         if let Some(waker) = &state.waker {
             waker.wake_by_ref();
         }
@@ -106,40 +109,35 @@ impl SharedOperationState {
     /// Poll the operation check if it's ready.
     pub(crate) fn poll(&self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
         let mut this = self.inner.lock().unwrap();
-        let res = this.result;
-        debug_assert!(res != NO_OP, "a10::OperationState in invalid state");
-        if res == IN_PROGRESS {
-            let waker = ctx.waker();
-            if !matches!(&this.waker, Some(w) if w.will_wake(waker)) {
-                this.waker = Some(waker.clone());
+        match this.result {
+            OperationResult::NotStarted => panic!("a10::OperationState in invalid state"),
+            OperationResult::InProgress => {
+                let waker = ctx.waker();
+                if !matches!(&this.waker, Some(w) if w.will_wake(waker)) {
+                    this.waker = Some(waker.clone());
+                }
+                Poll::Pending
             }
-            return Poll::Pending;
-        }
-
-        this.result = NO_OP;
-        if res.is_negative() {
-            // TODO: handle `-EBUSY` on operations.
-            // TODO: handle I/O uring specific errors here, read CQE ERRORS in
-            // the manual.
-            Poll::Ready(Err(io::Error::from_raw_os_error(-res)))
-        } else {
-            Poll::Ready(Ok(res))
+            OperationResult::Done(res) => {
+                this.result = OperationResult::NotStarted;
+                if res.is_negative() {
+                    // TODO: handle `-EBUSY` on operations.
+                    // TODO: handle I/O uring specific errors here, read CQE ERRORS in
+                    // the manual.
+                    Poll::Ready(Err(io::Error::from_raw_os_error(-res)))
+                } else {
+                    Poll::Ready(Ok(res))
+                }
+            }
         }
     }
 }
 
 impl fmt::Debug for SharedOperationState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let state = self.inner.lock().unwrap().result;
-        let mut d = f.debug_struct("SharedOperationState");
-        if state == NO_OP {
-            d.field("result", &"no operation");
-        } else if state == IN_PROGRESS {
-            d.field("result", &"in progress");
-        } else {
-            d.field("result", &state);
-        }
-        d.finish()
+        f.debug_struct("SharedOperationState")
+            .field("result", &self.inner.lock().unwrap().result)
+            .finish()
     }
 }
 
