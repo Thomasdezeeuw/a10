@@ -237,7 +237,7 @@ impl AsyncFd {
     #[doc(alias = "fsync")]
     pub fn sync_all<'fd>(&'fd self) -> Result<SyncAll<'fd>, QueueFull> {
         self.state
-            .start(|submission| unsafe { submission.sync_all(self.fd) })?;
+            .start(|submission| unsafe { submission.fsync(self.fd, 0) })?;
 
         Ok(SyncAll { fd: self })
     }
@@ -256,8 +256,9 @@ impl AsyncFd {
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fdatasync")]
     pub fn sync_data<'fd>(&'fd self) -> Result<SyncData<'fd>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.sync_data(self.fd) })?;
+        self.state.start(|submission| unsafe {
+            submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC)
+        })?;
 
         Ok(SyncData { fd: self })
     }

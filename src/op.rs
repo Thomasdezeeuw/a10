@@ -184,20 +184,11 @@ impl Submission {
             && self.inner.user_data == 0
     }
 
-    /// Sync the `fd`.
-    pub(crate) unsafe fn sync_all(&mut self, fd: RawFd) {
+    /// Sync the `fd` with `fsync_flags`.
+    pub(crate) unsafe fn fsync(&mut self, fd: RawFd, fsync_flags: libc::__u32) {
         self.inner.opcode = OperationCode::Fsync as u8;
         self.inner.fd = fd;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags: 0 };
-    }
-
-    /// Sync data  the `fd`.
-    pub(crate) unsafe fn sync_data(&mut self, fd: RawFd) {
-        self.inner.opcode = OperationCode::Fsync as u8;
-        self.inner.fd = fd;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            fsync_flags: libc::IORING_FSYNC_DATASYNC,
-        };
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
     }
 
     /// Create a timeout submission waiting for at least one completion or
