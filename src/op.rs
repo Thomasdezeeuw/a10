@@ -184,43 +184,6 @@ impl Submission {
             && self.inner.user_data == 0
     }
 
-    /*
-    /// Set the `OperationCode` to [`Operation::Nop`].
-    fn nop(&mut self) {
-        self.inner.opcode = OperationCode::Nop as u8;
-    }
-    */
-
-    /*
-    unsafe fn read_vectored<F>(
-        &mut self,
-        fd: &F,
-        bufs: &mut [MaybeUninitSlice<'_>], // FIXME: lifetime.
-    ) where
-        F: io::Read + AsRawFd,
-    {
-        self.read_vectored_at(fd, bufs, NO_OFFSET)
-    }
-
-    unsafe fn read_vectored_at<F>(
-        &mut self,
-        fd: &F,
-        bufs: &mut [MaybeUninitSlice<'_>], // FIXME: lifetime.
-        offset: u64,
-    ) where
-        F: io::Read + AsRawFd,
-    {
-        self.inner.opcode = OperationCode::Readv as u8;
-        self.inner.fd = fd.as_raw_fd();
-        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: bufs.as_mut_ptr() as _,
-        };
-        self.inner.len = min(bufs.len(), u32::MAX as usize) as u32;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
-    }
-    */
-
     /// Sync the `fd`.
     pub(crate) unsafe fn sync_all(&mut self, fd: RawFd) {
         self.inner.opcode = OperationCode::Fsync as u8;
@@ -236,15 +199,6 @@ impl Submission {
             fsync_flags: libc::IORING_FSYNC_DATASYNC,
         };
     }
-
-    /*
-    /// Create a read submission.
-    ///
-    /// Avaialable since Linux kernel 5.6.
-    pub(crate) unsafe fn read(&mut self, fd: RawFd, buf: &mut [MaybeUninit<u8>]) {
-        self.read_at(fd, buf, NO_OFFSET)
-    }
-    */
 
     /// Create a timeout submission waiting for at least one completion or
     /// triggers a timeout.
@@ -357,19 +311,6 @@ impl Submission {
             statx_flags: libc::AT_EMPTY_PATH as _,
         };
     }
-
-    // TODO: add other operations, see `io_uring_enter` manual.
-
-    /*
-    /// Set the I/O priority.
-    ///
-    /// See the [`io_prio_get(2)`] manual for more information.
-    ///
-    /// [`io_prio_get(2)`]: https://man7.org/linux/man-pages/man2/ioprio_get.2.html
-    fn set_io_priority(&mut self, io_prio: u16) {
-        self.inner.ioprio = io_prio;
-    }
-    */
 }
 
 impl fmt::Debug for Submission {
