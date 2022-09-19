@@ -1,7 +1,7 @@
 #![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
-use std::os::unix::io::{AsRawFd, OwnedFd};
+use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,7 +22,6 @@ macro_rules! syscall {
 #[macro_use]
 mod op;
 
-pub mod asyncfd;
 mod config;
 pub mod extract;
 pub mod fs;
@@ -33,7 +32,6 @@ pub mod net;
 mod sys;
 use sys as libc;
 
-pub use asyncfd::AsyncFd;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
@@ -461,5 +459,30 @@ impl fmt::Debug for Completion {
             .field("res", &self.inner.res)
             .field("flags", &self.inner.flags)
             .finish()
+    }
+}
+
+/// An open file descriptor.
+///
+/// All functions on `AsyncFd` are asynchronous and return a [`Future`].
+///
+/// [`Future`]: std::future::Future
+#[derive(Debug)]
+pub struct AsyncFd {
+    pub(crate) fd: RawFd,
+    pub(crate) state: SharedOperationState,
+}
+
+// NOTE: the implementation are split over the modules to give the `Future`
+// implementation types a reasonable place in the docs.
+
+impl Drop for AsyncFd {
+    fn drop(&mut self) {
+        let result = self
+            .state
+            .start(|submission| unsafe { submission.close_fd(self.fd) });
+        if let Err(err) = result {
+            log::error!("error closing fd: {}", err);
+        }
     }
 }
