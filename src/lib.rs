@@ -1,3 +1,19 @@
+//! The [A10] io_uring library.
+//!
+//! This library is meant as a low-level library safely exposing the io_uring
+//! API. For simplicity two main types and a number of helper types:
+//!  * [`Ring`] is a wrapper around io_uring used to poll for completion events.
+//!  * [`AsyncFd`] is a wrapper around a file descriptor that provides a safe
+//!    API to schedule operations.
+//!
+//! Some modules provide ways to create `AsyncFd`, e.g. [`OpenOptions`], others
+//! are simply a place to expose the [`Future`]s supporting the scheduled
+//! operations. The module try to follow the same structure as that of std lib.
+//!
+//! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
+//! [`OpenOptions`]: fs::OpenOptions
+//! [`Future`]: std::future::Future
+
 #![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
