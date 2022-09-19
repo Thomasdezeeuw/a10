@@ -30,7 +30,6 @@ struct OperationState {
     /// Other values mean a result from the operation; negative is a (negative)
     /// errno, positive a succesfull result.
     result: i32,
-    // TODO: add flags once there used.
     waker: Option<task::Waker>,
 }
 
