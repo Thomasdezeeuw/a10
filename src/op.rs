@@ -336,55 +336,29 @@ impl fmt::Debug for Submission {
 #[derive(Debug)]
 #[repr(u8)]
 pub(crate) enum OperationCode {
-    /// Do not perform any I/O.
-    #[doc(alias = "IORING_OP_NOP")]
     Nop = libc::IORING_OP_NOP as u8,
-    /// Vectored read operation.
     Readv = libc::IORING_OP_READV as u8,
-    /// Vectored write operation.
     Writev = libc::IORING_OP_WRITEV as u8,
-    /// File sync, see `fsync(2)`.
-    /// Any write scheduled before this are **not** guaranteed to also be
-    /// synced, or even completed.
-    #[doc(alias = "IORING_OP_FSYNC")]
     Fsync = libc::IORING_OP_FSYNC as u8,
-    /// Read from pre-mapped buffers.
     ReadFixed = libc::IORING_OP_READ_FIXED as u8,
-    /// Write to pre-mapped buffers.
     WriteFixed = libc::IORING_OP_WRITE_FIXED as u8,
     PollAdd = libc::IORING_OP_POLL_ADD as u8,
     PollRemove = libc::IORING_OP_POLL_REMOVE as u8,
     SyncFileRange = libc::IORING_OP_SYNC_FILE_RANGE as u8,
     Sendmsg = libc::IORING_OP_SENDMSG as u8,
     Recvmsg = libc::IORING_OP_RECVMSG as u8,
-    /// Register a timeout operation.
-    #[doc(alias = "IORING_OP_TIMEOUT")]
     Timeout = libc::IORING_OP_TIMEOUT as u8,
-    /// Remove an existing timeout operation.
-    #[doc(alias = "IORING_OP_TIMEOUT_REMOVE")]
     TimeoutRemove = libc::IORING_OP_TIMEOUT_REMOVE as u8,
-    /// Issue the equivalent of a `accept4(2)` system call.
-    #[doc(alias = "IORING_OP_ACCEPT")]
     Accept = libc::IORING_OP_ACCEPT as u8,
     AsyncCancel = libc::IORING_OP_ASYNC_CANCEL as u8,
     LinkTimeout = libc::IORING_OP_LINK_TIMEOUT as u8,
     Connect = libc::IORING_OP_CONNECT as u8,
     Fallocate = libc::IORING_OP_FALLOCATE as u8,
-    /// Issue the equivalent of a `openat(2)` system call.
-    #[doc(alias = "IORING_OP_OPENAT")]
     Openat = libc::IORING_OP_OPENAT as u8,
-    /// Issue the equivalent of a `close(2)` system call.
-    #[doc(alias = "IORING_OP_CLOSE")]
     Close = libc::IORING_OP_CLOSE as u8,
     FilesUpdate = libc::IORING_OP_FILES_UPDATE as u8,
-    /// Issue the equivalent of a `statx(2)` system call.
-    #[doc(alias = "IORING_OP_STATX")]
     Statx = libc::IORING_OP_STATX as u8,
-    /// Issue the equivalent of a `pread(2)` system call.
-    #[doc(alias = "IORING_OP_READ")]
     Read = libc::IORING_OP_READ as u8,
-    /// Issue the equivalent of a `pwrite(2)` system call.
-    #[doc(alias = "IORING_OP_WRITE")]
     Write = libc::IORING_OP_WRITE as u8,
     Fadvise = libc::IORING_OP_FADVISE as u8,
     Madvise = libc::IORING_OP_MADVISE as u8,
