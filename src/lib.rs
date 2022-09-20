@@ -54,11 +54,11 @@ pub use config::Config;
 pub use extract::Extract;
 use op::{SharedOperationState, Submission};
 
-/// This type represents the user space side of an I/O uring.
+/// This type represents the user space side of an io_uring.
 ///
-/// An I/O uring is split into two queues: the submissions and completions
-/// queue. The [`SubmissionQueue`] is public, but doesn't provide any methods.
-/// The `SubmissionQueue` is only used by I/O types in the crate to schedule
+/// An io_uring is split into two queues: the submissions and completions queue.
+/// The [`SubmissionQueue`] is public, but doesn't provide any methods. The
+/// `SubmissionQueue` is only used by I/O types in the crate to schedule
 /// asynchronous operations.
 ///
 /// The completions queue is not exposed by the crate and only used internally.
@@ -231,7 +231,7 @@ pub struct SubmissionQueue {
 /// Shared internals of [`SubmissionQueue`].
 #[derive(Debug)]
 struct SharedSubmissionQueue {
-    /// File descriptor of the I/O ring.
+    /// File descriptor of the io_uring.
     ring_fd: OwnedFd,
 
     /// Mmap-ed pointer.
@@ -261,9 +261,9 @@ struct SharedSubmissionQueue {
     // thus all need atomic access.
     // FIXME: I think the following fields need `UnsafeCell`.
     /// Head to queue, i.e. the submussions read by the kernel. Incremented by
-    /// the kernel when I/O has succesfully been submitted.
+    /// the kernel when submissions has succesfully been processed.
     kernel_read: *const AtomicU32,
-    /// Incremented by us when submitting new I/O.
+    /// Incremented by us when submitting new submissions.
     tail: *mut AtomicU32,
     /// Number of invalid entries dropped by the kernel.
     #[allow(dead_code)]
@@ -400,9 +400,9 @@ struct CompletionQueue {
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
     // FIXME: I think the following fields need `UnsafeCell`.
-    /// Incremented by us when I/O completion has been read.
+    /// Incremented by us when completions have been read.
     head: *mut AtomicU32,
-    /// Incremented by the kernel when I/O has been completed.
+    /// Incremented by the kernel when adding completions.
     tail: *const AtomicU32,
     /// Array of `len` completion entries shared with the kernel. The kernel
     /// modifies this array, we're only reading from it.

@@ -122,8 +122,8 @@ impl SharedOperationState {
                 this.result = OperationResult::NotStarted;
                 if res.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
-                    // TODO: handle I/O uring specific errors here, read CQE ERRORS in
-                    // the manual.
+                    // TODO: handle io_uring specific errors here, read CQE
+                    // ERRORS in the manual.
                     Poll::Ready(Err(io::Error::from_raw_os_error(-res)))
                 } else {
                     Poll::Ready(Ok(res))
@@ -462,9 +462,9 @@ macro_rules! op_future {
         // Future structure.
         struct $name: ident < $lifetime: lifetime > {
             $(
-            // Field passed to I/O uring, must be an `Option`. Syntax is the
-            // same a struct definition, with `$drop_msg` being the message
-            // logged when leaking `$field`.
+            // Field passed to io_uring, must be an `Option`. Syntax is the same
+            // a struct definition, with `$drop_msg` being the message logged
+            // when leaking `$field`.
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty, $drop_msg: expr,
             )?
