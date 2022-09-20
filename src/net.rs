@@ -61,7 +61,7 @@ impl AsyncFd {
 
 // Connect.
 op_future! {
-    fn AsyncFd::Connect -> (),
+    fn AsyncFd::connect -> (),
     struct Connect<'fd> {
         /// Address needs to stay alive for as long as the kernel is connecting.
         address: Box<libc::sockaddr_storage>, "dropped `a10::net::Connect` before completion, leaking address buffer",
