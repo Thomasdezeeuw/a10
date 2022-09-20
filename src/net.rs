@@ -14,12 +14,20 @@ impl AsyncFd {
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
     pub fn accept<'fd>(&'fd self) -> Result<Accept<'fd>, QueueFull> {
+        self.accept4(libc::SOCK_CLOEXEC)
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::accept`].
+    pub fn accept4<'fd>(&'fd self, flags: libc::c_int) -> Result<Accept<'fd>, QueueFull> {
         let address: MaybeUninit<libc::sockaddr_storage> = MaybeUninit::uninit();
         let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
         let mut address = Box::new((address, length));
 
         self.state.start(|submission| unsafe {
-            submission.accept(self.fd, &mut address.0, &mut address.1, libc::SOCK_CLOEXEC);
+            submission.accept(self.fd, &mut address.0, &mut address.1, flags);
         })?;
 
         Ok(Accept {
