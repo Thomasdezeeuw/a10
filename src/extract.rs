@@ -23,12 +23,15 @@
 /// operation, e.g. for performance reasons. This trait allow you to do just
 /// that: extract the input arguments from `Future` operations.
 ///
-/// See the list of [supported operations below].
+/// All I/O operations, that is the `Future` implementations, that support
+/// extract the input argument will implement this `Extract` trait. A list of
+/// the supported operations can be found [below]. For the actual implementation
+/// see the [`Extractor`] type.
 ///
 /// [`Future`]: std::future::Future
 /// [`fs::OpenOptions::open`]: crate::fs::OpenOptions::open
 /// [`AsyncFd`]: crate::AsyncFd
-/// [supported operations below]: #implementors
+/// [below]: #implementors
 ///
 /// # Examples
 ///
