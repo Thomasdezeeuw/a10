@@ -225,6 +225,22 @@ impl Submission {
         self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
     }
 
+    pub(crate) unsafe fn connect(
+        &mut self,
+        fd: RawFd,
+        address: &mut libc::sockaddr_storage,
+        address_length: libc::socklen_t,
+    ) {
+        self.inner.opcode = OperationCode::Connect as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: address_length as _,
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: address as *mut _ as _,
+        };
+    }
+
     /// Create a accept submission starting.
     ///
     /// Avaialable since Linux kernel 5.5.

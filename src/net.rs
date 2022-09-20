@@ -10,6 +10,27 @@ use crate::{libc, AsyncFd, QueueFull};
 
 /// Socket related system calls.
 impl AsyncFd {
+    /// Initiate a connection on this socket to the specified address.
+    pub fn connect<'fd, A>(
+        &'fd self,
+        address: A,
+        address_length: libc::socklen_t,
+    ) -> Result<Connect<'fd>, QueueFull>
+    where
+        A: Into<Box<libc::sockaddr_storage>>,
+    {
+        let mut address = address.into();
+        self.state.start(|submission| unsafe {
+            submission.connect(self.fd, &mut address, address_length);
+        })?;
+
+        Ok(Connect {
+            // Needs to stay alive as long as the kernel is accessing it.
+            address: Some(UnsafeCell::new(address)),
+            fd: self,
+        })
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -35,6 +56,20 @@ impl AsyncFd {
             address: Some(UnsafeCell::new(address)),
             fd: self,
         })
+    }
+}
+
+// Connect.
+op_future! {
+    fn AsyncFd::Connect -> (),
+    struct Connect<'fd> {
+        /// Address needs to stay alive for as long as the kernel is connecting.
+        address: Box<libc::sockaddr_storage>, "dropped `a10::net::Connect` before completion, leaking address buffer",
+    },
+    |res| Ok(debug_assert!(res == 0)),
+    extract: |this, res| -> Box<libc::sockaddr_storage> {
+        debug_assert!(res == 0);
+        Ok(this.address.take().unwrap().into_inner())
     }
 }
 
