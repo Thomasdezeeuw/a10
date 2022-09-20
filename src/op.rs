@@ -161,7 +161,6 @@ pub(crate) const NO_OFFSET: u64 = u64::MAX;
 
 impl Submission {
     /// Reset the submission.
-    #[cfg(debug_assertions)]
     pub(crate) fn reset(&mut self) {
         debug_assert!(OperationCode::Nop as u8 == 0);
         unsafe {
@@ -198,8 +197,6 @@ impl Submission {
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: 1 };
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ts as _ };
         self.inner.len = 1;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { timeout_flags: 0 };
-        self.inner.user_data = 0;
     }
 
     /// Create a read submission starting at `offset`.
@@ -213,7 +210,6 @@ impl Submission {
             addr: buf.as_mut_ptr() as _,
         };
         self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
     }
 
     /// Create a write submission starting at `offset`.
@@ -227,7 +223,6 @@ impl Submission {
             addr: buf.as_ptr() as _,
         };
         self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
     }
 
     /// Create a accept submission starting.
@@ -248,8 +243,6 @@ impl Submission {
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: address as *mut _ as _,
         };
-
-        self.inner.len = 0;
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             accept_flags: flags as _,
         };

@@ -318,7 +318,6 @@ impl SubmissionQueue {
             let submission = unsafe { &mut *self.shared.entries.add(submission_index as usize) };
 
             // Let the caller fill the `submission`.
-            #[cfg(debug_assertions)]
             submission.reset();
             submit(submission);
             debug_assert!(!submission.is_unchanged());
