@@ -5,7 +5,6 @@ use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
 use std::{fmt, result, slice};
 
-use crate::extract::Extractor;
 use crate::op::NO_OFFSET;
 use crate::{AsyncFd, QueueFull};
 

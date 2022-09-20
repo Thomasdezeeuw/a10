@@ -493,7 +493,7 @@ macro_rules! op_future {
         $(
         impl<$lifetime> $crate::Extract for $name<$lifetime> {}
 
-        impl<$lifetime> std::future::Future for Extractor<$name<$lifetime>> {
+        impl<$lifetime> std::future::Future for $crate::extract::Extractor<$name<$lifetime>> {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
