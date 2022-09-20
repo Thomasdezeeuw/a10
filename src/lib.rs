@@ -493,6 +493,21 @@ pub struct AsyncFd {
 // NOTE: the implementation are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
+impl AsyncFd {
+    /// Create a new `AsyncFd`.
+    ///
+    /// # Unsafety
+    ///
+    /// The call must ensure that `fd` is valid and that it's no longer used by
+    /// anything other than the returned `AsyncFd`.
+    pub unsafe fn new(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
+        AsyncFd {
+            fd,
+            state: SharedOperationState::new(sq),
+        }
+    }
+}
+
 impl Drop for AsyncFd {
     fn drop(&mut self) {
         let result = self
