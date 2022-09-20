@@ -1,5 +1,6 @@
 //! Asynchronous networking.
 
+use std::cell::UnsafeCell;
 use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
@@ -31,25 +32,26 @@ impl AsyncFd {
         })?;
 
         Ok(Accept {
-            address: Some(address),
+            address: Some(UnsafeCell::new(address)),
             fd: self,
         })
     }
 }
 
+// Accept.
 op_future! {
     fn AsyncFd::accept -> (AsyncFd, SocketAddr),
     struct Accept<'fd> {
         /// Address for the accepted connection, needs to stay in memory so the
         /// kernel can access it safely.
-        address: Option<Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>>, "dropped `a10::net::Accept` before completion, leaking address buffer",
+        address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>, "dropped `a10::net::Accept` before completion, leaking address buffer",
     },
     |this, fd| {
         let sq = this.fd.state.submission_queue();
         let state = SharedOperationState::new(sq);
         let stream = AsyncFd { fd, state };
 
-        let address = this.address.take().unwrap();
+        let address = this.address.take().unwrap().into_inner();
         let storage = unsafe { address.0.assume_init_ref() };
         let address_length = address.1 as usize;
 

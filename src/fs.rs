@@ -3,6 +3,7 @@
 //! The main type is [`OpenOptions`], which can be used to open a file
 //! ([`AsyncFd`]).
 
+use std::cell::UnsafeCell;
 use std::ffi::{CString, OsString};
 use std::future::Future;
 use std::mem::{forget as leak, zeroed};
@@ -275,7 +276,7 @@ impl AsyncFd {
         })?;
 
         Ok(Stat {
-            metadata: Some(metadata),
+            metadata: Some(UnsafeCell::new(metadata)),
             fd: self,
         })
     }
@@ -304,11 +305,11 @@ op_future! {
     fn AsyncFd::metadata -> Box<Metadata>,
     struct Stat<'fd> {
         /// Buffer to write the statx data into.
-        metadata: Option<Box<Metadata>>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
+        metadata: Box<Metadata>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
     },
     |this, n| {
         debug_assert!(n == 0);
-        let metadata = this.metadata.take().unwrap();
+        let metadata = this.metadata.take().unwrap().into_inner();
         assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
         Ok(metadata)
     },

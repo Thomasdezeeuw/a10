@@ -470,7 +470,7 @@ macro_rules! op_future {
         pub struct $name<$lifetime> {
             $(
             $(#[ $field_doc ])*
-            $field: $value,
+            $field: std::option::Option<std::cell::UnsafeCell<$value>>,
             )?
             fd: &$lifetime $f,
         }

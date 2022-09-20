@@ -1,5 +1,6 @@
 //! Type definitions for I/O functionality.
 
+use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::ops::{Deref, DerefMut};
@@ -43,7 +44,7 @@ impl AsyncFd {
         })?;
 
         Ok(Read {
-            buf: Some(buf),
+            buf: Some(UnsafeCell::new(buf)),
             fd: self,
         })
     }
@@ -65,7 +66,7 @@ impl AsyncFd {
             .start(|submission| unsafe { submission.write_at(self.fd, &buf, offset) })?;
 
         Ok(Write {
-            buf: Some(buf),
+            buf: Some(UnsafeCell::new(buf)),
             fd: self,
         })
     }
@@ -77,10 +78,10 @@ op_future! {
     struct Read<'fd> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Option<Vec<u8>>, "dropped `a10::Read` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::Read` before completion, leaking buffer",
     },
     |this, n| {
-        let mut buf = this.buf.take().unwrap();
+        let mut buf = this.buf.take().unwrap().into_inner();
         unsafe { buf.set_len(buf.len() + n as usize) };
         Ok(buf)
     },
@@ -92,11 +93,11 @@ op_future! {
     struct Write<'fd> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Option<Vec<u8>>, "dropped `a10::Write` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::Write` before completion, leaking buffer",
     },
     |n| Ok(n as usize),
     extract: |this, n| -> (Vec<u8>, usize) {
-        let buf = this.buf.take().unwrap();
+        let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
     }
 }
