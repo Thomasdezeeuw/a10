@@ -225,6 +225,22 @@ impl Submission {
         self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
     }
 
+    pub(crate) unsafe fn socket(
+        &mut self,
+        domain: libc::c_int,
+        r#type: libc::c_int,
+        protocol: libc::c_int,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = OperationCode::Socket as u8;
+        self.inner.fd = domain;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: r#type as _ };
+        self.inner.len = protocol as _;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            rw_flags: flags as _,
+        };
+    }
+
     pub(crate) unsafe fn connect(
         &mut self,
         fd: RawFd,

@@ -1,12 +1,29 @@
 //! Asynchronous networking.
 
 use std::cell::UnsafeCell;
+use std::future::Future;
 use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::pin::Pin;
+use std::task::{self, Poll};
 
 use crate::op::SharedOperationState;
-use crate::{libc, AsyncFd, QueueFull};
+use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
+
+/// Creates a new socket and sets common flags.
+pub fn socket(
+    queue: SubmissionQueue,
+    domain: libc::c_int,
+    r#type: libc::c_int,
+    protocol: libc::c_int,
+    flags: libc::c_int,
+) -> Result<Socket, QueueFull> {
+    let state = SharedOperationState::new(queue);
+    state.start(|submission| unsafe { submission.socket(domain, r#type, protocol, flags) })?;
+
+    Ok(Socket { state: Some(state) })
+}
 
 /// Socket related system calls.
 impl AsyncFd {
@@ -107,6 +124,25 @@ impl AsyncFd {
         Ok(Accept {
             address: Some(UnsafeCell::new(address)),
             fd: self,
+        })
+    }
+}
+
+/// [`Future`] to create a new [`socket`] asynchronously.
+///
+/// If you're looking for a socket, there is none, see [`AsyncFd`].
+#[derive(Debug)]
+pub struct Socket {
+    state: Option<SharedOperationState>,
+}
+
+impl Future for Socket {
+    type Output = io::Result<AsyncFd>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| AsyncFd {
+            fd,
+            state: self.state.take().unwrap(),
         })
     }
 }

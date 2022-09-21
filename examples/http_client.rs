@@ -4,23 +4,13 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, mem, ptr, str};
 
-use a10::{AsyncFd, Ring};
+use a10::Ring;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
-    let mut ring = Ring::new(1)?;
+    let mut ring = Ring::new(2)?;
 
-    // Manually create a socket. You'll want to use the socket2 library for
-    // this.
-    // SAFETY: system call.
-    let socket = unsafe { libc::socket(libc::AF_INET, libc::SOCK_STREAM, 0) };
-    if socket == -1 {
-        return Err(io::Error::last_os_error());
-    }
-    // SAFETY: just created the socket above.
-    let socket = unsafe { AsyncFd::new(socket, ring.submission_queue()) };
-
-    // Start a connect call.
+    // Get an IPv4 address for the domain (using blocking I/O).
     let address = std::net::ToSocketAddrs::to_socket_addrs("thomasdezeeuw.nl:80")?
         .filter(SocketAddr::is_ipv4)
         .next()
@@ -29,11 +19,23 @@ fn main() -> io::Result<()> {
         SocketAddr::V4(address) => to_sockaddr_storage(address),
         SocketAddr::V6(_) => unreachable!(),
     };
-    let connect = socket.connect(address, address_length)?;
 
-    // Poll the ring and check if the socket is connected.
+    // Create a new socket.
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+    let protocol = 0;
+    let flags = 0;
+    let socket = a10::net::socket(ring.submission_queue(), domain, r#type, protocol, flags)?;
+
+    // Poll the ring and check if the socket is created.
     ring.poll(None)?;
-    block_on(connect)?; // Replace this with a `.await`.
+    let socket = block_on(socket)?; // Replace this with a `.await`.
+
+    // Start a connect call.
+    let connect = socket.connect(address, address_length)?;
+    // Same pattern of polling & awaiting as above.
+    ring.poll(None)?;
+    block_on(connect)?;
 
     // Start aysynchronously sending a HTTP `GET /` request to the socket.
     let request = format!("GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: curl/7.79.1\r\nAccept: */*\r\n\r\n");
