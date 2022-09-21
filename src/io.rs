@@ -1,12 +1,15 @@
 //! Type definitions for I/O functionality.
 
 use std::cell::UnsafeCell;
+use std::future::Future;
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ops::{Deref, DerefMut};
-use std::{fmt, result, slice};
+use std::pin::Pin;
+use std::task::{self, Poll};
+use std::{fmt, io, ptr, result, slice};
 
-use crate::op::NO_OFFSET;
+use crate::op::{SharedOperationState, NO_OFFSET};
 use crate::{AsyncFd, QueueFull};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -70,6 +73,25 @@ impl AsyncFd {
             fd: self,
         })
     }
+
+    /// Explicitly close the file descriptor.
+    ///
+    /// # Notes
+    ///
+    /// This happens automatically on drop, this can be used to get a possible
+    /// error.
+    pub fn close(self) -> result::Result<Close, QueueFull> {
+        // We deconstruct `self` without dropping it to avoid closing the fd
+        // twice.
+        let this = ManuallyDrop::new(self);
+        // SAFETY: this is safe because we're ensure the pointers are valid and
+        // not touching `this` after reading the fields.
+        let fd = unsafe { ptr::read(&this.fd) };
+        let state = unsafe { ptr::read(&this.state) };
+        state.start(|submission| unsafe { submission.close(fd, true) })?;
+
+        Ok(Close { state })
+    }
 }
 
 // Read.
@@ -99,6 +121,20 @@ op_future! {
     extract: |this, n| -> (Vec<u8>, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
+    }
+}
+
+/// [`Future`] to close a [`AsyncFd`]
+#[derive(Debug)]
+pub struct Close {
+    state: SharedOperationState,
+}
+
+impl Future for Close {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.state.poll(ctx).map_ok(|_| ())
     }
 }
 

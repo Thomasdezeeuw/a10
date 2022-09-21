@@ -511,7 +511,7 @@ impl Drop for AsyncFd {
     fn drop(&mut self) {
         let result = self
             .state
-            .start(|submission| unsafe { submission.close_fd(self.fd) });
+            .start(|submission| unsafe { submission.close(self.fd, false) });
         if let Err(err) = result {
             log::error!("error closing fd: {}", err);
         }

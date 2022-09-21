@@ -48,6 +48,12 @@ fn main() -> io::Result<()> {
     ring.poll(None)?;
     let buf = block_on(recv)?;
 
+    // We'll explicitly close the socket, although that happens for us when we
+    // drop the socket.
+    let close = socket.close()?;
+    ring.poll(None)?;
+    block_on(close)?;
+
     // Done receivinreceivingg, we'll print the result (using ol' fashioned blocking I/O).
     let data = str::from_utf8(&buf).map_err(|err| {
         io::Error::new(

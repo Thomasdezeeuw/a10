@@ -330,10 +330,12 @@ impl Submission {
     }
 
     /// Close the `fd`.
-    pub(crate) unsafe fn close_fd(&mut self, fd: RawFd) {
+    pub(crate) unsafe fn close(&mut self, fd: RawFd, want_callback: bool) {
         self.inner.opcode = OperationCode::Close as u8;
         self.inner.fd = fd;
-        self.inner.user_data = 0; // Don't want a callback.
+        if !want_callback {
+            self.inner.user_data = 0; // Don't want a callback.
+        }
     }
 
     /// Call `statx(2)` on `fd`, where `fd` points to a file.
