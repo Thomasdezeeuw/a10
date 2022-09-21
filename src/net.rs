@@ -31,6 +31,29 @@ impl AsyncFd {
         })
     }
 
+    /// Sends data on the socket to a connected peer.
+    pub fn send<'fd>(&'fd self, buf: Vec<u8>) -> Result<Send<'fd>, QueueFull> {
+        self.send_with_flags(buf, 0)
+    }
+
+    /// Identical to [`AsyncFd::send`] but allows for specification of arbitrary
+    /// flags to the underlying `send` call.
+    pub fn send_with_flags<'fd>(
+        &'fd self,
+        mut buf: Vec<u8>,
+        flags: libc::c_int,
+    ) -> Result<Send<'fd>, QueueFull> {
+        self.state.start(|submission| unsafe {
+            submission.send(self.fd, &mut buf, flags);
+        })?;
+
+        Ok(Send {
+            // Needs to stay alive as long as the kernel is accessing it.
+            buf: Some(UnsafeCell::new(buf)),
+            fd: self,
+        })
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -70,6 +93,21 @@ op_future! {
     extract: |this, res| -> Box<libc::sockaddr_storage> {
         debug_assert!(res == 0);
         Ok(this.address.take().unwrap().into_inner())
+    }
+}
+
+// Send.
+op_future! {
+    fn AsyncFd::send -> usize,
+    struct Send<'fd> {
+        /// Buffer to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: Vec<u8>, "dropped `a10::Send` before completion, leaking buffer",
+    },
+    |n| Ok(n as usize),
+    extract: |this, n| -> (Vec<u8>, usize) {
+        let buf = this.buf.take().unwrap().into_inner();
+        Ok((buf, n as usize))
     }
 }
 

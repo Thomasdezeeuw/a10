@@ -37,7 +37,7 @@ fn main() -> io::Result<()> {
 
     // Start aysynchronously writing a HTTP `GET /` request to the socket.
     let request = format!("GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: curl/7.79.1\r\nAccept: */*\r\n\r\n");
-    let write = socket.write(request.into())?;
+    let write = socket.send(request.into())?;
     ring.poll(None)?;
     block_on(write)?;
 
