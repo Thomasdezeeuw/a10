@@ -35,18 +35,18 @@ fn main() -> io::Result<()> {
     ring.poll(None)?;
     block_on(connect)?; // Replace this with a `.await`.
 
-    // Start aysynchronously writing a HTTP `GET /` request to the socket.
+    // Start aysynchronously sending a HTTP `GET /` request to the socket.
     let request = format!("GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: curl/7.79.1\r\nAccept: */*\r\n\r\n");
-    let write = socket.send(request.into())?;
+    let send = socket.send(request.into())?;
     ring.poll(None)?;
-    block_on(write)?;
+    block_on(send)?;
 
-    // Start aysynchronously reading the response.
-    let read = socket.read(Vec::with_capacity(8192))?;
+    // Start aysynchronously receinv the response.
+    let recv = socket.recv(Vec::with_capacity(8192))?;
     ring.poll(None)?;
-    let buf = block_on(read)?;
+    let buf = block_on(recv)?;
 
-    // Done reading, we'll print the result (using ol' fashioned blocking I/O).
+    // Done receivinreceivingg, we'll print the result (using ol' fashioned blocking I/O).
     let data = str::from_utf8(&buf).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,

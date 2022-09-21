@@ -54,6 +54,35 @@ impl AsyncFd {
         })
     }
 
+    /// Receives data on the socket from the remote address to which it is
+    /// connected.
+    ///
+    /// # Notes
+    ///
+    /// This leave the current contents of `buf` untouched and only uses the
+    /// spare capacity.
+    pub fn recv<'fd>(&'fd self, buf: Vec<u8>) -> Result<Recv<'fd>, QueueFull> {
+        self.recv_with_flags(buf, 0)
+    }
+
+    /// Identical to [`AsyncFd::recv`] but allows for specification of arbitrary
+    /// flags to the underlying `recv` call.
+    pub fn recv_with_flags<'fd>(
+        &'fd self,
+        mut buf: Vec<u8>,
+        flags: libc::c_int,
+    ) -> Result<Recv<'fd>, QueueFull> {
+        self.state.start(|submission| unsafe {
+            submission.recv(self.fd, buf.spare_capacity_mut(), flags);
+        })?;
+
+        Ok(Recv {
+            // Needs to stay alive as long as the kernel is accessing it.
+            buf: Some(UnsafeCell::new(buf)),
+            fd: self,
+        })
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -109,6 +138,21 @@ op_future! {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
     }
+}
+
+// Recv.
+op_future! {
+    fn AsyncFd::recv -> Vec<u8>,
+    struct Recv<'fd> {
+        /// Buffer to write into, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: Vec<u8>, "dropped `a10::Recv` before completion, leaking buffer",
+    },
+    |this, n| {
+        let mut buf = this.buf.take().unwrap().into_inner();
+        unsafe { buf.set_len(buf.len() + n as usize) };
+        Ok(buf)
+    },
 }
 
 // Accept.
