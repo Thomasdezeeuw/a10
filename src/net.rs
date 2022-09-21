@@ -11,7 +11,7 @@ use std::task::{self, Poll};
 use crate::op::SharedOperationState;
 use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
 
-/// Creates a new socket and sets common flags.
+/// Creates a new socket.
 pub fn socket(
     queue: SubmissionQueue,
     domain: libc::c_int,
