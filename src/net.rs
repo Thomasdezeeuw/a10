@@ -130,7 +130,7 @@ impl AsyncFd {
 
 /// [`Future`] to create a new [`socket`] asynchronously.
 ///
-/// If you're looking for a socket, there is none, see [`AsyncFd`].
+/// If you're looking for a socket type, there is none, see [`AsyncFd`].
 #[derive(Debug)]
 pub struct Socket {
     state: Option<SharedOperationState>,
