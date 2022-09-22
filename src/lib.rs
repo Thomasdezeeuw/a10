@@ -17,6 +17,7 @@
 
 #![feature(const_mut_refs, io_error_more)]
 
+use std::future::IntoFuture;
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -501,5 +502,32 @@ impl Drop for AsyncFd {
         if let Err(err) = result {
             log::error!("error closing fd: {}", err);
         }
+    }
+}
+
+/// Wrapper type to allow chaining of operations.
+///
+/// If you don't want to chain further operations simply call `.await` or use
+/// the [`IntoFuture`] implementation.
+#[derive(Debug)]
+pub struct Chain<Fut>(Fut);
+
+impl<Fut> Chain<Fut> {
+    /// Returns the wrapped type `Fut`.
+    pub fn into_inner(self) -> Fut {
+        self.0
+    }
+}
+
+impl<Fut> IntoFuture for Chain<Fut>
+where
+    Fut: IntoFuture,
+{
+    type Output = Fut::Output;
+
+    type IntoFuture = Fut::IntoFuture;
+
+    fn into_future(self) -> Self::IntoFuture {
+        self.0.into_future()
     }
 }
