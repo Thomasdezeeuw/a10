@@ -56,13 +56,13 @@ fn main() -> io::Result<()> {
     block_on(close)?;
 
     // Done receiving, we'll print the result (using ol' fashioned blocking I/O).
-    let data = str::from_utf8(&recv_buf).map_err(|err| {
+    let response = str::from_utf8(&recv_buf).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("file doesn't contain UTF-8: {}", err),
+            format!("response doesn't contain UTF-8: {}", err),
         )
     })?;
-    println!("{data}");
+    println!("{response}");
 
     Ok(())
 }
