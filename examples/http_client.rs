@@ -6,6 +6,8 @@ use std::{io, mem, ptr, str};
 
 use a10::Ring;
 
+const HTTP_REQUEST: &str = "GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: a10-example/0.1.0\r\nAccept: */*\r\n\r\n";
+
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = Ring::new(2)?;
@@ -38,15 +40,14 @@ fn main() -> io::Result<()> {
     block_on(connect)?;
 
     // Start aysynchronously sending a HTTP `GET /` request to the socket.
-    let request = format!("GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: curl/7.79.1\r\nAccept: */*\r\n\r\n");
-    let send = socket.send(request.into())?;
+    let send = socket.send(HTTP_REQUEST.into())?;
     ring.poll(None)?;
     block_on(send)?;
 
     // Start aysynchronously receinv the response.
     let recv = socket.recv(Vec::with_capacity(8192))?;
     ring.poll(None)?;
-    let buf = block_on(recv)?;
+    let recv_buf = block_on(recv)?;
 
     // We'll explicitly close the socket, although that happens for us when we
     // drop the socket.
@@ -54,8 +55,8 @@ fn main() -> io::Result<()> {
     ring.poll(None)?;
     block_on(close)?;
 
-    // Done receivinreceivingg, we'll print the result (using ol' fashioned blocking I/O).
-    let data = str::from_utf8(&buf).map_err(|err| {
+    // Done receiving, we'll print the result (using ol' fashioned blocking I/O).
+    let data = str::from_utf8(&recv_buf).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("file doesn't contain UTF-8: {}", err),
