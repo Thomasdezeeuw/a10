@@ -147,6 +147,14 @@ pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
 pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
 pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
 
+pub const IOSQE_FIXED_FILE: __u8 = 1 << 0;
+pub const IOSQE_IO_DRAIN: __u8 = 1 << 1;
+pub const IOSQE_IO_LINK: __u8 = 1 << 2;
+pub const IOSQE_IO_HARDLINK: __u8 = 1 << 3;
+pub const IOSQE_ASYNC: __u8 = 1 << 4;
+pub const IOSQE_BUFFER_SELECT: __u8 = 1 << 5;
+pub const IOSQE_CQE_SKIP_SUCCESS: __u8 = 1 << 6;
+
 pub unsafe fn io_uring_setup(entries: c_uint, p: *mut io_uring_params) -> c_int {
     syscall(SYS_io_uring_setup, entries as c_long, p as c_long) as _
 }
