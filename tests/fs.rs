@@ -299,7 +299,7 @@ fn sync_data() {
     let waker = Waker::new();
 
     let mut path = temp_dir();
-    path.push("sync_all");
+    path.push("sync_data");
 
     let _d = defer(|| remove_test_file(&path));
 
