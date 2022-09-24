@@ -501,7 +501,6 @@ impl OperationCode {
 /// Macro to create an operation [`Future`] structure.
 ///
 /// [`Future`]: std::future::Future
-#[macro_export]
 macro_rules! op_future {
     (
         // File type and function name.
@@ -601,3 +600,5 @@ macro_rules! op_future {
         }
     };
 }
+
+pub(crate) use op_future;

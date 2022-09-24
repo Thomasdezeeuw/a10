@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, result, slice};
 
-use crate::op::{SharedOperationState, NO_OFFSET};
+use crate::op::{op_future, SharedOperationState, NO_OFFSET};
 use crate::{AsyncFd, QueueFull};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.

@@ -15,7 +15,7 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::extract::Extractor;
-use crate::op::SharedOperationState;
+use crate::op::{op_future, SharedOperationState};
 use crate::{libc, AsyncFd, Extract, QueueFull, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].

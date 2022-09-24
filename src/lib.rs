@@ -36,14 +36,12 @@ macro_rules! syscall {
     }};
 }
 
-#[macro_use]
-mod op;
-
 mod config;
 pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod net;
+mod op;
 
 // TODO: replace this with definitions from the `libc` crate once available.
 mod sys;
