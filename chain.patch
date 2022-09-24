@@ -1,0 +1,70 @@
+diff --git a/src/fs.rs b/src/fs.rs
+index c2aa1fa..dca6a5d 100644
+--- a/src/fs.rs
++++ b/src/fs.rs
+@@ -16,7 +16,7 @@ use std::{fmt, io, str};
+ 
+ use crate::extract::Extractor;
+ use crate::op::{op_future, SharedOperationState};
+-use crate::{libc, AsyncFd, Extract, QueueFull, SubmissionQueue};
++use crate::{libc, AsyncFd, Chain, Extract, QueueFull, SubmissionQueue};
+ 
+ /// Flags needed to fill [`Metadata`].
+ const METADATA_FLAGS: u32 = libc::STATX_TYPE
+@@ -151,14 +151,14 @@ impl OpenOptions {
+         mut self,
+         queue: SubmissionQueue,
+         dir: PathBuf,
+-    ) -> Result<Open, QueueFull> {
++    ) -> Result<Chain<Open>, QueueFull> {
+         self.flags |= libc::O_TMPFILE;
+         self.open(queue, dir)
+     }
+ 
+     /// Open `path`.
+     #[doc(alias = "openat")]
+-    pub fn open(self, queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
++    pub fn open(self, queue: SubmissionQueue, path: PathBuf) -> Result<Chain<Open>, QueueFull> {
+         let path = path.into_os_string().into_vec();
+         let path = unsafe { CString::from_vec_unchecked(path) };
+ 
+@@ -167,10 +167,10 @@ impl OpenOptions {
+             submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode);
+         })?;
+ 
+-        Ok(Open {
++        Ok(Chain(Open {
+             path: Some(path),
+             state: Some(state),
+-        })
++        }))
+     }
+ }
+ 
+diff --git a/src/net.rs b/src/net.rs
+index 5ac868d..feddac3 100644
+--- a/src/net.rs
++++ b/src/net.rs
+@@ -9,7 +9,7 @@ use std::pin::Pin;
+ use std::task::{self, Poll};
+ 
+ use crate::op::{op_future, SharedOperationState};
+-use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
++use crate::{libc, AsyncFd, Chain, QueueFull, SubmissionQueue};
+ 
+ /// Creates a new socket.
+ pub fn socket(
+@@ -18,11 +18,11 @@ pub fn socket(
+     r#type: libc::c_int,
+     protocol: libc::c_int,
+     flags: libc::c_int,
+-) -> Result<Socket, QueueFull> {
++) -> Result<Chain<Socket>, QueueFull> {
+     let state = SharedOperationState::new(queue);
+     state.start(|submission| unsafe { submission.socket(domain, r#type, protocol, flags) })?;
+ 
+-    Ok(Socket { state: Some(state) })
++    Ok(Chain(Socket { state: Some(state) }))
+ }
+ 
+ /// Socket related system calls.
