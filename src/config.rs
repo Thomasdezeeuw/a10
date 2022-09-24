@@ -99,7 +99,7 @@ impl<'r> Config<'r> {
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let fd = syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
+        let fd = libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters))?;
         // SAFETY: just created the fd (and checked the error).
         let fd = unsafe { OwnedFd::from_raw_fd(fd) };
         check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.

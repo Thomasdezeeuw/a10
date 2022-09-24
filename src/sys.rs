@@ -9,6 +9,20 @@
 #![allow(clippy::unreadable_literal, clippy::missing_safety_doc)]
 #![cfg_attr(test, allow(deref_nullptr, unaligned_references))]
 
+/// Helper macro to execute a system call that returns an `io::Result`.
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
+        let res = unsafe { libc::$fn($( $arg, )*) };
+        if res == -1 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+}
+
+pub(crate) use syscall;
+
 pub use libc::*;
 
 pub const IORING_ENTER_GETEVENTS: u32 = 1;

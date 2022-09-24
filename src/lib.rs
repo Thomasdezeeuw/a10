@@ -24,18 +24,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, ptr};
 
-/// Helper macro to execute a system call that returns an `io::Result`.
-macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
-        let res = unsafe { libc::$fn($($arg, )*) };
-        if res == -1 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-}
-
 mod config;
 pub mod extract;
 pub mod fs;
@@ -176,7 +164,7 @@ impl Ring {
         }
 
         log::debug!("waiting for completion events");
-        let n = syscall!(io_uring_enter(
+        let n = libc::syscall!(io_uring_enter(
             self.sq.shared.ring_fd.as_raw_fd(),
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
