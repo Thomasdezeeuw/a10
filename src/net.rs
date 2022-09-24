@@ -167,7 +167,7 @@ op_future! {
     struct Send<'fd> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::Send` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::net::Send` before completion, leaking buffer",
     },
     |n| Ok(n as usize),
     extract: |this, n| -> (Vec<u8>, usize) {
@@ -182,7 +182,7 @@ op_future! {
     struct Recv<'fd> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::Recv` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::net::Recv` before completion, leaking buffer",
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();

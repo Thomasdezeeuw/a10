@@ -112,7 +112,7 @@ impl Ring {
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         for completion in self.completions(timeout)? {
-            log::trace!("got completion: {:?}", completion);
+            log::trace!("got completion: {completion:?}");
             let user_data = completion.inner.user_data;
             if user_data == 0 {
                 // No callback.
@@ -172,7 +172,7 @@ impl Ring {
             ptr::null(),
             0
         ))?;
-        log::trace!("got {} completion events", n);
+        log::trace!("got {n} completion events");
 
         // NOTE: we're the only onces writing to the completion head so we don't
         // need to read it again.
@@ -499,7 +499,7 @@ impl Drop for AsyncFd {
             .state
             .start(|submission| unsafe { submission.close(self.fd, false) });
         if let Err(err) = result {
-            log::error!("error closing fd: {}", err);
+            log::error!("error submitting close operation for a10::AsyncFd: {err}");
         }
     }
 }

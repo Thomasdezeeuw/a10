@@ -100,7 +100,7 @@ op_future! {
     struct Read<'fd> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::Read` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::io::Read` before completion, leaking buffer",
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();
@@ -115,7 +115,7 @@ op_future! {
     struct Write<'fd> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::Write` before completion, leaking buffer",
+        buf: Vec<u8>, "dropped `a10::io::Write` before completion, leaking buffer",
     },
     |n| Ok(n as usize),
     extract: |this, n| -> (Vec<u8>, usize) {
