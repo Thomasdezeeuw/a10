@@ -2,6 +2,7 @@
 
 #![feature(once_cell)]
 
+use std::any::Any;
 use std::env::temp_dir;
 use std::fs::remove_file;
 use std::future::{Future, IntoFuture};
@@ -48,14 +49,8 @@ fn test_queue() -> SubmissionQueue {
             match res {
                 Ok(()) => (),
                 Err(err) => {
-                    let msg = match err.downcast_ref::<&'static str>() {
-                        Some(s) => *s,
-                        None => match err.downcast_ref::<String>() {
-                            Some(s) => &**s,
-                            None => "<unknown>",
-                        },
-                    };
-                    let msg = format!("Polling thread panicked: {}", msg);
+                    let msg = panic_message(&err);
+                    let msg = format!("Polling thread panicked: {msg}");
 
                     // Bypass the buffered output and write directly to standard
                     // error.
@@ -422,7 +417,15 @@ struct Defer<F: FnOnce()> {
 
 impl<F: FnOnce()> Drop for Defer<F> {
     fn drop(&mut self) {
-        (self.f.take().unwrap())()
+        let f = self.f.take().unwrap();
+        if thread::panicking() {
+            if let Err(err) = panic::catch_unwind(panic::AssertUnwindSafe(f)) {
+                let msg = panic_message(&err);
+                eprintln!("panic while already panicking: {msg}");
+            }
+        } else {
+            f()
+        }
     }
 }
 
@@ -430,6 +433,16 @@ fn remove_test_file(path: &Path) {
     match remove_file(path) {
         Ok(()) => {}
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
-        Err(err) => panic!("unexpected error removing test file: {}", err),
+        Err(err) => panic!("unexpected error removing test file: {err}"),
+    }
+}
+
+fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
+    match err.downcast_ref::<&'static str>() {
+        Some(s) => *s,
+        None => match err.downcast_ref::<String>() {
+            Some(s) => &**s,
+            None => "<unknown>",
+        },
     }
 }
