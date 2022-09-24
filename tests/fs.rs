@@ -4,7 +4,7 @@
 
 use std::env::temp_dir;
 use std::fs::remove_file;
-use std::future::Future;
+use std::future::{Future, IntoFuture};
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -367,10 +367,10 @@ impl Waker {
     /// progress.
     fn block_on<Fut>(self: &Arc<Waker>, future: Fut) -> Fut::Output
     where
-        Fut: Future,
+        Fut: IntoFuture,
     {
         // Pin the `Future` to stack.
-        let mut future = future;
+        let mut future = future.into_future();
         let mut future = unsafe { Pin::new_unchecked(&mut future) };
 
         let task_waker = task::Waker::from(self.clone());

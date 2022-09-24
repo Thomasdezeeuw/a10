@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{env, io, str};
@@ -39,12 +39,14 @@ fn main() -> io::Result<()> {
 }
 
 /// Replace this with your favorite [`Future`] runtime.
-fn block_on<Fut>(mut fut: Fut) -> Fut::Output
+fn block_on<Fut>(fut: Fut) -> Fut::Output
 where
-    Fut: Future + Unpin,
+    Fut: IntoFuture,
+    Fut::IntoFuture: Unpin,
 {
     let waker = noop_waker();
     let mut ctx = task::Context::from_waker(&waker);
+    let mut fut = fut.into_future();
     let mut fut = Pin::new(&mut fut);
     loop {
         if let Poll::Ready(result) = fut.as_mut().poll(&mut ctx) {
