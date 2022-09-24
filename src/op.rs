@@ -334,6 +334,7 @@ impl Submission {
         self.inner.opcode = OperationCode::Close as u8;
         self.inner.fd = fd;
         if !want_callback {
+            self.inner.flags = libc::IOSQE_CQE_SKIP_SUCCESS;
             self.inner.user_data = 0; // Don't want a callback.
         }
     }
