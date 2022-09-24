@@ -324,13 +324,13 @@ fn sync_data() {
 
 #[test]
 fn metadata_small() {
-    let created = SystemTime::UNIX_EPOCH + Duration::new(1626523515, 19551854);
+    let created = SystemTime::UNIX_EPOCH + Duration::new(1664033209, 759488874);
     test_metadata(&LOREM_IPSUM_5, created)
 }
 
 #[test]
 fn metadata_big() {
-    let created = SystemTime::UNIX_EPOCH + Duration::new(1626602057, 795679901);
+    let created = SystemTime::UNIX_EPOCH + Duration::new(1664033209, 759488874);
     test_metadata(&LOREM_IPSUM_50, created)
 }
 
@@ -352,7 +352,7 @@ fn test_metadata(test_file: &TestFile, created: SystemTime) {
     assert!(permissions.owner_can_write());
     assert!(!permissions.owner_can_execute());
     assert!(permissions.group_can_read());
-    assert!(permissions.group_can_write());
+    assert!(!permissions.group_can_write());
     assert!(!permissions.group_can_execute());
     assert!(permissions.others_can_read());
     assert!(!permissions.others_can_write());
