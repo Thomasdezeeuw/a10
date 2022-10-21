@@ -25,6 +25,11 @@ pub trait ReadBuf: 'static {
     /// such as `[0u8; 4096]`. Returning a slice with `MaybeUninit` to such as
     /// type would be unsound as it would allow the caller to write unitialised
     /// bytes without using `unsafe`.
+    ///
+    /// # Notes
+    ///
+    /// Although a `usize` is used in the function signature io_uring actually
+    /// uses a `u32` (similar to `iovec`), so the length will truncated.
     unsafe fn as_ptr(&mut self) -> (*mut u8, usize);
 
     /// Mark `n` bytes as initialised.
