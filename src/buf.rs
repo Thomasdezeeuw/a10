@@ -71,3 +71,15 @@ impl<const N: usize> WriteBuf for [u8; N] {
         self.as_slice()
     }
 }
+
+impl WriteBuf for &'static [u8] {
+    unsafe fn as_slice(&self) -> &[u8] {
+        self
+    }
+}
+
+impl WriteBuf for &'static str {
+    unsafe fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
