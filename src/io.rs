@@ -9,6 +9,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, result, slice};
 
+use crate::buf::ReadBuf;
 use crate::op::{op_future, SharedOperationState, NO_OFFSET};
 use crate::{AsyncFd, QueueFull};
 
@@ -23,7 +24,10 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read<'fd>(&'fd self, buf: Vec<u8>) -> result::Result<Read<'fd>, QueueFull> {
+    pub fn read<'fd, B>(&'fd self, buf: B) -> result::Result<Read<'fd, B>, QueueFull>
+    where
+        B: ReadBuf,
+    {
         self.read_at(buf, NO_OFFSET)
     }
 
@@ -37,13 +41,17 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read_at<'fd>(
+    pub fn read_at<'fd, B>(
         &'fd self,
-        mut buf: Vec<u8>,
+        mut buf: B,
         offset: u64,
-    ) -> result::Result<Read<'fd>, QueueFull> {
+    ) -> result::Result<Read<'fd, B>, QueueFull>
+    where
+        B: ReadBuf,
+    {
         self.state.start(|submission| unsafe {
-            submission.read_at(self.fd, buf.spare_capacity_mut(), offset);
+            let (ptr, size) = buf.as_ptr();
+            submission.read_at(self.fd, ptr, size, offset);
         })?;
 
         Ok(Read {
@@ -96,15 +104,15 @@ impl AsyncFd {
 
 // Read.
 op_future! {
-    fn AsyncFd::read -> Vec<u8>,
-    struct Read<'fd> {
+    fn AsyncFd::read -> B,
+    struct Read<'fd, B: ReadBuf> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::io::Read` before completion, leaking buffer",
+        buf: B, "dropped `a10::io::Read` before completion, leaking buffer",
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();
-        unsafe { buf.set_len(buf.len() + n as usize) };
+        unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
 }
