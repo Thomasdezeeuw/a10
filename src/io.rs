@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, result, slice};
 
-use crate::buf::ReadBuf;
+use crate::buf::{ReadBuf, WriteBuf};
 use crate::op::{op_future, SharedOperationState, NO_OFFSET};
 use crate::{AsyncFd, QueueFull};
 
@@ -61,20 +61,26 @@ impl AsyncFd {
     }
 
     /// Write `buf` to this file.
-    pub fn write<'fd>(&'fd self, buf: Vec<u8>) -> result::Result<Write<'fd>, QueueFull> {
+    pub fn write<'fd, B>(&'fd self, buf: B) -> result::Result<Write<'fd, B>, QueueFull>
+    where
+        B: WriteBuf,
+    {
         self.write_at(buf, NO_OFFSET)
     }
 
     /// Write `buf` to this file.
     ///
     /// The current file cursor is not affected by this function.
-    pub fn write_at<'fd>(
+    pub fn write_at<'fd, B>(
         &'fd self,
-        buf: Vec<u8>,
+        buf: B,
         offset: u64,
-    ) -> result::Result<Write<'fd>, QueueFull> {
+    ) -> result::Result<Write<'fd, B>, QueueFull>
+    where
+        B: WriteBuf,
+    {
         self.state
-            .start(|submission| unsafe { submission.write_at(self.fd, &buf, offset) })?;
+            .start(|submission| unsafe { submission.write_at(self.fd, buf.as_slice(), offset) })?;
 
         Ok(Write {
             buf: Some(UnsafeCell::new(buf)),
@@ -120,13 +126,13 @@ op_future! {
 // Write.
 op_future! {
     fn AsyncFd::write -> usize,
-    struct Write<'fd> {
+    struct Write<'fd, B: WriteBuf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::io::Write` before completion, leaking buffer",
+        buf: B, "dropped `a10::io::Write` before completion, leaking buffer",
     },
     |n| Ok(n as usize),
-    extract: |this, n| -> (Vec<u8>, usize) {
+    extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
     }
