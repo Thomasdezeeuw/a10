@@ -255,11 +255,11 @@ impl Submission {
         };
     }
 
-    pub(crate) unsafe fn send(&mut self, fd: RawFd, buf: &mut [u8], flags: libc::c_int) {
+    pub(crate) unsafe fn send(&mut self, fd: RawFd, buf: &[u8], flags: libc::c_int) {
         self.inner.opcode = OperationCode::Send as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: buf.as_mut_ptr() as _,
+            addr: buf.as_ptr() as _,
         };
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: flags as _,
