@@ -507,7 +507,7 @@ macro_rules! op_future {
         // File type and function name.
         fn $f: ident :: $fn: ident -> $result: ty,
         // Future structure.
-        struct $name: ident < $lifetime: lifetime > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             // Field passed to io_uring, must be an `Option`. Syntax is the same
             // a struct definition, with `$drop_msg` being the message logged
@@ -519,11 +519,50 @@ macro_rules! op_future {
         // Mapping function for `SharedOperationState::poll` result.
         |$self: ident, $arg: ident| $map_result: expr,
         // Mapping function for `Extractor` implementation.
-        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
+        extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block
+    ) => {
+        op_future!{
+            fn $f::$fn -> $result,
+            struct $name<$lifetime $(, $generic: $($trait)? )*> {
+                $(
+                $(#[$field_doc])*
+                $field: $value, $drop_msg,
+                )?
+            },
+            |$self, $arg| $map_result,
+        }
+
+        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
+
+        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)*>> {
+            type Output = std::io::Result<$extract_result>;
+
+            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                match self.fut.fd.state.poll(ctx) {
+                    std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
+                        let $extract_self = &mut self.fut;
+                        $extract_map
+                    }),
+                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                    std::task::Poll::Pending => std::task::Poll::Pending,
+                }
+            }
+        }
+    };
+    // Version without `Extractor` implementation.
+    (
+        fn $f: ident :: $fn: ident -> $result: ty,
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+            $(
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty, $drop_msg: expr,
+            )?
+        },
+        |$self: ident, $arg: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
-        pub struct $name<$lifetime> {
+        pub struct $name<$lifetime $(, $generic)*> {
             $(
             $(#[ $field_doc ])*
             $field: std::option::Option<std::cell::UnsafeCell<$value>>,
@@ -531,7 +570,7 @@ macro_rules! op_future {
             fd: &$lifetime $f,
         }
 
-        impl<$lifetime> std::future::Future for $name<$lifetime> {
+        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
             type Output = std::io::Result<$result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -546,26 +585,7 @@ macro_rules! op_future {
             }
         }
 
-        $(
-        impl<$lifetime> $crate::Extract for $name<$lifetime> {}
-
-        impl<$lifetime> std::future::Future for $crate::extract::Extractor<$name<$lifetime>> {
-            type Output = std::io::Result<$extract_result>;
-
-            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                match self.fut.fd.state.poll(ctx) {
-                    std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
-                        let $extract_self = &mut self.fut;
-                        $extract_map
-                    }),
-                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
-                    std::task::Poll::Pending => std::task::Poll::Pending,
-                }
-            }
-        }
-        )?
-
-        impl<$lifetime> std::ops::Drop for $name<$lifetime> {
+        impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
                 $(
                 if let Some($field) = std::mem::take(&mut self.$field) {
@@ -579,25 +599,25 @@ macro_rules! op_future {
     // Version that doesn't need `self` (this) in `$map_result`.
     (
         fn $f: ident :: $fn: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty, $drop_msg: expr,
             )?
         },
-        |$n: ident| $map_result: expr, // Only difference: 1 argument.
+        |$arg: ident| $map_result: expr, // Only difference: 1 argument.
         $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
     ) => {
         op_future!{
-            fn $f :: $fn -> $result,
-            struct $name<$lifetime> {
+            fn $f::$fn -> $result,
+            struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
-                $(#[ $field_doc ])*
+                $(#[$field_doc])*
                 $field: $value, $drop_msg,
                 )?
             },
-            |_unused_this, $n| $map_result,
-            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )*
+            |_unused_this, $arg| $map_result,
+            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )?
         }
     };
 }
