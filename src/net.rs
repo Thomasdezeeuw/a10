@@ -8,6 +8,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+use crate::buf::WriteBuf;
 use crate::op::{op_future, SharedOperationState};
 use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
 
@@ -49,19 +50,25 @@ impl AsyncFd {
     }
 
     /// Sends data on the socket to a connected peer.
-    pub fn send<'fd>(&'fd self, buf: Vec<u8>) -> Result<Send<'fd>, QueueFull> {
+    pub fn send<'fd, B>(&'fd self, buf: B) -> Result<Send<'fd, B>, QueueFull>
+    where
+        B: WriteBuf,
+    {
         self.send_with_flags(buf, 0)
     }
 
     /// Identical to [`AsyncFd::send`] but allows for specification of arbitrary
     /// flags to the underlying `send` call.
-    pub fn send_with_flags<'fd>(
+    pub fn send_with_flags<'fd, B>(
         &'fd self,
-        mut buf: Vec<u8>,
+        buf: B,
         flags: libc::c_int,
-    ) -> Result<Send<'fd>, QueueFull> {
+    ) -> Result<Send<'fd, B>, QueueFull>
+    where
+        B: WriteBuf,
+    {
         self.state.start(|submission| unsafe {
-            submission.send(self.fd, &mut buf, flags);
+            submission.send(self.fd, buf.as_slice(), flags);
         })?;
 
         Ok(Send {
@@ -164,13 +171,13 @@ op_future! {
 // Send.
 op_future! {
     fn AsyncFd::send -> usize,
-    struct Send<'fd> {
+    struct Send<'fd, B: WriteBuf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::net::Send` before completion, leaking buffer",
+        buf: B, "dropped `a10::net::Send` before completion, leaking buffer",
     },
     |n| Ok(n as usize),
-    extract: |this, n| -> (Vec<u8>, usize) {
+    extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
     }

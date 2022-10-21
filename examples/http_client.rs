@@ -40,7 +40,7 @@ fn main() -> io::Result<()> {
     block_on(connect)?;
 
     // Start aysynchronously sending a HTTP `GET /` request to the socket.
-    let send = socket.send(HTTP_REQUEST.into())?;
+    let send = socket.send(HTTP_REQUEST)?;
     ring.poll(None)?;
     block_on(send)?;
 
