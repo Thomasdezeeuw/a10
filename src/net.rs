@@ -8,7 +8,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::buf::WriteBuf;
+use crate::buf::{ReadBuf, WriteBuf};
 use crate::op::{op_future, SharedOperationState};
 use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
 
@@ -85,19 +85,26 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn recv<'fd>(&'fd self, buf: Vec<u8>) -> Result<Recv<'fd>, QueueFull> {
+    pub fn recv<'fd, B>(&'fd self, buf: B) -> Result<Recv<'fd, B>, QueueFull>
+    where
+        B: ReadBuf,
+    {
         self.recv_with_flags(buf, 0)
     }
 
     /// Identical to [`AsyncFd::recv`] but allows for specification of arbitrary
     /// flags to the underlying `recv` call.
-    pub fn recv_with_flags<'fd>(
+    pub fn recv_with_flags<'fd, B>(
         &'fd self,
-        mut buf: Vec<u8>,
+        mut buf: B,
         flags: libc::c_int,
-    ) -> Result<Recv<'fd>, QueueFull> {
+    ) -> Result<Recv<'fd, B>, QueueFull>
+    where
+        B: ReadBuf,
+    {
         self.state.start(|submission| unsafe {
-            submission.recv(self.fd, buf.spare_capacity_mut(), flags);
+            let (ptr, size) = buf.as_ptr();
+            submission.recv(self.fd, ptr, size, flags);
         })?;
 
         Ok(Recv {
@@ -185,15 +192,15 @@ op_future! {
 
 // Recv.
 op_future! {
-    fn AsyncFd::recv -> Vec<u8>,
-    struct Recv<'fd> {
+    fn AsyncFd::recv -> B,
+    struct Recv<'fd, B: ReadBuf> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: Vec<u8>, "dropped `a10::net::Recv` before completion, leaking buffer",
+        buf: B, "dropped `a10::net::Recv` before completion, leaking buffer",
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();
-        unsafe { buf.set_len(buf.len() + n as usize) };
+        unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
 }

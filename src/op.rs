@@ -267,21 +267,14 @@ impl Submission {
         self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
     }
 
-    pub(crate) unsafe fn recv(
-        &mut self,
-        fd: RawFd,
-        buf: &mut [MaybeUninit<u8>],
-        flags: libc::c_int,
-    ) {
+    pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, size: usize, flags: libc::c_int) {
         self.inner.opcode = OperationCode::Recv as u8;
         self.inner.fd = fd;
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: buf.as_mut_ptr() as _,
-        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: flags as _,
         };
-        self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
+        self.inner.len = min(size, u32::MAX as usize) as u32;
     }
 
     /// Create a accept submission starting.
