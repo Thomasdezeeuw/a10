@@ -202,14 +202,12 @@ impl Submission {
     /// Create a read submission starting at `offset`.
     ///
     /// Avaialable since Linux kernel 5.6.
-    pub(crate) unsafe fn read_at(&mut self, fd: RawFd, buf: &mut [MaybeUninit<u8>], offset: u64) {
+    pub(crate) unsafe fn read_at(&mut self, fd: RawFd, ptr: *mut u8, size: usize, offset: u64) {
         self.inner.opcode = OperationCode::Read as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: buf.as_mut_ptr() as _,
-        };
-        self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
+        self.inner.len = min(size, u32::MAX as usize) as u32;
     }
 
     /// Create a write submission starting at `offset`.
