@@ -259,12 +259,6 @@ impl WriteBuf for Vec<u8> {
     }
 }
 
-impl<const N: usize> WriteBuf for [u8; N] {
-    unsafe fn as_slice(&self) -> &[u8] {
-        self.as_slice()
-    }
-}
-
 impl WriteBuf for &'static [u8] {
     unsafe fn as_slice(&self) -> &[u8] {
         self
