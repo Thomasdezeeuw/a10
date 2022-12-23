@@ -213,14 +213,12 @@ impl Submission {
     /// Create a write submission starting at `offset`.
     ///
     /// Avaialable since Linux kernel 5.6.
-    pub(crate) unsafe fn write_at(&mut self, fd: RawFd, buf: &[u8], offset: u64) {
+    pub(crate) unsafe fn write_at(&mut self, fd: RawFd, ptr: *const u8, len: u32, offset: u64) {
         self.inner.opcode = OperationCode::Write as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: buf.as_ptr() as _,
-        };
-        self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
+        self.inner.len = len;
     }
 
     pub(crate) unsafe fn socket(
@@ -255,16 +253,14 @@ impl Submission {
         };
     }
 
-    pub(crate) unsafe fn send(&mut self, fd: RawFd, buf: &[u8], flags: libc::c_int) {
+    pub(crate) unsafe fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, flags: libc::c_int) {
         self.inner.opcode = OperationCode::Send as u8;
         self.inner.fd = fd;
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: buf.as_ptr() as _,
-        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: flags as _,
         };
-        self.inner.len = min(buf.len(), u32::MAX as usize) as u32;
+        self.inner.len = len;
     }
 
     pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, size: usize, flags: libc::c_int) {

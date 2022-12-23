@@ -68,7 +68,8 @@ impl AsyncFd {
         B: WriteBuf,
     {
         self.state.start(|submission| unsafe {
-            submission.send(self.fd, buf.as_slice(), flags);
+            let (ptr, len) = buf.parts();
+            submission.send(self.fd, ptr, len, flags);
         })?;
 
         Ok(Send {

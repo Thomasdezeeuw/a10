@@ -78,8 +78,10 @@ impl AsyncFd {
     where
         B: WriteBuf,
     {
-        self.state
-            .start(|submission| unsafe { submission.write_at(self.fd, buf.as_slice(), offset) })?;
+        self.state.start(|submission| unsafe {
+            let (ptr, len) = buf.parts();
+            submission.write_at(self.fd, ptr, len, offset)
+        })?;
 
         Ok(Write {
             buf: Some(UnsafeCell::new(buf)),
@@ -248,25 +250,60 @@ impl ReadBuf for Vec<u8> {
 }
 
 /// Trait that defines the behaviour of buffers used in writing.
-pub trait WriteBuf: 'static {
-    /// Returns the bytes to write.
-    unsafe fn as_slice(&self) -> &[u8];
+///
+/// # Safety
+///
+/// Unlike normal buffers the buffer implementations for A10 have additional
+/// requirements.
+///
+/// If the operation (that uses this buffer) is not polled to completion, i.e.
+/// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
+/// access to the buffer and will still attempt to read from it. This means that
+/// we must ensure that we can leak the buffer in such a way that the kernel
+/// will not read memory we don't have access to any more. This makes, for
+/// example, stack based buffers unfit to implement `WriteBuf`. As if they were
+/// to be leaked the kernel will read part of your stack (where the buffer used
+/// to be)! This would be a huge security risk.
+pub unsafe trait WriteBuf {
+    /// Returns the reabable buffer as pointer and length parts.
+    ///
+    /// # Safety
+    ///
+    /// The implementation must ensure that the pointer is valid, i.e. not null
+    /// and pointing to memory owned by the buffer. Furthermore it must ensure
+    /// that the returned length is, in combination with the pointer, valid. In
+    /// other words the memory the pointer and length are pointing to must be a
+    /// valid memory address and owned by the buffer.
+    ///
+    /// # Notes
+    ///
+    /// Most Rust API use a `usize` for length, but io_uring uses `u32`, hence
+    /// we do also.
+    unsafe fn parts(&self) -> (*const u8, u32);
 }
 
-impl WriteBuf for Vec<u8> {
-    unsafe fn as_slice(&self) -> &[u8] {
-        self.as_slice()
+// SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
+// alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
+// will also be leaked.
+unsafe impl WriteBuf for Vec<u8> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let slice = self.as_slice();
+        (slice.as_ptr().cast(), slice.len() as u32)
     }
 }
 
-impl WriteBuf for &'static [u8] {
-    unsafe fn as_slice(&self) -> &[u8] {
-        self
+// SAFETY: because the reference has a `'static` lifetime we know the bytes
+// can't be deallocated, so it's safe to implement `WriteBuf`.
+unsafe impl WriteBuf for &'static [u8] {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_ptr(), self.len() as u32)
     }
 }
 
-impl WriteBuf for &'static str {
-    unsafe fn as_slice(&self) -> &[u8] {
-        self.as_bytes()
+// SAFETY: because the reference has a `'static` lifetime we know the bytes
+// can't be deallocated, so it's safe to implement `WriteBuf`.
+unsafe impl WriteBuf for &'static str {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_bytes().as_ptr(), self.len() as u32)
     }
 }
