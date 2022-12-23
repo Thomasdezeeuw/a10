@@ -18,41 +18,7 @@ struct OperationState {
     /// Submission queue to submit operations to.
     sq: SubmissionQueue,
     /// Queued operation.
-    queued: QueueOperation,
-}
-
-/// State of a queue operation.
-#[derive(Debug)]
-struct QueueOperation {
-    /// Result of the operation.
-    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
-    // some of the error number to represent `NotStarted` and `InProgress`, but
-    // on 64bit padding is added and we end up with 24 bytes any way, so not
-    // point at the moment.
-    result: OperationResult,
-    /// Waker to wake when the operation is done.
-    waker: Option<task::Waker>,
-}
-
-/// Result of an operation.
-#[derive(Copy, Clone, Debug)]
-enum OperationResult {
-    /// No operation queued.
-    NotStarted,
-    /// Operation is in progress, waiting on result.
-    InProgress,
-    /// Operation done.
-    ///
-    /// Value is the result from the operation; negative is a (negative) errno,
-    /// positive a successful result.
-    Done(i32),
-}
-
-#[test]
-fn size_assertion() {
-    assert_eq!(std::mem::size_of::<OperationState>(), 32);
-    assert_eq!(std::mem::size_of::<QueueOperation>(), 24);
-    assert_eq!(std::mem::size_of::<OperationResult>(), 8);
+    queued: QueuedOperation,
 }
 
 impl SharedOperationState {
@@ -61,7 +27,7 @@ impl SharedOperationState {
         SharedOperationState {
             inner: Arc::new(Mutex::new(OperationState {
                 sq,
-                queued: QueueOperation {
+                queued: QueuedOperation {
                     result: OperationResult::NotStarted,
                     waker: None,
                 },
@@ -160,6 +126,33 @@ impl fmt::Debug for SharedOperationState {
             .field("queued", &self.inner.lock().unwrap().queued)
             .finish()
     }
+}
+
+/// State of a queue operation.
+#[derive(Debug)]
+pub(crate) struct QueuedOperation {
+    /// Result of the operation.
+    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
+    // some of the error number to represent `NotStarted` and `InProgress`, but
+    // on 64bit padding is added and we end up with 24 bytes any way, so not
+    // point at the moment.
+    result: OperationResult,
+    /// Waker to wake when the operation is done.
+    waker: Option<task::Waker>,
+}
+
+/// Result of an operation.
+#[derive(Copy, Clone, Debug)]
+enum OperationResult {
+    /// No operation queued.
+    NotStarted,
+    /// Operation is in progress, waiting on result.
+    InProgress,
+    /// Operation done.
+    ///
+    /// Value is the result from the operation; negative is a (negative) errno,
+    /// positive a successful result.
+    Done(i32),
 }
 
 /// Submission event.
@@ -629,3 +622,12 @@ macro_rules! op_future {
 }
 
 pub(crate) use op_future;
+
+#[test]
+fn size_assertion() {
+    assert_eq!(std::mem::size_of::<SharedOperationState>(), 8);
+    assert_eq!(std::mem::size_of::<OperationState>(), 32);
+    assert_eq!(std::mem::size_of::<QueuedOperation>(), 24);
+    assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 24);
+    assert_eq!(std::mem::size_of::<OperationResult>(), 8);
+}
