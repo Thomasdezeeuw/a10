@@ -4,7 +4,7 @@ use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
-use std::{fmt, io, ptr};
+use std::{fmt, io};
 
 use crate::{libc, QueueFull, SubmissionQueue};
 
@@ -533,7 +533,7 @@ macro_rules! op_future {
             }
         }
     };
-    // Version without `Extractor` implementation.
+    // Base version (without any additional implementations).
     (
         fn $f: ident :: $fn: ident -> $result: ty,
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
