@@ -1,23 +1,18 @@
-//! Tests for the filesystem types
+//! Tests for the filesystem operations.
 
 #![feature(once_cell)]
 
-use std::any::Any;
 use std::env::temp_dir;
 use std::fs::remove_file;
-use std::future::{Future, IntoFuture};
 use std::path::Path;
-use std::pin::Pin;
-use std::sync::{Arc, LazyLock};
-use std::task::{self, Poll};
-use std::thread::{self, Thread};
 use std::time::{Duration, SystemTime};
-use std::{io, panic, process, str};
+use std::{io, panic, str};
 
 use a10::fs::OpenOptions;
-use a10::{Extract, Ring, SubmissionQueue};
+use a10::{Extract, SubmissionQueue};
 
-const PAGE_SIZE: usize = 4096;
+mod util;
+use util::{defer, test_queue, Waker, PAGE_SIZE};
 
 struct TestFile {
     path: &'static str,
@@ -33,42 +28,6 @@ static LOREM_IPSUM_50: TestFile = TestFile {
     path: "tests/data/lorem_ipsum_50.txt",
     content: include_bytes!("data/lorem_ipsum_50.txt"),
 };
-
-/// Start a single background thread for polling and return the submission
-/// queue.
-/// Create a [`Ring`] for testing.
-fn test_queue() -> SubmissionQueue {
-    static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
-        let mut ring = Ring::new(128).expect("failed to create test ring");
-        let sq = ring.submission_queue();
-        thread::spawn(move || {
-            let res = panic::catch_unwind(move || loop {
-                ring.poll(None).expect("failed to poll ring");
-            });
-            match res {
-                Ok(()) => (),
-                Err(err) => {
-                    let msg = panic_message(&err);
-                    let msg = format!("Polling thread panicked: {msg}");
-
-                    // Bypass the buffered output and write directly to standard
-                    // error.
-                    let stderr = io::stderr();
-                    let guard = stderr.lock();
-                    let _ =
-                        unsafe { libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len()) };
-                    drop(guard);
-
-                    // Since all the tests depend on this thread we'll abort the
-                    // process since otherwise they'll wait for ever.
-                    process::abort()
-                }
-            }
-        });
-        sq
-    });
-    TEST_SQ.clone()
-}
 
 #[test]
 fn open_extractor() {
@@ -361,87 +320,10 @@ fn test_metadata(test_file: &TestFile, created: SystemTime) {
     assert_eq!(metadata.created(), created);
 }
 
-/// Waker that blocks the current thread.
-struct Waker {
-    handle: Thread,
-}
-
-impl task::Wake for Waker {
-    fn wake(self: Arc<Self>) {
-        self.handle.unpark();
-    }
-
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.handle.unpark();
-    }
-}
-
-impl Waker {
-    /// Create a new `Waker`.
-    fn new() -> Arc<Waker> {
-        Arc::new(Waker {
-            handle: thread::current(),
-        })
-    }
-
-    /// Poll the `future` until completion, blocking when it can't make
-    /// progress.
-    fn block_on<Fut>(self: &Arc<Waker>, future: Fut) -> Fut::Output
-    where
-        Fut: IntoFuture,
-    {
-        // Pin the `Future` to stack.
-        let mut future = future.into_future();
-        let mut future = unsafe { Pin::new_unchecked(&mut future) };
-
-        let task_waker = task::Waker::from(self.clone());
-        let mut task_ctx = task::Context::from_waker(&task_waker);
-        loop {
-            match Future::poll(future.as_mut(), &mut task_ctx) {
-                Poll::Ready(res) => return res,
-                // The waking implementation will `unpark` us.
-                Poll::Pending => thread::park(),
-            }
-        }
-    }
-}
-
-fn defer<F: FnOnce()>(f: F) -> Defer<F> {
-    Defer { f: Some(f) }
-}
-
-struct Defer<F: FnOnce()> {
-    f: Option<F>,
-}
-
-impl<F: FnOnce()> Drop for Defer<F> {
-    fn drop(&mut self) {
-        let f = self.f.take().unwrap();
-        if thread::panicking() {
-            if let Err(err) = panic::catch_unwind(panic::AssertUnwindSafe(f)) {
-                let msg = panic_message(&err);
-                eprintln!("panic while already panicking: {msg}");
-            }
-        } else {
-            f()
-        }
-    }
-}
-
 fn remove_test_file(path: &Path) {
     match remove_file(path) {
         Ok(()) => {}
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => panic!("unexpected error removing test file: {err}"),
-    }
-}
-
-fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
-    match err.downcast_ref::<&'static str>() {
-        Some(s) => *s,
-        None => match err.downcast_ref::<String>() {
-            Some(s) => &**s,
-            None => "<unknown>",
-        },
     }
 }
