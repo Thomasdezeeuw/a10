@@ -503,7 +503,7 @@ macro_rules! op_future {
         // Mapping function for `SharedOperationState::poll` result.
         |$self: ident, $arg: ident| $map_result: expr,
         // Mapping function for `Extractor` implementation.
-        extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block
+        extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
         op_future!{
             fn $f::$fn -> $result,
@@ -590,7 +590,7 @@ macro_rules! op_future {
             )?
         },
         |$arg: ident| $map_result: expr, // Only difference: 1 argument.
-        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block )?
+        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
         op_future!{
             fn $f::$fn -> $result,
@@ -601,7 +601,7 @@ macro_rules! op_future {
                 )?
             },
             |_unused_this, $arg| $map_result,
-            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map )?
+            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map, )?
         }
     };
 }

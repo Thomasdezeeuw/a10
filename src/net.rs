@@ -173,7 +173,7 @@ op_future! {
     extract: |this, res| -> Box<libc::sockaddr_storage> {
         debug_assert!(res == 0);
         Ok(this.address.take().unwrap().into_inner())
-    }
+    },
 }
 
 // Send.
@@ -188,7 +188,7 @@ op_future! {
     extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
-    }
+    },
 }
 
 // Recv.

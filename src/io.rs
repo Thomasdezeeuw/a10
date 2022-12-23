@@ -136,7 +136,7 @@ op_future! {
     extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
-    }
+    },
 }
 
 /// [`Future`] to close a [`AsyncFd`]
