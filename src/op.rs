@@ -163,9 +163,7 @@ impl Submission {
     pub(crate) fn reset(&mut self) {
         debug_assert!(OperationCode::Nop as u8 == 0);
         unsafe {
-            ptr::addr_of_mut!(self.inner)
-                .cast::<libc::io_uring_sqe>()
-                .write_bytes(0, 1);
+            (&mut self.inner as *mut libc::io_uring_sqe).write_bytes(0, 1);
         }
     }
 

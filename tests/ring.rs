@@ -15,9 +15,7 @@ fn polling_timeout() -> io::Result<()> {
     let elapsed = start.elapsed();
     assert!(
         elapsed >= TIMEOUT && elapsed <= (TIMEOUT + MARGIN),
-        "polling elapsed: {:?}, expected: {:?}",
-        elapsed,
-        TIMEOUT
+        "polling elapsed: {elapsed:?}, expected: {TIMEOUT:?}",
     );
     Ok(())
 }
