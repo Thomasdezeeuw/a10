@@ -49,8 +49,8 @@ impl AsyncFd {
         B: ReadBuf,
     {
         self.state.start(|submission| unsafe {
-            let (ptr, size) = buf.as_ptr();
-            submission.read_at(self.fd, ptr, size, offset);
+            let (ptr, len) = buf.parts();
+            submission.read_at(self.fd, ptr, len, offset);
         })?;
 
         Ok(Read {
@@ -196,8 +196,22 @@ impl<'a> fmt::Debug for MaybeUninitSlice<'a> {
 }
 
 /// Trait that defines the behaviour of buffers used in reading.
-pub trait ReadBuf: 'static {
-    /// Returns the writable buffer as pointer and length.
+///
+/// # Safety
+///
+/// Unlike normal buffers the buffer implementations for A10 have additional
+/// requirements.
+///
+/// If the operation (that uses this buffer) is not polled to completion, i.e.
+/// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
+/// access to the buffer and will still attempt to write into it. This means
+/// that we must ensure that we can leak the buffer in such a way that the
+/// kernel will not write into memory we don't have access to any more. This
+/// makes, for example, stack based buffers unfit to implement `ReadBuf`.
+/// Because if they were to be leaked the kernel will overwrite part of your
+/// stack (where the buffer used to be)!
+pub unsafe trait ReadBuf: 'static {
+    /// Returns the writable buffer as pointer and length parts.
     ///
     /// # Safety
     ///
@@ -206,7 +220,7 @@ pub trait ReadBuf: 'static {
     /// is UB.
     ///
     /// The implementation must ensure that the pointer is valid, i.e. not null
-    /// and pointign to memoty owned by the buffer. Furthermore it must ensure
+    /// and pointing to memory owned by the buffer. Furthermore it must ensure
     /// that the returned length is, in combination with the pointer, valid. In
     /// other words the memory the pointer and length are pointing to must be a
     /// valid memory address and owned by the buffer.
@@ -216,16 +230,16 @@ pub trait ReadBuf: 'static {
     /// Returning a slice `&[u8]` would prevent us to use unitialised bytes,
     /// meaning we have to zero the buffer before usage, not ideal for
     /// performance. So, naturally you would suggest `&[MaybeUninit<u8>]`,
-    /// however that would prevent buffer types with only initialised bytes,
-    /// such as `[0u8; 4096]`. Returning a slice with `MaybeUninit` to such as
-    /// type would be unsound as it would allow the caller to write unitialised
-    /// bytes without using `unsafe`.
+    /// however that would prevent buffer types with only initialised bytes.
+    /// Returning a slice with `MaybeUninit` to such as type would be unsound as
+    /// it would allow the caller to write unitialised bytes without using
+    /// `unsafe`.
     ///
     /// # Notes
     ///
-    /// Although a `usize` is used in the function signature io_uring actually
-    /// uses a `u32` (similar to `iovec`), so the length will truncated.
-    unsafe fn as_ptr(&mut self) -> (*mut u8, usize);
+    /// Most Rust API use a `usize` for length, but io_uring uses `u32`, hence
+    /// we do also.
+    unsafe fn parts(&mut self) -> (*mut u8, u32);
 
     /// Mark `n` bytes as initialised.
     ///
@@ -238,10 +252,13 @@ pub trait ReadBuf: 'static {
 
 /// The implementation for `Vec<u8>` only uses the unused capacity, so any bytes
 /// already in the buffer will be untouched.
-impl ReadBuf for Vec<u8> {
-    unsafe fn as_ptr(&mut self) -> (*mut u8, usize) {
+// SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
+// alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
+// will also be leaked.
+unsafe impl ReadBuf for Vec<u8> {
+    unsafe fn parts(&mut self) -> (*mut u8, u32) {
         let slice = self.spare_capacity_mut();
-        (slice.as_mut_ptr().cast(), slice.len())
+        (slice.as_mut_ptr().cast(), slice.len() as u32)
     }
 
     unsafe fn set_init(&mut self, n: usize) {
@@ -261,9 +278,9 @@ impl ReadBuf for Vec<u8> {
 /// access to the buffer and will still attempt to read from it. This means that
 /// we must ensure that we can leak the buffer in such a way that the kernel
 /// will not read memory we don't have access to any more. This makes, for
-/// example, stack based buffers unfit to implement `WriteBuf`. As if they were
-/// to be leaked the kernel will read part of your stack (where the buffer used
-/// to be)! This would be a huge security risk.
+/// example, stack based buffers unfit to implement `WriteBuf`. Because if they
+/// were to be leaked the kernel will read part of your stack (where the buffer
+/// used to be)! This would be a huge security risk.
 pub unsafe trait WriteBuf {
     /// Returns the reabable buffer as pointer and length parts.
     ///

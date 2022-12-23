@@ -104,8 +104,8 @@ impl AsyncFd {
         B: ReadBuf,
     {
         self.state.start(|submission| unsafe {
-            let (ptr, size) = buf.as_ptr();
-            submission.recv(self.fd, ptr, size, flags);
+            let (ptr, len) = buf.parts();
+            submission.recv(self.fd, ptr, len, flags);
         })?;
 
         Ok(Recv {
