@@ -17,11 +17,24 @@ pub(crate) struct SharedOperationState {
 struct OperationState {
     /// Submission queue to submit operations to.
     sq: SubmissionQueue,
+    /// Queued operation.
+    queued: QueueOperation,
+}
+
+/// State of a queue operation.
+#[derive(Debug)]
+struct QueueOperation {
     /// Result of the operation.
+    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
+    // some of the error number to represent `NotStarted` and `InProgress`, but
+    // on 64bit padding is added and we end up with 24 bytes any way, so not
+    // point at the moment.
     result: OperationResult,
+    /// Waker to wake when the operation is done.
     waker: Option<task::Waker>,
 }
 
+/// Result of an operation.
 #[derive(Copy, Clone, Debug)]
 enum OperationResult {
     /// No operation queued.
@@ -35,14 +48,23 @@ enum OperationResult {
     Done(i32),
 }
 
+#[test]
+fn size_assertion() {
+    assert_eq!(std::mem::size_of::<OperationState>(), 32);
+    assert_eq!(std::mem::size_of::<QueueOperation>(), 24);
+    assert_eq!(std::mem::size_of::<OperationResult>(), 8);
+}
+
 impl SharedOperationState {
     /// Create a new `SharedOperationState`.
     pub(crate) fn new(sq: SubmissionQueue) -> SharedOperationState {
         SharedOperationState {
             inner: Arc::new(Mutex::new(OperationState {
                 sq,
-                result: OperationResult::NotStarted,
-                waker: None,
+                queued: QueueOperation {
+                    result: OperationResult::NotStarted,
+                    waker: None,
+                },
             })),
         }
     }
@@ -81,10 +103,10 @@ impl SharedOperationState {
                     let count = Arc::strong_count(&self.inner);
                     count == 2 || count == 3
                 });
-                assert!(matches!(this.result, OperationResult::NotStarted));
+                assert!(matches!(this.queued.result, OperationResult::NotStarted));
             }
         })?;
-        this.result = OperationResult::InProgress;
+        this.queued.result = OperationResult::InProgress;
         Ok(())
     }
 
@@ -98,9 +120,9 @@ impl SharedOperationState {
         let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
         debug_assert!(Arc::strong_count(&state) == 2);
         let mut state = state.lock().unwrap();
-        let res = replace(&mut state.result, OperationResult::Done(result));
+        let res = replace(&mut state.queued.result, OperationResult::Done(result));
         assert!(matches!(res, OperationResult::InProgress));
-        if let Some(waker) = &state.waker {
+        if let Some(waker) = &state.queued.waker {
             waker.wake_by_ref();
         }
     }
@@ -108,17 +130,17 @@ impl SharedOperationState {
     /// Poll the operation check if it's ready.
     pub(crate) fn poll(&self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
         let mut this = self.inner.lock().unwrap();
-        match this.result {
+        match this.queued.result {
             OperationResult::NotStarted => panic!("a10::OperationState in invalid state"),
             OperationResult::InProgress => {
                 let waker = ctx.waker();
-                if !matches!(&this.waker, Some(w) if w.will_wake(waker)) {
-                    this.waker = Some(waker.clone());
+                if !matches!(&this.queued.waker, Some(w) if w.will_wake(waker)) {
+                    this.queued.waker = Some(waker.clone());
                 }
                 Poll::Pending
             }
             OperationResult::Done(res) => {
-                this.result = OperationResult::NotStarted;
+                this.queued.result = OperationResult::NotStarted;
                 if res.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
                     // TODO: handle io_uring specific errors here, read CQE
@@ -135,7 +157,7 @@ impl SharedOperationState {
 impl fmt::Debug for SharedOperationState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SharedOperationState")
-            .field("result", &self.inner.lock().unwrap().result)
+            .field("queued", &self.inner.lock().unwrap().queued)
             .finish()
     }
 }
