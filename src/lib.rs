@@ -24,6 +24,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, ptr};
 
+mod bitmap;
 mod config;
 pub mod extract;
 pub mod fs;
