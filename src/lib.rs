@@ -20,7 +20,7 @@
 use std::marker::PhantomData;
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fmt, ptr};
 
@@ -36,10 +36,11 @@ mod op;
 mod sys;
 use sys as libc;
 
+use bitmap::AtomicBitMap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
-use op::{SharedOperationState, Submission};
+use op::{QueuedOperation, SharedOperationState, Submission};
 
 /// This type represents the user space side of an io_uring.
 ///
@@ -245,6 +246,15 @@ struct SharedSubmissionQueue {
     len: u32,
     /// Mask used to index into the `sqes` queue.
     ring_mask: u32,
+
+    /// Bitmap which can be used to create an index into `op_queue`.
+    op_indices: Box<AtomicBitMap>,
+    /// Queue of operations.
+    ///
+    /// This is the user space side of things in which we store the data to
+    /// store the result and `task::Waker`. It's used when enqueueing new
+    /// operations and when marking operations as complete (by the kernel).
+    op_queue: Box<[Mutex<Option<QueuedOperation>>]>,
 
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.

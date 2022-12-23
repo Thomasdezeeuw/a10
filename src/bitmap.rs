@@ -8,13 +8,22 @@ pub(crate) struct AtomicBitMap {
 }
 
 impl AtomicBitMap {
-    #[cfg(test)]
-    fn new_test(size: usize) -> Box<AtomicBitMap> {
+    /// Create a new `AtomicBitMap`.
+    pub(crate) fn new(entries: usize) -> Box<AtomicBitMap> {
+        let mut size = entries / usize::BITS as usize;
+        if (entries % usize::BITS as usize) != 0 {
+            size += 1;
+        }
         let mut vec = Vec::with_capacity(size);
         vec.resize_with(size, || AtomicUsize::new(0));
         // SAFETY: Due to the use of `repr(transparent)` on `AtomicBitMap` it
         // has the same layout as `[AtomicUsize]`.
         unsafe { Box::from_raw(Box::into_raw(vec.into_boxed_slice()) as _) }
+    }
+
+    /// Returns the number of indices the bitmap can manage.
+    pub(crate) fn capacity(&self) -> usize {
+        self.data.len() * usize::BITS as usize
     }
 
     /// Returns the index of the available slot, or `None`.
@@ -74,40 +83,40 @@ impl Index {
 
 #[test]
 fn setting_and_unsetting_one() {
-    setting_and_unsetting(1) // 64 slots.
+    setting_and_unsetting(64)
 }
 
 #[test]
 fn setting_and_unsetting_two() {
-    setting_and_unsetting(2) // 128 slots.
+    setting_and_unsetting(128)
 }
 
 #[test]
 fn setting_and_unsetting_three() {
-    setting_and_unsetting(3) // 192 slots.
+    setting_and_unsetting(192)
 }
 
 #[test]
 fn setting_and_unsetting_four() {
-    setting_and_unsetting(4) // 256 slots.
+    setting_and_unsetting(256)
 }
 
 #[test]
 fn setting_and_unsetting_eight() {
-    setting_and_unsetting(8) // 512 slots.
+    setting_and_unsetting(512)
 }
 
 #[test]
 fn setting_and_unsetting_sixteen() {
-    setting_and_unsetting(16) // 1024 slots.
+    setting_and_unsetting(1024)
 }
 
 #[cfg(test)]
-fn setting_and_unsetting(size: usize) {
-    let map = AtomicBitMap::new_test(size);
+fn setting_and_unsetting(entries: usize) {
+    let map = AtomicBitMap::new(entries);
 
     // Ask for all indices.
-    for n in 0..(size * usize::BITS as usize) {
+    for n in 0..entries {
         assert!(matches!(map.next_unset(), Some(Index(i)) if i == n));
     }
     // All bits should be set.
@@ -124,7 +133,7 @@ fn setting_and_unsetting(size: usize) {
     assert!(matches!(map.next_unset(), Some(Index(i)) if i == 63));
 
     // Unset all indices again.
-    for n in (0..(size * usize::BITS as usize)).into_iter().rev() {
+    for n in (0..entries).into_iter().rev() {
         map.unset(Index(n));
     }
     // Bitmap should be zeroed.
