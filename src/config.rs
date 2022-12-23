@@ -4,9 +4,10 @@ use std::mem::{self, size_of};
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::{io, ptr};
 
-use crate::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
+use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
 
 /// Configuration for a [`Ring`].
 ///
@@ -143,6 +144,11 @@ fn mmap_submission_queue(
         libc::IORING_OFF_SQES as libc::off_t,
     )?;
 
+    let op_indices = AtomicBitMap::new(parameters.cq_entries as usize);
+    let mut op_queue = Vec::with_capacity(op_indices.capacity());
+    op_queue.resize_with(op_queue.capacity(), || Mutex::new(None));
+    let op_queue = op_queue.into_boxed_slice();
+
     unsafe {
         Ok(SubmissionQueue {
             shared: Arc::new(SharedSubmissionQueue {
@@ -154,6 +160,8 @@ fn mmap_submission_queue(
                 ring_mask: load_atomic_u32(
                     submission_queue.add(parameters.sq_off.ring_mask as usize),
                 ),
+                op_indices,
+                op_queue,
                 pending_tail: AtomicU32::new(0),
                 pending_index: AtomicU32::new(0),
                 // Fields are shared with the kernel.
