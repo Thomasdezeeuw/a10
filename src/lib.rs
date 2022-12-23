@@ -208,6 +208,8 @@ impl Ring {
 /// such as [`OpenOptions`], to queue asynchronous operations. The queue can be
 /// acquired by using [`Ring::submission_queue`].
 ///
+/// The submission queue can be shared by cloning it, it's a cheap operation.
+///
 /// [`OpenOptions`]: fs::OpenOptions
 #[derive(Debug, Clone)]
 pub struct SubmissionQueue {
@@ -481,7 +483,7 @@ pub struct AsyncFd {
 impl AsyncFd {
     /// Create a new `AsyncFd`.
     ///
-    /// # Unsafety
+    /// # Safety
     ///
     /// The call must ensure that `fd` is valid and that it's no longer used by
     /// anything other than the returned `AsyncFd`.

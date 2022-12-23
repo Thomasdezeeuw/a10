@@ -80,7 +80,7 @@ impl AsyncFd {
     {
         self.state.start(|submission| unsafe {
             let (ptr, len) = buf.parts();
-            submission.write_at(self.fd, ptr, len, offset)
+            submission.write_at(self.fd, ptr, len, offset);
         })?;
 
         Ok(Write {
@@ -246,7 +246,7 @@ pub unsafe trait ReadBuf: 'static {
     /// # Safety
     ///
     /// The caller must ensure that `n` bytes, starting at the pointer returned
-    /// by [`ReadBuf::as_ptr`], are initialised.
+    /// by [`ReadBuf::parts`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 }
 

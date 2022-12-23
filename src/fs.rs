@@ -222,7 +222,7 @@ impl Drop for Open {
     fn drop(&mut self) {
         if self.state.is_some() {
             let path = self.path.take().unwrap();
-            log::debug!("dropped `a10::fs::Open` before completion, leaking path");
+            log::debug!("dropped `a10::fs::Open` before completion, leaking path buffer");
             leak(path);
         }
     }
@@ -258,7 +258,7 @@ impl AsyncFd {
     #[doc(alias = "fdatasync")]
     pub fn sync_data<'fd>(&'fd self) -> Result<SyncData<'fd>, QueueFull> {
         self.state.start(|submission| unsafe {
-            submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC)
+            submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC);
         })?;
 
         Ok(SyncData { fd: self })

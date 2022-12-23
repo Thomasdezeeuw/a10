@@ -76,7 +76,7 @@ impl SharedOperationState {
                 // However because we wake the waker before we reduce the strong
                 // count (in `complete`) there is a small gap where the the lock
                 // is unlocked, but the strong count isn't reduced yet. In that
-                // gap as stricter assertion (count == 2) would fail.
+                // gap a stricter assertion (count == 2) would fail.
                 debug_assert!({
                     let count = Arc::strong_count(&self.inner);
                     count == 2 || count == 3
