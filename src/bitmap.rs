@@ -28,15 +28,16 @@ impl AtomicBitMap {
 
     /// Returns the index of the available slot, or `None`.
     pub(crate) fn next_available(&self) -> Option<usize> {
-        for idx in 0..self.data.len() {
-            let mut value = self.data[idx].load(Ordering::Relaxed);
+        for (idx, data) in self.data.iter().enumerate() {
+            let mut value = data.load(Ordering::Relaxed);
             if value == usize::MAX {
                 continue; // All taken.
             }
 
-            for i in 0..usize::BITS as usize {
+            for i in value.leading_ones() as usize..usize::BITS as usize {
                 if is_unset(value, i) {
-                    value = self.data[idx].fetch_or(1 << i, Ordering::SeqCst);
+                    // Attempt to set the bit, claiming the slot.
+                    value = data.fetch_or(1 << i, Ordering::SeqCst);
                     // Another thread could have attempted to set the same bit
                     // we're setting, so we need to make sure we actually set
                     // the bit (i.e. if was unset in the previous state).
@@ -58,7 +59,8 @@ impl AtomicBitMap {
     }
 }
 
-/// `n` is zero indexed.
+/// Returns true if bit `n` is set in `value`. `n` is zero indexed, i.e. must be
+/// in the range 0..usize::BITS (64).
 const fn is_unset(value: usize, n: usize) -> bool {
     ((value >> n) & 1) == 0
 }
