@@ -114,7 +114,7 @@ impl AsyncFd {
     /// operations.
     pub fn cancel_all<'fd>(&'fd self) -> result::Result<Cancel<'fd>, QueueFull> {
         let op_index = self.sq.add(|submission| unsafe {
-            submission.cancel(self.fd, libc::IORING_ASYNC_CANCEL_ALL)
+            submission.cancel(self.fd, libc::IORING_ASYNC_CANCEL_ALL);
         })?;
 
         Ok(Cancel { fd: self, op_index })
@@ -127,9 +127,9 @@ impl AsyncFd {
     /// This happens automatically on drop, this can be used to get a possible
     /// error.
     pub fn close(self) -> result::Result<Close, QueueFull> {
-        let op_index = self
-            .sq
-            .add(|submission| unsafe { submission.close(self.fd) })?;
+        let op_index = self.sq.add(|submission| unsafe {
+            submission.close(self.fd);
+        })?;
 
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.

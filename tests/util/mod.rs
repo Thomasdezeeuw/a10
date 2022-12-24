@@ -23,7 +23,7 @@ pub(crate) const PAGE_SIZE: usize = 4096;
 pub(crate) fn test_queue() -> SubmissionQueue {
     static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
         let mut ring = Ring::new(128).expect("failed to create test ring");
-        let sq = ring.submission_queue();
+        let sq = ring.submission_queue().clone();
         thread::spawn(move || {
             let res = panic::catch_unwind(move || loop {
                 ring.poll(None).expect("failed to poll ring");

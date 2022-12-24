@@ -24,7 +24,7 @@ fn main() -> io::Result<()> {
     };
 
     // Create our future that makes the request.
-    let mut request = Box::pin(request(ring.submission_queue(), address));
+    let mut request = Box::pin(request(ring.submission_queue().clone(), address));
 
     // This loop will represent our `Future`s runtime, in practice use an actual
     // implementation.

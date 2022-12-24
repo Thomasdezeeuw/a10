@@ -20,8 +20,9 @@ pub fn socket(
     protocol: libc::c_int,
     flags: libc::c_int,
 ) -> Result<Socket, QueueFull> {
-    let op_index =
-        sq.add(|submission| unsafe { submission.socket(domain, r#type, protocol, flags) })?;
+    let op_index = sq.add(|submission| unsafe {
+        submission.socket(domain, r#type, protocol, flags);
+    })?;
 
     Ok(Socket {
         sq: Some(sq),

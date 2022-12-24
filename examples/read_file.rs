@@ -13,7 +13,7 @@ fn main() -> io::Result<()> {
     let path = env::args().nth(1).expect("missing argument");
 
     // Create our future that reads the file.
-    let mut request = Box::pin(read_file(ring.submission_queue(), path));
+    let mut request = Box::pin(read_file(ring.submission_queue().clone(), path));
 
     // This loop will represent our `Future`s runtime, in practice use an actual
     // implementation.

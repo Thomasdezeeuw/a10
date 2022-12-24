@@ -114,8 +114,8 @@ impl Ring {
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
-    pub fn submission_queue(&self) -> SubmissionQueue {
-        self.sq.clone()
+    pub fn submission_queue(&self) -> &SubmissionQueue {
+        &self.sq
     }
 
     /// Poll the ring for completions.
