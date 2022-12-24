@@ -67,7 +67,12 @@ const fn is_unset(value: usize, n: usize) -> bool {
 
 impl fmt::Debug for AtomicBitMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AtomicBitMap").finish()
+        const WIDTH: usize = usize::BITS as usize;
+        for data in self.data.iter() {
+            let value = data.load(Ordering::Relaxed);
+            write!(f, "{value:0WIDTH$b}")?;
+        }
+        Ok(())
     }
 }
 
