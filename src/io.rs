@@ -170,7 +170,7 @@ op_future! {
     },
 }
 
-/// [`Future`] to cancel previous request(s) on a [`AsyncFd`].
+/// [`Future`] behind [`AsyncFd::cancel_previous`] and [`AsyncFd::cancel_all`].
 #[derive(Debug)]
 pub struct Cancel<'fd> {
     fd: &'fd AsyncFd,
@@ -185,7 +185,7 @@ impl<'fd> Future for Cancel<'fd> {
     }
 }
 
-/// [`Future`] to close a [`AsyncFd`].
+/// [`Future`] behind [`AsyncFd::close`].
 #[derive(Debug)]
 pub struct Close {
     sq: SubmissionQueue,
