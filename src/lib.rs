@@ -374,6 +374,7 @@ impl SubmissionQueue {
         submission.reset();
         submission.set_user_data(u64::MAX);
         submit(submission);
+        #[cfg(debug_assertions)]
         debug_assert!(!submission.is_unchanged());
 
         // Now that we've written our submission we need add it to the

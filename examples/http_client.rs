@@ -44,7 +44,7 @@ fn main() -> io::Result<()> {
     ring.poll(None)?;
     block_on(send)?;
 
-    // Start aysynchronously receinv the response.
+    // Start aysynchronously receiving the response.
     let recv = socket.recv(Vec::with_capacity(8192))?;
     ring.poll(None)?;
     let recv_buf = block_on(recv)?;
