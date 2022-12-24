@@ -10,7 +10,7 @@ use std::task::{self, Poll};
 use std::{fmt, io, ptr, result, slice};
 
 use crate::op::{op_future, NO_OFFSET};
-use crate::{AsyncFd, OpIndex, QueueFull, SubmissionQueue};
+use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -91,6 +91,35 @@ impl AsyncFd {
         })
     }
 
+    /// Attempt to cancel an already operation.
+    ///
+    /// If the previous I/O operation was succesfully canceled this return
+    /// `Ok(())` and the canceled operation will return an `ECANCELED` "error"
+    /// to indicate it was canceled.
+    ///
+    /// If no previous operation was found, for example if it was already
+    /// completed, this will return `io::ErrorKind::NotFound`.
+    ///
+    /// In general, requests that are interruptible (like socket IO) will get
+    /// canceled, while disk IO requests cannot be canceled if already started.
+    pub fn cancel_previous<'fd>(&'fd self) -> result::Result<Cancel<'fd>, QueueFull> {
+        let op_index = self
+            .sq
+            .add(|submission| unsafe { submission.cancel(self.fd, 0) })?;
+
+        Ok(Cancel { fd: self, op_index })
+    }
+
+    /// Same as [`AsyncFd::cancel_previous`], but attempts to cancel all
+    /// operations.
+    pub fn cancel_all<'fd>(&'fd self) -> result::Result<Cancel<'fd>, QueueFull> {
+        let op_index = self.sq.add(|submission| unsafe {
+            submission.cancel(self.fd, libc::IORING_ASYNC_CANCEL_ALL)
+        })?;
+
+        Ok(Cancel { fd: self, op_index })
+    }
+
     /// Explicitly close the file descriptor.
     ///
     /// # Notes
@@ -143,7 +172,22 @@ op_future! {
     },
 }
 
-/// [`Future`] to close a [`AsyncFd`]
+/// [`Future`] to cancel previous request(s) on a [`AsyncFd`].
+#[derive(Debug)]
+pub struct Cancel<'fd> {
+    fd: &'fd AsyncFd,
+    op_index: OpIndex,
+}
+
+impl<'fd> Future for Cancel<'fd> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.fd.sq.poll_op(ctx, self.op_index).map_ok(|_| ())
+    }
+}
+
+/// [`Future`] to close a [`AsyncFd`].
 #[derive(Debug)]
 pub struct Close {
     sq: SubmissionQueue,

@@ -228,6 +228,17 @@ impl Submission {
         };
     }
 
+    /// Attempt to cancel an already issued request.
+    ///
+    /// Avaialable since Linux kernel 5.5.
+    pub(crate) unsafe fn cancel(&mut self, fd: RawFd, flags: u32) {
+        self.inner.opcode = OperationCode::AsyncCancel as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            cancel_flags: flags | libc::IORING_ASYNC_CANCEL_FD,
+        };
+    }
+
     /// Open a file by `pathname` in directory `dir_fd`.
     pub(crate) unsafe fn open_at(
         &mut self,
