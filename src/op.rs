@@ -218,7 +218,7 @@ impl Submission {
         self.inner.opcode = OperationCode::Accept as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            addr2: address_length as *mut _ as _,
+            off: address_length as *mut _ as _,
         };
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: address as *mut _ as _,

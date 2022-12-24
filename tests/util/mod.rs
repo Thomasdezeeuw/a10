@@ -2,14 +2,17 @@
 
 use std::any::Any;
 use std::future::{Future, IntoFuture};
+use std::mem;
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::os::fd::{AsFd, AsRawFd};
 use std::pin::Pin;
-use std::sync::Arc;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{io, panic, process, str};
 
-use a10::{Ring, SubmissionQueue};
+use a10::net::socket;
+use a10::{AsyncFd, Ring, SubmissionQueue};
 
 /// Size of a single page in bytes.
 pub(crate) const PAGE_SIZE: usize = 4096;
@@ -127,3 +130,59 @@ fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
         },
     }
 }
+
+/// Create an IPv4, TCP socket.
+pub(crate) async fn tcp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+    let protocol = 0;
+    let flags = 0;
+    socket(sq, domain, r#type, protocol, flags)
+        .expect("can't queue creation of socket")
+        .await
+        .expect("failed to create socket")
+}
+
+/// Bind `socket` to a local IPv4 addres with a random port and starts listening
+/// on it. Returns the bound address.
+pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
+    let fd = socket.as_fd().as_raw_fd();
+    let mut addr = libc::sockaddr_in {
+        sin_family: libc::AF_INET as libc::sa_family_t,
+        sin_port: 0,
+        sin_addr: libc::in_addr {
+            s_addr: u32::from_ne_bytes([127, 0, 0, 1]),
+        },
+        ..unsafe { mem::zeroed() }
+    };
+    let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
+
+    syscall!(listen(fd, 128)).expect("failed to listen on socket");
+
+    syscall!(getsockname(
+        fd,
+        &mut addr as *mut _ as *mut _,
+        &mut addr_len
+    ))
+    .expect("failed to get socket address");
+
+    SocketAddr::V4(SocketAddrV4::new(
+        Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes()),
+        u16::from_be(addr.sin_port),
+    ))
+}
+
+/// Helper macro to execute a system call that returns an `io::Result`.
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
+        let res = unsafe { libc::$fn($( $arg, )*) };
+        if res == -1 {
+            Err(std::io::Error::last_os_error())
+        } else {
+            Ok(res)
+        }
+    }};
+}
+
+use syscall;
