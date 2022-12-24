@@ -34,6 +34,7 @@
 
 use std::marker::PhantomData;
 use std::mem::replace;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -600,6 +601,12 @@ impl AsyncFd {
     /// anything other than the returned `AsyncFd`.
     pub const unsafe fn new(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
         AsyncFd { fd, sq }
+    }
+}
+
+impl AsFd for AsyncFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        unsafe { BorrowedFd::borrow_raw(self.fd) }
     }
 }
 
