@@ -145,9 +145,9 @@ fn mmap_submission_queue(
     )?;
 
     let op_indices = AtomicBitMap::new(parameters.cq_entries as usize);
-    let mut op_queue = Vec::with_capacity(op_indices.capacity());
-    op_queue.resize_with(op_queue.capacity(), || Mutex::new(None));
-    let op_queue = op_queue.into_boxed_slice();
+    let mut queued_ops = Vec::with_capacity(op_indices.capacity());
+    queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
+    let queued_ops = queued_ops.into_boxed_slice();
 
     unsafe {
         Ok(SubmissionQueue {
@@ -161,7 +161,7 @@ fn mmap_submission_queue(
                     submission_queue.add(parameters.sq_off.ring_mask as usize),
                 ),
                 op_indices,
-                op_queue,
+                queued_ops,
                 pending_tail: AtomicU32::new(0),
                 pending_index: AtomicU32::new(0),
                 // Fields are shared with the kernel.

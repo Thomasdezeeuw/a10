@@ -9,8 +9,8 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, result, slice};
 
-use crate::op::{op_future, SharedOperationState, NO_OFFSET};
-use crate::{AsyncFd, QueueFull};
+use crate::op::{op_future, NO_OFFSET};
+use crate::{AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -48,7 +48,7 @@ impl AsyncFd {
     where
         B: ReadBuf,
     {
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             let (ptr, len) = buf.parts();
             submission.read_at(self.fd, ptr, len, offset);
         })?;
@@ -56,6 +56,7 @@ impl AsyncFd {
         Ok(Read {
             buf: Some(UnsafeCell::new(buf)),
             fd: self,
+            op_index,
         })
     }
 
@@ -78,7 +79,7 @@ impl AsyncFd {
     where
         B: WriteBuf,
     {
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             let (ptr, len) = buf.parts();
             submission.write_at(self.fd, ptr, len, offset);
         })?;
@@ -86,6 +87,7 @@ impl AsyncFd {
         Ok(Write {
             buf: Some(UnsafeCell::new(buf)),
             fd: self,
+            op_index,
         })
     }
 
@@ -96,16 +98,18 @@ impl AsyncFd {
     /// This happens automatically on drop, this can be used to get a possible
     /// error.
     pub fn close(self) -> result::Result<Close, QueueFull> {
+        let op_index = self
+            .sq
+            .add(|submission| unsafe { submission.close(self.fd) })?;
+
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.
         let this = ManuallyDrop::new(self);
         // SAFETY: this is safe because we're ensure the pointers are valid and
         // not touching `this` after reading the fields.
-        let fd = unsafe { ptr::read(&this.fd) };
-        let state = unsafe { ptr::read(&this.state) };
-        state.start(|submission| unsafe { submission.close(fd, true) })?;
+        let sq = unsafe { ptr::read(&this.sq) };
 
-        Ok(Close { state })
+        Ok(Close { sq, op_index })
     }
 }
 
@@ -142,14 +146,15 @@ op_future! {
 /// [`Future`] to close a [`AsyncFd`]
 #[derive(Debug)]
 pub struct Close {
-    state: SharedOperationState,
+    sq: SubmissionQueue,
+    op_index: OpIndex,
 }
 
 impl Future for Close {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.state.poll(ctx).map_ok(|_| ())
+        self.sq.poll_op(ctx, self.op_index).map_ok(|_| ())
     }
 }
 

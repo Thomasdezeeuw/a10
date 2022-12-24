@@ -2,111 +2,53 @@
 
 use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
-use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::{libc, QueueFull, SubmissionQueue};
+use crate::libc;
 
-/// Shared version of [`OperationState`].
-pub(crate) struct SharedOperationState {
-    inner: Arc<Mutex<OperationState>>,
+/// State of a queue operation.
+#[derive(Debug)]
+pub(crate) struct QueuedOperation {
+    /// Result of the operation.
+    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
+    // some unused error number to represent `InProgress`, but on 64bit padding
+    // is added and we end up with 24 bytes any way, so not point at the moment.
+    result: OperationResult,
+    /// Waker to wake when the operation is done.
+    waker: Option<task::Waker>,
 }
 
-/// State of an asynchronous operation.
-struct OperationState {
-    /// Submission queue to submit operations to.
-    sq: SubmissionQueue,
-    /// Queued operation.
-    queued: QueuedOperation,
-}
-
-impl SharedOperationState {
-    /// Create a new `SharedOperationState`.
-    pub(crate) fn new(sq: SubmissionQueue) -> SharedOperationState {
-        SharedOperationState {
-            inner: Arc::new(Mutex::new(OperationState {
-                sq,
-                queued: QueuedOperation {
-                    result: OperationResult::NotStarted,
-                    waker: None,
-                },
-            })),
+impl QueuedOperation {
+    /// Create a queued operation, marked as in progress.
+    pub(crate) const fn in_progress() -> QueuedOperation {
+        QueuedOperation {
+            result: OperationResult::InProgress,
+            waker: None,
         }
     }
 
-    pub(crate) fn submission_queue(&self) -> SubmissionQueue {
-        self.inner.lock().unwrap().sq.clone()
-    }
-
-    /// Start a new operation by calling [`SubmissionQueue.add`].
-    ///
-    /// # Panics
-    ///
-    /// This will panic if an operation is already in progress.
-    pub(crate) fn start<F>(&self, submit: F) -> Result<(), QueueFull>
-    where
-        F: FnOnce(&mut Submission),
-    {
-        let mut this = self.inner.lock().unwrap();
-        let user_data = Arc::as_ptr(&self.inner) as u64;
-        this.sq.add(|submission| {
-            // SAFETY: we set the `user_data` before calling `submit` because
-            // for some operations we don't want a callback, e.g. `close_fd`.
-            submission.inner.user_data = user_data;
-            submit(submission);
-            if submission.inner.user_data != 0 {
-                // If we do want a callback we need to clone the `inner` as it
-                // will owned by the submission (i.e. the kernel).
-                let user_data = Arc::into_raw(self.inner.clone()) as u64;
-                debug_assert_eq!(submission.inner.user_data, user_data);
-                // Can't have two concurrent operations overwriting the result.
-                // However because we wake the waker before we reduce the strong
-                // count (in `complete`) there is a small gap where the the lock
-                // is unlocked, but the strong count isn't reduced yet. In that
-                // gap a stricter assertion (count == 2) would fail.
-                debug_assert!({
-                    let count = Arc::strong_count(&self.inner);
-                    count == 2 || count == 3
-                });
-                assert!(matches!(this.queued.result, OperationResult::NotStarted));
-            }
-        })?;
-        this.queued.result = OperationResult::InProgress;
-        Ok(())
-    }
-
-    /// Mark the asynchronous operation as complete with `result`.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure the `user_data` was created in
-    /// [`SharedOperationState::start`].
-    pub(crate) unsafe fn complete(user_data: u64, result: i32) {
-        let state: Arc<Mutex<OperationState>> = Arc::from_raw(user_data as _);
-        debug_assert!(Arc::strong_count(&state) == 2);
-        let mut state = state.lock().unwrap();
-        let res = replace(&mut state.queued.result, OperationResult::Done(result));
+    /// Set the result of the operation to `result` and wake to `Future` waiting
+    /// for the result.
+    pub(crate) fn set_result(&mut self, result: i32) {
+        let res = replace(&mut self.result, OperationResult::Done(result));
         assert!(matches!(res, OperationResult::InProgress));
-        if let Some(waker) = &state.queued.waker {
-            waker.wake_by_ref();
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
         }
     }
 
     /// Poll the operation check if it's ready.
-    pub(crate) fn poll(&self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
-        let mut this = self.inner.lock().unwrap();
-        match this.queued.result {
-            OperationResult::NotStarted => panic!("a10::OperationState in invalid state"),
+    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
+        match self.result {
             OperationResult::InProgress => {
                 let waker = ctx.waker();
-                if !matches!(&this.queued.waker, Some(w) if w.will_wake(waker)) {
-                    this.queued.waker = Some(waker.clone());
+                if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
+                    self.waker = Some(waker.clone());
                 }
                 Poll::Pending
             }
             OperationResult::Done(res) => {
-                this.queued.result = OperationResult::NotStarted;
                 if res.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
                     // TODO: handle io_uring specific errors here, read CQE
@@ -120,32 +62,9 @@ impl SharedOperationState {
     }
 }
 
-impl fmt::Debug for SharedOperationState {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SharedOperationState")
-            .field("queued", &self.inner.lock().unwrap().queued)
-            .finish()
-    }
-}
-
-/// State of a queue operation.
-#[derive(Debug)]
-pub(crate) struct QueuedOperation {
-    /// Result of the operation.
-    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
-    // some of the error number to represent `NotStarted` and `InProgress`, but
-    // on 64bit padding is added and we end up with 24 bytes any way, so not
-    // point at the moment.
-    result: OperationResult,
-    /// Waker to wake when the operation is done.
-    waker: Option<task::Waker>,
-}
-
 /// Result of an operation.
 #[derive(Copy, Clone, Debug)]
 enum OperationResult {
-    /// No operation queued.
-    NotStarted,
     /// Operation is in progress, waiting on result.
     InProgress,
     /// Operation done.
@@ -182,14 +101,17 @@ impl Submission {
         }
     }
 
+    /// Set the user data to `user_data`.
+    pub(crate) const fn set_user_data(&mut self, user_data: u64) {
+        self.inner.user_data = user_data;
+    }
+
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
     #[cfg(debug_assertions)]
     pub(crate) const fn is_unchanged(&self) -> bool {
         self.inner.opcode == OperationCode::Nop as u8
-            && self.inner.flags == 0
-            && self.inner.user_data == 0
     }
 
     /// Sync the `fd` with `fsync_flags`.
@@ -329,13 +251,9 @@ impl Submission {
     }
 
     /// Close the `fd`.
-    pub(crate) unsafe fn close(&mut self, fd: RawFd, want_callback: bool) {
+    pub(crate) unsafe fn close(&mut self, fd: RawFd) {
         self.inner.opcode = OperationCode::Close as u8;
         self.inner.fd = fd;
-        if !want_callback {
-            self.inner.flags = libc::IOSQE_CQE_SKIP_SUCCESS;
-            self.inner.user_data = 0; // Don't want a callback.
-        }
     }
 
     /// Call `statx(2)` on `fd`, where `fd` points to a file.
@@ -537,7 +455,7 @@ macro_rules! op_future {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                match self.fut.fd.state.poll(ctx) {
+                match self.fut.fd.sq.poll_op(ctx, self.fut.op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
                         let $extract_self = &mut self.fut;
                         $extract_map
@@ -567,13 +485,15 @@ macro_rules! op_future {
             $field: std::option::Option<std::cell::UnsafeCell<$value>>,
             )?
             fd: &$lifetime $f,
+            /// Index for the queued operation.
+            op_index: $crate::OpIndex,
         }
 
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
             type Output = std::io::Result<$result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                match self.fd.state.poll(ctx) {
+                match self.fd.sq.poll_op(ctx, self.op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($arg)) => std::task::Poll::Ready({
                         let $self = &mut self;
                         $map_result
@@ -625,8 +545,6 @@ pub(crate) use op_future;
 
 #[test]
 fn size_assertion() {
-    assert_eq!(std::mem::size_of::<SharedOperationState>(), 8);
-    assert_eq!(std::mem::size_of::<OperationState>(), 32);
     assert_eq!(std::mem::size_of::<QueuedOperation>(), 24);
     assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 24);
     assert_eq!(std::mem::size_of::<OperationResult>(), 8);

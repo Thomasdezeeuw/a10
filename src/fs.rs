@@ -15,8 +15,8 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::extract::Extractor;
-use crate::op::{op_future, SharedOperationState};
-use crate::{libc, AsyncFd, Extract, QueueFull, SubmissionQueue};
+use crate::op::op_future;
+use crate::{libc, AsyncFd, Extract, OpIndex, QueueFull, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -158,18 +158,18 @@ impl OpenOptions {
 
     /// Open `path`.
     #[doc(alias = "openat")]
-    pub fn open(self, queue: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
+    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
         let path = path.into_os_string().into_vec();
         let path = unsafe { CString::from_vec_unchecked(path) };
 
-        let state = SharedOperationState::new(queue);
-        state.start(|submission| unsafe {
+        let op_index = sq.add(|submission| unsafe {
             submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode);
         })?;
 
         Ok(Open {
             path: Some(path),
-            state: Some(state),
+            sq: Some(sq),
+            op_index,
         })
     }
 }
@@ -186,17 +186,22 @@ pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can
     /// access it safely.
     path: Option<CString>,
-    state: Option<SharedOperationState>,
+    sq: Option<SubmissionQueue>,
+    op_index: OpIndex,
 }
 
 impl Future for Open {
     type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| AsyncFd {
-            fd,
-            state: self.state.take().unwrap(),
-        })
+        self.sq
+            .as_ref()
+            .unwrap()
+            .poll_op(ctx, self.op_index)
+            .map_ok(|fd| AsyncFd {
+                fd,
+                sq: self.sq.take().unwrap(),
+            })
     }
 }
 
@@ -206,21 +211,26 @@ impl Future for Extractor<Open> {
     type Output = io::Result<(AsyncFd, PathBuf)>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.fut.state.as_ref().unwrap().poll(ctx).map_ok(|fd| {
-            let file = AsyncFd {
-                fd,
-                state: self.fut.state.take().unwrap(),
-            };
-            let path_bytes = self.fut.path.take().unwrap().into_bytes();
-            let path = OsString::from_vec(path_bytes).into();
-            (file, path)
-        })
+        self.fut
+            .sq
+            .as_ref()
+            .unwrap()
+            .poll_op(ctx, self.fut.op_index)
+            .map_ok(|fd| {
+                let file = AsyncFd {
+                    fd,
+                    sq: self.fut.sq.take().unwrap(),
+                };
+                let path_bytes = self.fut.path.take().unwrap().into_bytes();
+                let path = OsString::from_vec(path_bytes).into();
+                (file, path)
+            })
     }
 }
 
 impl Drop for Open {
     fn drop(&mut self) {
-        if self.state.is_some() {
+        if self.path.is_some() {
             let path = self.path.take().unwrap();
             log::debug!("dropped `a10::fs::Open` before completion, leaking path buffer");
             leak(path);
@@ -237,10 +247,11 @@ impl AsyncFd {
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fsync")]
     pub fn sync_all<'fd>(&'fd self) -> Result<SyncAll<'fd>, QueueFull> {
-        self.state
-            .start(|submission| unsafe { submission.fsync(self.fd, 0) })?;
+        let op_index = self
+            .sq
+            .add(|submission| unsafe { submission.fsync(self.fd, 0) })?;
 
-        Ok(SyncAll { fd: self })
+        Ok(SyncAll { fd: self, op_index })
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -257,11 +268,11 @@ impl AsyncFd {
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fdatasync")]
     pub fn sync_data<'fd>(&'fd self) -> Result<SyncData<'fd>, QueueFull> {
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC);
         })?;
 
-        Ok(SyncData { fd: self })
+        Ok(SyncData { fd: self, op_index })
     }
 
     /// Retrieve metadata about the file.
@@ -271,13 +282,14 @@ impl AsyncFd {
             // SAFETY: all zero values are valid representations.
             inner: unsafe { zeroed() },
         });
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
         })?;
 
         Ok(Stat {
             metadata: Some(UnsafeCell::new(metadata)),
             fd: self,
+            op_index,
         })
     }
 }

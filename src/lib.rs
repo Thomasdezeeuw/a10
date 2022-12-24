@@ -18,9 +18,11 @@
 #![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
+use std::mem::replace;
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::task::{self, Poll};
 use std::time::Duration;
 use std::{fmt, ptr};
 
@@ -40,7 +42,7 @@ use bitmap::AtomicBitMap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
-use op::{QueuedOperation, SharedOperationState, Submission};
+use op::{QueuedOperation, Submission};
 
 /// This type represents the user space side of an io_uring.
 ///
@@ -113,15 +115,11 @@ impl Ring {
     /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
             log::trace!("got completion: {completion:?}");
             let user_data = completion.inner.user_data;
-            if user_data == 0 {
-                // No callback.
-                continue;
-            }
-
-            unsafe { SharedOperationState::complete(user_data, completion.inner.res) }
+            sq.complete(user_data as usize, completion.inner.res);
         }
         Ok(())
     }
@@ -153,7 +151,7 @@ impl Ring {
             };
 
             self.sq
-                .add(|submission| unsafe { submission.timeout(&timeout) })?;
+                .add_no_result(|submission| unsafe { submission.timeout(&timeout) })?;
         }
 
         // If not we need to check if the kernel thread is stil awake. If the
@@ -249,12 +247,10 @@ struct SharedSubmissionQueue {
 
     /// Bitmap which can be used to create an index into `op_queue`.
     op_indices: Box<AtomicBitMap>,
-    /// Queue of operations.
-    ///
-    /// This is the user space side of things in which we store the data to
-    /// store the result and `task::Waker`. It's used when enqueueing new
-    /// operations and when marking operations as complete (by the kernel).
-    op_queue: Box<[Mutex<Option<QueuedOperation>>]>,
+    /// State of queued operations, holds the (would be) result and
+    /// `task::Waker`. It's used when adding new operations and when marking
+    /// operations as complete (by the kernel).
+    queued_ops: Box<[Mutex<Option<QueuedOperation>>]>,
 
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
@@ -282,13 +278,53 @@ struct SharedSubmissionQueue {
 impl SubmissionQueue {
     /// Add a submission to the queue.
     ///
+    /// Returns an index into the `op_queue` which can be used to check the
+    /// progress of the operation. Once the operation is completed and the
+    /// result read the index should be made avaiable again in `op_indices` and
+    /// the value set to `None`.
+    ///
     /// Returns an error if the submission queue is full. To fix this call
     /// [`Ring::poll`] (and handle the completed operations) and try queueing
     /// again.
-    fn add<F>(&self, submit: F) -> Result<(), QueueFull>
+    fn add<F>(&self, submit: F) -> Result<OpIndex, QueueFull>
     where
         F: FnOnce(&mut Submission),
     {
+        // Get an index to the queued operation queue.
+        let shared = &*self.shared;
+        let op_index = match shared.op_indices.next_available() {
+            Some(idx) => idx,
+            None => return Err(QueueFull(())),
+        };
+
+        let queued_op = QueuedOperation::in_progress();
+        // SAFETY: the `AtomicBitMap` always returns valid indices for
+        // `op_queue` (it's the whole point of it).
+        let mut op = shared.queued_ops[op_index].lock().unwrap();
+        let old_queued_op = replace(&mut *op, Some(queued_op));
+        debug_assert!(old_queued_op.is_none());
+
+        let res = self.add_no_result(|submission| {
+            submit(submission);
+            submission.set_user_data(op_index as u64);
+        });
+
+        match res {
+            Ok(()) => Ok(OpIndex(op_index)),
+            Err(err) => {
+                // Make the index available, we're not going to use it.
+                shared.op_indices.make_available(op_index);
+                Err(err)
+            }
+        }
+    }
+
+    /// Same as [`SubmissionQueue::add`], but ignores the result.
+    fn add_no_result<F>(&self, submit: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut Submission),
+    {
+        let shared = &*self.shared;
         // First we need to acquire mutable access to an `Submission` entry in
         // the `entries` array.
         //
@@ -297,47 +333,82 @@ impl SubmissionQueue {
         // beyond what the kernel has processed by checking `tail - kernel_read`
         // is less then the length of the submission queue.
         let kernel_read = self.kernel_read();
-        let tail =
-            self.shared
-                .pending_tail
-                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                    if tail - kernel_read < self.shared.len {
-                        // Still an entry available.
-                        Some(tail + 1) // TODO: handle overflows.
-                    } else {
-                        None
-                    }
-                });
+        let tail = shared
+            .pending_tail
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
+                if tail - kernel_read < shared.len {
+                    // Still an entry available.
+                    Some(tail + 1) // TODO: handle overflows.
+                } else {
+                    None
+                }
+            });
+        let tail = match tail {
+            Ok(tail) => tail,
+            Err(_) => return Err(QueueFull(())),
+        };
 
-        if let Ok(tail) = tail {
-            // SAFETY: the `ring_mask` ensures we can never get an index larger
-            // then the size of the queue. Above we've already ensured that
-            // we're the only thread  with mutable access to the entry.
-            let submission_index = tail & self.shared.ring_mask;
-            let submission = unsafe { &mut *self.shared.entries.add(submission_index as usize) };
+        // SAFETY: the `ring_mask` ensures we can never get an index larger
+        // then the size of the queue. Above we've already ensured that
+        // we're the only thread  with mutable access to the entry.
+        let submission_index = tail & shared.ring_mask;
+        let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
 
-            // Let the caller fill the `submission`.
-            submission.reset();
-            submit(submission);
-            debug_assert!(!submission.is_unchanged());
+        // Let the caller fill the `submission`.
+        submission.reset();
+        submission.set_user_data(u64::MAX);
+        submit(submission);
+        debug_assert!(!submission.is_unchanged());
 
-            // Now that we've written our submission we need add it to the
-            // `array` so that the kernel can process it.
-            let array_tail = self.shared.pending_index.fetch_add(1, Ordering::AcqRel);
-            let array_index = (array_tail & self.shared.ring_mask) as usize;
-            // SAFETY: `idx` is masked above to be within the correct bounds.
-            // As we have unique access `Relaxed` is acceptable.
-            unsafe {
-                (*self.shared.array.add(array_index)).store(submission_index, Ordering::Relaxed);
+        // Now that we've written our submission we need add it to the
+        // `array` so that the kernel can process it.
+        let array_tail = shared.pending_index.fetch_add(1, Ordering::AcqRel);
+        let array_index = (array_tail & shared.ring_mask) as usize;
+        // SAFETY: `idx` is masked above to be within the correct bounds.
+        // As we have unique access `Relaxed` is acceptable.
+        unsafe {
+            (*shared.array.add(array_index)).store(submission_index, Ordering::Relaxed);
+        }
+
+        // FIXME: doesn't work. Can have a gap in the `self.array` the
+        // kernel will then assume to be filled.
+        unsafe { &*shared.tail }.fetch_add(1, Ordering::AcqRel);
+
+        Ok(())
+    }
+
+    /// Poll a queued operation with `op_index` to check if it's ready.
+    ///
+    /// # Notes
+    ///
+    /// If this return [`Poll::Ready`] it marks `op_index` slot as available.
+    pub(crate) fn poll_op(
+        &self,
+        ctx: &mut task::Context<'_>,
+        op_index: OpIndex,
+    ) -> Poll<io::Result<i32>> {
+        if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                let res = op.poll(ctx);
+                if res.is_ready() {
+                    *operation = None;
+                    drop(operation);
+                    self.shared.op_indices.make_available(op_index.0);
+                }
+                return res;
             }
+        }
+        panic!("a10::SubmissionQueue::poll called incorrectly");
+    }
 
-            // FIXME: doesn't work. Can have a gap in the `self.array` the
-            // kernel will then assume to be filled.
-            unsafe { &*self.shared.tail }.fetch_add(1, Ordering::AcqRel);
-
-            Ok(())
-        } else {
-            Err(QueueFull(()))
+    /// Mark an asynchronous operation as complete with `result`.
+    fn complete(&self, op_index: usize, result: i32) {
+        if let Some(op) = self.shared.queued_ops.get(op_index) {
+            let mut op = op.lock().unwrap();
+            if let Some(op) = &mut *op {
+                op.set_result(result);
+            }
         }
     }
 
@@ -352,6 +423,20 @@ impl SubmissionQueue {
 unsafe impl Send for SharedSubmissionQueue {}
 
 unsafe impl Sync for SharedSubmissionQueue {}
+
+/// Index into [`SharedSubmissionQueue::op_indices`].
+///
+/// Returned by [`SubmissionQueue::add`] and used by [`SubmissionQueue::poll`]
+/// to check for a result.
+#[derive(Copy, Clone)]
+#[must_use]
+struct OpIndex(usize);
+
+impl fmt::Debug for OpIndex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 /// Error returned when the submission queue is full.
 ///
@@ -485,7 +570,7 @@ impl fmt::Debug for Completion {
 #[derive(Debug)]
 pub struct AsyncFd {
     pub(crate) fd: RawFd,
-    pub(crate) state: SharedOperationState,
+    pub(crate) sq: SubmissionQueue,
 }
 
 // NOTE: the implementation are split over the modules to give the `Future`
@@ -499,18 +584,15 @@ impl AsyncFd {
     /// The call must ensure that `fd` is valid and that it's no longer used by
     /// anything other than the returned `AsyncFd`.
     pub unsafe fn new(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd {
-            fd,
-            state: SharedOperationState::new(sq),
-        }
+        AsyncFd { fd, sq }
     }
 }
 
 impl Drop for AsyncFd {
     fn drop(&mut self) {
         let result = self
-            .state
-            .start(|submission| unsafe { submission.close(self.fd, false) });
+            .sq
+            .add_no_result(|submission| unsafe { submission.close(self.fd) });
         if let Err(err) = result {
             log::error!("error submitting close operation for a10::AsyncFd: {err}");
         }
