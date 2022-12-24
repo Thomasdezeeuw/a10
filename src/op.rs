@@ -3,7 +3,7 @@
 use std::mem::{replace, MaybeUninit};
 use std::os::unix::io::RawFd;
 use std::task::{self, Poll};
-use std::{fmt, io};
+use std::{fmt, io, ptr};
 
 use crate::libc;
 
@@ -96,9 +96,7 @@ impl Submission {
     /// Reset the submission.
     pub(crate) fn reset(&mut self) {
         debug_assert!(OperationCode::Nop as u8 == 0);
-        unsafe {
-            (&mut self.inner as *mut libc::io_uring_sqe).write_bytes(0, 1);
-        }
+        unsafe { ptr::addr_of_mut!(self.inner).write_bytes(0, 1) };
     }
 
     /// Set the user data to `user_data`.
