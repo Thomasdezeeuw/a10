@@ -1,62 +1,62 @@
-use std::future::{Future, IntoFuture};
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{env, io, str};
+use std::{env, io, ptr, str};
 
 use a10::fs::OpenOptions;
-use a10::Ring;
+use a10::{Ring, SubmissionQueue};
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = Ring::new(1)?;
 
-    // Asynchronously open a file for reading.
     let path = env::args().nth(1).expect("missing argument");
-    let open_file = OpenOptions::new().open(ring.submission_queue(), path.into())?;
 
-    // Poll the ring and check if the file is opened.
-    ring.poll(None)?;
-    let file = block_on(open_file)?;
+    // Create our future that reads the file.
+    let mut request = Box::pin(read_file(ring.submission_queue(), path));
 
-    // Start aysynchronously reading from the file.
-    let buf = Vec::with_capacity(4096);
-    let read = file.read(buf)?;
+    // This loop will represent our `Future`s runtime, in practice use an actual
+    // implementation.
+    let data = loop {
+        match poll_future(request.as_mut()) {
+            Poll::Ready(res) => break res?,
+            Poll::Pending => {
+                // Poll the `Ring` to get an update on the operation (s).
+                //
+                // In pratice you would first yield to another future, but in
+                // this example we don't have one, so we'll always poll the
+                // `Ring`.
+                ring.poll(None)?;
+            }
+        }
+    };
 
-    // Same pattern as above; poll and check the result.
-    ring.poll(None)?;
-    let buf = block_on(read)?;
-
-    // Done reading, we'll print the result (using ol' fashioned blocking I/O).
-    let data = str::from_utf8(&buf).map_err(|err| {
+    // We'll print the response (using ol' fashioned blocking I/O).
+    let data = str::from_utf8(&data).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("file doesn't contain UTF-8: {}", err),
         )
     })?;
-    println!("{}", data);
+    println!("{data}");
 
     Ok(())
 }
 
-/// Replace this with your favorite [`Future`] runtime.
-fn block_on<Fut>(fut: Fut) -> Fut::Output
-where
-    Fut: IntoFuture,
-    Fut::IntoFuture: Unpin,
-{
-    let waker = noop_waker();
-    let mut ctx = task::Context::from_waker(&waker);
-    let mut fut = fut.into_future();
-    let mut fut = Pin::new(&mut fut);
-    loop {
-        if let Poll::Ready(result) = fut.as_mut().poll(&mut ctx) {
-            return result;
-        }
-    }
+async fn read_file(sq: SubmissionQueue, path: String) -> io::Result<Vec<u8>> {
+    // Open a file for reading.
+    let file = OpenOptions::new().open(sq, path.into())?.await?;
+
+    // Read some bytes from the file.
+    let buf = file.read(Vec::with_capacity(4096))?.await?;
+    Ok(buf)
 }
 
-fn noop_waker() -> task::Waker {
-    use std::ptr;
+/// Replace this with your favorite [`Future`] runtime.
+fn poll_future<Fut>(fut: Pin<&mut Fut>) -> Poll<Fut::Output>
+where
+    Fut: Future,
+{
     use std::task::{RawWaker, RawWakerVTable};
     static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
         |_| RawWaker::new(ptr::null(), &WAKER_VTABLE),
@@ -64,5 +64,7 @@ fn noop_waker() -> task::Waker {
         |_| {},
         |_| {},
     );
-    unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) }
+    let waker = unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) };
+    let mut ctx = task::Context::from_waker(&waker);
+    fut.poll(&mut ctx)
 }
