@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{io, panic, process, str};
+use std::{fmt, io, panic, process, str};
 
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
@@ -128,6 +128,29 @@ fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
             Some(s) => &**s,
             None => "<unknown>",
         },
+    }
+}
+
+/// Expect `result` to contain an [`io::Error`] with `expected` error kind.
+#[track_caller]
+pub(crate) fn expect_io_error_kind<T: fmt::Debug>(
+    result: Result<T, io::Error>,
+    expected: io::ErrorKind,
+) {
+    match result {
+        Ok(value) => panic!("unexpected ok result, value: {value:?}"),
+        Err(ref err) if err.kind() == expected => return,
+        Err(err) => panic!("unexpected error result, error: {err:?}"),
+    }
+}
+
+/// Expect `result` to contain an [`io::Error`] with `expected` error number.
+#[track_caller]
+pub(crate) fn expect_io_errno<T: fmt::Debug>(result: Result<T, io::Error>, expected: libc::c_int) {
+    match result {
+        Ok(value) => panic!("unexpected ok result, value: {value:?}"),
+        Err(ref err) if err.raw_os_error() == Some(expected) => return,
+        Err(err) => panic!("unexpected error result, error: {err:?}"),
     }
 }
 
