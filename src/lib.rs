@@ -14,6 +14,21 @@
 //! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
 //! [`OpenOptions`]: fs::OpenOptions
 //! [`Future`]: std::future::Future
+//!
+//! # Notes
+//!
+//! The [`Future`]s in this library has a number of limitations that are a
+//! little stricter that "normal" `Future`s.
+//! * The `Future`s should not be dropped before completion, due to the way
+//!   io_uring works the kernel need access to memory the `Future` owns for the
+//!   duration of the I/O operation. If the `Future` is dropped before the I/O
+//!   operation is completed the memory will be leaked.
+//! * The `Future` should not be polled after completion. For performance reason
+//!   we reuse allocations made, which means that if a `Future` is polled after
+//!   it already returned a result it may read the result of another `Future`.
+//! * Most I/O operations need ownership of the data, e.g. a buffer, so it can
+//!   be leaked if needed, as mention above. This data can be retrieved again by
+//!   using the [`Extract`] trait.
 
 #![feature(const_mut_refs, io_error_more)]
 
