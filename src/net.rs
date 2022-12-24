@@ -9,21 +9,24 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::io::{ReadBuf, WriteBuf};
-use crate::op::{op_future, SharedOperationState};
-use crate::{libc, AsyncFd, QueueFull, SubmissionQueue};
+use crate::op::op_future;
+use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 /// Creates a new socket.
 pub fn socket(
-    queue: SubmissionQueue,
+    sq: SubmissionQueue,
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
     flags: libc::c_int,
 ) -> Result<Socket, QueueFull> {
-    let state = SharedOperationState::new(queue);
-    state.start(|submission| unsafe { submission.socket(domain, r#type, protocol, flags) })?;
+    let op_index =
+        sq.add(|submission| unsafe { submission.socket(domain, r#type, protocol, flags) })?;
 
-    Ok(Socket { state: Some(state) })
+    Ok(Socket {
+        sq: Some(sq),
+        op_index,
+    })
 }
 
 /// Socket related system calls.
@@ -38,7 +41,7 @@ impl AsyncFd {
         A: Into<Box<libc::sockaddr_storage>>,
     {
         let mut address = address.into();
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             submission.connect(self.fd, &mut address, address_length);
         })?;
 
@@ -46,6 +49,7 @@ impl AsyncFd {
             // Needs to stay alive as long as the kernel is accessing it.
             address: Some(UnsafeCell::new(address)),
             fd: self,
+            op_index,
         })
     }
 
@@ -67,7 +71,7 @@ impl AsyncFd {
     where
         B: WriteBuf,
     {
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             let (ptr, len) = buf.parts();
             submission.send(self.fd, ptr, len, flags);
         })?;
@@ -76,6 +80,7 @@ impl AsyncFd {
             // Needs to stay alive as long as the kernel is accessing it.
             buf: Some(UnsafeCell::new(buf)),
             fd: self,
+            op_index,
         })
     }
 
@@ -103,7 +108,7 @@ impl AsyncFd {
     where
         B: ReadBuf,
     {
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             let (ptr, len) = buf.parts();
             submission.recv(self.fd, ptr, len, flags);
         })?;
@@ -112,6 +117,7 @@ impl AsyncFd {
             // Needs to stay alive as long as the kernel is accessing it.
             buf: Some(UnsafeCell::new(buf)),
             fd: self,
+            op_index,
         })
     }
 
@@ -132,13 +138,14 @@ impl AsyncFd {
         let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
         let mut address = Box::new((address, length));
 
-        self.state.start(|submission| unsafe {
+        let op_index = self.sq.add(|submission| unsafe {
             submission.accept(self.fd, &mut address.0, &mut address.1, flags);
         })?;
 
         Ok(Accept {
             address: Some(UnsafeCell::new(address)),
             fd: self,
+            op_index,
         })
     }
 }
@@ -148,17 +155,22 @@ impl AsyncFd {
 /// If you're looking for a socket type, there is none, see [`AsyncFd`].
 #[derive(Debug)]
 pub struct Socket {
-    state: Option<SharedOperationState>,
+    sq: Option<SubmissionQueue>,
+    op_index: OpIndex,
 }
 
 impl Future for Socket {
     type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.state.as_ref().unwrap().poll(ctx).map_ok(|fd| AsyncFd {
-            fd,
-            state: self.state.take().unwrap(),
-        })
+        self.sq
+            .as_ref()
+            .unwrap()
+            .poll_op(ctx, self.op_index)
+            .map_ok(|fd| AsyncFd {
+                fd,
+                sq: self.sq.take().unwrap(),
+            })
     }
 }
 
@@ -215,9 +227,8 @@ op_future! {
         address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>, "dropped `a10::net::Accept` before completion, leaking address buffer",
     },
     |this, fd| {
-        let sq = this.fd.state.submission_queue();
-        let state = SharedOperationState::new(sq);
-        let stream = AsyncFd { fd, state };
+        let sq = this.fd.sq.clone();
+        let stream = AsyncFd { fd, sq };
 
         let address = this.address.take().unwrap().into_inner();
         let storage = unsafe { address.0.assume_init_ref() };

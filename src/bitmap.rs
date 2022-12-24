@@ -22,12 +22,12 @@ impl AtomicBitMap {
     }
 
     /// Returns the number of indices the bitmap can manage.
-    pub(crate) fn capacity(&self) -> usize {
+    pub(crate) const fn capacity(&self) -> usize {
         self.data.len() * usize::BITS as usize
     }
 
     /// Returns the index of the available slot, or `None`.
-    pub(crate) fn next_unset(&self) -> Option<Index> {
+    pub(crate) fn next_available(&self) -> Option<usize> {
         for idx in 0..self.data.len() {
             let mut value = self.data[idx].load(Ordering::Relaxed);
             if value == usize::MAX {
@@ -41,7 +41,7 @@ impl AtomicBitMap {
                     // we're setting, so we need to make sure we actually set
                     // the bit (i.e. if was unset in the previous state).
                     if is_unset(value, i) {
-                        return Some(Index((idx * usize::BITS as usize) + i));
+                        return Some((idx * usize::BITS as usize) + i);
                     }
                 }
             }
@@ -50,9 +50,9 @@ impl AtomicBitMap {
     }
 
     /// Mark `index` as available.
-    pub(crate) fn unset(&self, index: Index) {
-        let idx = index.0 / usize::BITS as usize;
-        let n = index.0 % usize::BITS as usize;
+    pub(crate) fn make_available(&self, index: usize) {
+        let idx = index / usize::BITS as usize;
+        let n = index % usize::BITS as usize;
         let old_value = self.data[idx].fetch_and(!(1 << n), Ordering::SeqCst);
         debug_assert!(!is_unset(old_value, n));
     }
@@ -66,18 +66,6 @@ const fn is_unset(value: usize, n: usize) -> bool {
 impl fmt::Debug for AtomicBitMap {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AtomicBitMap").finish()
-    }
-}
-
-/// Index into an array.
-///
-/// Contents made private so it must always come from [`AtomicBitMap`].
-pub(crate) struct Index(usize);
-
-impl Index {
-    /// Get the value of index.
-    pub(crate) const fn get(&self) -> usize {
-        self.0
     }
 }
 
@@ -114,32 +102,33 @@ fn setting_and_unsetting_sixteen() {
 #[cfg(test)]
 fn setting_and_unsetting(entries: usize) {
     let map = AtomicBitMap::new(entries);
+    assert_eq!(map.capacity(), entries);
 
     // Ask for all indices.
     for n in 0..entries {
-        assert!(matches!(map.next_unset(), Some(Index(i)) if i == n));
+        assert!(matches!(map.next_available(), Some(i) if i == n));
     }
     // All bits should be set.
     for data in &map.data {
         assert!(data.load(Ordering::Relaxed) == usize::MAX);
     }
     // No more indices left.
-    assert!(matches!(map.next_unset(), None));
+    assert!(matches!(map.next_available(), None));
 
     // Test unsetting an index not in order.
-    map.unset(Index(63));
-    map.unset(Index(0));
-    assert!(matches!(map.next_unset(), Some(Index(i)) if i == 0));
-    assert!(matches!(map.next_unset(), Some(Index(i)) if i == 63));
+    map.make_available(63);
+    map.make_available(0);
+    assert!(matches!(map.next_available(), Some(i) if i == 0));
+    assert!(matches!(map.next_available(), Some(i) if i == 63));
 
     // Unset all indices again.
     for n in (0..entries).into_iter().rev() {
-        map.unset(Index(n));
+        map.make_available(n);
     }
     // Bitmap should be zeroed.
     for data in &map.data {
         assert!(data.load(Ordering::Relaxed) == 0);
     }
     // Next avaiable index should be 0 again.
-    assert!(matches!(map.next_unset(), Some(Index(i)) if i == 0));
+    assert!(matches!(map.next_available(), Some(i) if i == 0));
 }
