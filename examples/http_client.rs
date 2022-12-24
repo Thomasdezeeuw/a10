@@ -1,10 +1,11 @@
-use std::future::{Future, IntoFuture};
+use std::future::Future;
 use std::net::{SocketAddr, SocketAddrV4};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, mem, ptr, str};
 
-use a10::Ring;
+use a10::net::socket;
+use a10::{Ring, SubmissionQueue};
 
 const HTTP_REQUEST: &str = "GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: a10-example/0.1.0\r\nAccept: */*\r\n\r\n";
 
@@ -17,46 +18,32 @@ fn main() -> io::Result<()> {
         .filter(SocketAddr::is_ipv4)
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to lookup ip"))?;
-    let (address, address_length) = match address {
-        SocketAddr::V4(address) => to_sockaddr_storage(address),
+    let address = match address {
+        SocketAddr::V4(address) => address,
         SocketAddr::V6(_) => unreachable!(),
     };
 
-    // Create a new socket.
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
-    let protocol = 0;
-    let flags = 0;
-    let socket = a10::net::socket(ring.submission_queue(), domain, r#type, protocol, flags)?;
+    // Create our future that makes the request.
+    let mut request = Box::pin(request(ring.submission_queue(), address));
 
-    // Poll the ring and check if the socket is created.
-    ring.poll(None)?;
-    let socket = block_on(socket)?; // Replace this with a `.await`.
+    // This loop will represent our `Future`s runtime, in practice use an actual
+    // implementation.
+    let response = loop {
+        match poll_future(request.as_mut()) {
+            Poll::Ready(res) => break res?,
+            Poll::Pending => {
+                // Poll the `Ring` to get an update on the operation (s).
+                //
+                // In pratice you would first yield to another future, but in
+                // this example we don't have one, so we'll always poll the
+                // `Ring`.
+                ring.poll(None)?;
+            }
+        }
+    };
 
-    // Start a connect call.
-    let connect = socket.connect(address, address_length)?;
-    // Same pattern of polling & awaiting as above.
-    ring.poll(None)?;
-    block_on(connect)?;
-
-    // Start aysynchronously sending a HTTP `GET /` request to the socket.
-    let send = socket.send(HTTP_REQUEST)?;
-    ring.poll(None)?;
-    block_on(send)?;
-
-    // Start aysynchronously receiving the response.
-    let recv = socket.recv(Vec::with_capacity(8192))?;
-    ring.poll(None)?;
-    let recv_buf = block_on(recv)?;
-
-    // We'll explicitly close the socket, although that happens for us when we
-    // drop the socket.
-    let close = socket.close()?;
-    ring.poll(None)?;
-    block_on(close)?;
-
-    // Done receiving, we'll print the result (using ol' fashioned blocking I/O).
-    let response = str::from_utf8(&recv_buf).map_err(|err| {
+    // We'll print the response (using ol' fashioned blocking I/O).
+    let response = str::from_utf8(&response).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("response doesn't contain UTF-8: {}", err),
@@ -65,6 +52,33 @@ fn main() -> io::Result<()> {
     println!("{response}");
 
     Ok(())
+}
+
+/// Make a HTTP GET request to `address`.
+async fn request(sq: SubmissionQueue, address: SocketAddrV4) -> io::Result<Vec<u8>> {
+    // Create a new TCP, IPv4 socket.
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+    let protocol = 0;
+    let flags = 0;
+    let socket = socket(sq, domain, r#type, protocol, flags)?.await?;
+
+    // Connect.
+    let (addr, addr_len) = to_sockaddr_storage(address);
+    socket.connect(addr, addr_len)?.await?;
+
+    // Send a HTTP GET / request to the socket.
+    let n = socket.send(HTTP_REQUEST)?.await?;
+    assert!(n == HTTP_REQUEST.len()); // In practice try reading again.
+
+    // Receiving the response.
+    let recv_buf = socket.recv(Vec::with_capacity(8192))?.await?;
+
+    // We'll explicitly close the socket, although that happens for us when we
+    // drop the socket. In other words, this is not needed.
+    socket.close()?.await?;
+
+    Ok(recv_buf)
 }
 
 fn to_sockaddr_storage(addr: SocketAddrV4) -> (libc::sockaddr_storage, libc::socklen_t) {
@@ -84,23 +98,10 @@ fn to_sockaddr_storage(addr: SocketAddrV4) -> (libc::sockaddr_storage, libc::soc
 }
 
 /// Replace this with your favorite [`Future`] runtime.
-fn block_on<Fut>(fut: Fut) -> Fut::Output
+fn poll_future<Fut>(fut: Pin<&mut Fut>) -> Poll<Fut::Output>
 where
-    Fut: IntoFuture,
-    Fut::IntoFuture: Unpin,
+    Fut: Future,
 {
-    let waker = noop_waker();
-    let mut ctx = task::Context::from_waker(&waker);
-    let mut fut = fut.into_future();
-    let mut fut = Pin::new(&mut fut);
-    loop {
-        if let Poll::Ready(result) = fut.as_mut().poll(&mut ctx) {
-            return result;
-        }
-    }
-}
-
-fn noop_waker() -> task::Waker {
     use std::task::{RawWaker, RawWakerVTable};
     static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
         |_| RawWaker::new(ptr::null(), &WAKER_VTABLE),
@@ -108,5 +109,7 @@ fn noop_waker() -> task::Waker {
         |_| {},
         |_| {},
     );
-    unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) }
+    let waker = unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) };
+    let mut ctx = task::Context::from_waker(&waker);
+    fut.poll(&mut ctx)
 }
