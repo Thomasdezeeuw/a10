@@ -198,9 +198,12 @@ impl Future for Open {
             .as_ref()
             .unwrap()
             .poll_op(ctx, self.op_index)
-            .map_ok(|fd| AsyncFd {
-                fd,
-                sq: self.sq.take().unwrap(),
+            .map_ok(|fd| {
+                drop(self.path.take());
+                AsyncFd {
+                    fd,
+                    sq: self.sq.take().unwrap(),
+                }
             })
     }
 }
