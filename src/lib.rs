@@ -19,16 +19,13 @@
 //!
 //! The [`Future`]s in this library has a number of limitations that are a
 //! little stricter that "normal" `Future`s.
-//! * The `Future`s should not be dropped before completion, due to the way
-//!   io_uring works the kernel need access to memory the `Future` owns for the
-//!   duration of the I/O operation. If the `Future` is dropped before the I/O
-//!   operation is completed the memory will be leaked.
 //! * The `Future` should not be polled after completion. For performance reason
 //!   we reuse allocations made, which means that if a `Future` is polled after
 //!   it already returned a result it may read the result of another `Future`.
 //! * Most I/O operations need ownership of the data, e.g. a buffer, so it can
-//!   be leaked if needed, as mention above. This data can be retrieved again by
-//!   using the [`Extract`] trait.
+//!   delay deallocation if needed (e.g. when a `Future` is dropped before being
+//!   polled to completion). This data can be retrieved again by using the
+//!   [`Extract`] trait.
 
 #![feature(const_mut_refs, io_error_more)]
 
@@ -135,7 +132,7 @@ impl Ring {
         for completion in self.completions(timeout)? {
             log::trace!("got completion: {completion:?}");
             let user_data = completion.inner.user_data;
-            sq.complete(user_data as usize, completion.inner.res);
+            sq.complete_op(user_data as usize, completion.inner.res);
         }
         Ok(())
     }
@@ -419,12 +416,66 @@ impl SubmissionQueue {
         panic!("a10::SubmissionQueue::poll called incorrectly");
     }
 
+    /// Mark the operation with `op_index` as dropped.
+    ///
+    /// Because the kernel still has access to the `resources`, we might have to
+    /// do some trickery to delay the deallocation of `resources` and making the
+    /// queued operation slot available again.
+    pub(crate) fn drop_op<T>(&self, op_index: OpIndex, resources: T) {
+        if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                if op.is_done() {
+                    // Easy path, the operation has already been completed.
+                    *operation = None;
+                    // Unlock defore dropping `resources`, which might take a
+                    // while.
+                    drop(operation);
+                    self.shared.op_indices.make_available(op_index.0);
+
+                    // We can safely drop the resources.
+                    drop(resources);
+                    return;
+                }
+
+                // Hard path, the operation is not done, but the Future holding
+                // the resource is about to be dropped, so we need to apply some
+                // trickery here.
+                //
+                // We need to do two things:
+                // 1. Delay the dropping of `resources` until the kernel is done
+                //    with the operation.
+                // 2. Delay the available making of the queued operation slot
+                //    until the kernel is done with the operation.
+                //
+                // We achieve 1 by creating a special waker that just drops the
+                // resources in `resources`.
+                // SAFETY: we're not going to clone the `waker`.
+                let waker = unsafe { drop_task_waker(resources) };
+                // We achive 2 by setting the operation state to dropped, so
+                // that `QueuedOperation::set_result` returns true, which makes
+                // `complete` below make the queued operation slot available
+                // again.
+                op.set_dropped(waker);
+                return;
+            }
+        }
+        panic!("a10::SubmissionQueue::drop_op called incorrectly");
+    }
+
     /// Mark an asynchronous operation as complete with `result`.
-    fn complete(&self, op_index: usize, result: i32) {
-        if let Some(op) = self.shared.queued_ops.get(op_index) {
-            let mut op = op.lock().unwrap();
-            if let Some(op) = &mut *op {
-                op.set_result(result);
+    fn complete_op(&self, op_index: usize, result: i32) {
+        if let Some(operation) = self.shared.queued_ops.get(op_index) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                let is_dropped = op.set_result(result);
+                if is_dropped {
+                    // The Future was previously dropped so no one is waiting on
+                    // the result. We can make the slot avaiable again.
+                    *operation = None;
+                    drop(operation);
+                    self.shared.op_indices.make_available(op_index);
+                }
             }
         }
     }
@@ -434,6 +485,33 @@ impl SubmissionQueue {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (*self.shared.kernel_read).load(Ordering::Acquire) }
+    }
+}
+
+/// Returns a `task::Waker` that will drop `to_drop` when the waker is dropped.
+///
+/// # Safety
+///
+/// The returned `task::Waker` cannot be cloned, it will panic.
+pub(crate) unsafe fn drop_task_waker<T>(to_drop: T) -> task::Waker {
+    // SAFETY: this is safe because we just passed the pointer created by
+    // `Box::into_raw` to this function.
+    fn drop_by_ptr<T>(ptr: *const ()) {
+        unsafe { drop(Box::<T>::from_raw(ptr as _)) }
+    }
+
+    // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
+    unsafe {
+        task::Waker::from_raw(task::RawWaker::new(
+            Box::into_raw(Box::from(to_drop)) as _,
+            &task::RawWakerVTable::new(
+                |_| panic!("attempted to clone `a10::drop_task_waker`"),
+                // SAFETY: `wake` takes ownership, so dropping is safe.
+                drop_by_ptr::<T>,
+                |_| { /* `wake_by_ref` is a no-op. */ },
+                drop_by_ptr::<T>,
+            ),
+        ))
     }
 }
 

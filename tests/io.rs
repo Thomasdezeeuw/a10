@@ -2,7 +2,10 @@
 
 #![feature(once_cell)]
 
+use std::env::temp_dir;
 use std::io;
+
+use a10::fs::OpenOptions;
 
 mod util;
 use util::{bind_ipv4, expect_io_errno, expect_io_error_kind, tcp_ipv4_socket, test_queue, Waker};
@@ -104,4 +107,23 @@ fn cancel_all_no_operation_in_progress() {
 
     let cancel = socket.cancel_all().unwrap();
     waker.block_on(cancel).expect("failed to cancel");
+}
+
+#[test]
+fn dropped_futures_do_not_leak_buffers() {
+    // NOTE: run this test with the `leak` or `address` sanitizer, see the
+    // test_sanitizer Make target, and it shouldn't cause any errors.
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = OpenOptions::new()
+        .write()
+        .open_temp_file(sq, temp_dir())
+        .unwrap();
+    let file = waker.block_on(open_file).unwrap();
+
+    let buf = vec![123; 64 * 1024];
+    let write = file.write(buf);
+    drop(write);
 }
