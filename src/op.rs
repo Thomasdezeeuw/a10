@@ -30,12 +30,18 @@ impl QueuedOperation {
 
     /// Set the result of the operation to `result` and wake to `Future` waiting
     /// for the result.
-    pub(crate) fn set_result(&mut self, result: i32) {
+    ///
+    /// Returns `true` if the operation was previously dropped.
+    pub(crate) fn set_result(&mut self, result: i32) -> bool {
         let res = replace(&mut self.result, OperationResult::Done(result));
-        assert!(matches!(res, OperationResult::InProgress));
+        debug_assert!(matches!(
+            res,
+            OperationResult::InProgress | OperationResult::Dropped
+        ));
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
+        matches!(res, OperationResult::Dropped)
     }
 
     /// Poll the operation check if it's ready.
@@ -48,6 +54,7 @@ impl QueuedOperation {
                 }
                 Poll::Pending
             }
+            OperationResult::Dropped => unreachable!("polling a dropped Future"),
             OperationResult::Done(res) => {
                 if res.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
@@ -60,6 +67,19 @@ impl QueuedOperation {
             }
         }
     }
+
+    /// Returns true if the operation is done.
+    pub(crate) fn is_done(&self) -> bool {
+        matches!(self.result, OperationResult::Done(_))
+    }
+
+    /// Set the state of the operation as dropped, but still in progress kernel
+    /// side. This set the waker to `waker` and make `set_result` return `true`.
+    pub(crate) fn set_dropped(&mut self, waker: task::Waker) {
+        let res = replace(&mut self.result, OperationResult::Dropped);
+        debug_assert!(matches!(res, OperationResult::InProgress));
+        self.waker = Some(waker);
+    }
 }
 
 /// Result of an operation.
@@ -67,6 +87,9 @@ impl QueuedOperation {
 enum OperationResult {
     /// Operation is in progress, waiting on result.
     InProgress,
+    /// The `Future` waiting for this operation has been dropped, but kernel
+    /// side it's still in progress.
+    Dropped,
     /// Operation done.
     ///
     /// Value is the result from the operation; negative is a (negative) errno,
@@ -522,9 +545,8 @@ macro_rules! op_future {
         impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
                 $(
-                if let Some($field) = std::mem::take(&mut self.$field) {
-                    log::warn!($drop_msg);
-                    std::mem::forget($field);
+                if let Some($field) = self.$field.take() {
+                    self.fd.sq.drop_op(self.op_index, $field);
                 }
                 )?
             }
