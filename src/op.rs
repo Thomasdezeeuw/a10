@@ -517,7 +517,7 @@ macro_rules! op_future {
             fn drop(&mut self) {
                 $(
                 if let Some($field) = std::mem::take(&mut self.$field) {
-                    log::debug!($drop_msg);
+                    log::warn!($drop_msg);
                     std::mem::forget($field);
                 }
                 )?
