@@ -469,7 +469,10 @@ macro_rules! op_future {
                         let $extract_self = &mut self.fut;
                         $extract_map
                     }),
-                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                    std::task::Poll::Ready(std::result::Result::Err(err)) => {
+                        $( drop(self.fut.$field.take()); )?
+                        std::task::Poll::Ready(std::result::Result::Err(err))
+                    },
                     std::task::Poll::Pending => std::task::Poll::Pending,
                 }
             }
@@ -507,7 +510,10 @@ macro_rules! op_future {
                         let $self = &mut self;
                         $map_result
                     }),
-                    std::task::Poll::Ready(std::result::Result::Err(err)) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                    std::task::Poll::Ready(std::result::Result::Err(err)) => {
+                        $( drop(self.$field.take()); )?
+                        std::task::Poll::Ready(std::result::Result::Err(err))
+                    },
                     std::task::Poll::Pending => std::task::Poll::Pending,
                 }
             }
