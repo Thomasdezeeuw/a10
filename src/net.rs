@@ -182,7 +182,10 @@ op_future! {
         /// Address needs to stay alive for as long as the kernel is connecting.
         address: Box<libc::sockaddr_storage>, "dropped `a10::net::Connect` before completion, leaking address buffer",
     },
-    |res| Ok(debug_assert!(res == 0)),
+    |this, res| {
+        drop(this.address.take());
+        Ok(debug_assert!(res == 0))
+    },
     extract: |this, res| -> Box<libc::sockaddr_storage> {
         debug_assert!(res == 0);
         Ok(this.address.take().unwrap().into_inner())
@@ -197,7 +200,10 @@ op_future! {
         /// access it safely.
         buf: B, "dropped `a10::net::Send` before completion, leaking buffer",
     },
-    |n| Ok(n as usize),
+    |this, n| {
+        drop(this.buf.take());
+        Ok(n as usize)
+    },
     extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))

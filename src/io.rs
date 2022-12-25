@@ -163,7 +163,10 @@ op_future! {
         /// access it safely.
         buf: B, "dropped `a10::io::Write` before completion, leaking buffer",
     },
-    |n| Ok(n as usize),
+    |this, n| {
+        drop(this.buf.take());
+        Ok(n as usize)
+    },
     extract: |this, n| -> (B, usize) {
         let buf = this.buf.take().unwrap().into_inner();
         Ok((buf, n as usize))
