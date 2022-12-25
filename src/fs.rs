@@ -194,17 +194,16 @@ impl Future for Open {
     type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.sq
-            .as_ref()
-            .unwrap()
-            .poll_op(ctx, self.op_index)
-            .map_ok(|fd| {
+        match self.sq.as_ref().unwrap().poll_op(ctx, self.op_index) {
+            Poll::Ready(res) => {
                 drop(self.path.take());
-                AsyncFd {
+                Poll::Ready(res.map(|fd| AsyncFd {
                     fd,
                     sq: self.sq.take().unwrap(),
-                }
-            })
+                }))
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -214,20 +213,23 @@ impl Future for Extractor<Open> {
     type Output = io::Result<(AsyncFd, PathBuf)>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.fut
-            .sq
-            .as_ref()
-            .unwrap()
-            .poll_op(ctx, self.fut.op_index)
-            .map_ok(|fd| {
+        let op_index = self.fut.op_index;
+        match self.fut.sq.as_ref().unwrap().poll_op(ctx, op_index) {
+            Poll::Ready(Ok(fd)) => {
                 let file = AsyncFd {
                     fd,
                     sq: self.fut.sq.take().unwrap(),
                 };
                 let path_bytes = self.fut.path.take().unwrap().into_bytes();
                 let path = OsString::from_vec(path_bytes).into();
-                (file, path)
-            })
+                Poll::Ready(Ok((file, path)))
+            }
+            Poll::Ready(Err(err)) => {
+                drop(self.fut.path.take());
+                Poll::Ready(Err(err))
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
