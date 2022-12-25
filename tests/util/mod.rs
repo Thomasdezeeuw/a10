@@ -26,7 +26,11 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         let sq = ring.submission_queue().clone();
         thread::spawn(move || {
             let res = panic::catch_unwind(move || loop {
-                ring.poll(None).expect("failed to poll ring");
+                match ring.poll(None) {
+                    Ok(()) => continue,
+                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(err) => panic!("unexpected error polling: {err}"),
+                }
             });
             match res {
                 Ok(()) => (),
