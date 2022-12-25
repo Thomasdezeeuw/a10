@@ -30,21 +30,17 @@ impl AtomicBitMap {
     pub(crate) fn next_available(&self) -> Option<usize> {
         for (idx, data) in self.data.iter().enumerate() {
             let mut value = data.load(Ordering::Relaxed);
-            if value == usize::MAX {
-                continue; // All taken.
-            }
-
-            for i in value.leading_ones() as usize..usize::BITS as usize {
-                if is_unset(value, i) {
-                    // Attempt to set the bit, claiming the slot.
-                    value = data.fetch_or(1 << i, Ordering::SeqCst);
-                    // Another thread could have attempted to set the same bit
-                    // we're setting, so we need to make sure we actually set
-                    // the bit (i.e. if was unset in the previous state).
-                    if is_unset(value, i) {
-                        return Some((idx * usize::BITS as usize) + i);
-                    }
+            let mut i = value.trailing_ones();
+            while i < usize::BITS {
+                // Attempt to set the bit, claiming the slot.
+                value = data.fetch_or(1 << i, Ordering::SeqCst);
+                // Another thread could have attempted to set the same bit we're
+                // setting, so we need to make sure we actually set the bit
+                // (i.e. check if was unset in the previous state).
+                if is_unset(value, i as usize) {
+                    return Some((idx * usize::BITS as usize) + i as usize);
                 }
+                i += (value >> i).trailing_ones();
             }
         }
         None
@@ -138,4 +134,49 @@ fn setting_and_unsetting(entries: usize) {
     }
     // Next avaiable index should be 0 again.
     assert!(matches!(map.next_available(), Some(i) if i == 0));
+}
+
+#[test]
+fn setting_and_unsetting_concurrent() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+
+    const N: usize = 4;
+    const M: usize = 1024;
+
+    let bitmap = Arc::new(AtomicBitMap::new(N * M));
+    let barrier = Arc::new(Barrier::new(N + 1));
+    let handles = (0..N)
+        .map(|i| {
+            let bitmap = bitmap.clone();
+            let barrier = barrier.clone();
+            thread::spawn(move || {
+                let mut indices = Vec::with_capacity(M);
+                barrier.wait();
+
+                if i % 2 == 0 {
+                    for _ in 0..M {
+                        let idx = bitmap.next_available().expect("failed to get index");
+                        indices.push(idx);
+                    }
+
+                    for idx in indices {
+                        bitmap.make_available(idx);
+                    }
+                } else {
+                    for _ in 0..M {
+                        let idx = bitmap.next_available().expect("failed to get index");
+                        bitmap.make_available(idx);
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    barrier.wait();
+    handles
+        .into_iter()
+        .map(|handle| handle.join())
+        .collect::<thread::Result<()>>()
+        .unwrap();
 }
