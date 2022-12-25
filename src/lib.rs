@@ -132,7 +132,8 @@ impl Ring {
         for completion in self.completions(timeout)? {
             log::trace!("got completion: {completion:?}");
             let user_data = completion.inner.user_data;
-            sq.complete_op(user_data as usize, completion.inner.res);
+            // SAFETY: we're calling this with information from the kernel.
+            unsafe { sq.complete_op(user_data as usize, completion.inner.res) };
         }
         Ok(())
     }
@@ -464,7 +465,13 @@ impl SubmissionQueue {
     }
 
     /// Mark an asynchronous operation as complete with `result`.
-    fn complete_op(&self, op_index: usize, result: i32) {
+    ///
+    /// # Safety
+    ///
+    /// This may only be called when the kernel is no longer using the resources
+    /// (e.g. read buffer)
+    /// for the operation
+    unsafe fn complete_op(&self, op_index: usize, result: i32) {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
