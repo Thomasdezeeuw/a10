@@ -322,7 +322,7 @@ op_future! {
     fn AsyncFd::metadata -> Box<Metadata>,
     struct Stat<'fd> {
         /// Buffer to write the statx data into.
-        metadata: Box<Metadata>, "dropped `a10::fs::Stat` before completion, leaking metadata buffer",
+        metadata: Box<Metadata>,
     },
     |this, n| {
         debug_assert!(n == 0);

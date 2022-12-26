@@ -410,10 +410,9 @@ macro_rules! op_future {
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             // Field passed to io_uring, always wrapped in an `Option`. Syntax
-            // is the same a struct definition, with `$drop_msg` being the
-            // message logged when leaking `$field`.
+            // is the same a struct definition.
             $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
+            $field: ident : $value: ty,
             )*
         },
         // Mapping function for `SharedOperationState::poll` result.
@@ -426,7 +425,7 @@ macro_rules! op_future {
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
                 $(#[$field_doc])*
-                $field: $value, $drop_msg,
+                $field: $value,
                 )*
             },
             |$self, $arg| $map_result,
@@ -458,7 +457,7 @@ macro_rules! op_future {
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
+            $field: ident : $value: ty,
             )*
         },
         |$self: ident, $arg: ident| $map_result: expr,
@@ -520,7 +519,7 @@ macro_rules! op_future {
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             $(#[ $field_doc: meta ])*
-            $field: ident : $value: ty, $drop_msg: expr,
+            $field: ident : $value: ty,
             )*
         },
         |$arg: ident| $map_result: expr, // Only difference: 1 argument.
@@ -531,7 +530,7 @@ macro_rules! op_future {
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
                 $(#[$field_doc])*
-                $field: $value, $drop_msg,
+                $field: $value,
                 )*
             },
             |_unused_this, $arg| $map_result,

@@ -146,7 +146,7 @@ op_future! {
     struct Read<'fd, B: ReadBuf> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: B, "dropped `a10::io::Read` before completion, leaking buffer",
+        buf: B,
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();
@@ -161,7 +161,7 @@ op_future! {
     struct Write<'fd, B: WriteBuf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: B, "dropped `a10::io::Write` before completion, leaking buffer",
+        buf: B,
     },
     |this, n| {
         drop(this.buf.take());

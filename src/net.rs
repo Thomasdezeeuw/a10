@@ -182,7 +182,7 @@ op_future! {
     fn AsyncFd::connect -> (),
     struct Connect<'fd> {
         /// Address needs to stay alive for as long as the kernel is connecting.
-        address: Box<libc::sockaddr_storage>, "dropped `a10::net::Connect` before completion, leaking address buffer",
+        address: Box<libc::sockaddr_storage>,
     },
     |this, res| {
         drop(this.address.take());
@@ -200,7 +200,7 @@ op_future! {
     struct Send<'fd, B: WriteBuf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: B, "dropped `a10::net::Send` before completion, leaking buffer",
+        buf: B,
     },
     |this, n| {
         drop(this.buf.take());
@@ -218,7 +218,7 @@ op_future! {
     struct Recv<'fd, B: ReadBuf> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
-        buf: B, "dropped `a10::net::Recv` before completion, leaking buffer",
+        buf: B,
     },
     |this, n| {
         let mut buf = this.buf.take().unwrap().into_inner();
@@ -233,7 +233,7 @@ op_future! {
     struct Accept<'fd> {
         /// Address for the accepted connection, needs to stay in memory so the
         /// kernel can access it safely.
-        address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>, "dropped `a10::net::Accept` before completion, leaking address buffer",
+        address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>,
     },
     |this, fd| {
         let sq = this.fd.sq.clone();
