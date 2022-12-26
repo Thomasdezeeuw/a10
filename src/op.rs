@@ -415,9 +415,11 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
-        // Mapping function for `SharedOperationState::poll` result.
+        // Mapping function that maps the returned `$arg`ument into
+        // `$map_result`. The `$resources` is a tuple of the `$field`s on the
+        // future.
         |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
-        // Mapping function for `Extractor` implementation.
+        // Mapping function for `Extractor` implementation. See above.
         extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
         op_future!{
@@ -447,7 +449,7 @@ macro_rules! op_future {
                         $extract_map
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        drop(self.fut.resources.take());
+                        std::mem::drop(self.fut.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -470,6 +472,10 @@ macro_rules! op_future {
         #[derive(Debug)]
         pub struct $name<$lifetime $(, $generic)*> {
             /// Resoures used in the operation.
+            ///
+            /// If this is `Some` when the future is dropped it will assume it
+            /// was dropped before completion and set the operation state to
+            /// dropped.
             resources: std::option::Option<std::cell::UnsafeCell<(
                 $( $value, )*
             )>>,
@@ -504,7 +510,7 @@ macro_rules! op_future {
                         $map_result
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        drop(self.resources.take());
+                        std::mem::drop(self.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -514,7 +520,7 @@ macro_rules! op_future {
 
         impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
-                if let Some(resources) = self.resources.take() {
+                if let std::option::Option::Some(resources) = self.resources.take() {
                     self.fd.sq.drop_op(self.op_index, resources);
                 }
             }
