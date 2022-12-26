@@ -409,12 +409,12 @@ macro_rules! op_future {
         // Future structure.
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
-            // Field passed to io_uring, must be an `Option`. Syntax is the same
-            // a struct definition, with `$drop_msg` being the message logged
-            // when leaking `$field`.
+            // Field passed to io_uring, always wrapped in an `Option`. Syntax
+            // is the same a struct definition, with `$drop_msg` being the
+            // message logged when leaking `$field`.
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty, $drop_msg: expr,
-            )?
+            )*
         },
         // Mapping function for `SharedOperationState::poll` result.
         |$self: ident, $arg: ident| $map_result: expr,
@@ -427,7 +427,7 @@ macro_rules! op_future {
                 $(
                 $(#[$field_doc])*
                 $field: $value, $drop_msg,
-                )?
+                )*
             },
             |$self, $arg| $map_result,
         }
@@ -444,7 +444,7 @@ macro_rules! op_future {
                         $extract_map
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        $( drop(self.fut.$field.take()); )?
+                        $( drop(self.fut.$field.take()); )*
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -459,7 +459,7 @@ macro_rules! op_future {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty, $drop_msg: expr,
-            )?
+            )*
         },
         |$self: ident, $arg: ident| $map_result: expr,
     ) => {
@@ -469,7 +469,7 @@ macro_rules! op_future {
             $(
             $(#[ $field_doc ])*
             $field: std::option::Option<std::cell::UnsafeCell<$value>>,
-            )?
+            )*
             fd: &$lifetime $f,
             /// Index for the queued operation.
             op_index: $crate::OpIndex,
@@ -485,7 +485,7 @@ macro_rules! op_future {
                         $map_result
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        $( drop(self.$field.take()); )?
+                        $( drop(self.$field.take()); )*
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -495,11 +495,22 @@ macro_rules! op_future {
 
         impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
-                $(
-                if let Some($field) = self.$field.take() {
-                    self.fd.sq.drop_op(self.op_index, $field);
+                #[allow(unused_mut)]
+                let mut needs_drop = false;
+
+                let field = (
+                    $(
+                    {
+                        let f = self.$field.take();
+                        needs_drop |= f.is_some();
+                        f
+                    },
+                    )*
+                );
+
+                if needs_drop {
+                    self.fd.sq.drop_op(self.op_index, field);
                 }
-                )?
             }
         }
     };
@@ -510,7 +521,7 @@ macro_rules! op_future {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty, $drop_msg: expr,
-            )?
+            )*
         },
         |$arg: ident| $map_result: expr, // Only difference: 1 argument.
         $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
@@ -521,7 +532,7 @@ macro_rules! op_future {
                 $(
                 $(#[$field_doc])*
                 $field: $value, $drop_msg,
-                )?
+                )*
             },
             |_unused_this, $arg| $map_result,
             $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map, )?
