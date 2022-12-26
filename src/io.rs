@@ -1,6 +1,5 @@
 //! Type definitions for I/O functionality.
 
-use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::ManuallyDrop;
 use std::pin::Pin;
@@ -51,11 +50,7 @@ impl AsyncFd {
             submission.read_at(self.fd, ptr, len, offset);
         })?;
 
-        Ok(Read {
-            buf: Some(UnsafeCell::new(buf)),
-            fd: self,
-            op_index,
-        })
+        Ok(Read::new(self, op_index, buf))
     }
 
     /// Write `buf` to this file.
@@ -82,11 +77,7 @@ impl AsyncFd {
             submission.write_at(self.fd, ptr, len, offset);
         })?;
 
-        Ok(Write {
-            buf: Some(UnsafeCell::new(buf)),
-            fd: self,
-            op_index,
-        })
+        Ok(Write::new(self, op_index, buf))
     }
 
     /// Attempt to cancel an already operation.
@@ -148,8 +139,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, n| {
-        let mut buf = this.buf.take().unwrap().into_inner();
+    |this, (mut buf,), n| {
         unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
@@ -163,12 +153,8 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, n| {
-        drop(this.buf.take());
-        Ok(n as usize)
-    },
-    extract: |this, n| -> (B, usize) {
-        let buf = this.buf.take().unwrap().into_inner();
+    |n| Ok(n as usize),
+    extract: |this, (buf,), n| -> (B, usize) {
         Ok((buf, n as usize))
     },
 }

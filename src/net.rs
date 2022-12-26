@@ -1,6 +1,5 @@
 //! Asynchronous networking.
 
-use std::cell::UnsafeCell;
 use std::future::Future;
 use std::io;
 use std::mem::{size_of, MaybeUninit};
@@ -46,12 +45,7 @@ impl AsyncFd {
             submission.connect(self.fd, &mut address, address_length);
         })?;
 
-        Ok(Connect {
-            // Needs to stay alive as long as the kernel is accessing it.
-            address: Some(UnsafeCell::new(address)),
-            fd: self,
-            op_index,
-        })
+        Ok(Connect::new(self, op_index, address))
     }
 
     /// Sends data on the socket to a connected peer.
@@ -64,12 +58,7 @@ impl AsyncFd {
             submission.send(self.fd, ptr, len, flags);
         })?;
 
-        Ok(Send {
-            // Needs to stay alive as long as the kernel is accessing it.
-            buf: Some(UnsafeCell::new(buf)),
-            fd: self,
-            op_index,
-        })
+        Ok(Send::new(self, op_index, buf))
     }
 
     /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
@@ -93,12 +82,7 @@ impl AsyncFd {
             submission.send_zc(self.fd, ptr, len, flags);
         })?;
 
-        Ok(Send {
-            // Needs to stay alive as long as the kernel is accessing it.
-            buf: Some(UnsafeCell::new(buf)),
-            fd: self,
-            op_index,
-        })
+        Ok(Send::new(self, op_index, buf))
     }
 
     /// Receives data on the socket from the remote address to which it is
@@ -116,12 +100,7 @@ impl AsyncFd {
             submission.recv(self.fd, ptr, len, flags);
         })?;
 
-        Ok(Recv {
-            // Needs to stay alive as long as the kernel is accessing it.
-            buf: Some(UnsafeCell::new(buf)),
-            fd: self,
-            op_index,
-        })
+        Ok(Recv::new(self, op_index, buf))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
@@ -145,11 +124,7 @@ impl AsyncFd {
             submission.accept(self.fd, &mut address.0, &mut address.1, flags);
         })?;
 
-        Ok(Accept {
-            address: Some(UnsafeCell::new(address)),
-            fd: self,
-            op_index,
-        })
+        Ok(Accept::new(self, op_index, address))
     }
 }
 
@@ -184,13 +159,10 @@ op_future! {
         /// Address needs to stay alive for as long as the kernel is connecting.
         address: Box<libc::sockaddr_storage>,
     },
-    |this, res| {
-        drop(this.address.take());
-        Ok(debug_assert!(res == 0))
-    },
-    extract: |this, res| -> Box<libc::sockaddr_storage> {
+    |result| Ok(debug_assert!(result == 0)),
+    extract: |this, (address,), res| -> Box<libc::sockaddr_storage> {
         debug_assert!(res == 0);
-        Ok(this.address.take().unwrap().into_inner())
+        Ok(address)
     },
 }
 
@@ -202,12 +174,8 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, n| {
-        drop(this.buf.take());
-        Ok(n as usize)
-    },
-    extract: |this, n| -> (B, usize) {
-        let buf = this.buf.take().unwrap().into_inner();
+    |n| Ok(n as usize),
+    extract: |this, (buf,), n| -> (B, usize) {
         Ok((buf, n as usize))
     },
 }
@@ -220,8 +188,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, n| {
-        let mut buf = this.buf.take().unwrap().into_inner();
+    |this, (mut buf,), n| {
         unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
@@ -235,11 +202,10 @@ op_future! {
         /// kernel can access it safely.
         address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>,
     },
-    |this, fd| {
+    |this, (address,), fd| {
         let sq = this.fd.sq.clone();
         let stream = AsyncFd { fd, sq };
 
-        let address = this.address.take().unwrap().into_inner();
         let storage = unsafe { address.0.assume_init_ref() };
         let address_length = address.1 as usize;
 

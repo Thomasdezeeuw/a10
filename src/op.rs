@@ -416,9 +416,9 @@ macro_rules! op_future {
             )*
         },
         // Mapping function for `SharedOperationState::poll` result.
-        |$self: ident, $arg: ident| $map_result: expr,
+        |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
         // Mapping function for `Extractor` implementation.
-        extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
+        extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
         op_future!{
             fn $f::$fn -> $result,
@@ -428,7 +428,7 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
-            |$self, $arg| $map_result,
+            |$self, $resources, $arg| $map_result,
         }
 
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
@@ -440,10 +440,14 @@ macro_rules! op_future {
                 match self.fut.fd.sq.poll_op(ctx, self.fut.op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
                         let $extract_self = &mut self.fut;
+                        // SAFETY: this will not panic because we need to keep
+                        // the resources around until the operation is
+                        // completed.
+                        let $extract_resources = $extract_self.resources.take().unwrap().into_inner();
                         $extract_map
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        $( drop(self.fut.$field.take()); )*
+                        drop(self.fut.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -460,18 +464,30 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
-        |$self: ident, $arg: ident| $map_result: expr,
+        |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
         pub struct $name<$lifetime $(, $generic)*> {
-            $(
-            $(#[ $field_doc ])*
-            $field: std::option::Option<std::cell::UnsafeCell<$value>>,
-            )*
+            /// Resoures used in the operation.
+            resources: std::option::Option<std::cell::UnsafeCell<(
+                $( $value, )*
+            )>>,
             fd: &$lifetime $f,
             /// Index for the queued operation.
             op_index: $crate::OpIndex,
+        }
+
+        impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
+            const fn new(fd: &$lifetime $f, op_index: $crate::OpIndex, $( $field: $value, )*) -> $name<$lifetime $(, $generic)*> {
+                $name {
+                    resources: std::option::Option::Some(std::cell::UnsafeCell::new((
+                        $( $field, )*
+                    ))),
+                    fd,
+                    op_index,
+                }
+            }
         }
 
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
@@ -481,10 +497,14 @@ macro_rules! op_future {
                 match self.fd.sq.poll_op(ctx, self.op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($arg)) => std::task::Poll::Ready({
                         let $self = &mut self;
+                        // SAFETY: this will not panic because we need to keep
+                        // the resources around until the operation is
+                        // completed.
+                        let $resources = $self.resources.take().unwrap().into_inner();
                         $map_result
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        $( drop(self.$field.take()); )*
+                        drop(self.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -494,26 +514,13 @@ macro_rules! op_future {
 
         impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
-                #[allow(unused_mut)]
-                let mut needs_drop = false;
-
-                let field = (
-                    $(
-                    {
-                        let f = self.$field.take();
-                        needs_drop |= f.is_some();
-                        f
-                    },
-                    )*
-                );
-
-                if needs_drop {
-                    self.fd.sq.drop_op(self.op_index, field);
+                if let Some(resources) = self.resources.take() {
+                    self.fd.sq.drop_op(self.op_index, resources);
                 }
             }
         }
     };
-    // Version that doesn't need `self` (this) in `$map_result`.
+    // Version that doesn't need `self` (this) or resources in `$map_result`.
     (
         fn $f: ident :: $fn: ident -> $result: ty,
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
@@ -523,7 +530,7 @@ macro_rules! op_future {
             )*
         },
         |$arg: ident| $map_result: expr, // Only difference: 1 argument.
-        $( extract: |$extract_self: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
+        $( extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
         op_future!{
             fn $f::$fn -> $result,
@@ -533,8 +540,8 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
-            |_unused_this, $arg| $map_result,
-            $( extract: |$extract_self, $extract_arg| -> $extract_result $extract_map, )?
+            |_unused_this, _unused_resources, $arg| $map_result,
+            $( extract: |$extract_self, $extract_resources, $extract_arg| -> $extract_result $extract_map, )?
         }
     };
 }

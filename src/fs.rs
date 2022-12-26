@@ -3,7 +3,6 @@
 //! The main type is [`OpenOptions`], which can be used to open a file
 //! ([`AsyncFd`]).
 
-use std::cell::UnsafeCell;
 use std::ffi::{CString, OsString};
 use std::future::Future;
 use std::mem::{forget as leak, zeroed};
@@ -256,7 +255,7 @@ impl AsyncFd {
             .sq
             .add(|submission| unsafe { submission.fsync(self.fd, 0) })?;
 
-        Ok(SyncAll { fd: self, op_index })
+        Ok(SyncAll::new(self, op_index))
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -277,7 +276,7 @@ impl AsyncFd {
             submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC);
         })?;
 
-        Ok(SyncData { fd: self, op_index })
+        Ok(SyncData::new(self, op_index))
     }
 
     /// Retrieve metadata about the file.
@@ -291,11 +290,7 @@ impl AsyncFd {
             submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
         })?;
 
-        Ok(Stat {
-            metadata: Some(UnsafeCell::new(metadata)),
-            fd: self,
-            op_index,
-        })
+        Ok(Stat::new(self, op_index, metadata))
     }
 }
 
@@ -324,10 +319,9 @@ op_future! {
         /// Buffer to write the statx data into.
         metadata: Box<Metadata>,
     },
-    |this, n| {
+    |this, (metadata,), n| {
         debug_assert!(n == 0);
-        let metadata = this.metadata.take().unwrap().into_inner();
-        assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
+        debug_assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
         Ok(metadata)
     },
 }
