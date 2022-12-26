@@ -317,6 +317,15 @@ unsafe impl WriteBuf for Vec<u8> {
     }
 }
 
+// SAFETY: `String` is just a `Vec<u8>`, see it's implementation for the safety
+// reasoning.
+unsafe impl WriteBuf for String {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let slice = self.as_bytes();
+        (slice.as_ptr().cast(), slice.len() as u32)
+    }
+}
+
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
 // can't be deallocated, so it's safe to implement `WriteBuf`.
 unsafe impl WriteBuf for &'static [u8] {
