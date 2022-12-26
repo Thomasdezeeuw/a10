@@ -17,6 +17,7 @@ pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
     clamp: bool,
+    cpu_affinity: Option<u32>,
     attach: Option<&'r Ring>,
 }
 
@@ -40,6 +41,7 @@ impl<'r> Config<'r> {
             submission_entries: entries,
             completion_entries: None,
             clamp: false,
+            cpu_affinity: None,
             attach: None,
         }
     }
@@ -65,6 +67,14 @@ impl<'r> Config<'r> {
     #[doc(alias = "IORING_SETUP_CLAMP")]
     pub const fn clamp_queue_sizes(mut self) -> Self {
         self.clamp = true;
+        self
+    }
+
+    /// Set the CPU affinity of the returned [`Ring`]. This means that only the
+    /// thread running on `cpu` may call [`Ring::poll`].
+    #[doc(alias = "IORING_SETUP_SQ_AFF")]
+    pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
+        self.cpu_affinity = Some(cpu);
         self
     }
 
@@ -94,6 +104,9 @@ impl<'r> Config<'r> {
         }
         if self.clamp {
             parameters.flags |= libc::IORING_SETUP_CLAMP;
+        }
+        if let Some(cpu) = self.cpu_affinity {
+            parameters.sq_thread_cpu = cpu;
         }
         if let Some(other_ring) = self.attach {
             parameters.wq_fd = other_ring.sq.shared.ring_fd.as_raw_fd() as u32;
