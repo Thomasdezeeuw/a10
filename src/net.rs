@@ -55,20 +55,7 @@ impl AsyncFd {
     }
 
     /// Sends data on the socket to a connected peer.
-    pub fn send<'fd, B>(&'fd self, buf: B) -> Result<Send<'fd, B>, QueueFull>
-    where
-        B: WriteBuf,
-    {
-        self.send_with_flags(buf, 0)
-    }
-
-    /// Identical to [`AsyncFd::send`] but allows for specification of arbitrary
-    /// flags to the underlying `send` call.
-    pub fn send_with_flags<'fd, B>(
-        &'fd self,
-        buf: B,
-        flags: libc::c_int,
-    ) -> Result<Send<'fd, B>, QueueFull>
+    pub fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Result<Send<'fd, B>, QueueFull>
     where
         B: WriteBuf,
     {
@@ -85,15 +72,15 @@ impl AsyncFd {
         })
     }
 
-    /// Same as [`AsyncFd::send_with_flags`], but tries to avoid making
-    /// intermediate copies of `buf`.
+    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
+    /// of `buf`.
     ///
     /// # Notes
     ///
     /// Zerocopy execution is not guaranteed and may fall back to copying. The
     /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
-    /// zerocopy, in which case users are recommended to use
-    /// [`AsyncFd::send_with_flags`] instead.
+    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
+    /// instead.
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
@@ -116,21 +103,7 @@ impl AsyncFd {
 
     /// Receives data on the socket from the remote address to which it is
     /// connected.
-    ///
-    /// # Notes
-    ///
-    /// This leave the current contents of `buf` untouched and only uses the
-    /// spare capacity.
-    pub fn recv<'fd, B>(&'fd self, buf: B) -> Result<Recv<'fd, B>, QueueFull>
-    where
-        B: ReadBuf,
-    {
-        self.recv_with_flags(buf, 0)
-    }
-
-    /// Identical to [`AsyncFd::recv`] but allows for specification of arbitrary
-    /// flags to the underlying `recv` call.
-    pub fn recv_with_flags<'fd, B>(
+    pub fn recv<'fd, B>(
         &'fd self,
         mut buf: B,
         flags: libc::c_int,

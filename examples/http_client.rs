@@ -66,10 +66,10 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
     let version = env!("CARGO_PKG_VERSION");
     let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
-    socket.send(request)?.await?;
+    socket.send(request, 0)?.await?;
 
     // Receiving the response.
-    let recv_buf = socket.recv(Vec::with_capacity(8192))?.await?;
+    let recv_buf = socket.recv(Vec::with_capacity(8192), 0)?.await?;
 
     // We'll explicitly close the socket, although that happens for us when we
     // drop the socket. In other words, this is not needed.

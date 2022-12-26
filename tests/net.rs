@@ -172,7 +172,7 @@ fn recv() {
     waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
-    let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1)).unwrap();
+    let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1), 0).unwrap();
     client.write_all(DATA1).expect("failed to send data");
     let mut buf = waker.block_on(recv_future).expect("failed to receive");
     assert_eq!(&buf, DATA1);
@@ -181,7 +181,7 @@ fn recv() {
     drop(client);
     buf.clear();
     let buf = waker
-        .block_on(stream.recv(buf).unwrap())
+        .block_on(stream.recv(buf, 0).unwrap())
         .expect("failed to receive");
     assert!(buf.is_empty());
 }
@@ -210,7 +210,7 @@ fn send() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send(DATA2).unwrap())
+        .block_on(stream.send(DATA2, 0).unwrap())
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -274,7 +274,7 @@ fn send_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send(DATA2).unwrap().extract())
+        .block_on(stream.send(DATA2, 0).unwrap().extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
