@@ -131,9 +131,16 @@ impl Ring {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
             log::trace!("got completion: {completion:?}");
-            let user_data = completion.inner.user_data;
-            // SAFETY: we're calling this with information from the kernel.
-            unsafe { sq.complete_op(user_data as usize, completion.inner.res) };
+            if completion.is_in_progress() {
+                // SAFETY: we're calling this with information from the kernel.
+                unsafe { sq.set_op_in_progress_result(completion.index(), completion.result()) };
+            } else if completion.is_notification() {
+                // SAFETY: we're calling this with information from the kernel.
+                unsafe { sq.complete_in_progress_op(completion.index()) };
+            } else {
+                // SAFETY: we're calling this with information from the kernel.
+                unsafe { sq.complete_op(completion.index(), completion.result()) };
+            }
         }
         Ok(())
     }
@@ -311,7 +318,7 @@ impl SubmissionQueue {
             None => return Err(QueueFull(())),
         };
 
-        let queued_op = QueuedOperation::in_progress();
+        let queued_op = QueuedOperation::new();
         // SAFETY: the `AtomicBitMap` always returns valid indices for
         // `op_queue` (it's the whole point of it).
         let mut op = shared.queued_ops[op_index].lock().unwrap();
@@ -464,18 +471,56 @@ impl SubmissionQueue {
         panic!("a10::SubmissionQueue::drop_op called incorrectly");
     }
 
+    /// Set the result of asynchronous operation, but don't mark it as complete.
+    /// This is for zero copy operations which report their result in one
+    /// completion and releasing of the buffer in another.
+    ///
+    /// # Safety
+    ///
+    /// This may only be called based on information form the kernel.
+    unsafe fn set_op_in_progress_result(&self, op_index: usize, result: i32) {
+        if let Some(operation) = self.shared.queued_ops.get(op_index) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                op.set_in_progress_result(result);
+            }
+        }
+    }
+
+    /// Mark in in-progress operation (as set by `set_op_in_progress_result`) as
+    /// completed.
+    ///
+    /// # Safety
+    ///
+    /// This may only be called when the kernel is no longer using the resources
+    /// (e.g. read buffer) for the operation.
+    unsafe fn complete_in_progress_op(&self, op_index: usize) {
+        if let Some(operation) = self.shared.queued_ops.get(op_index) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                let is_dropped = op.complete_in_progress();
+                if is_dropped {
+                    // The Future was previously dropped so no one is waiting on
+                    // the result. We can make the slot avaiable again.
+                    *operation = None;
+                    drop(operation);
+                    self.shared.op_indices.make_available(op_index);
+                }
+            }
+        }
+    }
+
     /// Mark an asynchronous operation as complete with `result`.
     ///
     /// # Safety
     ///
     /// This may only be called when the kernel is no longer using the resources
-    /// (e.g. read buffer)
-    /// for the operation
+    /// (e.g. read buffer) for the operation.
     unsafe fn complete_op(&self, op_index: usize, result: i32) {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                let is_dropped = op.set_result(result);
+                let is_dropped = op.complete(result);
                 if is_dropped {
                     // The Future was previously dropped so no one is waiting on
                     // the result. We can make the slot avaiable again.
@@ -652,6 +697,28 @@ impl<'ring> Drop for Completions<'ring> {
 #[repr(transparent)]
 struct Completion {
     inner: libc::io_uring_cqe,
+}
+
+impl Completion {
+    /// Returns the operation index.
+    const fn index(&self) -> usize {
+        self.inner.user_data as usize
+    }
+
+    /// Returns the result of the operation.
+    const fn result(&self) -> i32 {
+        self.inner.res
+    }
+
+    /// Return `true` if `IORING_CQE_F_MORE` is set.
+    const fn is_in_progress(&self) -> bool {
+        self.inner.flags & libc::IORING_CQE_F_MORE != 0
+    }
+
+    /// Return `true` if `IORING_CQE_F_NOTIF` is set.
+    const fn is_notification(&self) -> bool {
+        self.inner.flags & libc::IORING_CQE_F_NOTIF != 0
+    }
 }
 
 impl fmt::Debug for Completion {

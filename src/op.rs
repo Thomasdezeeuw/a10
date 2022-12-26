@@ -11,50 +11,91 @@ use crate::libc;
 #[derive(Debug)]
 pub(crate) struct QueuedOperation {
     /// Result of the operation.
-    // NOTE: we could reduce the size of `OperationResult` to an `i32` by using
-    // some unused error number to represent `InProgress`, but on 64bit padding
-    // is added and we end up with 24 bytes any way, so not point at the moment.
     result: OperationResult,
     /// Waker to wake when the operation is done.
     waker: Option<task::Waker>,
 }
 
 impl QueuedOperation {
-    /// Create a queued operation, marked as in progress.
-    pub(crate) const fn in_progress() -> QueuedOperation {
+    /// Create a queued operation.
+    pub(crate) const fn new() -> QueuedOperation {
         QueuedOperation {
-            result: OperationResult::InProgress,
+            result: OperationResult::Started,
             waker: None,
         }
+    }
+
+    /// Set the result of the operation, but don't mark it as complete.
+    pub(crate) fn set_in_progress_result(&mut self, result: i32) {
+        match self.result {
+            OperationResult::Started => self.result = OperationResult::InProgress(result),
+            OperationResult::Dropped => self.result = OperationResult::InProgressDropped(result),
+            OperationResult::InProgress(_)
+            | OperationResult::InProgressDropped(_)
+            | OperationResult::Done(_) => {
+                unreachable!("set_in_progress_result called incorrectly")
+            }
+        }
+    }
+
+    /// Wake to `Future` waiting for the result.
+    ///
+    /// Returns `true` if the operation was previously dropped.
+    pub(crate) fn complete_in_progress(&mut self) -> bool {
+        let is_dropped = match self.result {
+            OperationResult::InProgress(result) => {
+                self.result = OperationResult::Done(result);
+                false
+            }
+            OperationResult::InProgressDropped(result) => {
+                self.result = OperationResult::Done(result);
+                true
+            }
+            OperationResult::Started | OperationResult::Dropped | OperationResult::Done(_) => {
+                unreachable!("complete_in_progress called incorrectly")
+            }
+        };
+        // NOTE: if `is_dropped` is true this drops the operations' resources
+        // (e.g. buffers).
+        if let Some(waker) = self.waker.take() {
+            waker.wake();
+        }
+        is_dropped
     }
 
     /// Set the result of the operation to `result` and wake to `Future` waiting
     /// for the result.
     ///
     /// Returns `true` if the operation was previously dropped.
-    pub(crate) fn set_result(&mut self, result: i32) -> bool {
-        let res = replace(&mut self.result, OperationResult::Done(result));
-        debug_assert!(matches!(
-            res,
-            OperationResult::InProgress | OperationResult::Dropped
-        ));
+    pub(crate) fn complete(&mut self, result: i32) -> bool {
+        let old_state = replace(&mut self.result, OperationResult::Done(result));
+        debug_assert!(match old_state {
+            OperationResult::Started | OperationResult::Dropped => true,
+            OperationResult::InProgress(_)
+            | OperationResult::InProgressDropped(_)
+            | OperationResult::Done(_) => false,
+        });
         if let Some(waker) = self.waker.take() {
             waker.wake();
         }
-        matches!(res, OperationResult::Dropped)
+        // NOTE: `OperationResult::InProgressDropped` shouldn't be reachable
+        // here.
+        matches!(old_state, OperationResult::Dropped)
     }
 
     /// Poll the operation check if it's ready.
     pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
         match self.result {
-            OperationResult::InProgress => {
+            OperationResult::Started | OperationResult::InProgress(_) => {
                 let waker = ctx.waker();
                 if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
                     self.waker = Some(waker.clone());
                 }
                 Poll::Pending
             }
-            OperationResult::Dropped => unreachable!("polling a dropped Future"),
+            OperationResult::Dropped | OperationResult::InProgressDropped(_) => {
+                unreachable!("polling a dropped Future")
+            }
             OperationResult::Done(res) => {
                 if res.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
@@ -77,7 +118,12 @@ impl QueuedOperation {
     /// side. This set the waker to `waker` and make `set_result` return `true`.
     pub(crate) fn set_dropped(&mut self, waker: task::Waker) {
         let res = replace(&mut self.result, OperationResult::Dropped);
-        debug_assert!(matches!(res, OperationResult::InProgress));
+        debug_assert!(match res {
+            OperationResult::Started | OperationResult::InProgress(_) => true,
+            OperationResult::Dropped
+            | OperationResult::InProgressDropped(_)
+            | OperationResult::Done(_) => false,
+        });
         self.waker = Some(waker);
     }
 }
@@ -85,11 +131,19 @@ impl QueuedOperation {
 /// Result of an operation.
 #[derive(Copy, Clone, Debug)]
 enum OperationResult {
-    /// Operation is in progress, waiting on result.
-    InProgress,
+    /// Operation has started, but hasn't report a result yet.
+    Started,
+    /// Operation is in progress, but has already reported the result.
+    ///
+    /// This is for zero copy operations which report the result in one
+    /// completion and notify us in another completion when the buffer can be
+    /// released.
+    InProgress(i32),
     /// The `Future` waiting for this operation has been dropped, but kernel
     /// side it's still in progress.
     Dropped,
+    /// Combination of `InProgress` and `Dropped`.
+    InProgressDropped(i32),
     /// Operation done.
     ///
     /// Value is the result from the operation; negative is a (negative) errno,
