@@ -97,7 +97,9 @@ impl<'r> Config<'r> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
         parameters.flags = libc::IORING_SETUP_SQPOLL // Kernel thread for polling.
-            | libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
+            | libc::IORING_SETUP_SUBMIT_ALL // Submit all submissions on error.
+            // Using `IORING_SETUP_SQPOLL` we always have one issuer.
+            | libc::IORING_SETUP_SINGLE_ISSUER;
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
