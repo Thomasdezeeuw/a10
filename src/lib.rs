@@ -175,11 +175,12 @@ impl Ring {
                 .add_no_result(|submission| unsafe { submission.timeout(&timeout) })?;
         }
 
-        // If not we need to check if the kernel thread is stil awake. If the
-        // kernel thread is not awake we'll need to wake it.
-        let mut enter_flags = libc::IORING_ENTER_GETEVENTS;
+        // If there are no completions we need to check if the kernel thread is
+        // stil awake.
+        let mut enter_flags = libc::IORING_ENTER_GETEVENTS; // Wait for a completion.
         let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
         if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
+            // If the kernel thread is not awake we'll need to wake it.
             log::debug!("waking kernel thread");
             enter_flags |= libc::IORING_ENTER_SQ_WAKEUP;
         }
