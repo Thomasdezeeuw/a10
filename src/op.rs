@@ -272,6 +272,17 @@ impl Submission {
         self.inner.len = len;
     }
 
+    pub(crate) unsafe fn send_zc(
+        &mut self,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        flags: libc::c_int,
+    ) {
+        self.send(fd, ptr, len, flags);
+        self.inner.opcode = libc::IORING_OP_SEND_ZC as u8;
+    }
+
     pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, flags: libc::c_int) {
         self.inner.opcode = libc::IORING_OP_RECV as u8;
         self.inner.fd = fd;

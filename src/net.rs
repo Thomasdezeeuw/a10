@@ -85,6 +85,35 @@ impl AsyncFd {
         })
     }
 
+    /// Same as [`AsyncFd::send_with_flags`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    ///
+    /// # Notes
+    ///
+    /// Zerocopy execution is not guaranteed and may fall back to copying. The
+    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
+    /// zerocopy, in which case users are recommended to use
+    /// [`AsyncFd::send_with_flags`] instead.
+    ///
+    /// The `Future` only returns once it safe for the buffer to be used again,
+    /// for TCP for example this means until the data is ACKed by the peer.
+    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Result<Send<'fd, B>, QueueFull>
+    where
+        B: WriteBuf,
+    {
+        let op_index = self.sq.add(|submission| unsafe {
+            let (ptr, len) = buf.parts();
+            submission.send_zc(self.fd, ptr, len, flags);
+        })?;
+
+        Ok(Send {
+            // Needs to stay alive as long as the kernel is accessing it.
+            buf: Some(UnsafeCell::new(buf)),
+            fd: self,
+            op_index,
+        })
+    }
+
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     ///

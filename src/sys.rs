@@ -83,8 +83,9 @@ pub const IORING_OP_FGETXATTR: libc::c_int = 43;
 pub const IORING_OP_GETXATTR: libc::c_int = 44;
 pub const IORING_OP_SOCKET: libc::c_int = 45;
 pub const IORING_OP_URING_CMD: libc::c_int = 46;
-pub const IORING_OP_SENDZC_NOTIF: libc::c_int = 47;
-pub const IORING_OP_LAST: libc::c_int = 48;
+pub const IORING_OP_SEND_ZC: libc::c_int = 47;
+pub const IORING_OP_SENDMSG_ZC: libc::c_int = 48;
+pub const IORING_OP_LAST: libc::c_int = 49;
 
 pub const IORING_FILE_INDEX_ALLOC: i32 = -1;
 pub const IORING_SETUP_IOPOLL: u32 = 1;

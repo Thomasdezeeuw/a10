@@ -219,6 +219,38 @@ fn send() {
 }
 
 #[test]
+fn send_zc() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let connect_future = stream.connect(addr, addr_len).unwrap();
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let n = waker
+        .block_on(stream.send_zc(DATA2, 0).unwrap())
+        .expect("failed to send");
+    assert_eq!(n, DATA2.len());
+    let mut buf = vec![0; DATA2.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
 fn send_extractor() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -243,6 +275,39 @@ fn send_extractor() {
     // Send some data.
     let (buf, n) = waker
         .block_on(stream.send(DATA2).unwrap().extract())
+        .expect("failed to send");
+    assert_eq!(buf, DATA2);
+    assert_eq!(n, DATA2.len());
+    let mut buf = vec![0; DATA2.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
+fn send_zc_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let connect_future = stream.connect(addr, addr_len).unwrap();
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let (buf, n) = waker
+        .block_on(stream.send_zc(DATA2, 0).unwrap().extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
