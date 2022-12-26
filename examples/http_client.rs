@@ -1,20 +1,27 @@
-use std::future::Future;
 use std::net::{SocketAddr, SocketAddrV4};
-use std::pin::Pin;
-use std::task::{self, Poll};
-use std::{io, mem, ptr, str};
+use std::{env, io, mem, ptr, str};
 
 use a10::net::socket;
 use a10::{Ring, SubmissionQueue};
 
-const HTTP_REQUEST: &str = "GET / HTTP/1.1\r\nHost: thomasdezeeuw.nl\r\nUser-Agent: a10-example/0.1.0\r\nAccept: */*\r\n\r\n";
+mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = Ring::new(2)?;
 
+    let mut host = env::args()
+        .nth(1)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing host"))?;
+    if !host.contains(':') {
+        // Add port 80 for `ToSocketAddrs`.
+        let insert_idx = host.find('/').unwrap_or(host.len());
+        host.insert_str(insert_idx, ":80");
+    }
+    let addr_host = host.split_once('/').map(|(h, _)| h).unwrap_or(&host);
+
     // Get an IPv4 address for the domain (using blocking I/O).
-    let address = std::net::ToSocketAddrs::to_socket_addrs("thomasdezeeuw.nl:80")?
+    let address = std::net::ToSocketAddrs::to_socket_addrs(&addr_host)?
         .filter(SocketAddr::is_ipv4)
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to lookup ip"))?;
@@ -24,29 +31,17 @@ fn main() -> io::Result<()> {
     };
 
     // Create our future that makes the request.
-    let mut request = Box::pin(request(ring.submission_queue().clone(), address));
+    let request_future = request(ring.submission_queue().clone(), &host, address);
 
-    // This loop will represent our `Future`s runtime, in practice use an actual
-    // implementation.
-    let response = loop {
-        match poll_future(request.as_mut()) {
-            Poll::Ready(res) => break res?,
-            Poll::Pending => {
-                // Poll the `Ring` to get an update on the operation (s).
-                //
-                // In pratice you would first yield to another future, but in
-                // this example we don't have one, so we'll always poll the
-                // `Ring`.
-                ring.poll(None)?;
-            }
-        }
-    };
+    // Use our fake runtime to poll the future, this basically polls the future
+    // and the `a10::Ring` in a loop.
+    let response = runtime::block_on(&mut ring, request_future)?;
 
     // We'll print the response (using ol' fashioned blocking I/O).
     let response = str::from_utf8(&response).map_err(|err| {
         io::Error::new(
             io::ErrorKind::InvalidData,
-            format!("response doesn't contain UTF-8: {}", err),
+            format!("response doesn't contain UTF-8: {err}"),
         )
     })?;
     println!("{response}");
@@ -55,7 +50,7 @@ fn main() -> io::Result<()> {
 }
 
 /// Make a HTTP GET request to `address`.
-async fn request(sq: SubmissionQueue, address: SocketAddrV4) -> io::Result<Vec<u8>> {
+async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::Result<Vec<u8>> {
     // Create a new TCP, IPv4 socket.
     let domain = libc::AF_INET;
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
@@ -68,8 +63,10 @@ async fn request(sq: SubmissionQueue, address: SocketAddrV4) -> io::Result<Vec<u
     socket.connect(addr, addr_len)?.await?;
 
     // Send a HTTP GET / request to the socket.
-    let n = socket.send(HTTP_REQUEST)?.await?;
-    assert!(n == HTTP_REQUEST.len()); // In practice try reading again.
+    let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
+    let version = env!("CARGO_PKG_VERSION");
+    let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
+    socket.send(request)?.await?;
 
     // Receiving the response.
     let recv_buf = socket.recv(Vec::with_capacity(8192))?.await?;
@@ -95,21 +92,4 @@ fn to_sockaddr_storage(addr: SocketAddrV4) -> (libc::sockaddr_storage, libc::soc
         mem::size_of::<libc::sockaddr_in>() as _
     };
     (storage, len)
-}
-
-/// Replace this with your favorite [`Future`] runtime.
-fn poll_future<Fut>(fut: Pin<&mut Fut>) -> Poll<Fut::Output>
-where
-    Fut: Future,
-{
-    use std::task::{RawWaker, RawWakerVTable};
-    static WAKER_VTABLE: RawWakerVTable = RawWakerVTable::new(
-        |_| RawWaker::new(ptr::null(), &WAKER_VTABLE),
-        |_| {},
-        |_| {},
-        |_| {},
-    );
-    let waker = unsafe { task::Waker::from_raw(RawWaker::new(ptr::null(), &WAKER_VTABLE)) };
-    let mut ctx = task::Context::from_waker(&waker);
-    fut.poll(&mut ctx)
 }
