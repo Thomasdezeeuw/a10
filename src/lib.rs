@@ -276,7 +276,6 @@ struct SharedSubmissionQueue {
 
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
-    // FIXME: I think the following fields need `UnsafeCell`.
     /// Head to queue, i.e. the submussions read by the kernel. Incremented by
     /// the kernel when submissions has succesfully been processed.
     kernel_read: *const AtomicU32,
@@ -632,7 +631,6 @@ struct CompletionQueue {
 
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
-    // FIXME: I think the following fields need `UnsafeCell`.
     /// Incremented by us when completions have been read.
     head: *mut AtomicU32,
     /// Incremented by the kernel when adding completions.
