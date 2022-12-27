@@ -282,9 +282,10 @@ struct SharedSubmissionQueue {
     kernel_read: *const AtomicU32,
     /// Incremented by us when submitting new submissions.
     tail: *mut AtomicU32,
+    /* NOTE: unused because we expect `IORING_FEAT_NODROP`.
     /// Number of invalid entries dropped by the kernel.
-    #[allow(dead_code)]
     dropped: *const AtomicU32,
+    */
     /// Flags set by the kernel to communicate state information.
     flags: *const AtomicU32,
     /// Array of `len` submission entries shared with the kernel. We're the only
