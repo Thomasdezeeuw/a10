@@ -230,7 +230,7 @@ fn mmap_completion_queue(
     }
 }
 
-/// `mmap(2)` wrapper.
+/// `mmap(2)` wrapper that also sets `MADV_DONTFORK`.
 fn mmap(
     len: libc::size_t,
     prot: libc::c_int,
@@ -238,9 +238,15 @@ fn mmap(
     fd: libc::c_int,
     offset: libc::off_t,
 ) -> io::Result<*mut libc::c_void> {
-    match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
-        libc::MAP_FAILED => Err(io::Error::last_os_error()),
-        ptr => Ok(ptr),
+    let ptr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
+        libc::MAP_FAILED => return Err(io::Error::last_os_error()),
+        ptr => ptr,
+    };
+
+    // FIXME: unmap on error.
+    match unsafe { libc::madvise(ptr, len, libc::MADV_DONTFORK) } {
+        0 => Ok(ptr),
+        _ => Err(io::Error::last_os_error()),
     }
 }
 
