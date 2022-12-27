@@ -223,7 +223,9 @@ fn mmap_completion_queue(
             ptr: completion_queue,
             size,
             // Fields are constant, so we load them once.
+            /* NOTE: usunused.
             len: load_atomic_u32(completion_queue.add(parameters.cq_off.ring_entries as usize)),
+            */
             ring_mask: load_atomic_u32(completion_queue.add(parameters.cq_off.ring_mask as usize)),
             // Fields are shared with the kernel.
             head: completion_queue.add(parameters.cq_off.head as usize).cast(),

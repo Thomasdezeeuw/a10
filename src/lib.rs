@@ -635,9 +635,10 @@ struct CompletionQueue {
 
     // NOTE: the following two fields are constant. we read them once from the
     // mmap area and then copied them here to avoid the need for the atomics.
+    /* NOTE: usunused.
     /// Number of entries in the queue.
-    #[allow(dead_code)]
     len: u32,
+    */
     /// Mask used to index into the `sqes` queue.
     ring_mask: u32,
 
