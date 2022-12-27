@@ -256,7 +256,7 @@ fn mmap(
 }
 
 /// `munmap(2)` wrapper.
-fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
+pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
     match unsafe { libc::munmap(addr, len) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),

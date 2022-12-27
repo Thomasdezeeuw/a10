@@ -30,7 +30,7 @@
 #![feature(const_mut_refs, io_error_more)]
 
 use std::marker::PhantomData;
-use std::mem::replace;
+use std::mem::{replace, size_of};
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -52,6 +52,7 @@ mod sys;
 use sys as libc;
 
 use bitmap::AtomicBitMap;
+use config::munmap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
@@ -245,10 +246,8 @@ struct SharedSubmissionQueue {
     ring_fd: OwnedFd,
 
     /// Mmap-ed pointer.
-    #[allow(dead_code)]
     ptr: *mut libc::c_void,
     /// Mmap-ed size in bytes.
-    #[allow(dead_code)]
     size: libc::c_uint,
 
     /// Local version of `tail`.
@@ -572,6 +571,21 @@ unsafe impl Send for SharedSubmissionQueue {}
 
 unsafe impl Sync for SharedSubmissionQueue {}
 
+impl Drop for SharedSubmissionQueue {
+    fn drop(&mut self) {
+        if let Err(err) = munmap(
+            self.entries.cast(),
+            self.len as usize * size_of::<Submission>(),
+        ) {
+            log::warn!("error unmapping a10::SubmissionQueue entries: {err}");
+        }
+
+        if let Err(err) = munmap(self.ptr, self.size as usize) {
+            log::warn!("error unmapping a10::SubmissionQueue: {err}");
+        }
+    }
+}
+
 /// Index into [`SharedSubmissionQueue::op_indices`].
 ///
 /// Returned by [`SubmissionQueue::add`] and used by [`SubmissionQueue::poll`]
@@ -615,10 +629,8 @@ impl fmt::Display for QueueFull {
 #[derive(Debug)]
 struct CompletionQueue {
     /// Mmap-ed pointer to the completion queue.
-    #[allow(dead_code)]
     ptr: *mut libc::c_void,
     /// Mmap-ed size in bytes.
-    #[allow(dead_code)]
     size: libc::c_uint,
 
     // NOTE: the following two fields are constant. we read them once from the
@@ -643,6 +655,14 @@ struct CompletionQueue {
 unsafe impl Send for CompletionQueue {}
 
 unsafe impl Sync for CompletionQueue {}
+
+impl Drop for CompletionQueue {
+    fn drop(&mut self) {
+        if let Err(err) = munmap(self.ptr, self.size as usize) {
+            log::warn!("error unmapping a10::CompletionQueue: {err}");
+        }
+    }
+}
 
 /// Iterator of completed operations.
 struct Completions<'ring> {

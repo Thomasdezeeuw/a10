@@ -19,3 +19,13 @@ fn polling_timeout() -> io::Result<()> {
     );
     Ok(())
 }
+
+#[test]
+fn dropping_unmaps_queues() {
+    let _ = std_logger::Config::logfmt()
+        .with_call_location(true)
+        .try_init();
+
+    let ring = Ring::new(64).unwrap();
+    drop(ring);
+}
