@@ -150,14 +150,17 @@ fn mmap_submission_queue(
         libc::IORING_OFF_SQ_RING as libc::off_t,
     )?;
 
-    // FIXME: unmap `submission_queue` on error.
     let submission_queue_entries = mmap(
         parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>(),
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
         ring_fd.as_raw_fd(),
         libc::IORING_OFF_SQES as libc::off_t,
-    )?;
+    )
+    .map_err(|err| {
+        let _ = munmap(submission_queue, size as usize);
+        err
+    })?;
 
     let op_indices = AtomicBitMap::new(parameters.cq_entries as usize);
     let mut queued_ops = Vec::with_capacity(op_indices.capacity());
@@ -238,14 +241,24 @@ fn mmap(
     fd: libc::c_int,
     offset: libc::off_t,
 ) -> io::Result<*mut libc::c_void> {
-    let ptr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
+    let addr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
         libc::MAP_FAILED => return Err(io::Error::last_os_error()),
-        ptr => ptr,
+        addr => addr,
     };
 
-    // FIXME: unmap on error.
-    match unsafe { libc::madvise(ptr, len, libc::MADV_DONTFORK) } {
-        0 => Ok(ptr),
+    match unsafe { libc::madvise(addr, len, libc::MADV_DONTFORK) } {
+        0 => Ok(addr),
+        _ => {
+            let _ = munmap(addr, len);
+            Err(io::Error::last_os_error())
+        }
+    }
+}
+
+/// `munmap(2)` wrapper.
+fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
+    match unsafe { libc::munmap(addr, len) } {
+        0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
 }
