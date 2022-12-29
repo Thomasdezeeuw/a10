@@ -497,6 +497,7 @@ macro_rules! op_future {
         }
 
         impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
+            #[doc = concat!("Create a new `", stringify!($name), "`.")]
             const fn new(fd: &$lifetime $f, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)*> {
                 $name {
                     resources: std::option::Option::Some(std::cell::UnsafeCell::new((
