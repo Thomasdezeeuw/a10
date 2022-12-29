@@ -583,6 +583,8 @@ macro_rules! op_future {
 pub(crate) use op_future;
 
 /// State of an [`op_future!`] [`Future`].
+///
+/// [`Future`]: std::future::Future
 #[derive(Debug)]
 pub(crate) enum OpState<S> {
     /// The operation has not started yet.

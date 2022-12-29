@@ -624,8 +624,8 @@ impl Drop for SharedSubmissionQueue {
 
 /// Index into [`SharedSubmissionQueue::op_indices`].
 ///
-/// Returned by [`SubmissionQueue::add`] and used by [`SubmissionQueue::poll`]
-/// to check for a result.
+/// Returned by [`SubmissionQueue::add`] and used by
+/// [`SubmissionQueue::poll_op`] to check for a result.
 #[derive(Copy, Clone)]
 #[must_use]
 struct OpIndex(usize);
