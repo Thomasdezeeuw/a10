@@ -2,14 +2,13 @@
 
 use std::any::Any;
 use std::future::{Future, IntoFuture};
-use std::mem;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, io, panic, process, str};
+use std::{fmt, io, mem, panic, process, ptr, str};
 
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
@@ -106,6 +105,22 @@ impl Waker {
     }
 }
 
+/// Poll the `future` once with a no-op waker.
+pub(crate) fn poll_nop<Fut>(future: Pin<&mut Fut>) -> Poll<Fut::Output>
+where
+    Fut: Future,
+{
+    const NOP_WAKER: task::RawWakerVTable = task::RawWakerVTable::new(
+        |_| task::RawWaker::new(ptr::null(), &NOP_WAKER), // clone.
+        |_| {},                                           // wake.
+        |_| {},                                           // wake_by_ref.
+        |_| {},                                           // drop.
+    );
+    let task_waker = unsafe { task::Waker::from_raw(task::RawWaker::new(ptr::null(), &NOP_WAKER)) };
+    let mut task_ctx = task::Context::from_waker(&task_waker);
+    Future::poll(future, &mut task_ctx)
+}
+
 /// Defer execution of function `f`.
 pub(crate) fn defer<F: FnOnce()>(f: F) -> Defer<F> {
     Defer { f: Some(f) }
@@ -169,7 +184,6 @@ pub(crate) async fn tcp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
     let protocol = 0;
     let flags = 0;
     socket(sq, domain, r#type, protocol, flags)
-        .expect("can't queue creation of socket")
         .await
         .expect("failed to create socket")
 }

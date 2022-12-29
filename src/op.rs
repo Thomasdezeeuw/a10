@@ -5,7 +5,7 @@ use std::os::unix::io::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::libc;
+use crate::{libc, OpIndex};
 
 /// State of a queue operation.
 #[derive(Debug)]
@@ -262,25 +262,25 @@ impl Submission {
         };
     }
 
-    pub(crate) unsafe fn send(&mut self, fd: RawFd, ptr: *const u8, len: u32, flags: libc::c_int) {
-        self.inner.opcode = libc::IORING_OP_SEND as u8;
+    /// `opcode` must be `IORING_OP_SEND` or `IORING_OP_SEND_ZC`.
+    pub(crate) unsafe fn send(
+        &mut self,
+        opcode: u8,
+        fd: RawFd,
+        ptr: *const u8,
+        len: u32,
+        flags: libc::c_int,
+    ) {
+        debug_assert!(
+            opcode == libc::IORING_OP_SEND as u8 || opcode == libc::IORING_OP_SEND_ZC as u8
+        );
+        self.inner.opcode = opcode;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: flags as _,
         };
         self.inner.len = len;
-    }
-
-    pub(crate) unsafe fn send_zc(
-        &mut self,
-        fd: RawFd,
-        ptr: *const u8,
-        len: u32,
-        flags: libc::c_int,
-    ) {
-        self.send(fd, ptr, len, flags);
-        self.inner.opcode = libc::IORING_OP_SEND_ZC as u8;
     }
 
     pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, flags: libc::c_int) {
@@ -415,14 +415,18 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        // State held in the setup function.
+        setup_state: $setup_field: ident : $setup_ty: ty,
+        // Function to setup the operation.
+        setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
         // Mapping function that maps the returned `$arg`ument into
         // `$map_result`. The `$resources` is a tuple of the `$field`s on the
         // future.
-        |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
+        map_result: |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
         // Mapping function for `Extractor` implementation. See above.
         extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
-        op_future!{
+        $crate::op::op_future!{
             fn $f::$fn -> $result,
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
@@ -430,7 +434,9 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
-            |$self, $resources, $arg| $map_result,
+            setup_state: $setup_field : $setup_ty,
+            setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
+            map_result: |$self, $resources, $arg| $map_result,
         }
 
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
@@ -439,8 +445,11 @@ macro_rules! op_future {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                match self.fut.fd.sq.poll_op(ctx, self.fut.op_index) {
+                let op_index = $crate::op::poll_state!($name, self.fut, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
+
+                match self.fut.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
+                        self.fut.state = $crate::op::OpState::Done;
                         let $extract_self = &mut self.fut;
                         // SAFETY: this will not panic because we need to keep
                         // the resources around until the operation is
@@ -449,6 +458,7 @@ macro_rules! op_future {
                         $extract_map
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
+                        self.fut.state = $crate::op::OpState::Done;
                         std::mem::drop(self.fut.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
@@ -466,7 +476,9 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
-        |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
+        setup_state: $setup_field: ident : $setup_ty: ty,
+        setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
+        map_result: |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($f), "::", stringify!($fn), "`].")]
         #[derive(Debug)]
@@ -480,18 +492,18 @@ macro_rules! op_future {
                 $( $value, )*
             )>>,
             fd: &$lifetime $f,
-            /// Index for the queued operation.
-            op_index: $crate::OpIndex,
+            /// State of the operation.
+            state: $crate::op::OpState<$setup_ty>,
         }
 
         impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
-            const fn new(fd: &$lifetime $f, op_index: $crate::OpIndex, $( $field: $value, )*) -> $name<$lifetime $(, $generic)*> {
+            const fn new(fd: &$lifetime $f, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)*> {
                 $name {
                     resources: std::option::Option::Some(std::cell::UnsafeCell::new((
                         $( $field, )*
                     ))),
                     fd,
-                    op_index,
+                    state: $crate::op::OpState::NotStarted($setup_field),
                 }
             }
         }
@@ -500,8 +512,11 @@ macro_rules! op_future {
             type Output = std::io::Result<$result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                match self.fd.sq.poll_op(ctx, self.op_index) {
+                let op_index = $crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
+
+                match self.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(std::result::Result::Ok($arg)) => std::task::Poll::Ready({
+                        self.state = $crate::op::OpState::Done;
                         let $self = &mut self;
                         // SAFETY: this will not panic because we need to keep
                         // the resources around until the operation is
@@ -510,6 +525,7 @@ macro_rules! op_future {
                         $map_result
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
+                        self.state = $crate::op::OpState::Done;
                         std::mem::drop(self.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
@@ -521,7 +537,12 @@ macro_rules! op_future {
         impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
-                    self.fd.sq.drop_op(self.op_index, resources);
+                    match self.state {
+                        $crate::op::OpState::Waiting(op_index) => self.fd.sq.drop_op(op_index, resources),
+                        // NOTE: `Done` should not be reachable, but no point in
+                        // creating another branch.
+                        $crate::op::OpState::NotStarted(_) | $crate::op::OpState::Done => drop(resources),
+                    }
                 }
             }
         }
@@ -535,10 +556,12 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
-        |$arg: ident| $map_result: expr, // Only difference: 1 argument.
+        setup_state: $setup_field: ident : $setup_ty: ty,
+        setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
+        map_result: |$arg: ident| $map_result: expr, // Only difference: 1 argument.
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
-        op_future!{
+        $crate::op::op_future!{
             fn $f::$fn -> $result,
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
@@ -546,13 +569,114 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
-            |_unused_this, _unused_resources, $arg| $map_result,
+            setup_state: $setup_field : $setup_ty,
+            setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
+            map_result: |_unused_this, _unused_resources, $arg| $map_result,
             $( extract: |$extract_self, $extract_resources, $extract_arg| -> $extract_result $extract_map, )?
         }
     };
 }
 
 pub(crate) use op_future;
+
+/// State of an [`op_future!`] [`Future`].
+#[derive(Debug)]
+pub(crate) enum OpState<S> {
+    /// The operation has not started yet.
+    NotStarted(S),
+    /// Operation has started, waiting for the result.
+    Waiting(OpIndex),
+    /// Operation is done.
+    Done,
+}
+
+/// Poll an [`OpState`].
+macro_rules! poll_state {
+    // Variant used by `op_future!`.
+    (
+        $name: ident, $self: expr, $ctx: expr,
+        |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr $(,)?
+    ) => {
+        match $self.state {
+            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::NotStarted($setup_state) => {
+                let $name {
+                    fd: $setup_fd,
+                    resources,
+                    ..
+                } = &mut $self;
+                // SAFETY: this will not panic as the resources are only removed
+                // after the state is set to `Done`.
+                let $setup_resources = resources.as_mut().take().unwrap().get_mut();
+                let result = $setup_fd.sq.add(|$setup_submission| $setup_fn);
+                match result {
+                    Ok(op_index) => {
+                        $self.state = $crate::op::OpState::Waiting(op_index);
+                        op_index
+                    }
+                    Err($crate::QueueFull(())) => {
+                        $self.fd.sq.wait_for_submission($ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+        }
+    };
+    // Without `$setup_resources`, but expects `$self.fd` to be `AsyncFd`.
+    (
+        $name: ident, $self: expr, $ctx: expr,
+        |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr $(,)?
+    ) => {
+        match $self.state {
+            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::NotStarted($setup_state) => {
+                let $setup_fd = $self.fd;
+                let result = $self.fd.sq.add(|$setup_submission| $setup_fn);
+                match result {
+                    Ok(op_index) => {
+                        $self.state = $crate::op::OpState::Waiting(op_index);
+                        op_index
+                    }
+                    Err($crate::QueueFull(())) => {
+                        $self.fd.sq.wait_for_submission($ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+        }
+    };
+    // No `AsyncFd` or `$setup_resources`.
+    // NOTE: this doesn't take `$self`, but `$state` and `$sq`.
+    (
+        $name: ident, $state: expr, $sq: expr, $ctx: expr,
+        |$setup_submission: ident, $setup_state: tt| $setup_fn: expr $(,)?
+    ) => {
+        match $state {
+            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::NotStarted($setup_state) => {
+                let result = $sq.add(|$setup_submission| $setup_fn);
+                match result {
+                    Ok(op_index) => {
+                        $state = $crate::op::OpState::Waiting(op_index);
+                        op_index
+                    }
+                    Err($crate::QueueFull(())) => {
+                        $sq.wait_for_submission($ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+        }
+    };
+    (__panic $name: ident) => {
+        unreachable!(concat!("a10::", stringify!($name), " polled after completion"))
+    }
+}
+
+pub(crate) use poll_state;
 
 #[test]
 fn size_assertion() {

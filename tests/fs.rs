@@ -34,9 +34,7 @@ fn open_extractor() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new()
-        .open(sq, LOREM_IPSUM_5.path.into())
-        .unwrap();
+    let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     // Extract the file path.
     let open_file = open_file.extract();
     let (_, path) = waker.block_on(open_file).unwrap();
@@ -76,14 +74,14 @@ fn test_read(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize) {
     let waker = Waker::new();
 
     let path = test_file.path.into();
-    let open_file = OpenOptions::new().open(sq, path).unwrap();
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
     let mut read_bytes = 0;
     loop {
         buf.clear();
-        let read = file.read(buf).unwrap();
+        let read = file.read(buf);
         buf = waker.block_on(read).unwrap();
         if buf.is_empty() {
             panic!("read zero bytes");
@@ -126,14 +124,14 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
     let waker = Waker::new();
 
     let path = test_file.path.into();
-    let open_file = OpenOptions::new().open(sq, path).unwrap();
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
     let mut expected = &test_file.content[offset as usize..];
     loop {
         buf.clear();
-        let read = file.read_at(buf, offset).unwrap();
+        let read = file.read_at(buf, offset);
         buf = waker.block_on(read).unwrap();
 
         if buf.is_empty() {
@@ -204,15 +202,14 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
         .write()
         .create()
         .truncate()
-        .open(sq, path.clone())
-        .unwrap();
+        .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
     let mut expected = Vec::new();
     for buf in bufs {
         expected.extend(&buf);
         let expected_len = buf.len();
-        let write = file.write(buf).unwrap();
+        let write = file.write(buf);
         let n = waker.block_on(write).unwrap();
         assert_eq!(n, expected_len);
     }
@@ -236,15 +233,14 @@ fn sync_all() {
         .write()
         .create()
         .truncate()
-        .open(sq, path.clone())
-        .unwrap();
+        .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let write = file.write(b"Hello world".to_vec()).unwrap().extract();
+    let write = file.write(b"Hello world".to_vec()).extract();
     let (buf, n) = waker.block_on(write).unwrap();
     assert_eq!(n, 11);
 
-    waker.block_on(file.sync_all().unwrap()).unwrap();
+    waker.block_on(file.sync_all()).unwrap();
     drop(file);
 
     let got = std::fs::read(&path).unwrap();
@@ -265,15 +261,14 @@ fn sync_data() {
         .write()
         .create()
         .truncate()
-        .open(sq, path.clone())
-        .unwrap();
+        .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let write = file.write(b"Hello world".to_vec()).unwrap().extract();
+    let write = file.write(b"Hello world".to_vec()).extract();
     let (buf, n) = waker.block_on(write).unwrap();
     assert_eq!(n, 11);
 
-    waker.block_on(file.sync_data().unwrap()).unwrap();
+    waker.block_on(file.sync_data()).unwrap();
     drop(file);
 
     let got = std::fs::read(&path).unwrap();
@@ -296,10 +291,10 @@ fn test_metadata(test_file: &TestFile, created: SystemTime) {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().open(sq, test_file.path.into()).unwrap();
+    let open_file = OpenOptions::new().open(sq, test_file.path.into());
     let file = waker.block_on(open_file).unwrap();
 
-    let metadata = waker.block_on(file.metadata().unwrap()).unwrap();
+    let metadata = waker.block_on(file.metadata()).unwrap();
     assert!(metadata.file_type().is_file());
     assert!(metadata.is_file());
     assert!(!metadata.is_dir());

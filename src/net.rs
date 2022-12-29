@@ -8,57 +8,40 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::io::{ReadBuf, WriteBuf};
-use crate::op::op_future;
-use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
+use crate::op::{op_future, poll_state, OpState};
+use crate::{libc, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
-pub fn socket(
+pub const fn socket(
     sq: SubmissionQueue,
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
     flags: libc::c_int,
-) -> Result<Socket, QueueFull> {
-    let op_index = sq.add(|submission| unsafe {
-        submission.socket(domain, r#type, protocol, flags);
-    })?;
-
-    Ok(Socket {
+) -> Socket {
+    Socket {
         sq: Some(sq),
-        op_index,
-    })
+        state: OpState::NotStarted((domain, r#type, protocol, flags)),
+    }
 }
 
 /// Socket related system calls.
 impl AsyncFd {
     /// Initiate a connection on this socket to the specified address.
-    pub fn connect<'fd, A>(
-        &'fd self,
-        address: A,
-        address_length: libc::socklen_t,
-    ) -> Result<Connect<'fd>, QueueFull>
+    pub fn connect<'fd, A>(&'fd self, address: A, address_length: libc::socklen_t) -> Connect<'fd>
     where
         A: Into<Box<libc::sockaddr_storage>>,
     {
-        let mut address = address.into();
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.connect(self.fd, &mut address, address_length);
-        })?;
-
-        Ok(Connect::new(self, op_index, address))
+        let address = address.into();
+        Connect::new(self, address, address_length)
     }
 
     /// Sends data on the socket to a connected peer.
-    pub fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Result<Send<'fd, B>, QueueFull>
+    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
         B: WriteBuf,
     {
-        let op_index = self.sq.add(|submission| unsafe {
-            let (ptr, len) = buf.parts();
-            submission.send(self.fd, ptr, len, flags);
-        })?;
-
-        Ok(Send::new(self, op_index, buf))
+        Send::new(self, buf, (libc::IORING_OP_SEND as u8, flags))
     }
 
     /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
@@ -73,41 +56,27 @@ impl AsyncFd {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
-    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Result<Send<'fd, B>, QueueFull>
+    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
         B: WriteBuf,
     {
-        let op_index = self.sq.add(|submission| unsafe {
-            let (ptr, len) = buf.parts();
-            submission.send_zc(self.fd, ptr, len, flags);
-        })?;
-
-        Ok(Send::new(self, op_index, buf))
+        Send::new(self, buf, (libc::IORING_OP_SEND_ZC as u8, flags))
     }
 
     /// Receives data on the socket from the remote address to which it is
     /// connected.
-    pub fn recv<'fd, B>(
-        &'fd self,
-        mut buf: B,
-        flags: libc::c_int,
-    ) -> Result<Recv<'fd, B>, QueueFull>
+    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B>
     where
         B: ReadBuf,
     {
-        let op_index = self.sq.add(|submission| unsafe {
-            let (ptr, len) = buf.parts();
-            submission.recv(self.fd, ptr, len, flags);
-        })?;
-
-        Ok(Recv::new(self, op_index, buf))
+        Recv::new(self, buf, flags)
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
-    pub fn accept<'fd>(&'fd self) -> Result<Accept<'fd>, QueueFull> {
+    pub fn accept<'fd>(&'fd self) -> Accept<'fd> {
         self.accept4(libc::SOCK_CLOEXEC)
     }
 
@@ -115,16 +84,11 @@ impl AsyncFd {
     /// socket.
     ///
     /// Also see [`AsyncFd::accept`].
-    pub fn accept4<'fd>(&'fd self, flags: libc::c_int) -> Result<Accept<'fd>, QueueFull> {
+    pub fn accept4<'fd>(&'fd self, flags: libc::c_int) -> Accept<'fd> {
         let address: MaybeUninit<libc::sockaddr_storage> = MaybeUninit::uninit();
         let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
-        let mut address = Box::new((address, length));
-
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.accept(self.fd, &mut address.0, &mut address.1, flags);
-        })?;
-
-        Ok(Accept::new(self, op_index, address))
+        let address = Box::new((address, length));
+        Accept::new(self, address, flags)
     }
 }
 
@@ -134,21 +98,42 @@ impl AsyncFd {
 #[derive(Debug)]
 pub struct Socket {
     sq: Option<SubmissionQueue>,
-    op_index: OpIndex,
+    state: OpState<(libc::c_int, libc::c_int, libc::c_int, libc::c_int)>,
 }
 
 impl Future for Socket {
     type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.sq
-            .as_ref()
-            .unwrap()
-            .poll_op(ctx, self.op_index)
-            .map_ok(|fd| AsyncFd {
-                fd,
-                sq: self.sq.take().unwrap(),
-            })
+        let op_index = poll_state!(
+            Socket,
+            self.state,
+            // SAFETY: `poll_state!` will panic if `OpState == Done`, if not
+            // this unwrap is safe.
+            self.sq.as_ref().unwrap(),
+            ctx,
+            |submission, (domain, r#type, protocol, flags)| unsafe {
+                submission.socket(domain, r#type, protocol, flags);
+            },
+        );
+
+        // SAFETY: this is only `None` if `OpState == Done`, which would mean
+        // `poll_state!` above would panic.
+        let sq = self.sq.as_ref().unwrap();
+        match sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok(fd) => Poll::Ready(Ok(AsyncFd {
+                        fd,
+                        // SAFETY: used it above.
+                        sq: self.sq.take().unwrap(),
+                    })),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -159,7 +144,11 @@ op_future! {
         /// Address needs to stay alive for as long as the kernel is connecting.
         address: Box<libc::sockaddr_storage>,
     },
-    |result| Ok(debug_assert!(result == 0)),
+    setup_state: address_length: libc::socklen_t,
+    setup: |submission, fd, (address,), address_length| unsafe {
+        submission.connect(fd.fd, &mut *address, address_length);
+    },
+    map_result: |result| Ok(debug_assert!(result == 0)),
     extract: |this, (address,), res| -> Box<libc::sockaddr_storage> {
         debug_assert!(res == 0);
         Ok(address)
@@ -174,7 +163,12 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |n| Ok(n as usize),
+    setup_state: flags: (u8, libc::c_int),
+    setup: |submission, fd, (buf,), (op, flags)| unsafe {
+        let (ptr, len) = buf.parts();
+        submission.send(op, fd.fd, ptr, len, flags);
+    },
+    map_result: |n| Ok(n as usize),
     extract: |this, (buf,), n| -> (B, usize) {
         Ok((buf, n as usize))
     },
@@ -188,7 +182,12 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, (mut buf,), n| {
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (buf,), flags| unsafe {
+        let (ptr, len) = buf.parts();
+        submission.recv(fd.fd, ptr, len, flags);
+    },
+    map_result: |this, (mut buf,), n| {
         unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
@@ -202,7 +201,11 @@ op_future! {
         /// kernel can access it safely.
         address: Box<(MaybeUninit<libc::sockaddr_storage>, libc::socklen_t)>,
     },
-    |this, (address,), fd| {
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (address,), flags| unsafe {
+        submission.accept(fd.fd, &mut address.0, &mut address.1, flags);
+    },
+    map_result: |this, (address,), fd| {
         let sq = this.fd.sq.clone();
         let stream = AsyncFd { fd, sq };
 

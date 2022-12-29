@@ -5,11 +5,12 @@
 use std::io::{Read, Write};
 use std::mem;
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::pin::Pin;
 
 use a10::Extract;
 
 mod util;
-use util::{bind_ipv4, tcp_ipv4_socket, test_queue, Waker};
+use util::{bind_ipv4, poll_nop, tcp_ipv4_socket, test_queue, Waker};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -24,8 +25,8 @@ fn accept() {
     let local_addr = bind_ipv4(&listener);
 
     // Accept a connection.
-    let accept = listener.accept().unwrap();
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
+    let accept = listener.accept();
     let (client, addr) = waker.block_on(accept).expect("failed to accept connection");
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
     assert_eq!(stream.local_addr().unwrap(), addr);
@@ -33,13 +34,13 @@ fn accept() {
     // Read some data.
     stream.write(DATA1).expect("failed to write");
     let mut buf = waker
-        .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)).unwrap())
+        .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
         .expect("failed to read");
     assert_eq!(buf, DATA1);
 
     // Write some data.
     let n = waker
-        .block_on(client.write(DATA2).unwrap())
+        .block_on(client.write(DATA2))
         .expect("failed to write");
     assert_eq!(n, DATA2.len());
     buf.resize(DATA2.len() + 1, 0);
@@ -49,9 +50,7 @@ fn accept() {
     // Closing the client should get a result.
     drop(stream);
     buf.clear();
-    let buf = waker
-        .block_on(client.read(buf).unwrap())
-        .expect("failed to read");
+    let buf = waker.block_on(client.read(buf)).expect("failed to read");
     assert!(buf.is_empty());
 }
 
@@ -80,7 +79,9 @@ fn connect() {
         addr
     };
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -88,7 +89,7 @@ fn connect() {
 
     // Write some data.
     waker
-        .block_on(stream.write(DATA1).unwrap())
+        .block_on(stream.write(DATA1))
         .expect("failed to write");
     let mut buf = vec![0; DATA1.len() + 1];
     let n = client.read(&mut buf).expect("failed to read");
@@ -98,9 +99,7 @@ fn connect() {
     client.write_all(DATA2).expect("failed to write");
     buf.clear();
     buf.reserve(DATA2.len() + 1);
-    let mut buf = waker
-        .block_on(stream.read(buf).unwrap())
-        .expect("failed to read");
+    let mut buf = waker.block_on(stream.read(buf)).expect("failed to read");
     assert_eq!(buf, DATA2);
 
     // Dropping the stream should closing it.
@@ -125,7 +124,9 @@ fn connect_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap().extract();
+    let mut connect_future = stream.connect(addr, addr_len).extract();
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -133,7 +134,7 @@ fn connect_extractor() {
 
     // Write some data.
     waker
-        .block_on(stream.write(DATA1).unwrap())
+        .block_on(stream.write(DATA1))
         .expect("failed to write");
     let mut buf = vec![0; DATA1.len() + 1];
     let n = client.read(&mut buf).expect("failed to read");
@@ -143,9 +144,7 @@ fn connect_extractor() {
     client.write_all(DATA2).expect("failed to write");
     buf.clear();
     buf.reserve(DATA2.len() + 1);
-    let buf = waker
-        .block_on(stream.read(buf).unwrap())
-        .expect("failed to read");
+    let buf = waker.block_on(stream.read(buf)).expect("failed to read");
     assert_eq!(buf, DATA2);
 }
 
@@ -165,14 +164,16 @@ fn recv() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
     waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
-    let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1), 0).unwrap();
+    let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1), 0);
     client.write_all(DATA1).expect("failed to send data");
     let mut buf = waker.block_on(recv_future).expect("failed to receive");
     assert_eq!(&buf, DATA1);
@@ -181,7 +182,7 @@ fn recv() {
     drop(client);
     buf.clear();
     let buf = waker
-        .block_on(stream.recv(buf, 0).unwrap())
+        .block_on(stream.recv(buf, 0))
         .expect("failed to receive");
     assert!(buf.is_empty());
 }
@@ -202,7 +203,9 @@ fn send() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -210,7 +213,7 @@ fn send() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send(DATA2, 0).unwrap())
+        .block_on(stream.send(DATA2, 0))
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -234,7 +237,9 @@ fn send_zc() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -242,7 +247,7 @@ fn send_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send_zc(DATA2, 0).unwrap())
+        .block_on(stream.send_zc(DATA2, 0))
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -266,7 +271,9 @@ fn send_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -274,7 +281,7 @@ fn send_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send(DATA2, 0).unwrap().extract())
+        .block_on(stream.send(DATA2, 0).extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
@@ -299,7 +306,9 @@ fn send_zc_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let connect_future = stream.connect(addr, addr_len).unwrap();
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -307,7 +316,7 @@ fn send_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send_zc(DATA2, 0).unwrap().extract())
+        .block_on(stream.send_zc(DATA2, 0).extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
