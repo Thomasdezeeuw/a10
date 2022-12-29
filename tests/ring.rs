@@ -1,7 +1,15 @@
+#![feature(once_cell)]
+
 use std::io;
+use std::pin::Pin;
+use std::task::Poll;
 use std::time::{Duration, Instant};
 
+use a10::fs::OpenOptions;
 use a10::Ring;
+
+mod util;
+use util::poll_nop;
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
@@ -28,4 +36,51 @@ fn dropping_unmaps_queues() {
 
     let ring = Ring::new(64).unwrap();
     drop(ring);
+}
+
+#[test]
+fn submission_queue_full_is_handle_internally() {
+    const PATH: &str = "tests/data/lorem_ipsum_50.txt";
+    const EXPECTED: &[u8] = include_bytes!("data/lorem_ipsum_50.txt");
+    const SIZE: usize = 31396;
+    const N: usize = (usize::BITS as usize) + 10;
+    const BUF_SIZE: usize = SIZE / N;
+
+    let mut ring = Ring::new(2).unwrap();
+    let sq = ring.submission_queue();
+
+    let mut future = OpenOptions::new().open(sq.clone(), PATH.into());
+    let file = loop {
+        match poll_nop(Pin::new(&mut future)) {
+            Poll::Ready(result) => break result.unwrap(),
+            Poll::Pending => ring.poll(None).unwrap(),
+        }
+    };
+
+    let mut futures = (0..N)
+        .into_iter()
+        .map(|i| Some(file.read_at(Vec::with_capacity(BUF_SIZE), (i * BUF_SIZE) as u64)))
+        .collect::<Vec<_>>();
+    loop {
+        let mut needs_poll = false;
+        for (i, fut) in futures.iter_mut().enumerate() {
+            if let Some(future) = fut {
+                match poll_nop(Pin::new(future)) {
+                    Poll::Ready(result) => {
+                        *fut = None;
+                        let read_buf = result.unwrap();
+                        assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
+                    }
+                    Poll::Pending => needs_poll = true,
+                }
+            }
+        }
+        if needs_poll {
+            ring.poll(None).unwrap();
+        } else {
+            break;
+        }
+    }
+
+    assert!(futures.iter().all(Option::is_none));
 }

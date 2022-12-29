@@ -34,9 +34,9 @@ fn main() -> io::Result<()> {
 
 async fn read_file(sq: SubmissionQueue, path: String) -> io::Result<Vec<u8>> {
     // Open a file for reading.
-    let file = OpenOptions::new().open(sq, path.into())?.await?;
+    let file = OpenOptions::new().open(sq, path.into()).await?;
 
     // Read some bytes from the file.
-    let buf = file.read(Vec::with_capacity(32 * 1024))?.await?;
+    let buf = file.read(Vec::with_capacity(32 * 1024)).await?;
     Ok(buf)
 }

@@ -56,24 +56,24 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
     let protocol = 0;
     let flags = 0;
-    let socket = socket(sq, domain, r#type, protocol, flags)?.await?;
+    let socket = socket(sq, domain, r#type, protocol, flags).await?;
 
     // Connect.
     let (addr, addr_len) = to_sockaddr_storage(address);
-    socket.connect(addr, addr_len)?.await?;
+    socket.connect(addr, addr_len).await?;
 
     // Send a HTTP GET / request to the socket.
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
     let version = env!("CARGO_PKG_VERSION");
     let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
-    socket.send(request, 0)?.await?;
+    socket.send(request, 0).await?;
 
     // Receiving the response.
-    let recv_buf = socket.recv(Vec::with_capacity(8192), 0)?.await?;
+    let recv_buf = socket.recv(Vec::with_capacity(8192), 0).await?;
 
     // We'll explicitly close the socket, although that happens for us when we
     // drop the socket. In other words, this is not needed.
-    socket.close()?.await?;
+    socket.close().await?;
 
     Ok(recv_buf)
 }

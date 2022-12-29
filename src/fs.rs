@@ -5,7 +5,7 @@
 
 use std::ffi::{CString, OsString};
 use std::future::Future;
-use std::mem::{forget as leak, zeroed};
+use std::mem::zeroed;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -14,8 +14,8 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::extract::Extractor;
-use crate::op::op_future;
-use crate::{libc, AsyncFd, Extract, OpIndex, QueueFull, SubmissionQueue};
+use crate::op::{op_future, poll_state, OpState};
+use crate::{libc, AsyncFd, Extract, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -146,30 +146,21 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
-    pub fn open_temp_file(
-        mut self,
-        queue: SubmissionQueue,
-        dir: PathBuf,
-    ) -> Result<Open, QueueFull> {
+    pub fn open_temp_file(mut self, queue: SubmissionQueue, dir: PathBuf) -> Open {
         self.flags |= libc::O_TMPFILE;
         self.open(queue, dir)
     }
 
     /// Open `path`.
     #[doc(alias = "openat")]
-    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Result<Open, QueueFull> {
+    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open {
         let path = path.into_os_string().into_vec();
         let path = unsafe { CString::from_vec_unchecked(path) };
-
-        let op_index = sq.add(|submission| unsafe {
-            submission.open_at(libc::AT_FDCWD, path.as_ptr(), self.flags, self.mode);
-        })?;
-
-        Ok(Open {
+        Open {
             path: Some(path),
             sq: Some(sq),
-            op_index,
-        })
+            state: OpState::NotStarted((self.flags, self.mode)),
+        }
     }
 }
 
@@ -186,20 +177,36 @@ pub struct Open {
     /// access it safely.
     path: Option<CString>,
     sq: Option<SubmissionQueue>,
-    op_index: OpIndex,
+    state: OpState<(libc::c_int, libc::mode_t)>,
 }
 
 impl Future for Open {
     type Output = io::Result<AsyncFd>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        match self.sq.as_ref().unwrap().poll_op(ctx, self.op_index) {
-            Poll::Ready(res) => {
-                drop(self.path.take());
-                Poll::Ready(res.map(|fd| AsyncFd {
-                    fd,
-                    sq: self.sq.take().unwrap(),
-                }))
+        let op_index = poll_state!(
+            Open,
+            self.state,
+            self.sq.as_ref().unwrap(),
+            ctx,
+            |submission, (flags, mode)| unsafe {
+                // SAFETY: `path` is only removed after the state is set to `Done`.
+                let path = self.path.as_ref().unwrap();
+                submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, mode)
+            }
+        );
+
+        match self.sq.as_ref().unwrap().poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok(fd) => Poll::Ready(Ok(AsyncFd {
+                        fd,
+                        // SAFETY: unwrapped `sq` above already.
+                        sq: self.sq.take().unwrap(),
+                    })),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
             }
             Poll::Pending => Poll::Pending,
         }
@@ -212,21 +219,13 @@ impl Future for Extractor<Open> {
     type Output = io::Result<(AsyncFd, PathBuf)>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let op_index = self.fut.op_index;
-        match self.fut.sq.as_ref().unwrap().poll_op(ctx, op_index) {
-            Poll::Ready(Ok(fd)) => {
-                let file = AsyncFd {
-                    fd,
-                    sq: self.fut.sq.take().unwrap(),
-                };
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(file)) => {
                 let path_bytes = self.fut.path.take().unwrap().into_bytes();
                 let path = OsString::from_vec(path_bytes).into();
                 Poll::Ready(Ok((file, path)))
             }
-            Poll::Ready(Err(err)) => {
-                drop(self.fut.path.take());
-                Poll::Ready(Err(err))
-            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
     }
@@ -234,10 +233,14 @@ impl Future for Extractor<Open> {
 
 impl Drop for Open {
     fn drop(&mut self) {
-        if self.path.is_some() {
-            let path = self.path.take().unwrap();
-            log::debug!("dropped `a10::fs::Open` before completion, leaking path buffer");
-            leak(path);
+        if let Some(path) = self.path.take() {
+            match self.state {
+                // SAFETY: only in the `Drop` state is `selfsq` `None`.
+                OpState::Waiting(op_index) => self.sq.as_ref().unwrap().drop_op(op_index, path),
+                // NOTE: `Done` should not be reachable, but no point in
+                // creating another branch.
+                OpState::NotStarted(_) | OpState::Done => drop(path),
+            }
         }
     }
 }
@@ -250,12 +253,8 @@ impl AsyncFd {
     ///
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fsync")]
-    pub fn sync_all<'fd>(&'fd self) -> Result<SyncAll<'fd>, QueueFull> {
-        let op_index = self
-            .sq
-            .add(|submission| unsafe { submission.fsync(self.fd, 0) })?;
-
-        Ok(SyncAll::new(self, op_index))
+    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
+        SyncData::new(self, 0)
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -271,45 +270,32 @@ impl AsyncFd {
     ///
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fdatasync")]
-    pub fn sync_data<'fd>(&'fd self) -> Result<SyncData<'fd>, QueueFull> {
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.fsync(self.fd, libc::IORING_FSYNC_DATASYNC);
-        })?;
-
-        Ok(SyncData::new(self, op_index))
+    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
+        SyncData::new(self, libc::IORING_FSYNC_DATASYNC)
     }
 
     /// Retrieve metadata about the file.
     #[doc(alias = "statx")]
-    pub fn metadata<'fd>(&'fd self) -> Result<Stat<'fd>, QueueFull> {
-        let mut metadata = Box::new(Metadata {
+    pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
+        let metadata = Box::new(Metadata {
             // SAFETY: all zero values are valid representations.
             inner: unsafe { zeroed() },
         });
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.statx_file(self.fd, &mut metadata.inner, METADATA_FLAGS);
-        })?;
-
-        Ok(Stat::new(self, op_index, metadata))
+        Stat::new(self, metadata, ())
     }
 }
 
-// Sync_all.
+// SyncData.
 op_future! {
     fn AsyncFd::sync_all -> (),
-    struct SyncAll<'fd> {
-        // Doesn't need any fields.
-    },
-    |n| Ok(debug_assert!(n == 0)),
-}
-
-// Sync_data.
-op_future! {
-    fn AsyncFd::sync_data -> (),
     struct SyncData<'fd> {
         // Doesn't need any fields.
     },
-    |n| Ok(debug_assert!(n == 0)),
+    setup_state: flags: u32,
+    setup: |submission, fd, (), flags| unsafe {
+        submission.fsync(fd.fd, flags)
+    },
+    map_result: |n| Ok(debug_assert!(n == 0)),
 }
 
 // Metadata.
@@ -319,7 +305,11 @@ op_future! {
         /// Buffer to write the statx data into.
         metadata: Box<Metadata>,
     },
-    |this, (metadata,), n| {
+    setup_state: _unused: (),
+    setup: |submission, fd, (metadata,), ()| unsafe {
+        submission.statx_file(fd.fd, &mut metadata.inner, METADATA_FLAGS);
+    },
+    map_result: |this, (metadata,), n| {
         debug_assert!(n == 0);
         debug_assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
         Ok(metadata)

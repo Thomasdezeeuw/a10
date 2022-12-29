@@ -2,12 +2,13 @@
 
 use std::future::Future;
 use std::mem::ManuallyDrop;
+use std::os::unix::io::RawFd;
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{io, ptr, result};
+use std::{io, ptr};
 
-use crate::op::{op_future, NO_OFFSET};
-use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
+use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
+use crate::{libc, AsyncFd, SubmissionQueue};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -20,7 +21,7 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read<'fd, B>(&'fd self, buf: B) -> result::Result<Read<'fd, B>, QueueFull>
+    pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
     where
         B: ReadBuf,
     {
@@ -37,24 +38,15 @@ impl AsyncFd {
     ///
     /// This leave the current contents of `buf` untouched and only uses the
     /// spare capacity.
-    pub fn read_at<'fd, B>(
-        &'fd self,
-        mut buf: B,
-        offset: u64,
-    ) -> result::Result<Read<'fd, B>, QueueFull>
+    pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
     where
         B: ReadBuf,
     {
-        let op_index = self.sq.add(|submission| unsafe {
-            let (ptr, len) = buf.parts();
-            submission.read_at(self.fd, ptr, len, offset);
-        })?;
-
-        Ok(Read::new(self, op_index, buf))
+        Read::new(self, buf, offset)
     }
 
     /// Write `buf` to this file.
-    pub fn write<'fd, B>(&'fd self, buf: B) -> result::Result<Write<'fd, B>, QueueFull>
+    pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
     where
         B: WriteBuf,
     {
@@ -64,23 +56,14 @@ impl AsyncFd {
     /// Write `buf` to this file.
     ///
     /// The current file cursor is not affected by this function.
-    pub fn write_at<'fd, B>(
-        &'fd self,
-        buf: B,
-        offset: u64,
-    ) -> result::Result<Write<'fd, B>, QueueFull>
+    pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
     where
         B: WriteBuf,
     {
-        let op_index = self.sq.add(|submission| unsafe {
-            let (ptr, len) = buf.parts();
-            submission.write_at(self.fd, ptr, len, offset);
-        })?;
-
-        Ok(Write::new(self, op_index, buf))
+        Write::new(self, buf, offset)
     }
 
-    /// Attempt to cancel an already operation.
+    /// Attempt to cancel an in progress operation.
     ///
     /// If the previous I/O operation was succesfully canceled this return
     /// `Ok(())` and the canceled operation will return an `ECANCELED` "error"
@@ -91,22 +74,25 @@ impl AsyncFd {
     ///
     /// In general, requests that are interruptible (like socket IO) will get
     /// canceled, while disk IO requests cannot be canceled if already started.
-    pub fn cancel_previous<'fd>(&'fd self) -> result::Result<Cancel<'fd>, QueueFull> {
-        let op_index = self
-            .sq
-            .add(|submission| unsafe { submission.cancel(self.fd, 0) })?;
-
-        Ok(Cancel { fd: self, op_index })
+    ///
+    /// # Notes
+    ///
+    /// Due to the lazyness of [`Future`]s it's possible that this will return
+    /// `NotFound` if the previous operation was never polled.
+    pub const fn cancel_previous<'fd>(&'fd self) -> Cancel<'fd> {
+        Cancel {
+            fd: self,
+            state: OpState::NotStarted(0),
+        }
     }
 
     /// Same as [`AsyncFd::cancel_previous`], but attempts to cancel all
     /// operations.
-    pub fn cancel_all<'fd>(&'fd self) -> result::Result<Cancel<'fd>, QueueFull> {
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.cancel(self.fd, libc::IORING_ASYNC_CANCEL_ALL);
-        })?;
-
-        Ok(Cancel { fd: self, op_index })
+    pub const fn cancel_all<'fd>(&'fd self) -> Cancel<'fd> {
+        Cancel {
+            fd: self,
+            state: OpState::NotStarted(libc::IORING_ASYNC_CANCEL_ALL),
+        }
     }
 
     /// Explicitly close the file descriptor.
@@ -115,19 +101,19 @@ impl AsyncFd {
     ///
     /// This happens automatically on drop, this can be used to get a possible
     /// error.
-    pub fn close(self) -> result::Result<Close, QueueFull> {
-        let op_index = self.sq.add(|submission| unsafe {
-            submission.close(self.fd);
-        })?;
-
+    pub fn close(self) -> Close {
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.
         let this = ManuallyDrop::new(self);
         // SAFETY: this is safe because we're ensure the pointers are valid and
         // not touching `this` after reading the fields.
+        let fd = unsafe { ptr::read(&this.fd) };
         let sq = unsafe { ptr::read(&this.sq) };
 
-        Ok(Close { sq, op_index })
+        Close {
+            sq,
+            state: OpState::NotStarted(fd),
+        }
     }
 }
 
@@ -139,7 +125,14 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |this, (mut buf,), n| {
+    setup_state: offset: u64,
+    setup: |submission, fd, (buf,), offset| unsafe {
+        let (ptr, len) = buf.parts();
+        submission.read_at(fd.fd, ptr, len, offset);
+    },
+    map_result: |this, (mut buf,), n| {
+        // SAFETY: the kernel initialised the bytes for us as part of the read
+        // call.
         unsafe { buf.set_init(n as usize) };
         Ok(buf)
     },
@@ -153,7 +146,12 @@ op_future! {
         /// access it safely.
         buf: B,
     },
-    |n| Ok(n as usize),
+    setup_state: offset: u64,
+    setup: |submission, fd, (buf,), offset| unsafe {
+        let (ptr, len) = buf.parts();
+        submission.write_at(fd.fd, ptr, len, offset);
+    },
+    map_result: |n| Ok(n as usize),
     extract: |this, (buf,), n| -> (B, usize) {
         Ok((buf, n as usize))
     },
@@ -163,14 +161,27 @@ op_future! {
 #[derive(Debug)]
 pub struct Cancel<'fd> {
     fd: &'fd AsyncFd,
-    op_index: OpIndex,
+    state: OpState<u32>,
 }
 
 impl<'fd> Future for Cancel<'fd> {
     type Output = io::Result<()>;
 
-    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.fd.sq.poll_op(ctx, self.op_index).map_ok(|_| ())
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let op_index = poll_state!(Cancel, *self, ctx, |submission, fd, flags| unsafe {
+            submission.cancel(fd.fd, flags);
+        });
+
+        match self.fd.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok(_) => Poll::Ready(Ok(())),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
@@ -178,14 +189,27 @@ impl<'fd> Future for Cancel<'fd> {
 #[derive(Debug)]
 pub struct Close {
     sq: SubmissionQueue,
-    op_index: OpIndex,
+    state: OpState<RawFd>,
 }
 
 impl Future for Close {
     type Output = io::Result<()>;
 
-    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        self.sq.poll_op(ctx, self.op_index).map_ok(|_| ())
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let op_index = poll_state!(Close, self.state, self.sq, ctx, |submission, fd| unsafe {
+            submission.close(fd);
+        });
+
+        match self.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok(_) => Poll::Ready(Ok(())),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

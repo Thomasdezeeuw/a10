@@ -49,13 +49,13 @@
 ///
 /// async fn write_all_to_file(sq: SubmissionQueue, path: PathBuf, buf: Vec<u8>) -> io::Result<(PathBuf, Vec<u8>)> {
 ///     // This `Future` returns just the opened file.
-///     let open_file_future = OpenOptions::new().open(sq, path)?;
+///     let open_file_future = OpenOptions::new().open(sq, path);
 ///     // Calling `extract` and awaiting that will returns both the file and
 ///     // the path buffer.
 ///     let (file, path) = open_file_future.extract().await?;
 ///
 ///     // This just returns the number of bytes written.
-///     let write_future = file.write(buf)?;
+///     let write_future = file.write(buf);
 ///     // When extracting it also returns the buffer.
 ///     let (buf, n) = write_future.extract().await?;
 ///

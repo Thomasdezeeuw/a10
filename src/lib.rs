@@ -17,15 +17,10 @@
 //!
 //! # Notes
 //!
-//! The [`Future`]s in this library has a number of limitations that are a
-//! little stricter that "normal" `Future`s.
-//! * The `Future` should not be polled after completion. For performance reason
-//!   we reuse allocations made, which means that if a `Future` is polled after
-//!   it already returned a result it may read the result of another `Future`.
-//! * Most I/O operations need ownership of the data, e.g. a buffer, so it can
-//!   delay deallocation if needed (e.g. when a `Future` is dropped before being
-//!   polled to completion). This data can be retrieved again by using the
-//!   [`Extract`] trait.
+//! Most I/O operations need ownership of the data, e.g. a buffer, so it can
+//! delay deallocation if needed. For example when a `Future` is dropped before
+//! being polled to completion. This data can be retrieved again by using the
+//! [`Extract`] trait.
 
 #![feature(const_mut_refs, io_error_more)]
 
@@ -143,6 +138,8 @@ impl Ring {
                 unsafe { sq.complete_op(completion.index(), completion.result()) };
             }
         }
+
+        self.wake_blocked_futures();
         Ok(())
     }
 
@@ -223,6 +220,37 @@ impl Ring {
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (*self.cq.tail).load(Ordering::Acquire) }
     }
+
+    /// Wake all [`SharedSubmissionQueue::blocked_futures`].
+    fn wake_blocked_futures(&mut self) {
+        // This not particullary efficient, but with a large enough number of
+        // entries, `IORING_SETUP_SQPOLL` and suffcient calls to [`Ring::poll`]
+        // this shouldn't be used at all.
+
+        let mut blocked_futures = {
+            let mut blocked_futures = self.sq.shared.blocked_futures.lock().unwrap();
+            if blocked_futures.is_empty() {
+                return;
+            }
+
+            replace(&mut *blocked_futures, Vec::new())
+        };
+        // Do the waking outside of the lock.
+        for waker in blocked_futures.drain(..) {
+            waker.wake();
+        }
+
+        // Keep the allocation around, just in case.
+        let blocked_futures = {
+            replace(
+                &mut *self.sq.shared.blocked_futures.lock().unwrap(),
+                blocked_futures,
+            )
+        };
+        for waker in blocked_futures {
+            waker.wake();
+        }
+    }
 }
 
 /// Queue to submit asynchronous operations to.
@@ -272,6 +300,8 @@ struct SharedSubmissionQueue {
     /// `task::Waker`. It's used when adding new operations and when marking
     /// operations as complete (by the kernel).
     queued_ops: Box<[Mutex<Option<QueuedOperation>>]>,
+    /// Futures that are waiting for a slot in `queued_ops`.
+    blocked_futures: Mutex<Vec<task::Waker>>,
 
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic access.
@@ -334,10 +364,16 @@ impl SubmissionQueue {
             Ok(()) => Ok(OpIndex(op_index)),
             Err(err) => {
                 // Make the index available, we're not going to use it.
+                *op = None;
                 shared.op_indices.make_available(op_index);
                 Err(err)
             }
         }
+    }
+
+    /// Wait for a submission slot, waking `waker` once one is available.
+    fn wait_for_submission(&self, waker: task::Waker) {
+        self.shared.blocked_futures.lock().unwrap().push(waker)
     }
 
     /// Same as [`SubmissionQueue::add`], but ignores the result.
@@ -605,7 +641,7 @@ impl fmt::Debug for OpIndex {
 /// To resolve this issue call [`Ring::poll`].
 ///
 /// Can be convert into [`io::Error`].
-pub struct QueueFull(());
+struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
     fn from(_: QueueFull) -> io::Error {

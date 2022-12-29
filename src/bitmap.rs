@@ -9,6 +9,11 @@ pub(crate) struct AtomicBitMap {
 
 impl AtomicBitMap {
     /// Create a new `AtomicBitMap`.
+    ///
+    /// # Notes
+    ///
+    /// `entries` is a minimum number of slots, use `capacity` to determine the
+    /// actual number of bits available.
     pub(crate) fn new(entries: usize) -> Box<AtomicBitMap> {
         let mut size = entries / usize::BITS as usize;
         if (entries % usize::BITS as usize) != 0 {

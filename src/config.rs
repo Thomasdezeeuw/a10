@@ -180,6 +180,7 @@ fn mmap_submission_queue(
                 ),
                 op_indices,
                 queued_ops,
+                blocked_futures: Mutex::new(Vec::new()),
                 pending_tail: AtomicU32::new(0),
                 pending_index: AtomicU32::new(0),
                 // Fields are shared with the kernel.
