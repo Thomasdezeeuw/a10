@@ -107,7 +107,7 @@ impl Ring {
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
-    pub fn submission_queue(&self) -> &SubmissionQueue {
+    pub const fn submission_queue(&self) -> &SubmissionQueue {
         &self.sq
     }
 
@@ -373,7 +373,7 @@ impl SubmissionQueue {
 
     /// Wait for a submission slot, waking `waker` once one is available.
     fn wait_for_submission(&self, waker: task::Waker) {
-        self.shared.blocked_futures.lock().unwrap().push(waker)
+        self.shared.blocked_futures.lock().unwrap().push(waker);
     }
 
     /// Same as [`SubmissionQueue::add`], but ignores the result.
