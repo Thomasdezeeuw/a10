@@ -110,7 +110,7 @@ impl QueuedOperation {
     }
 
     /// Returns true if the operation is done.
-    pub(crate) fn is_done(&self) -> bool {
+    pub(crate) const fn is_done(&self) -> bool {
         matches!(self.result, OperationResult::Done(_))
     }
 
@@ -526,6 +526,7 @@ macro_rules! op_future {
                     }),
                     std::task::Poll::Ready(std::result::Result::Err(err)) => {
                         self.state = $crate::op::OpState::Done;
+                        #[allow(clippy::drop_non_drop)]
                         std::mem::drop(self.resources.take());
                         std::task::Poll::Ready(std::result::Result::Err(err))
                     },
@@ -541,6 +542,7 @@ macro_rules! op_future {
                         $crate::op::OpState::Waiting(op_index) => self.fd.sq.drop_op(op_index, resources),
                         // NOTE: `Done` should not be reachable, but no point in
                         // creating another branch.
+                        #[allow(clippy::drop_non_drop)]
                         $crate::op::OpState::NotStarted(_) | $crate::op::OpState::Done => drop(resources),
                     }
                 }
@@ -607,6 +609,7 @@ macro_rules! poll_state {
                 } = &mut $self;
                 // SAFETY: this will not panic as the resources are only removed
                 // after the state is set to `Done`.
+                #[allow(clippy::let_unit_value)]
                 let $setup_resources = resources.as_mut().take().unwrap().get_mut();
                 let result = $setup_fd.sq.add(|$setup_submission| $setup_fn);
                 match result {

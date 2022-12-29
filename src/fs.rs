@@ -192,7 +192,7 @@ impl Future for Open {
             |submission, (flags, mode)| unsafe {
                 // SAFETY: `path` is only removed after the state is set to `Done`.
                 let path = self.path.as_ref().unwrap();
-                submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, mode)
+                submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, mode);
             }
         );
 
@@ -293,7 +293,7 @@ op_future! {
     },
     setup_state: flags: u32,
     setup: |submission, fd, (), flags| unsafe {
-        submission.fsync(fd.fd, flags)
+        submission.fsync(fd.fd, flags);
     },
     map_result: |n| Ok(debug_assert!(n == 0)),
 }
