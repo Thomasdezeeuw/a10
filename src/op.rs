@@ -448,19 +448,21 @@ macro_rules! op_future {
                 let op_index = $crate::op::poll_state!($name, self.fut, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
 
                 match self.fut.fd.sq.poll_op(ctx, op_index) {
-                    std::task::Poll::Ready(std::result::Result::Ok($extract_arg)) => std::task::Poll::Ready({
+                    std::task::Poll::Ready(result) => {
                         self.fut.state = $crate::op::OpState::Done;
-                        let $extract_self = &mut self.fut;
-                        // SAFETY: this will not panic because we need to keep
-                        // the resources around until the operation is
-                        // completed.
-                        let $extract_resources = $extract_self.resources.take().unwrap().into_inner();
-                        $extract_map
-                    }),
-                    std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        self.fut.state = $crate::op::OpState::Done;
-                        std::mem::drop(self.fut.resources.take());
-                        std::task::Poll::Ready(std::result::Result::Err(err))
+                        match result {
+                            std::result::Result::Ok($extract_arg) => {
+                                self.fut.state = $crate::op::OpState::Done;
+                                let $extract_self = &mut self.fut;
+                                // SAFETY: this will not panic because we need
+                                // to keep the resources around until the
+                                // operation is completed.
+                                let $extract_resources = $extract_self.resources.take().unwrap().into_inner();
+                                std::task::Poll::Ready($extract_map)
+
+                            },
+                            std::result::Result::Err(err) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                        }
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
                 }
@@ -516,20 +518,19 @@ macro_rules! op_future {
                 let op_index = $crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
 
                 match self.fd.sq.poll_op(ctx, op_index) {
-                    std::task::Poll::Ready(std::result::Result::Ok($arg)) => std::task::Poll::Ready({
+                    std::task::Poll::Ready(result) => {
                         self.state = $crate::op::OpState::Done;
-                        let $self = &mut self;
-                        // SAFETY: this will not panic because we need to keep
-                        // the resources around until the operation is
-                        // completed.
-                        let $resources = $self.resources.take().unwrap().into_inner();
-                        $map_result
-                    }),
-                    std::task::Poll::Ready(std::result::Result::Err(err)) => {
-                        self.state = $crate::op::OpState::Done;
-                        #[allow(clippy::drop_non_drop)]
-                        std::mem::drop(self.resources.take());
-                        std::task::Poll::Ready(std::result::Result::Err(err))
+                        match result {
+                            std::result::Result::Ok($arg) => {
+                                let $self = &mut self;
+                                // SAFETY: this will not panic because we need
+                                // to keep the resources around until the
+                                // operation is completed.
+                                let $resources = $self.resources.take().unwrap().into_inner();
+                                std::task::Poll::Ready($map_result)
+                            },
+                            std::result::Result::Err(err) => std::task::Poll::Ready(std::result::Result::Err(err)),
+                        }
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
                 }
