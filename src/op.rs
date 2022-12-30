@@ -445,21 +445,19 @@ macro_rules! op_future {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                let op_index = $crate::op::poll_state!($name, self.fut, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
+                let op_index = std::task::ready!(self.fut.poll_op_index(ctx));
 
                 match self.fut.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
                         self.fut.state = $crate::op::OpState::Done;
                         match result {
                             std::result::Result::Ok($extract_arg) => {
-                                self.fut.state = $crate::op::OpState::Done;
                                 let $extract_self = &mut self.fut;
                                 // SAFETY: this will not panic because we need
                                 // to keep the resources around until the
                                 // operation is completed.
                                 let $extract_resources = $extract_self.resources.take().unwrap().into_inner();
                                 std::task::Poll::Ready($extract_map)
-
                             },
                             std::result::Result::Err(err) => std::task::Poll::Ready(std::result::Result::Err(err)),
                         }
@@ -511,11 +509,20 @@ macro_rules! op_future {
             }
         }
 
+        impl<$lifetime $(, $generic $(: $trait)? )*> $name<$lifetime $(, $generic)*> {
+            /// Poll for the `OpIndex`.
+            fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
+                Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
+                    $setup_fn
+                }))
+            }
+        }
+
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
             type Output = std::io::Result<$result>;
 
             fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                let op_index = $crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn);
+                let op_index = std::task::ready!(self.poll_op_index(ctx));
 
                 match self.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
