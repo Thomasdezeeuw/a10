@@ -9,13 +9,14 @@ use a10::fs::OpenOptions;
 use a10::Ring;
 
 mod util;
-use util::poll_nop;
+use util::{init, poll_nop};
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
     const TIMEOUT: Duration = Duration::from_millis(400);
     const MARGIN: Duration = Duration::from_millis(10);
 
+    init();
     let mut ring = Ring::new(1).unwrap();
 
     let start = Instant::now();
@@ -30,10 +31,7 @@ fn polling_timeout() -> io::Result<()> {
 
 #[test]
 fn dropping_unmaps_queues() {
-    let _ = std_logger::Config::logfmt()
-        .with_call_location(true)
-        .try_init();
-
+    init();
     let ring = Ring::new(64).unwrap();
     drop(ring);
 }
@@ -46,6 +44,7 @@ fn submission_queue_full_is_handle_internally() {
     const N: usize = (usize::BITS as usize) + 10;
     const BUF_SIZE: usize = SIZE / N;
 
+    init();
     let mut ring = Ring::new(2).unwrap();
     let sq = ring.submission_queue();
 
