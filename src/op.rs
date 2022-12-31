@@ -697,4 +697,9 @@ fn size_assertion() {
     assert_eq!(std::mem::size_of::<QueuedOperation>(), 24);
     assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 24);
     assert_eq!(std::mem::size_of::<OperationResult>(), 8);
+    assert_eq!(std::mem::size_of::<OpState<()>>(), 16);
+    assert_eq!(std::mem::size_of::<OpState<u8>>(), 16);
+    assert_eq!(std::mem::size_of::<OpState<u16>>(), 16);
+    assert_eq!(std::mem::size_of::<OpState<u32>>(), 16);
+    assert_eq!(std::mem::size_of::<OpState<u64>>(), 16);
 }
