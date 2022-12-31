@@ -174,16 +174,12 @@ impl Ring {
                 .add_no_result(|submission| unsafe { submission.timeout(&timeout) })?;
         }
 
-        // If there are no completions we need to check if the kernel thread is
-        // stil awake.
-        let mut enter_flags = libc::IORING_ENTER_GETEVENTS; // Wait for a completion.
-        let submission_flags = unsafe { &*self.sq.shared.flags }.load(Ordering::Acquire);
-        if submission_flags & libc::IORING_SQ_NEED_WAKEUP != 0 {
-            // If the kernel thread is not awake we'll need to wake it.
-            log::debug!("waking kernel thread");
-            enter_flags |= libc::IORING_ENTER_SQ_WAKEUP;
-        }
-
+        // If there are no completions we'll wait for one and wake the kernel
+        // thread. Previously we checked the `flags` of the submission queue and
+        // only set `IORING_ENTER_SQ_WAKEUP` when `IORING_SQ_NEED_WAKEUP` was
+        // set, but that turned out was quite racy and didn't always work.
+        let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
+            | libc::IORING_ENTER_SQ_WAKEUP; // Wake the kernel thread.
         log::debug!("waiting for completion events");
         let n = libc::syscall!(io_uring_enter(
             self.sq.shared.ring_fd.as_raw_fd(),
@@ -315,8 +311,10 @@ struct SharedSubmissionQueue {
     /// Number of invalid entries dropped by the kernel.
     dropped: *const AtomicU32,
     */
+    /* NOTE: currently unused.
     /// Flags set by the kernel to communicate state information.
     flags: *const AtomicU32,
+    */
     /// Array of `len` submission entries shared with the kernel. We're the only
     /// one modifiying the structures, but the kernel can read from it.
     ///

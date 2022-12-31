@@ -191,9 +191,11 @@ fn mmap_submission_queue(
                     .add(parameters.sq_off.dropped as usize)
                     .cast(),
                 */
+                /* NOTE: currently unused.
                 flags: submission_queue
                     .add(parameters.sq_off.flags as usize)
                     .cast(),
+                */
                 entries: submission_queue_entries.cast(),
                 array: submission_queue
                     .add(parameters.sq_off.array as usize)
