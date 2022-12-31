@@ -623,7 +623,7 @@ macro_rules! poll_state {
                     }
                     Err($crate::QueueFull(())) => {
                         $self.fd.sq.wait_for_submission($ctx.waker().clone());
-                        return Poll::Pending;
+                        return std::task::Poll::Pending;
                     }
                 }
             }
@@ -647,7 +647,7 @@ macro_rules! poll_state {
                     }
                     Err($crate::QueueFull(())) => {
                         $self.fd.sq.wait_for_submission($ctx.waker().clone());
-                        return Poll::Pending;
+                        return std::task::Poll::Pending;
                     }
                 }
             }
@@ -671,7 +671,7 @@ macro_rules! poll_state {
                     }
                     Err($crate::QueueFull(())) => {
                         $sq.wait_for_submission($ctx.waker().clone());
-                        return Poll::Pending;
+                        return std::task::Poll::Pending;
                     }
                 }
             }
