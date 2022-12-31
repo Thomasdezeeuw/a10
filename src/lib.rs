@@ -831,3 +831,30 @@ impl Drop for AsyncFd {
         }
     }
 }
+
+/// Waker allow waking of [`Ring`].
+///
+/// All this does is interrupt a call to [`Ring::poll`].
+#[derive(Clone)]
+pub struct Waker {
+    sq: SubmissionQueue,
+}
+
+impl Waker {
+    /// Create a new `Waker` that wakes `ring`.
+    pub fn new(ring: &Ring) -> Waker {
+        Waker {
+            sq: ring.submission_queue().clone(),
+        }
+    }
+
+    /// Wake the connected [`Ring`].
+    pub fn wake(&self) {
+        // We ignore the queue full error as it means that is *very* unlikely
+        // that the Ring is currently being polling if the submission queue is
+        // filled. More likely the Ring hasn't been polled in a while.
+        let _: Result<(), QueueFull> = self.sq.add_no_result(|submission| unsafe {
+            submission.wake(self.sq.shared.ring_fd.as_raw_fd());
+        });
+    }
+}
