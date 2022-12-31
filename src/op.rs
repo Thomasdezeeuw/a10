@@ -370,6 +370,14 @@ impl Submission {
             statx_flags: libc::AT_EMPTY_PATH as _,
         };
     }
+
+    pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
+        self.inner.opcode = libc::IORING_OP_MSG_RING as u8;
+        self.inner.fd = ring_fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: u64::MAX, // `user_data` in the completion event.
+        };
+    }
 }
 
 impl fmt::Debug for Submission {

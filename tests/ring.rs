@@ -1,12 +1,12 @@
 #![feature(once_cell)]
 
-use std::io;
 use std::pin::Pin;
 use std::task::Poll;
 use std::time::{Duration, Instant};
+use std::{io, thread};
 
 use a10::fs::OpenOptions;
-use a10::Ring;
+use a10::{Ring, Waker};
 
 mod util;
 use util::{init, poll_nop};
@@ -82,4 +82,30 @@ fn submission_queue_full_is_handle_internally() {
     }
 
     assert!(futures.iter().all(Option::is_none));
+}
+
+#[test]
+fn waker_wake() {
+    init();
+    let mut ring = Ring::new(2).unwrap();
+
+    let waker = Waker::new(&ring);
+    let handle = thread::spawn(move || {
+        waker.wake();
+    });
+
+    // Should be awoken by the wake call above.
+    ring.poll(None).unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
+fn waker_wake_before_poll_nop() {
+    init();
+    let mut ring = Ring::new(2).unwrap();
+
+    Waker::new(&ring).wake();
+
+    // Should be awoken by the wake call above.
+    ring.poll(None).unwrap();
 }
