@@ -405,7 +405,7 @@ impl fmt::Debug for Submission {
 macro_rules! op_future {
     (
         // File type and function name.
-        fn $f: ident :: $fn: ident -> $result: ty,
+        fn $type: ident :: $method: ident -> $result: ty,
         // Future structure.
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
@@ -427,7 +427,7 @@ macro_rules! op_future {
         extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
         $crate::op::op_future!{
-            fn $f::$fn -> $result,
+            fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
                 $(#[$field_doc])*
@@ -471,7 +471,7 @@ macro_rules! op_future {
     };
     // Base version (without any additional implementations).
     (
-        fn $f: ident :: $fn: ident -> $result: ty,
+        fn $type: ident :: $method: ident -> $result: ty,
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             $(#[ $field_doc: meta ])*
@@ -482,7 +482,7 @@ macro_rules! op_future {
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
         map_result: |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
     ) => {
-        #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($f), "::", stringify!($fn), "`].")]
+        #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         pub struct $name<$lifetime $(, $generic)*> {
             /// Resoures used in the operation.
@@ -493,14 +493,14 @@ macro_rules! op_future {
             resources: std::option::Option<std::cell::UnsafeCell<(
                 $( $value, )*
             )>>,
-            fd: &$lifetime $f,
+            fd: &$lifetime $crate::AsyncFd,
             /// State of the operation.
             state: $crate::op::OpState<$setup_ty>,
         }
 
         impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $f, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)*> {
+            const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)*> {
                 $name {
                     resources: std::option::Option::Some(std::cell::UnsafeCell::new((
                         $( $field, )*
@@ -553,7 +553,7 @@ macro_rules! op_future {
     };
     // Version that doesn't need `self` (this) or resources in `$map_result`.
     (
-        fn $f: ident :: $fn: ident -> $result: ty,
+        fn $type: ident :: $method: ident -> $result: ty,
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
             $(#[ $field_doc: meta ])*
@@ -566,7 +566,7 @@ macro_rules! op_future {
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
         $crate::op::op_future!{
-            fn $f::$fn -> $result,
+            fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic: $($trait)? )*> {
                 $(
                 $(#[$field_doc])*
