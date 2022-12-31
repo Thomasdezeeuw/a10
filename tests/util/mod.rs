@@ -5,13 +5,23 @@ use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
 use std::pin::Pin;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Once};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, io, mem, panic, process, ptr, str};
 
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
+
+/// Initialise logging.
+///
+/// Automatically called when [`test_queue`] is used.
+pub(crate) fn init() {
+    static START: Once = Once::new();
+    START.call_once(|| {
+        std_logger::Config::logfmt().with_call_location(true).init();
+    });
+}
 
 /// Size of a single page in bytes.
 pub(crate) const PAGE_SIZE: usize = 4096;
@@ -21,9 +31,7 @@ pub(crate) const PAGE_SIZE: usize = 4096;
 /// Create a [`Ring`] for testing.
 pub(crate) fn test_queue() -> SubmissionQueue {
     static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
-        let _ = std_logger::Config::logfmt()
-            .with_call_location(true)
-            .try_init();
+        init();
 
         let mut ring = Ring::new(128).expect("failed to create test ring");
         let sq = ring.submission_queue().clone();
