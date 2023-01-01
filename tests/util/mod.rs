@@ -230,4 +230,4 @@ macro_rules! syscall {
     }};
 }
 
-use syscall;
+pub(crate) use syscall;
