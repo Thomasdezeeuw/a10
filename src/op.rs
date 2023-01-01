@@ -520,7 +520,7 @@ macro_rules! op_future {
         impl<$lifetime $(, $generic $(: $trait)? )*> $name<$lifetime $(, $generic)*> {
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
-                Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
+                std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
                     $setup_fn
                 }))
             }
