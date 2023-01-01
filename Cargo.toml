@@ -14,7 +14,7 @@ edition       = "2021"
 
 [dependencies]
 libc         = { version = "0.2.132", default-features = false }
-log          = { version = "0.4.17",  default-features = false }
+log          = { version = "0.4.17",  default-features = false, features = ["kv_unstable_std"] }
 
 [dev-dependencies]
 std-logger   = { version = "0.5.0", default-features = false }

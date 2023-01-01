@@ -127,7 +127,7 @@ impl Ring {
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
-            log::trace!("got completion event: {completion:?}");
+            log::trace!(completion = log::as_debug!(completion); "dequeued completion event");
             if completion.is_in_progress() {
                 // SAFETY: we're calling this with information from the kernel.
                 unsafe { sq.set_op_in_progress_result(completion.index(), completion.result()) };
@@ -202,7 +202,7 @@ impl Ring {
             Ok(_) => Ok(()),
             // Hit timeout, we can ignore it.
             Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => Ok(()),
-            Err(err) => return Err(err),
+            Err(err) => Err(err),
         }
     }
 
@@ -419,6 +419,7 @@ impl SubmissionQueue {
 
         // Now that we've written our submission we need add it to the
         // `array` so that the kernel can process it.
+        log::trace!(submission = log::as_debug!(submission); "queueing submission");
         let array_tail = shared.pending_index.fetch_add(1, Ordering::AcqRel);
         let array_index = (array_tail & shared.ring_mask) as usize;
         // SAFETY: `idx` is masked above to be within the correct bounds.
