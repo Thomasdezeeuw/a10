@@ -127,7 +127,7 @@ impl Ring {
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
-            log::trace!("got completion: {completion:?}");
+            log::trace!("got completion event: {completion:?}");
             if completion.is_in_progress() {
                 // SAFETY: we're calling this with information from the kernel.
                 unsafe { sq.set_op_in_progress_result(completion.index(), completion.result()) };
@@ -181,7 +181,7 @@ impl Ring {
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_SQ_WAKEUP; // Wake the kernel thread.
         log::debug!("waiting for completion events");
-        let n = libc::syscall!(io_uring_enter(
+        libc::syscall!(io_uring_enter(
             self.sq.shared.ring_fd.as_raw_fd(),
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
@@ -189,7 +189,6 @@ impl Ring {
             ptr::null(),
             0
         ))?;
-        log::trace!("got {n} completion events");
 
         // NOTE: we're the only onces writing to the completion head so we don't
         // need to read it again.
