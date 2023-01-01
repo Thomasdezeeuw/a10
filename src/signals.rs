@@ -1,4 +1,4 @@
-//! Module for handling signals.
+//! Process signal handling.
 //!
 //! See the [`Signals`] documentation.
 
@@ -35,6 +35,44 @@ use crate::{libc, AsyncFd, SubmissionQueue};
 /// [`pthread_sigmask(3)`]: https://man7.org/linux/man-pages/man3/pthread_sigmask.3.html
 /// [`Future`]: std::future::Future
 /// [`signalfd(2)`]: http://man7.org/linux/man-pages/man2/signalfd.2.html
+///
+/// # Examples
+///
+/// ```
+/// use std::io;
+/// use std::mem::MaybeUninit;
+///
+/// use a10::Ring;
+/// use a10::signals::Signals;
+///
+/// # fn main() {
+/// async fn main() -> io::Result<()> {
+///     let ring = Ring::new(128)?;
+///     let sq = ring.submission_queue().clone();
+///
+///     // Create a new `Signals` instance.
+///     let sigset = create_sigset(&[libc::SIGINT, libc::SIGQUIT, libc::SIGTERM])?;
+///     let signals = Signals::new(sq, sigset)?;
+///
+///     let signal_info = signals.receive().await?;
+///     println!("Got process signal: {}", signal_info.ssi_signo);
+///     Ok(())
+/// }
+/// # }
+///
+/// /// Create a `sigset_t` from `signals`.
+/// fn create_sigset(signals: &[libc::c_int]) -> io::Result<libc::sigset_t> {
+/// #   macro_rules! syscall { ( $( $t: tt )*  ) => { io::Result::Ok(()) } }
+///     let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
+///     syscall!(sigemptyset(set.as_mut_ptr()))?;
+///     // SAFETY: initialised the set in the call to `sigemptyset`.
+///     let mut set = unsafe { set.assume_init() };
+///     for signal in signals {
+///         syscall!(sigaddset(&mut set, signal))?;
+///     }
+///     Ok(set)
+/// }
+/// ```
 pub struct Signals {
     /// `signalfd(2)` file descriptor.
     fd: AsyncFd,
