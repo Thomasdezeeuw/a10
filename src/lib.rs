@@ -28,7 +28,7 @@ use std::marker::PhantomData;
 use std::mem::{replace, size_of};
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{self, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::time::Duration;
@@ -417,6 +417,9 @@ impl SubmissionQueue {
         #[cfg(debug_assertions)]
         debug_assert!(!submission.is_unchanged());
 
+        // Ensure that all writes to the `submission` are done.
+        atomic::fence(Ordering::SeqCst);
+
         // Now that we've written our submission we need add it to the
         // `array` so that the kernel can process it.
         log::trace!(submission = log::as_debug!(submission); "queueing submission");
@@ -425,7 +428,7 @@ impl SubmissionQueue {
         // SAFETY: `idx` is masked above to be within the correct bounds.
         // As we have unique access `Relaxed` is acceptable.
         unsafe {
-            (*shared.array.add(array_index)).store(submission_index, Ordering::Relaxed);
+            (*shared.array.add(array_index)).store(submission_index, Ordering::Release);
         }
 
         // FIXME: doesn't work. Can have a gap in the `self.array` the
