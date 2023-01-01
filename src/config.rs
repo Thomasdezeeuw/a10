@@ -182,10 +182,8 @@ fn mmap_submission_queue(
                 queued_ops,
                 blocked_futures: Mutex::new(Vec::new()),
                 pending_tail: AtomicU32::new(0),
-                pending_index: AtomicU32::new(0),
                 // Fields are shared with the kernel.
                 kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
-                tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
                 /* NOTE: unused because we expect `IORING_FEAT_NODROP`.
                 dropped: submission_queue
                     .add(parameters.sq_off.dropped as usize)
@@ -195,9 +193,11 @@ fn mmap_submission_queue(
                     .add(parameters.sq_off.flags as usize)
                     .cast(),
                 entries: submission_queue_entries.cast(),
+                array_index: Mutex::new(0),
                 array: submission_queue
                     .add(parameters.sq_off.array as usize)
                     .cast(),
+                array_tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
             }),
         })
     }

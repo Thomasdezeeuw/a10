@@ -22,7 +22,7 @@
 //! being polled to completion. This data can be retrieved again by using the
 //! [`Extract`] trait.
 
-#![feature(const_mut_refs, io_error_more, new_uninit)]
+#![feature(const_mut_refs, io_error_more, new_uninit, mutex_unlock)]
 
 use std::marker::PhantomData;
 use std::mem::{replace, size_of};
@@ -283,8 +283,6 @@ struct SharedSubmissionQueue {
     /// NOTE: this does not mean that `pending_tail` number of submissions are
     /// ready, this is determined by `tail`.
     pending_tail: AtomicU32,
-    /// Variable used to get an index into `array`.
-    pending_index: AtomicU32,
 
     // NOTE: the following two fields are constant. we read them once from the
     // mmap area and then copied them here to avoid the need for the atomics.
@@ -307,8 +305,6 @@ struct SharedSubmissionQueue {
     /// Head to queue, i.e. the submussions read by the kernel. Incremented by
     /// the kernel when submissions has succesfully been processed.
     kernel_read: *const AtomicU32,
-    /// Incremented by us when submitting new submissions.
-    tail: *mut AtomicU32,
     /* NOTE: unused because we expect `IORING_FEAT_NODROP`.
     /// Number of invalid entries dropped by the kernel.
     dropped: *const AtomicU32,
@@ -320,9 +316,17 @@ struct SharedSubmissionQueue {
     ///
     /// This pointer is also used in the `unmmap` call.
     entries: *mut Submission,
+
+    /// Variable used to get an index into `array`. The lock must be held while
+    /// writing into `array` to prevent race conditions with other threads.
+    array_index: Mutex<u32>,
     /// Array of `len` indices (into `entries`) shared with the kernel. We're
     /// the only one modifiying the structures, but the kernel can read from it.
+    ///
+    /// This is protected by `array_index`.
     array: *mut AtomicU32,
+    /// Incremented by us when submitting new submissions.
+    array_tail: *mut AtomicU32,
 }
 
 impl SubmissionQueue {
@@ -423,17 +427,36 @@ impl SubmissionQueue {
         // Now that we've written our submission we need add it to the
         // `array` so that the kernel can process it.
         log::trace!(submission = log::as_debug!(submission); "queueing submission");
-        let array_tail = shared.pending_index.fetch_add(1, Ordering::AcqRel);
-        let array_index = (array_tail & shared.ring_mask) as usize;
-        // SAFETY: `idx` is masked above to be within the correct bounds.
-        // As we have unique access `Relaxed` is acceptable.
-        unsafe {
-            (*shared.array.add(array_index)).store(submission_index, Ordering::Release);
-        }
+        {
+            // Now that the submission is filled we need to add it to the
+            // `shared.array` so that the kernel can read from it.
+            //
+            // We do this with a lock to avoid a race condition between two
+            // threads incrementing `shared.tail` concurrently. Consider the
+            // following execution:
+            //
+            // Thread A                           | Thread B
+            // ...                                | ...
+            // ...                                | Got `array_index` 0.
+            // Got `array_index` 1.               |
+            // Writes index to `shared.array[1]`. |
+            // `shared.tail.fetch_add` to 1.      |
+            // At this point the kernel will/can read `shared.array[0]`, but
+            // thread B hasn't filled it yet. So the kernel will read an invalid
+            // index!
+            //                                    | Writes index to `shared.array[0]`.
+            //                                    | `shared.tail.fetch_add` to 2.
 
-        // FIXME: doesn't work. Can have a gap in the `self.array` the
-        // kernel will then assume to be filled.
-        unsafe { &*shared.tail }.fetch_add(1, Ordering::AcqRel);
+            let mut array_index = shared.array_index.lock().unwrap();
+            let idx = (*array_index & shared.ring_mask) as usize;
+            // SAFETY: `idx` is masked above to be within the correct bounds.
+            unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
+            // SAFETY: we filled the array above.
+            let old_tail = unsafe { (&*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
+            debug_assert!(old_tail == *array_index);
+            *array_index += 1;
+            Mutex::unlock(array_index);
+        }
 
         if self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0 {
             // If the kernel thread is not awake we'll need to wake it for it to
