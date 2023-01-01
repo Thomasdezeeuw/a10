@@ -186,12 +186,8 @@ impl Ring {
             args.ts = &timespec as *const _ as u64;
         }
 
-        // If there are no completions we'll wait for one and wake the kernel
-        // thread. Previously we checked the `flags` of the submission queue and
-        // only set `IORING_ENTER_SQ_WAKEUP` when `IORING_SQ_NEED_WAKEUP` was
-        // set, but that turned out was quite racy and didn't always work.
+        // If there are no completions we'll wait for at least one.
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
-            | libc::IORING_ENTER_SQ_WAKEUP // Wake the kernel thread.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
         log::debug!("waiting for completion events");
         let result = libc::syscall!(io_uring_enter(
