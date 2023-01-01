@@ -217,7 +217,7 @@ op_future! {
                 // SAFETY: if the `ss_family` field is `AF_INET` then storage
                 // must be a `sockaddr_in`.
                 debug_assert!(address_length == size_of::<libc::sockaddr_in>());
-                let addr: &libc::sockaddr_in = unsafe { &*(storage as *const _ as *const libc::sockaddr_in) };
+                let addr: &libc::sockaddr_in = unsafe { &*(storage as *const libc::sockaddr_storage).cast() };
                 let ip = Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes());
                 let port = u16::from_be(addr.sin_port);
                 Ok(SocketAddr::V4(SocketAddrV4::new(ip, port)))
@@ -226,7 +226,7 @@ op_future! {
                 // SAFETY: if the `ss_family` field is `AF_INET6` then storage
                 // must be a `sockaddr_in6`.
                 debug_assert!(address_length == size_of::<libc::sockaddr_in6>());
-                let addr: &libc::sockaddr_in6 = unsafe { &*(storage as *const _ as *const libc::sockaddr_in6) };
+                let addr: &libc::sockaddr_in6 = unsafe { &*(storage as *const libc::sockaddr_storage).cast() };
                 let ip = Ipv6Addr::from(addr.sin6_addr.s6_addr);
                 let port = u16::from_be(addr.sin6_port);
                 Ok(SocketAddr::V6(SocketAddrV6::new(

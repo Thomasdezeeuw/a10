@@ -183,7 +183,7 @@ impl Ring {
         if let Some(timeout) = timeout {
             timespec.tv_sec = timeout.as_secs() as _;
             timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
-            args.ts = &timespec as *const _ as u64;
+            args.ts = ptr::addr_of!(timespec) as u64;
         }
 
         // If there are no completions we'll wait for at least one.
@@ -195,7 +195,7 @@ impl Ring {
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
             enter_flags,
-            &args as *const _ as *const _,
+            ptr::addr_of!(args).cast(),
             size_of::<libc::io_uring_getevents_args>(),
         ));
         match result {
