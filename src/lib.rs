@@ -114,7 +114,7 @@ impl Ring {
 
     /// Poll the ring for completions.
     ///
-    /// This will wake all completed [`Future`]s of the result of their
+    /// This will wake all completed [`Future`]s with the result of their
     /// operation.
     ///
     /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
@@ -144,10 +144,8 @@ impl Ring {
         Ok(())
     }
 
-    /// Submit all submissions and wait for at least `n` completions.
-    ///
-    /// Setting `n` to zero will submit all queued operations and return any
-    /// completions, without blocking.
+    /// Returns an iterator for all completion events, makes a system call if no
+    /// completions are queued.
     fn completions(&mut self, timeout: Option<Duration>) -> io::Result<Completions> {
         let head = self.completion_head();
         let mut tail = self.completion_tail();

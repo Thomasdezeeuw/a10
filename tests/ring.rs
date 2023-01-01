@@ -109,3 +109,14 @@ fn waker_wake_before_poll_nop() {
     // Should be awoken by the wake call above.
     ring.poll(None).unwrap();
 }
+
+#[test]
+fn waker_wake_after_ring_dropped() {
+    init();
+    let ring = Ring::new(2).unwrap();
+
+    let waker = Waker::new(&ring);
+
+    drop(ring);
+    waker.wake();
+}
