@@ -22,7 +22,7 @@
 //! being polled to completion. This data can be retrieved again by using the
 //! [`Extract`] trait.
 
-#![feature(const_mut_refs, io_error_more)]
+#![feature(const_mut_refs, io_error_more, new_uninit)]
 
 use std::marker::PhantomData;
 use std::mem::{replace, size_of};
@@ -41,6 +41,7 @@ pub mod fs;
 pub mod io;
 pub mod net;
 mod op;
+pub mod signals;
 
 // TODO: replace this with definitions from the `libc` crate once available.
 mod sys;
