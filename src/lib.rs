@@ -24,7 +24,6 @@
 
 #![feature(const_mut_refs, io_error_more, new_uninit)]
 
-use std::fmt;
 use std::marker::PhantomData;
 use std::mem::{replace, size_of};
 use std::os::fd::{AsFd, BorrowedFd};
@@ -33,6 +32,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::time::Duration;
+use std::{fmt, ptr};
 
 mod bitmap;
 mod config;
@@ -317,10 +317,8 @@ struct SharedSubmissionQueue {
     /// Number of invalid entries dropped by the kernel.
     dropped: *const AtomicU32,
     */
-    /* NOTE: currently unused.
     /// Flags set by the kernel to communicate state information.
     flags: *const AtomicU32,
-    */
     /// Array of `len` submission entries shared with the kernel. We're the only
     /// one modifiying the structures, but the kernel can read from it.
     ///
@@ -437,6 +435,28 @@ impl SubmissionQueue {
         // kernel will then assume to be filled.
         unsafe { &*shared.tail }.fetch_add(1, Ordering::AcqRel);
 
+        if self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0 {
+            // If the kernel thread is not awake we'll need to wake it for it to
+            // process our submission.
+            if let Err(err) = self.wake_kernel_thread() {
+                log::warn!("failed to wake submission queue polling kernel thread: {err}");
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Wake up the kernel thread polling for submission events.
+    fn wake_kernel_thread(&self) -> io::Result<()> {
+        log::debug!("waking submission queue polling kernel thread");
+        libc::syscall!(io_uring_enter(
+            self.shared.ring_fd.as_raw_fd(),
+            0,                            // We've already queued our submissions.
+            0,                            // Don't wait for any completion events.
+            libc::IORING_ENTER_SQ_WAKEUP, // Wake up the kernel.
+            ptr::null(),                  // We don't pass any additional arguments.
+            0,
+        ))?;
         Ok(())
     }
 
@@ -578,6 +598,13 @@ impl SubmissionQueue {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (*self.shared.kernel_read).load(Ordering::Acquire) }
+    }
+
+    /// Returns `self.flags`.
+    fn flags(&self) -> u32 {
+        // SAFETY: this written to by the kernel so we need to use `Acquire`
+        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (*self.shared.flags).load(Ordering::Acquire) }
     }
 }
 

@@ -91,6 +91,10 @@ fn waker_wake() {
 
     let waker = Waker::new(&ring);
     let handle = thread::spawn(move || {
+        // NOTE: this sleep ensures that the "submission queue polling kernel
+        // thread" (the one that reads our submissions) goes to sleep, this way
+        // we can test that we wake that as well.
+        thread::sleep(Duration::from_secs(1));
         waker.wake();
     });
 
