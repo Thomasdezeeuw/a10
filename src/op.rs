@@ -369,6 +369,22 @@ impl Submission {
 
 impl fmt::Debug for Submission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Helper functions with common patterns.
+        fn io_op(f: &mut fmt::DebugStruct<'_, '_>, submission: &libc::io_uring_sqe, name: &str) {
+            f.field("opcode", &name)
+                .field("fd", &submission.fd)
+                .field("offset", unsafe { &submission.__bindgen_anon_1.off })
+                .field("addr", unsafe { &submission.__bindgen_anon_2.addr })
+                .field("len", &submission.len);
+        }
+        fn net_op(f: &mut fmt::DebugStruct<'_, '_>, submission: &libc::io_uring_sqe, name: &str) {
+            f.field("opcode", &name)
+                .field("fd", &submission.fd)
+                .field("addr", unsafe { &submission.__bindgen_anon_2.addr })
+                .field("len", &submission.len)
+                .field("flags", unsafe { &submission.__bindgen_anon_3.msg_flags });
+        }
+
         let mut f = f.debug_struct("Submission");
         match self.inner.opcode as i32 {
             libc::IORING_OP_FSYNC => {
@@ -378,20 +394,8 @@ impl fmt::Debug for Submission {
                         &self.inner.__bindgen_anon_3.fsync_flags
                     });
             }
-            libc::IORING_OP_READ => {
-                f.field("opcode", &"IORING_OP_READ")
-                    .field("fd", &self.inner.fd)
-                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
-                    .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("len", &self.inner.len);
-            }
-            libc::IORING_OP_WRITE => {
-                f.field("opcode", &"IORING_OP_WRITE")
-                    .field("fd", &self.inner.fd)
-                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
-                    .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("len", &self.inner.len);
-            }
+            libc::IORING_OP_READ => io_op(&mut f, &self.inner, "IORING_OP_READ"),
+            libc::IORING_OP_WRITE => io_op(&mut f, &self.inner, "IORING_OP_WRITE"),
             libc::IORING_OP_SOCKET => {
                 f.field("opcode", &"IORING_OP_SOCKET")
                     .field("domain", &self.inner.fd)
@@ -405,27 +409,9 @@ impl fmt::Debug for Submission {
                     .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
                     .field("addr_size", unsafe { &self.inner.__bindgen_anon_1.off });
             }
-            libc::IORING_OP_SEND => {
-                f.field("opcode", &"IORING_OP_SEND")
-                    .field("fd", &self.inner.fd)
-                    .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("len", &self.inner.len)
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.msg_flags });
-            }
-            libc::IORING_OP_SEND_ZC => {
-                f.field("opcode", &"IORING_OP_SEND")
-                    .field("fd", &self.inner.fd)
-                    .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("len", &self.inner.len)
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.msg_flags });
-            }
-            libc::IORING_OP_RECV => {
-                f.field("opcode", &"IORING_OP_RECV")
-                    .field("fd", &self.inner.fd)
-                    .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("len", &self.inner.len)
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.msg_flags });
-            }
+            libc::IORING_OP_SEND => net_op(&mut f, &self.inner, "IORING_OP_SEND"),
+            libc::IORING_OP_SEND_ZC => net_op(&mut f, &self.inner, "IORING_OP_SEND_ZC"),
+            libc::IORING_OP_RECV => net_op(&mut f, &self.inner, "IORING_OP_RECV"),
             libc::IORING_OP_ACCEPT => {
                 f.field("opcode", &"IORING_OP_ACCEPT")
                     .field("fd", &self.inner.fd)
