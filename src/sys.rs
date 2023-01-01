@@ -1802,3 +1802,12 @@ pub struct __IncompleteArrayField<T>(::std::marker::PhantomData<T>, [T; 0]);
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct __BindgenUnionField<T>(::std::marker::PhantomData<T>);
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct io_uring_getevents_args {
+    pub sigmask: __u64,
+    pub sigmask_sz: __u32,
+    pub pad: __u32,
+    pub ts: __u64,
+}

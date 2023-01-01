@@ -24,6 +24,7 @@
 
 #![feature(const_mut_refs, io_error_more, new_uninit)]
 
+use std::fmt;
 use std::marker::PhantomData;
 use std::mem::{replace, size_of};
 use std::os::fd::{AsFd, BorrowedFd};
@@ -32,7 +33,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::time::Duration;
-use std::{fmt, ptr};
 
 mod bitmap;
 mod config;
@@ -164,14 +164,20 @@ impl Ring {
             });
         }
 
+        let mut args = libc::io_uring_getevents_args {
+            sigmask: 0,
+            sigmask_sz: 0,
+            pad: 0,
+            ts: 0,
+        };
+        let mut timespec = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         if let Some(timeout) = timeout {
-            let timeout = libc::timespec {
-                tv_sec: timeout.as_secs() as _,
-                tv_nsec: libc::c_longlong::from(timeout.subsec_nanos()),
-            };
-
-            self.sq
-                .add_no_result(|submission| unsafe { submission.timeout(&timeout) })?;
+            timespec.tv_sec = timeout.as_secs() as _;
+            timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
+            args.ts = &timespec as *const _ as u64;
         }
 
         // If there are no completions we'll wait for one and wake the kernel
@@ -179,16 +185,22 @@ impl Ring {
         // only set `IORING_ENTER_SQ_WAKEUP` when `IORING_SQ_NEED_WAKEUP` was
         // set, but that turned out was quite racy and didn't always work.
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
-            | libc::IORING_ENTER_SQ_WAKEUP; // Wake the kernel thread.
+            | libc::IORING_ENTER_SQ_WAKEUP // Wake the kernel thread.
+            | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
         log::debug!("waiting for completion events");
-        libc::syscall!(io_uring_enter(
+        let result = libc::syscall!(io_uring_enter(
             self.sq.shared.ring_fd.as_raw_fd(),
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
             enter_flags,
-            ptr::null(),
-            0
-        ))?;
+            &args as *const _ as *const _,
+            size_of::<libc::io_uring_getevents_args>(),
+        ));
+        match result {
+            Ok(_) => {}
+            Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => {}
+            Err(err) => return Err(err),
+        }
 
         // NOTE: we're the only onces writing to the completion head so we don't
         // need to read it again.

@@ -196,18 +196,6 @@ impl Submission {
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
     }
 
-    /// Create a timeout submission waiting for at least one completion or
-    /// triggers a timeout.
-    ///
-    /// Avaialable since Linux kernel 5.4.
-    pub(crate) unsafe fn timeout(&mut self, ts: *const libc::timespec) {
-        self.inner.opcode = libc::IORING_OP_TIMEOUT as u8;
-        self.inner.fd = -1;
-        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: 1 };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ts as _ };
-        self.inner.len = 1;
-    }
-
     /// Create a read submission starting at `offset`.
     ///
     /// Avaialable since Linux kernel 5.6.
