@@ -148,22 +148,30 @@ impl Ring {
     ///
     /// Setting `n` to zero will submit all queued operations and return any
     /// completions, without blocking.
-    #[doc(alias = "io_uring_enter")]
     fn completions(&mut self, timeout: Option<Duration>) -> io::Result<Completions> {
-        // First we check if there are already completions events queued.
         let head = self.completion_head();
-        let tail = self.completion_tail();
-        if head != tail || matches!(timeout, Some(Duration::ZERO)) {
-            return Ok(Completions {
-                entries: self.cq.entries,
-                local_head: head,
-                head: self.cq.head,
-                tail,
-                ring_mask: self.cq.ring_mask,
-                _lifetime: PhantomData,
-            });
+        let mut tail = self.completion_tail();
+        if head == tail && !matches!(timeout, Some(Duration::ZERO)) {
+            // If we have no completions and we have no, or a non-zero, timeout
+            // we make a system call to wait for completion events.
+            self.enter(timeout)?;
+            // NOTE: we're the only onces writing to the completion `head` so we
+            // don't need to read it again.
+            tail = self.completion_tail();
         }
 
+        Ok(Completions {
+            entries: self.cq.entries,
+            local_head: head,
+            head: self.cq.head,
+            tail,
+            ring_mask: self.cq.ring_mask,
+            _lifetime: PhantomData,
+        })
+    }
+
+    /// Make the `io_uring_enter` system call.
+    fn enter(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         let mut args = libc::io_uring_getevents_args {
             sigmask: 0,
             sigmask_sz: 0,
@@ -197,22 +205,11 @@ impl Ring {
             size_of::<libc::io_uring_getevents_args>(),
         ));
         match result {
-            Ok(_) => {}
-            Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => {}
+            Ok(_) => Ok(()),
+            // Hit timeout, we can ignore it.
+            Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => Ok(()),
             Err(err) => return Err(err),
         }
-
-        // NOTE: we're the only onces writing to the completion head so we don't
-        // need to read it again.
-        let tail = self.completion_tail();
-        Ok(Completions {
-            entries: self.cq.entries,
-            local_head: head,
-            head: self.cq.head,
-            tail,
-            ring_mask: self.cq.ring_mask,
-            _lifetime: PhantomData,
-        })
     }
 
     /// Returns `CompletionQueue.head`.
