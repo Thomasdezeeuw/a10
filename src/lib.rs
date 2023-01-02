@@ -170,7 +170,7 @@ impl Ring {
 
     /// Make the `io_uring_enter` system call.
     fn enter(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        let mut args = libc::io_uring_getevents_args {
+        let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
             pad: 0,
@@ -190,13 +190,13 @@ impl Ring {
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
         log::debug!("waiting for completion events");
-        let result = libc::syscall!(io_uring_enter(
+        let result = libc::syscall!(io_uring_enter2(
             self.sq.shared.ring_fd.as_raw_fd(),
             0, // We've already queued and submitted our submissions.
             1, // Wait for at least one completion.
             enter_flags,
             ptr::addr_of!(args).cast(),
-            size_of::<libc::io_uring_getevents_args>(),
+            size_of::<libc::io_uring_getevents_arg>(),
         ));
         match result {
             Ok(_) => Ok(()),
@@ -472,7 +472,7 @@ impl SubmissionQueue {
     /// Wake up the kernel thread polling for submission events.
     fn wake_kernel_thread(&self) -> io::Result<()> {
         log::debug!("waking submission queue polling kernel thread");
-        libc::syscall!(io_uring_enter(
+        libc::syscall!(io_uring_enter2(
             self.shared.ring_fd.as_raw_fd(),
             0,                            // We've already queued our submissions.
             0,                            // Don't wait for any completion events.

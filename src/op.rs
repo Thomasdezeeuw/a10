@@ -386,7 +386,7 @@ impl fmt::Debug for Submission {
         }
 
         let mut f = f.debug_struct("Submission");
-        match self.inner.opcode as i32 {
+        match self.inner.opcode as u32 {
             libc::IORING_OP_FSYNC => {
                 f.field("opcode", &"IORING_OP_FSYNC")
                     .field("fd", &self.inner.fd)
