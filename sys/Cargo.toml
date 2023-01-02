@@ -1,0 +1,13 @@
+[package]
+name          = "a10-sys"
+description   = "Generate the type definitions for A10"
+version       = "0.0.0"
+publish       = false
+authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
+edition       = "2021"
+
+[dependencies]
+libc         = { version = "0.2.132", default-features = false }
+
+[build-dependencies]
+bindgen = "0.63.0"
