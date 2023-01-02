@@ -43,7 +43,7 @@ fn main() {
 const HEADER: &str = "
 //! Code that should be moved to libc once C libraries have a wrapper.
 
-#![allow(dead_code, non_camel_case_types)]
+#![allow(dead_code, non_camel_case_types, non_snake_case)]
 #![allow(clippy::unreadable_literal, clippy::missing_safety_doc)]
 
 /// Helper macro to execute a system call that returns an `io::Result`.
