@@ -88,8 +88,9 @@ fn submission_queue_full_is_handle_internally() {
 fn waker_wake() {
     init();
     let mut ring = Ring::new(2).unwrap();
+    let sq = ring.submission_queue().clone();
 
-    let waker = Waker::new(&ring);
+    let waker = Waker::new(sq);
     let handle = thread::spawn(move || {
         // NOTE: this sleep ensures that the "submission queue polling kernel
         // thread" (the one that reads our submissions) goes to sleep, this way
@@ -107,8 +108,9 @@ fn waker_wake() {
 fn waker_wake_before_poll_nop() {
     init();
     let mut ring = Ring::new(2).unwrap();
+    let sq = ring.submission_queue().clone();
 
-    Waker::new(&ring).wake();
+    Waker::new(sq).wake();
 
     // Should be awoken by the wake call above.
     ring.poll(None).unwrap();
@@ -118,8 +120,9 @@ fn waker_wake_before_poll_nop() {
 fn waker_wake_after_ring_dropped() {
     init();
     let ring = Ring::new(2).unwrap();
+    let sq = ring.submission_queue().clone();
 
-    let waker = Waker::new(&ring);
+    let waker = Waker::new(sq);
 
     drop(ring);
     waker.wake();

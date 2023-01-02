@@ -895,11 +895,9 @@ pub struct Waker {
 }
 
 impl Waker {
-    /// Create a new `Waker` that wakes `ring`.
-    pub fn new(ring: &Ring) -> Waker {
-        Waker {
-            sq: ring.submission_queue().clone(),
-        }
+    /// Create a new `Waker` that wakes the ring connected to `sq`.
+    pub const fn new(sq: SubmissionQueue) -> Waker {
+        Waker { sq }
     }
 
     /// Wake the connected [`Ring`].
