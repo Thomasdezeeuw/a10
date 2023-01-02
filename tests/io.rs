@@ -7,6 +7,7 @@ use std::io;
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
+use a10::io::{stderr, stdout};
 
 mod util;
 use util::{
@@ -153,4 +154,22 @@ fn dropped_futures_do_not_leak_buffers() {
     let buf = vec![123; 64 * 1024];
     let write = file.write(buf);
     drop(write);
+}
+
+#[test]
+fn stdout_write() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let stdout = stdout(sq);
+    waker.block_on(stdout.write("Hello, stdout!\n")).unwrap();
+}
+
+#[test]
+fn stderr_write() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let stderr = stderr(sq);
+    waker.block_on(stderr.write("Hello, stderr!\n")).unwrap();
 }

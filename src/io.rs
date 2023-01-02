@@ -13,6 +13,40 @@ use crate::{libc, AsyncFd, SubmissionQueue};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
+macro_rules! stdio {
+    (
+        $fn: ident () -> $name: ident, $fd: expr
+    ) => {
+        #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
+        pub const fn $fn(sq: $crate::SubmissionQueue) -> $name {
+            $name(std::mem::ManuallyDrop::new($crate::AsyncFd {
+                fd: libc::STDOUT_FILENO as std::os::unix::io::RawFd,
+                sq,
+            }))
+        }
+
+        #[doc = concat!(
+                    "An [`AsyncFd`] for ", stringify!($fn), ".\n\n",
+                    "# Notes\n\n",
+                    "This directly writes to the raw file descriptor, which means it's not buffered and will not flush anything buffered by the standard library.\n\n",
+                    "When the returned type is dropped it will not close ", stringify!($fn), ".",
+                )]
+        pub struct $name(std::mem::ManuallyDrop<$crate::AsyncFd>);
+
+        impl std::ops::Deref for $name {
+            type Target = $crate::AsyncFd;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+    };
+}
+
+stdio!(stdin() -> Stdin, libc::STDIN_FILENO);
+stdio!(stdout() -> Stdout, libc::STDOUT_FILENO);
+stdio!(stderr() -> Stderr, libc::STDERR_FILENO);
+
 /// I/O system calls.
 impl AsyncFd {
     /// Read from this fd into `buf`.
