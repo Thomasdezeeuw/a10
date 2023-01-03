@@ -23,6 +23,7 @@ fn main() {
         // Limit to io_uring types and constants.
         .allowlist_type("io_uring.*")
         .allowlist_var("IORING.*")
+        .allowlist_var("IOSQE.*")
         // We define the function ourselves, since no definitions exist in libc
         // yet (otherwise this wasn't needed at all!).
         .ignore_functions()
@@ -98,4 +99,14 @@ pub unsafe fn io_uring_enter2(
         size as c_long,
     ) as _
 }
+
+// Work around for <https://github.com/rust-lang/rust-bindgen/issues/1642>,
+// <https://github.com/rust-lang/rust-bindgen/issues/258>.
+pub const IOSQE_FIXED_FILE: u8 = 1 << IOSQE_FIXED_FILE_BIT as u8;
+pub const IOSQE_IO_DRAIN: u8 = 1 << IOSQE_IO_DRAIN_BIT as u8;
+pub const IOSQE_IO_LINK: u8 = 1 << IOSQE_IO_LINK_BIT as u8;
+pub const IOSQE_IO_HARDLINK: u8 = 1 << IOSQE_IO_HARDLINK_BIT as u8;
+pub const IOSQE_ASYNC: u8 = 1 << IOSQE_ASYNC_BIT as u8;
+pub const IOSQE_BUFFER_SELECT: u8 = 1 << IOSQE_BUFFER_SELECT_BIT as u8;
+pub const IOSQE_CQE_SKIP_SUCCESS: u8 = 1 << IOSQE_CQE_SKIP_SUCCESS_BIT as u8;
 ";
