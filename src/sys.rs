@@ -56,6 +56,16 @@ pub unsafe fn io_uring_enter2(
     ) as _
 }
 
+// Work around for <https://github.com/rust-lang/rust-bindgen/issues/1642>,
+// <https://github.com/rust-lang/rust-bindgen/issues/258>.
+pub const IOSQE_FIXED_FILE: u8 = 1 << IOSQE_FIXED_FILE_BIT as u8;
+pub const IOSQE_IO_DRAIN: u8 = 1 << IOSQE_IO_DRAIN_BIT as u8;
+pub const IOSQE_IO_LINK: u8 = 1 << IOSQE_IO_LINK_BIT as u8;
+pub const IOSQE_IO_HARDLINK: u8 = 1 << IOSQE_IO_HARDLINK_BIT as u8;
+pub const IOSQE_ASYNC: u8 = 1 << IOSQE_ASYNC_BIT as u8;
+pub const IOSQE_BUFFER_SELECT: u8 = 1 << IOSQE_BUFFER_SELECT_BIT as u8;
+pub const IOSQE_CQE_SKIP_SUCCESS: u8 = 1 << IOSQE_CQE_SKIP_SUCCESS_BIT as u8;
+
 pub type __kernel_time64_t = ::std::os::raw::c_longlong;
 pub type __u8 = ::std::os::raw::c_uchar;
 pub type __u16 = ::std::os::raw::c_ushort;
@@ -63,6 +73,7 @@ pub type __s32 = ::std::os::raw::c_int;
 pub type __u32 = ::std::os::raw::c_uint;
 pub type __u64 = ::std::os::raw::c_ulonglong;
 pub type __kernel_rwf_t = ::std::os::raw::c_int;
+pub type _bindgen_ty_18 = ::std::os::raw::c_uint;
 pub type io_uring_op = ::std::os::raw::c_uint;
 pub type _bindgen_ty_19 = ::std::os::raw::c_uint;
 pub type _bindgen_ty_20 = ::std::os::raw::c_uint;
@@ -410,6 +421,13 @@ pub const IORING_FEAT_CQE_SKIP: u32 = 2048;
 pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
 pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
 pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
+pub const IOSQE_FIXED_FILE_BIT: _bindgen_ty_18 = 0;
+pub const IOSQE_IO_DRAIN_BIT: _bindgen_ty_18 = 1;
+pub const IOSQE_IO_LINK_BIT: _bindgen_ty_18 = 2;
+pub const IOSQE_IO_HARDLINK_BIT: _bindgen_ty_18 = 3;
+pub const IOSQE_ASYNC_BIT: _bindgen_ty_18 = 4;
+pub const IOSQE_BUFFER_SELECT_BIT: _bindgen_ty_18 = 5;
+pub const IOSQE_CQE_SKIP_SUCCESS_BIT: _bindgen_ty_18 = 6;
 pub const IORING_OP_NOP: io_uring_op = 0;
 pub const IORING_OP_READV: io_uring_op = 1;
 pub const IORING_OP_WRITEV: io_uring_op = 2;
