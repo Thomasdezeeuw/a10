@@ -200,7 +200,7 @@ impl Future for Open {
             Poll::Ready(result) => {
                 self.state = OpState::Done;
                 match result {
-                    Ok(fd) => Poll::Ready(Ok(AsyncFd {
+                    Ok((_, fd)) => Poll::Ready(Ok(AsyncFd {
                         fd,
                         // SAFETY: unwrapped `sq` above already.
                         sq: self.sq.take().unwrap(),
