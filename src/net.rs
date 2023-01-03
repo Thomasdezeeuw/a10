@@ -124,7 +124,7 @@ impl Future for Socket {
             Poll::Ready(result) => {
                 self.state = OpState::Done;
                 match result {
-                    Ok(fd) => Poll::Ready(Ok(AsyncFd {
+                    Ok((_, fd)) => Poll::Ready(Ok(AsyncFd {
                         fd,
                         // SAFETY: used it above.
                         sq: self.sq.take().unwrap(),

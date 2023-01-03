@@ -26,13 +26,15 @@ impl QueuedOperation {
     }
 
     /// Set the result of the operation, but don't mark it as complete.
-    pub(crate) fn set_in_progress_result(&mut self, result: i32) {
+    pub(crate) fn set_in_progress_result(&mut self, flags: u16, result: i32) {
         match self.result {
-            OperationResult::Started => self.result = OperationResult::InProgress(result),
-            OperationResult::Dropped => self.result = OperationResult::InProgressDropped(result),
-            OperationResult::InProgress(_)
-            | OperationResult::InProgressDropped(_)
-            | OperationResult::Done(_) => {
+            OperationResult::Started => self.result = OperationResult::InProgress { flags, result },
+            OperationResult::Dropped => {
+                self.result = OperationResult::InProgressDropped { flags, result }
+            }
+            OperationResult::InProgress { .. }
+            | OperationResult::InProgressDropped { .. }
+            | OperationResult::Done { .. } => {
                 unreachable!("set_in_progress_result called incorrectly")
             }
         }
@@ -43,15 +45,15 @@ impl QueuedOperation {
     /// Returns `true` if the operation was previously dropped.
     pub(crate) fn complete_in_progress(&mut self) -> bool {
         let is_dropped = match self.result {
-            OperationResult::InProgress(result) => {
-                self.result = OperationResult::Done(result);
+            OperationResult::InProgress { flags, result } => {
+                self.result = OperationResult::Done { flags, result };
                 false
             }
-            OperationResult::InProgressDropped(result) => {
-                self.result = OperationResult::Done(result);
+            OperationResult::InProgressDropped { flags, result } => {
+                self.result = OperationResult::Done { flags, result };
                 true
             }
-            OperationResult::Started | OperationResult::Dropped | OperationResult::Done(_) => {
+            OperationResult::Started | OperationResult::Dropped | OperationResult::Done { .. } => {
                 unreachable!("complete_in_progress called incorrectly")
             }
         };
@@ -67,13 +69,13 @@ impl QueuedOperation {
     /// for the result.
     ///
     /// Returns `true` if the operation was previously dropped.
-    pub(crate) fn complete(&mut self, result: i32) -> bool {
-        let old_state = replace(&mut self.result, OperationResult::Done(result));
+    pub(crate) fn complete(&mut self, flags: u16, result: i32) -> bool {
+        let old_state = replace(&mut self.result, OperationResult::Done { flags, result });
         debug_assert!(match old_state {
             OperationResult::Started | OperationResult::Dropped => true,
-            OperationResult::InProgress(_)
-            | OperationResult::InProgressDropped(_)
-            | OperationResult::Done(_) => false,
+            OperationResult::InProgress { .. }
+            | OperationResult::InProgressDropped { .. }
+            | OperationResult::Done { .. } => false,
         });
         if let Some(waker) = self.waker.take() {
             waker.wake();
@@ -84,26 +86,28 @@ impl QueuedOperation {
     }
 
     /// Poll the operation check if it's ready.
-    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<i32>> {
+    ///
+    /// Returns the `flags` and the `result` (always positive).
+    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<(u16, i32)>> {
         match self.result {
-            OperationResult::Started | OperationResult::InProgress(_) => {
+            OperationResult::Started | OperationResult::InProgress { .. } => {
                 let waker = ctx.waker();
                 if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
                     self.waker = Some(waker.clone());
                 }
                 Poll::Pending
             }
-            OperationResult::Dropped | OperationResult::InProgressDropped(_) => {
+            OperationResult::Dropped | OperationResult::InProgressDropped { .. } => {
                 unreachable!("polling a dropped Future")
             }
-            OperationResult::Done(res) => {
-                if res.is_negative() {
+            OperationResult::Done { flags, result } => {
+                if result.is_negative() {
                     // TODO: handle `-EBUSY` on operations.
                     // TODO: handle io_uring specific errors here, read CQE
                     // ERRORS in the manual.
-                    Poll::Ready(Err(io::Error::from_raw_os_error(-res)))
+                    Poll::Ready(Err(io::Error::from_raw_os_error(-result)))
                 } else {
-                    Poll::Ready(Ok(res))
+                    Poll::Ready(Ok((flags, result)))
                 }
             }
         }
@@ -111,7 +115,7 @@ impl QueuedOperation {
 
     /// Returns true if the operation is done.
     pub(crate) const fn is_done(&self) -> bool {
-        matches!(self.result, OperationResult::Done(_))
+        matches!(self.result, OperationResult::Done { .. })
     }
 
     /// Set the state of the operation as dropped, but still in progress kernel
@@ -119,10 +123,10 @@ impl QueuedOperation {
     pub(crate) fn set_dropped(&mut self, waker: task::Waker) {
         let res = replace(&mut self.result, OperationResult::Dropped);
         debug_assert!(match res {
-            OperationResult::Started | OperationResult::InProgress(_) => true,
+            OperationResult::Started | OperationResult::InProgress { .. } => true,
             OperationResult::Dropped
-            | OperationResult::InProgressDropped(_)
-            | OperationResult::Done(_) => false,
+            | OperationResult::InProgressDropped { .. }
+            | OperationResult::Done { .. } => false,
         });
         self.waker = Some(waker);
     }
@@ -138,17 +142,20 @@ enum OperationResult {
     /// This is for zero copy operations which report the result in one
     /// completion and notify us in another completion when the buffer can be
     /// released.
-    InProgress(i32),
+    ///
+    InProgress { flags: u16, result: i32 },
     /// The `Future` waiting for this operation has been dropped, but kernel
     /// side it's still in progress.
     Dropped,
     /// Combination of `InProgress` and `Dropped`.
-    InProgressDropped(i32),
+    InProgressDropped { flags: u16, result: i32 },
     /// Operation done.
     ///
-    /// Value is the result from the operation; negative is a (negative) errno,
-    /// positive a successful result.
-    Done(i32),
+    /// The `flags` are the 16 upper bits of `io_uring_cqe::flags`, usually the
+    /// index of a buffer in a buffer pool. `result` is the result of an
+    /// operation; negative is a (negative) errno, positive a successful result.
+    /// The meaning of both fields are depended on the operation itself.
+    Done { flags: u16, result: i32 },
 }
 
 /// Submission event.
@@ -492,9 +499,9 @@ macro_rules! op_future {
         // Mapping function that maps the returned `$arg`ument into
         // `$map_result`. The `$resources` is a tuple of the `$field`s on the
         // future.
-        map_result: |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
+        map_result: |$self: ident, $resources: tt, $flags: ident, $map_arg: ident| $map_result: expr,
         // Mapping function for `Extractor` implementation. See above.
-        extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
+        extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
@@ -506,7 +513,7 @@ macro_rules! op_future {
             },
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
-            map_result: |$self, $resources, $arg| $map_result,
+            map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
         impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
@@ -521,7 +528,7 @@ macro_rules! op_future {
                     std::task::Poll::Ready(result) => {
                         self.fut.state = $crate::op::OpState::Done;
                         match result {
-                            std::result::Result::Ok($extract_arg) => {
+                            std::result::Result::Ok(($extract_flags, $extract_arg)) => {
                                 let $extract_self = &mut self.fut;
                                 // SAFETY: this will not panic because we need
                                 // to keep the resources around until the
@@ -548,7 +555,7 @@ macro_rules! op_future {
         },
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
-        map_result: |$self: ident, $resources: tt, $arg: ident| $map_result: expr,
+        map_result: |$self: ident, $resources: tt, $flags: ident, $map_arg: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
@@ -598,7 +605,7 @@ macro_rules! op_future {
                     std::task::Poll::Ready(result) => {
                         self.state = $crate::op::OpState::Done;
                         match result {
-                            std::result::Result::Ok($arg) => {
+                            std::result::Result::Ok(($flags, $map_arg)) => {
                                 let $self = &mut self;
                                 // SAFETY: this will not panic because we need
                                 // to keep the resources around until the
@@ -628,6 +635,34 @@ macro_rules! op_future {
             }
         }
     };
+    // Version that doesn't need the `flags` from the result in `$map_result`.
+    (
+        fn $type: ident :: $method: ident -> $result: ty,
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+            $(
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty,
+            )*
+        },
+        setup_state: $setup_data: ident : $setup_ty: ty,
+        setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
+        map_result: |$self: ident, $resources: tt, $map_arg: ident| $map_result: expr,
+        $( extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
+    ) => {
+        $crate::op::op_future!{
+            fn $type::$method -> $result,
+            struct $name<$lifetime $(, $generic: $($trait)? )*> {
+                $(
+                $(#[$field_doc])*
+                $field: $value,
+                )*
+            },
+            setup_state: $setup_data: $setup_ty,
+            setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
+            map_result: |$self, $resources, _unused_flags, $map_arg| $map_result,
+            $( extract: |$extract_self, $extract_resources, _unused_flags, $extract_arg| -> $extract_result $extract_map, )?
+        }
+    };
     // Version that doesn't need `self` (this) or resources in `$map_result`.
     (
         fn $type: ident :: $method: ident -> $result: ty,
@@ -639,7 +674,7 @@ macro_rules! op_future {
         },
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
-        map_result: |$arg: ident| $map_result: expr, // Only difference: 1 argument.
+        map_result: |$map_arg: ident| $map_result: expr, // Only difference: 1 argument.
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
         $crate::op::op_future!{
@@ -652,8 +687,8 @@ macro_rules! op_future {
             },
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
-            map_result: |_unused_this, _unused_resources, $arg| $map_result,
-            $( extract: |$extract_self, $extract_resources, $extract_arg| -> $extract_result $extract_map, )?
+            map_result: |_unused_this, _unused_resources, _unused_flags, $map_arg| $map_result,
+            $( extract: |$extract_self, $extract_resources, _unused_flags, $extract_arg| -> $extract_result $extract_map, )?
         }
     };
 }

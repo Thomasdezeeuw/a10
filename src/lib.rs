@@ -128,15 +128,18 @@ impl Ring {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
             log::trace!(completion = log::as_debug!(completion); "dequeued completion event");
+            let flags = completion.operation_flags();
             if completion.is_in_progress() {
                 // SAFETY: we're calling this with information from the kernel.
-                unsafe { sq.set_op_in_progress_result(completion.index(), completion.result()) };
+                unsafe {
+                    sq.set_op_in_progress_result(completion.index(), flags, completion.result())
+                };
             } else if completion.is_notification() {
                 // SAFETY: we're calling this with information from the kernel.
                 unsafe { sq.complete_in_progress_op(completion.index()) };
             } else {
                 // SAFETY: we're calling this with information from the kernel.
-                unsafe { sq.complete_op(completion.index(), completion.result()) };
+                unsafe { sq.complete_op(completion.index(), flags, completion.result()) };
             }
         }
 
@@ -492,7 +495,7 @@ impl SubmissionQueue {
         &self,
         ctx: &mut task::Context<'_>,
         op_index: OpIndex,
-    ) -> Poll<io::Result<i32>> {
+    ) -> Poll<io::Result<(u16, i32)>> {
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
@@ -562,11 +565,11 @@ impl SubmissionQueue {
     /// # Safety
     ///
     /// This may only be called based on information form the kernel.
-    unsafe fn set_op_in_progress_result(&self, op_index: usize, result: i32) {
+    unsafe fn set_op_in_progress_result(&self, op_index: usize, flags: u16, result: i32) {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                op.set_in_progress_result(result);
+                op.set_in_progress_result(flags, result);
             }
         }
     }
@@ -600,11 +603,11 @@ impl SubmissionQueue {
     ///
     /// This may only be called when the kernel is no longer using the resources
     /// (e.g. read buffer) for the operation.
-    unsafe fn complete_op(&self, op_index: usize, result: i32) {
+    unsafe fn complete_op(&self, op_index: usize, flags: u16, result: i32) {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                let is_dropped = op.complete(result);
+                let is_dropped = op.complete(flags, result);
                 if is_dropped {
                     // The Future was previously dropped so no one is waiting on
                     // the result. We can make the slot avaiable again.
@@ -830,6 +833,21 @@ impl Completion {
     /// Return `true` if `IORING_CQE_F_NOTIF` is set.
     const fn is_notification(&self) -> bool {
         self.inner.flags & libc::IORING_CQE_F_NOTIF != 0
+    }
+
+    /// Return `true` if `IORING_CQE_F_BUFFER` is set.
+    const fn is_buffer_select(&self) -> bool {
+        self.inner.flags & libc::IORING_CQE_F_BUFFER != 0
+    }
+
+    /// Returns the operation flags that need to be passed to
+    /// [`QueuedOperation`].
+    const fn operation_flags(&self) -> u16 {
+        if self.is_buffer_select() {
+            (self.inner.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16
+        } else {
+            0
+        }
     }
 }
 
