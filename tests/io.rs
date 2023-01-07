@@ -31,8 +31,8 @@ fn read_read_buf_pool() {
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-
     assert_eq!(buf.len(), BUF_SIZE);
+    assert!(!buf.is_empty());
     assert!(
         &*buf == &test_file.content[..buf.len()],
         "read content is different"

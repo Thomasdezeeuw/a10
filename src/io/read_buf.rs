@@ -292,6 +292,11 @@ impl ReadBuf {
         self.owned.map_or(0, NonNull::len)
     }
 
+    /// Returns true if the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.owned.map_or(true, |ptr| ptr.len() == 0)
+    }
+
     /// Returns itself as slice.
     pub fn as_slice(&self) -> &[u8] {
         self
