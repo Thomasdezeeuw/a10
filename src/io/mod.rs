@@ -7,9 +7,12 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::fixed::{BufGroupId, BufIdx};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
 use crate::{libc, AsyncFd, SubmissionQueue};
+
+mod read_buf;
+pub(crate) use read_buf::{BufGroupId, BufIdx};
+pub use read_buf::{ReadBuf, ReadBufPool};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;

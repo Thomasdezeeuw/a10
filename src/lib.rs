@@ -46,7 +46,6 @@ use std::{fmt, ptr};
 mod bitmap;
 mod config;
 pub mod extract;
-pub mod fixed;
 pub mod fs;
 pub mod io;
 pub mod net;

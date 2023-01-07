@@ -6,9 +6,8 @@ use std::env::temp_dir;
 use std::io;
 use std::pin::Pin;
 
-use a10::fixed::ReadBufPool;
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout};
+use a10::io::{stderr, stdout, ReadBufPool};
 use a10::Ring;
 
 mod util;

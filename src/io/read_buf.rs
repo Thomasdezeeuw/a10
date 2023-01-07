@@ -1,6 +1,6 @@
-//! Module with fixed buffers.
+//! Module with read buffer pool.
 //!
-//! See [`BufPool`].
+//! See [`ReadBufPool`].
 
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
 use std::mem::{size_of, MaybeUninit};

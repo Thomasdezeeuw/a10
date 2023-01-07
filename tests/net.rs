@@ -7,7 +7,7 @@ use std::mem;
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 use std::pin::Pin;
 
-use a10::fixed::ReadBufPool;
+use a10::io::ReadBufPool;
 use a10::{Extract, Ring};
 
 mod util;
