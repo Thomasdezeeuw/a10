@@ -22,7 +22,16 @@
 //! being polled to completion. This data can be retrieved again by using the
 //! [`Extract`] trait.
 
-#![feature(const_mut_refs, io_error_more, new_uninit, mutex_unlock)]
+#![feature(
+    const_mut_refs,
+    io_error_more,
+    mutex_unlock,
+    new_uninit,
+    nonnull_slice_from_raw_parts,
+    once_cell,
+    ptr_sub_ptr,
+    slice_ptr_get
+)]
 
 use std::marker::PhantomData;
 use std::mem::{replace, size_of};
@@ -37,6 +46,7 @@ use std::{fmt, ptr};
 mod bitmap;
 mod config;
 pub mod extract;
+pub mod fixed;
 pub mod fs;
 pub mod io;
 pub mod net;
@@ -132,7 +142,7 @@ impl Ring {
             if completion.is_in_progress() {
                 // SAFETY: we're calling this with information from the kernel.
                 unsafe {
-                    sq.set_op_in_progress_result(completion.index(), flags, completion.result())
+                    sq.set_op_in_progress_result(completion.index(), flags, completion.result());
                 };
             } else if completion.is_notification() {
                 // SAFETY: we're calling this with information from the kernel.
@@ -455,7 +465,7 @@ impl SubmissionQueue {
             // SAFETY: `idx` is masked above to be within the correct bounds.
             unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
             // SAFETY: we filled the array above.
-            let old_tail = unsafe { (&*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
+            let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
             debug_assert!(old_tail == *array_index);
             *array_index += 1;
             Mutex::unlock(array_index);
@@ -840,6 +850,10 @@ impl Completion {
         self.inner.flags & libc::IORING_CQE_F_BUFFER != 0
     }
 
+    const fn flags(&self) -> u16 {
+        (self.inner.flags & ((1 << libc::IORING_CQE_BUFFER_SHIFT) - 1)) as u16
+    }
+
     /// Returns the operation flags that need to be passed to
     /// [`QueuedOperation`].
     const fn operation_flags(&self) -> u16 {
@@ -856,7 +870,8 @@ impl fmt::Debug for Completion {
         f.debug_struct("Completion")
             .field("user_data", &self.inner.user_data)
             .field("res", &self.inner.res)
-            .field("flags", &self.inner.flags)
+            .field("flags", &self.flags())
+            .field("operation_flags", &self.operation_flags())
             .finish()
     }
 }

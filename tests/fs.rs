@@ -12,22 +12,7 @@ use a10::fs::OpenOptions;
 use a10::{Extract, SubmissionQueue};
 
 mod util;
-use util::{defer, test_queue, Waker, PAGE_SIZE};
-
-struct TestFile {
-    path: &'static str,
-    content: &'static [u8],
-}
-
-static LOREM_IPSUM_5: TestFile = TestFile {
-    path: "tests/data/lorem_ipsum_5.txt",
-    content: include_bytes!("data/lorem_ipsum_5.txt"),
-};
-
-static LOREM_IPSUM_50: TestFile = TestFile {
-    path: "tests/data/lorem_ipsum_50.txt",
-    content: include_bytes!("data/lorem_ipsum_50.txt"),
-};
+use util::{defer, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE};
 
 #[test]
 fn open_extractor() {
