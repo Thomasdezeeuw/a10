@@ -85,6 +85,25 @@ fn read_buf() {
     buf.clear();
     assert_eq!(buf.len(), 0);
     assert!(buf.is_empty());
+
+    const DATA1: &[u8] = b"hello world";
+    buf.extend_from_slice(DATA1).unwrap();
+    assert_eq!(buf.len(), DATA1.len());
+    assert!(!buf.is_empty());
+    assert_eq!(&*buf, DATA1);
+
+    buf.extend_from_slice(DATA1).unwrap();
+    assert_eq!(buf.len(), 2 * DATA1.len());
+    assert!(!buf.is_empty());
+    assert_eq!(&buf[0..DATA1.len()], DATA1);
+    assert_eq!(&buf[DATA1.len()..2 * DATA1.len()], DATA1);
+
+    let rest = buf.spare_capacity_mut();
+    assert_eq!(rest.len(), BUF_SIZE - (2 * DATA1.len()));
+    rest[0].write(b'!');
+    rest[1].write(b'!');
+    unsafe { buf.set_len(buf.len() + 2) };
+    assert_eq!(&buf[2 * DATA1.len()..], b"!!");
 }
 
 #[test]
