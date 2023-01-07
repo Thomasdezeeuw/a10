@@ -40,6 +40,54 @@ fn read_read_buf_pool() {
 }
 
 #[test]
+fn read_buf() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
+    assert_eq!(buf.len(), BUF_SIZE);
+    assert!(!buf.is_empty());
+    assert!(
+        &*buf == &test_file.content[..buf.len()],
+        "read content is different"
+    );
+
+    buf.truncate(1024);
+    assert_eq!(buf.len(), 1024);
+    assert!(!buf.is_empty());
+    assert!(
+        &*buf == &test_file.content[..buf.len()],
+        "read content is different"
+    );
+
+    unsafe { buf.set_len(512) };
+    assert_eq!(buf.len(), 512);
+    assert!(!buf.is_empty());
+    assert!(
+        &*buf == &test_file.content[..buf.len()],
+        "read content is different"
+    );
+    unsafe { buf.set_len(1024) };
+    assert_eq!(buf.len(), 1024);
+    assert!(!buf.is_empty());
+    assert!(
+        &*buf == &test_file.content[..buf.len()],
+        "read content is different"
+    );
+
+    buf.clear();
+    assert_eq!(buf.len(), 0);
+    assert!(buf.is_empty());
+}
+
+#[test]
 fn read_read_buf_pool_multiple_buffers() {
     init();
     let mut ring = Ring::new(2).expect("failed to create test ring");

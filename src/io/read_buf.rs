@@ -307,6 +307,46 @@ impl ReadBuf {
         self
     }
 
+    /// Truncate the buffer to `len` bytes.
+    ///
+    /// If the buffer is shorter then `len` bytes this does nothing.
+    pub fn truncate(&mut self, len: usize) {
+        if let Some(ptr) = self.owned {
+            if len > ptr.len() {
+                return;
+            }
+            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), len));
+        }
+    }
+
+    /// Clear the buffer.
+    ///
+    /// # Notes
+    ///
+    /// This is not the same as returning the buffer to the buffer pool, for
+    /// that use [`ReadBuf::release`].
+    pub fn clear(&mut self) {
+        if let Some(ptr) = self.owned {
+            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), 0));
+        }
+    }
+
+    /// Set the length of the buffer to `new_len`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure `new_len` bytes are initialised and that
+    /// `new_len` is not larger than the buffer's capacity.
+    pub unsafe fn set_len(&mut self, new_len: usize) {
+        debug_assert!(new_len <= self.shared.buf_size as usize);
+        if let Some(ptr) = self.owned {
+            self.owned = Some(NonNull::slice_from_raw_parts(
+                ptr.as_non_null_ptr(),
+                new_len,
+            ));
+        }
+    }
+
     /// Release the buffer back to the buffer pool.
     ///
     /// If `self` doesn't allocate an actual buffer this does nothing.
