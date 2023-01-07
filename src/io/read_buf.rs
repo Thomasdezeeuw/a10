@@ -301,6 +301,50 @@ impl ReadBuf {
     pub fn as_mut_slice(&mut self) -> &mut [u8] {
         self
     }
+
+    /// Release the buffer back to the buffer pool.
+    ///
+    /// If `self` doesn't allocate an actual buffer this does nothing.
+    ///
+    /// # Notes
+    ///
+    /// This is automatically called in the `Drop` implementation.
+    pub fn release(&mut self) {
+        if let Some(ptr) = self.owned.take() {
+            let ring_tail = self.shared.ring_tail();
+
+            // Calculate the buffer index based on the `ptr`, which points to
+            // the start of our buffer, and `bufs_addr`, which points to the
+            // start of the pool, by calculating the difference and dividing it
+            // by the buffer size.
+            let buf_idx = unsafe {
+                (ptr.as_mut_ptr().sub_ptr(self.shared.bufs_addr)) / self.shared.buf_size as usize
+            } as u16;
+
+            // Because we need to fill the `ring_buf` and then atomatically
+            // update the `ring_tail` we do it while holding a lock.
+            let guard = self.shared.reregister_lock.lock().unwrap();
+            // Get a ring_buf we write into.
+            // NOTE: that we allocated at least as many `io_uring_buf`s as we
+            // did buffer, so there is always a slot available for us.
+            let tail = ring_tail.load(Ordering::Acquire);
+            let ring_idx = tail & self.shared.tail_mask;
+            let ring_buf = unsafe {
+                &mut *(ptr::addr_of_mut!((*self.shared.ring_addr).__bindgen_anon_1.bufs)
+                    .cast::<MaybeUninit<libc::io_uring_buf>>()
+                    .add(ring_idx as usize))
+            };
+            log::trace!(bid = buf_idx, addr = log::as_debug!(ptr), len = self.shared.buf_size; "reregistering buffer");
+            ring_buf.write(libc::io_uring_buf {
+                addr: ptr.as_mut_ptr() as u64,
+                len: self.shared.buf_size,
+                bid: buf_idx,
+                resv: 0,
+            });
+            ring_tail.store(tail + 1, Ordering::SeqCst);
+            Mutex::unlock(guard);
+        }
+    }
 }
 
 unsafe impl BufMut for ReadBuf {
@@ -357,40 +401,7 @@ impl fmt::Debug for ReadBuf {
 
 impl Drop for ReadBuf {
     fn drop(&mut self) {
-        if let Some(ptr) = self.owned {
-            let ring_tail = self.shared.ring_tail();
-
-            // Calculate the buffer index based on the `ptr`, which points to
-            // the start of our buffer, and `bufs_addr`, which points to the
-            // start of the pool, by calculating the difference and dividing it
-            // by the buffer size.
-            let buf_idx = unsafe {
-                (ptr.as_mut_ptr().sub_ptr(self.shared.bufs_addr)) / self.shared.buf_size as usize
-            } as u16;
-
-            // Because we need to fill the `ring_buf` and then atomatically
-            // update the `ring_tail` we do it while holding a lock.
-            let guard = self.shared.reregister_lock.lock().unwrap();
-            // Get a ring_buf we write into.
-            // NOTE: that we allocated at least as many `io_uring_buf`s as we
-            // did buffer, so there is always a slot available for us.
-            let tail = ring_tail.load(Ordering::Acquire);
-            let ring_idx = tail & self.shared.tail_mask;
-            let ring_buf = unsafe {
-                &mut *(ptr::addr_of_mut!((*self.shared.ring_addr).__bindgen_anon_1.bufs)
-                    .cast::<MaybeUninit<libc::io_uring_buf>>()
-                    .add(ring_idx as usize))
-            };
-            log::trace!(bid = buf_idx, addr = log::as_debug!(ptr), len = self.shared.buf_size; "reregistering buffer");
-            ring_buf.write(libc::io_uring_buf {
-                addr: ptr.as_mut_ptr() as u64,
-                len: self.shared.buf_size,
-                bid: buf_idx,
-                resv: 0,
-            });
-            ring_tail.store(tail + 1, Ordering::SeqCst);
-            Mutex::unlock(guard);
-        }
+        self.release()
     }
 }
 
