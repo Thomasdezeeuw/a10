@@ -347,6 +347,48 @@ impl ReadBuf {
         }
     }
 
+    /// Appends `other` to `self`.
+    ///
+    /// If the `self` doesn't have sufficient capacity it will return `Err(())`
+    /// and not append anything.
+    pub fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), ()> {
+        if let Some(ptr) = self.owned {
+            let new_len = ptr.len() + other.len();
+            if new_len > self.shared.buf_size as usize {
+                return Err(());
+            }
+
+            // SAFETY: the source, destination and len are all valid.
+            // NOTE: we can't use `copy_from_nonoverlapping` as we can't
+            // guarantee that `self` and `other` are not overlapping.
+            unsafe {
+                ptr.as_mut_ptr()
+                    .add(ptr.len())
+                    .copy_from(other.as_ptr(), other.len())
+            };
+            self.owned = Some(NonNull::slice_from_raw_parts(
+                ptr.as_non_null_ptr(),
+                new_len,
+            ));
+            Ok(())
+        } else {
+            Err(())
+        }
+    }
+
+    /// Returns the remaining spare capacity of the buffer.
+    pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
+        if let Some(ptr) = self.owned {
+            let unused_len = self.shared.buf_size as usize - ptr.len();
+            // SAFETY: this won't overflow `isize`.
+            let data = unsafe { ptr.as_mut_ptr().add(ptr.len()) };
+            // SAFETY: the pointer and length are correct.
+            unsafe { slice::from_raw_parts_mut(data.cast(), unused_len) }
+        } else {
+            &mut []
+        }
+    }
+
     /// Release the buffer back to the buffer pool.
     ///
     /// If `self` doesn't allocate an actual buffer this does nothing.
