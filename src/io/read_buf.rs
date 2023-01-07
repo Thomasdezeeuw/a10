@@ -33,11 +33,11 @@ static ID: AtomicU16 = AtomicU16::new(0);
 
 /// A read buffer pool.
 ///
-/// This is a special buffer pool that shares it's buffer with the kernel. The
+/// This is a special buffer pool that shares its buffers with the kernel. The
 /// buffer pool is used by the kernel in `read(2)` and `recv(2)` like calls.
 /// Instead of user space having to select a buffer before issueing the read
 /// call, the kernel will select a buffer from the pool when it's ready for
-/// reading. This avoid the need to have as many buffers as concurrent read
+/// reading. This avoids the need to have as many buffers as concurrent read
 /// calls.
 ///
 /// As a result of this the returned buffer, [`ReadBuf`], is somewhat limited.
@@ -74,6 +74,8 @@ impl ReadBufPool {
     /// Create a new buffer pool.
     ///
     /// `pool_size` must be a power of 2, with a maximum of 2^15 (32768).
+    /// `buf_size` is the maximum capacity of the buffer. Note that buffer can't
+    /// grow beyond this capacity.
     #[doc(alias = "IORING_REGISTER_PBUF_RING")]
     pub fn new(sq: SubmissionQueue, pool_size: u16, buf_size: u32) -> io::Result<ReadBufPool> {
         debug_assert!(pool_size <= 2 ^ 15);
@@ -267,12 +269,13 @@ fn alloc_layout_ring(pool_size: u16, page_size: usize) -> io::Result<alloc::Layo
 
 /// Buffer reference from a [`ReadBufPool`].
 ///
-/// Before a read system call, this will be empty.
+/// Before a read system call, this will be empty and can't be resize. This is
+/// really only useful in a call to a `read(2)` like system call.
 ///
 /// # Notes
 ///
 /// Do **not** use the [`BufMut`] implementation of this buffer to write into
-/// it, it's a specialised implementation it is invalid use to outside of the
+/// it, it's a specialised implementation that is invalid use to outside of the
 /// A10 crate.
 pub struct ReadBuf {
     /// Buffer pool info.
@@ -349,8 +352,8 @@ impl ReadBuf {
 
     /// Appends `other` to `self`.
     ///
-    /// If the `self` doesn't have sufficient capacity it will return `Err(())`
-    /// and not append anything.
+    /// If `self` doesn't have sufficient capacity it will return `Err(())` and
+    /// not append anything.
     pub fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), ()> {
         if let Some(ptr) = self.owned {
             let new_len = ptr.len() + other.len();
@@ -391,7 +394,7 @@ impl ReadBuf {
 
     /// Release the buffer back to the buffer pool.
     ///
-    /// If `self` doesn't allocate an actual buffer this does nothing.
+    /// If `self` isn't an allocated buffer this does nothing.
     ///
     /// # Notes
     ///
