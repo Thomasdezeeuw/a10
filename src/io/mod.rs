@@ -263,13 +263,13 @@ impl Future for Close {
 /// requirements.
 ///
 /// If the operation (that uses this buffer) is not polled to completion, i.e.
-/// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
-/// access to the buffer and will still attempt to write into it. This means
-/// that we must delay allocation in such a way that the kernel will not write
+/// the `Future` is dropped before it returns `Poll::Ready`, the kernel still
+/// has access to the buffer and will still attempt to write into it. This means
+/// that we must delay deallocation in such a way that the kernel will not write
 /// into memory we don't have access to any more. This makes, for example, stack
 /// based buffers unfit to implement `BufMut`. Because we can't delay the
-/// allocation once its dropped and the kernel will overwrite part of your stack
-/// (where the buffer used to be)!
+/// deallocation once its dropped and the kernel will overwrite part of your
+/// stack (where the buffer used to be)!
 pub unsafe trait BufMut: 'static {
     /// Returns the writable buffer as pointer and length parts.
     ///
@@ -355,13 +355,13 @@ unsafe impl BufMut for Vec<u8> {
 /// requirements.
 ///
 /// If the operation (that uses this buffer) is not polled to completion, i.e.
-/// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
-/// access to the buffer and will still attempt to read from it. This means that
-/// we must delay allocation in such a way that the kernel will not read memory
-/// we don't have access to any more. This makes, for example, stack based
-/// buffers unfit to implement `Buf`.  Because we can't delay the allocation
-/// once its dropped and the kernel will read part of your stack (where the
-/// buffer used to be)! This would be a huge security risk.
+/// the `Future` is dropped before it returns `Poll::Ready`, the kernel still
+/// has access to the buffer and will still attempt to read from it. This means
+/// that we must delay deallocation in such a way that the kernel will not read
+/// memory we don't have access to any more. This makes, for example, stack
+/// based buffers unfit to implement `Buf`.  Because we can't delay the
+/// deallocation once its dropped and the kernel will read part of your stack
+/// (where the buffer used to be)! This would be a huge security risk.
 pub unsafe trait Buf {
     /// Returns the reabable buffer as pointer and length parts.
     ///

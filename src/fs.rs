@@ -146,9 +146,9 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
-    pub fn open_temp_file(mut self, queue: SubmissionQueue, dir: PathBuf) -> Open {
+    pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open {
         self.flags |= libc::O_TMPFILE;
-        self.open(queue, dir)
+        self.open(sq, dir)
     }
 
     /// Open `path`.

@@ -396,6 +396,9 @@ impl ReadBuf {
     ///
     /// If `self` isn't an allocated buffer this does nothing.
     ///
+    /// The buffer can still be used in a `read(2)` system call, it's reset to
+    /// the state as if it was just created by calling [`ReadBufPool::get`].
+    ///
     /// # Notes
     ///
     /// This is automatically called in the `Drop` implementation.

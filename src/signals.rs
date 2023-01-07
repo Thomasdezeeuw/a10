@@ -28,7 +28,7 @@ use crate::{libc, AsyncFd, SubmissionQueue};
 /// This will block all signals in the signal set given when creating `Signals`,
 /// using [`pthread_sigmask(3)`]. This means that the thread in which `Signals`
 /// was created (and it's children) is not interrupted, or in any way notified
-/// of signal until [`Signals::receive`] called (and the returned [`Future`]
+/// of signal until [`Signals::receive`] is called (and the returned [`Future`]
 /// polled to completion). Under the hood [`Signals`] is just a wrapper around
 /// [`signalfd(2)`].
 ///
