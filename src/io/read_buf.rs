@@ -32,6 +32,17 @@ static PAGE_SIZE: LazyLock<usize> =
 static ID: AtomicU16 = AtomicU16::new(0);
 
 /// A read buffer pool.
+///
+/// This is a special buffer pool that shares it's buffer with the kernel. The
+/// buffer pool is used by the kernel in `read(2)` and `recv(2)` like calls.
+/// Instead of user space having to select a buffer before issueing the read
+/// call, the kernel will select a buffer from the pool when it's ready for
+/// reading. This avoid the need to have as many buffers as concurrent read
+/// calls.
+///
+/// As a result of this the returned buffer, [`ReadBuf`], is somewhat limited.
+/// For example it can't grow beyond the pool's buffer size. However it can be
+/// used in write calls like any other buffer.
 #[derive(Clone, Debug)]
 pub struct ReadBufPool {
     shared: Arc<Shared>,
@@ -63,6 +74,7 @@ impl ReadBufPool {
     /// Create a new buffer pool.
     ///
     /// `pool_size` must be a power of 2, with a maximum of 2^15 (32768).
+    #[doc(alias = "IORING_REGISTER_PBUF_RING")]
     pub fn new(sq: SubmissionQueue, pool_size: u16, buf_size: u32) -> io::Result<ReadBufPool> {
         debug_assert!(pool_size <= 2 ^ 15);
         debug_assert!(pool_size.is_power_of_two());
@@ -154,9 +166,11 @@ impl ReadBufPool {
 
     /// Get a buffer reference to this pool.
     ///
-    /// This can be used in read I/O operation, such as [`AsyncFd::read`], but
-    /// it won't yet allocate a buffer to use. This is done by the kernel once
-    /// it actually has data to write into the buffer.
+    /// This can only be used in read I/O operation, such as [`AsyncFd::read`],
+    /// but it won't yet select a buffer to use. This is done by the kernel once
+    /// it actually has data to write into the buffer. Before it's used in a
+    /// read call the returned buffer will be empty and can't be resized, it's
+    /// effecitvely useless before a read call.
     ///
     /// [`AsyncFd::read`]: crate::AsyncFd::read
     pub fn get(&self) -> ReadBuf {
@@ -252,6 +266,14 @@ fn alloc_layout_ring(pool_size: u16, page_size: usize) -> io::Result<alloc::Layo
 }
 
 /// Buffer reference from a [`ReadBufPool`].
+///
+/// Before a read system call, this will be empty.
+///
+/// # Notes
+///
+/// Do **not** use the [`BufMut`] implementation of this buffer to write into
+/// it, it's a specialised implementation it is invalid use to outside of the
+/// A10 crate.
 pub struct ReadBuf {
     /// Buffer pool info.
     shared: Arc<Shared>,
