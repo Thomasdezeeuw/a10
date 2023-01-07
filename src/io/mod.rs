@@ -83,7 +83,7 @@ impl AsyncFd {
     /// Write `buf` to this file.
     pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
     where
-        B: WriteBuf,
+        B: Buf,
     {
         self.write_at(buf, NO_OFFSET)
     }
@@ -93,7 +93,7 @@ impl AsyncFd {
     /// The current file cursor is not affected by this function.
     pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
     where
-        B: WriteBuf,
+        B: Buf,
     {
         Write::new(self, buf, offset)
     }
@@ -179,7 +179,7 @@ op_future! {
 // Write.
 op_future! {
     fn AsyncFd::write -> usize,
-    struct Write<'fd, B: WriteBuf> {
+    struct Write<'fd, B: Buf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
         buf: B,
@@ -343,7 +343,8 @@ unsafe impl BufMut for Vec<u8> {
     }
 }
 
-/// Trait that defines the behaviour of buffers used in writing.
+/// Trait that defines the behaviour of buffers used in writing, which requires
+/// read only access.
 ///
 /// # Safety
 ///
@@ -353,12 +354,12 @@ unsafe impl BufMut for Vec<u8> {
 /// If the operation (that uses this buffer) is not polled to completion, i.e.
 /// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
 /// access to the buffer and will still attempt to read from it. This means that
-/// we must ensure that we can leak the buffer in such a way that the kernel
-/// will not read memory we don't have access to any more. This makes, for
-/// example, stack based buffers unfit to implement `WriteBuf`. Because if they
-/// were to be leaked the kernel will read part of your stack (where the buffer
-/// used to be)! This would be a huge security risk.
-pub unsafe trait WriteBuf {
+/// we must delay allocation in such a way that the kernel will not read memory
+/// we don't have access to any more. This makes, for example, stack based
+/// buffers unfit to implement `Buf`.  Because we can't delay the allocation
+/// once its dropped and the kernel will read part of your stack (where the
+/// buffer used to be)! This would be a huge security risk.
+pub unsafe trait Buf {
     /// Returns the reabable buffer as pointer and length parts.
     ///
     /// # Safety
@@ -379,7 +380,7 @@ pub unsafe trait WriteBuf {
 // SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
 // alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
 // will also be leaked.
-unsafe impl WriteBuf for Vec<u8> {
+unsafe impl Buf for Vec<u8> {
     unsafe fn parts(&self) -> (*const u8, u32) {
         let slice = self.as_slice();
         (slice.as_ptr().cast(), slice.len() as u32)
@@ -388,7 +389,7 @@ unsafe impl WriteBuf for Vec<u8> {
 
 // SAFETY: `String` is just a `Vec<u8>`, see it's implementation for the safety
 // reasoning.
-unsafe impl WriteBuf for String {
+unsafe impl Buf for String {
     unsafe fn parts(&self) -> (*const u8, u32) {
         let slice = self.as_bytes();
         (slice.as_ptr().cast(), slice.len() as u32)
@@ -396,16 +397,16 @@ unsafe impl WriteBuf for String {
 }
 
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
-// can't be deallocated, so it's safe to implement `WriteBuf`.
-unsafe impl WriteBuf for &'static [u8] {
+// can't be deallocated, so it's safe to implement `Buf`.
+unsafe impl Buf for &'static [u8] {
     unsafe fn parts(&self) -> (*const u8, u32) {
         (self.as_ptr(), self.len() as u32)
     }
 }
 
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
-// can't be deallocated, so it's safe to implement `WriteBuf`.
-unsafe impl WriteBuf for &'static str {
+// can't be deallocated, so it's safe to implement `Buf`.
+unsafe impl Buf for &'static str {
     unsafe fn parts(&self) -> (*const u8, u32) {
         (self.as_bytes().as_ptr(), self.len() as u32)
     }

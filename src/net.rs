@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::fixed::BufIdx;
-use crate::io::{BufMut, WriteBuf};
+use crate::io::{Buf, BufMut};
 use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -40,7 +40,7 @@ impl AsyncFd {
     /// Sends data on the socket to a connected peer.
     pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
-        B: WriteBuf,
+        B: Buf,
     {
         Send::new(self, buf, (libc::IORING_OP_SEND as u8, flags))
     }
@@ -59,7 +59,7 @@ impl AsyncFd {
     /// for TCP for example this means until the data is ACKed by the peer.
     pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
-        B: WriteBuf,
+        B: Buf,
     {
         Send::new(self, buf, (libc::IORING_OP_SEND_ZC as u8, flags))
     }
@@ -159,7 +159,7 @@ op_future! {
 // Send.
 op_future! {
     fn AsyncFd::send -> usize,
-    struct Send<'fd, B: WriteBuf> {
+    struct Send<'fd, B: Buf> {
         /// Buffer to read from, needs to stay in memory so the kernel can
         /// access it safely.
         buf: B,
