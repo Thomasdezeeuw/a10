@@ -7,8 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::fixed::BufIdx;
-use crate::io::{Buf, BufMut};
+use crate::io::{Buf, BufIdx, BufMut};
 use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
