@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::{fmt, io, slice};
 
-use crate::io::BufMut;
+use crate::io::{Buf, BufMut};
 use crate::{libc, SubmissionQueue};
 
 /// Id for a [`BufPool`].
@@ -369,6 +369,15 @@ unsafe impl BufMut for ReadBuf {
         // SAFETY: `bufs_addr` is not NULL.
         let data = unsafe { NonNull::new_unchecked(data) };
         self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));
+    }
+}
+
+// SAFETY: `ReadBuf` manages the allocation of the bytes once it's assigned a
+// buffer, so as long as it's alive, so is the slice of bytes.
+unsafe impl Buf for ReadBuf {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let slice = self.as_slice();
+        (slice.as_ptr().cast(), slice.len() as u32)
     }
 }
 
