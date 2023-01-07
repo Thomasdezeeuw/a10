@@ -367,8 +367,8 @@ impl ReadBuf {
             unsafe {
                 ptr.as_mut_ptr()
                     .add(ptr.len())
-                    .copy_from(other.as_ptr(), other.len())
-            };
+                    .copy_from(other.as_ptr(), other.len());
+            }
             self.owned = Some(NonNull::slice_from_raw_parts(
                 ptr.as_non_null_ptr(),
                 new_len,
@@ -530,7 +530,7 @@ impl fmt::Debug for ReadBuf {
 
 impl Drop for ReadBuf {
     fn drop(&mut self) {
-        self.release()
+        self.release();
     }
 }
 
