@@ -294,6 +294,12 @@ impl Submission {
         self.inner.len = len;
     }
 
+    pub(crate) unsafe fn shutdown(&mut self, fd: RawFd, how: libc::c_int) {
+        self.inner.opcode = libc::IORING_OP_SHUTDOWN as u8;
+        self.inner.fd = fd;
+        self.inner.len = how as u32;
+    }
+
     /// Create a accept submission starting.
     ///
     /// Avaialable since Linux kernel 5.5.
