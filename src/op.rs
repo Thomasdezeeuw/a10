@@ -188,6 +188,12 @@ impl Submission {
         self.inner.user_data = user_data;
     }
 
+    /// Mark the submission as using `IOSQE_BUFFER_SELECT`.
+    pub(crate) const fn set_buffer_select(&mut self, buf_group: u16) {
+        self.inner.__bindgen_anon_4.buf_group = buf_group;
+        self.inner.flags |= libc::IOSQE_BUFFER_SELECT;
+    }
+
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset

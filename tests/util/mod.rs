@@ -68,6 +68,21 @@ pub(crate) fn test_queue() -> SubmissionQueue {
     TEST_SQ.clone()
 }
 
+pub(crate) struct TestFile {
+    pub(crate) path: &'static str,
+    pub(crate) content: &'static [u8],
+}
+
+pub(crate) static LOREM_IPSUM_5: TestFile = TestFile {
+    path: "tests/data/lorem_ipsum_5.txt",
+    content: include_bytes!("../data/lorem_ipsum_5.txt"),
+};
+
+pub(crate) static LOREM_IPSUM_50: TestFile = TestFile {
+    path: "tests/data/lorem_ipsum_50.txt",
+    content: include_bytes!("../data/lorem_ipsum_50.txt"),
+};
+
 /// Waker that blocks the current thread.
 pub(crate) struct Waker {
     handle: Thread,
@@ -127,6 +142,40 @@ where
     let task_waker = unsafe { task::Waker::from_raw(task::RawWaker::new(ptr::null(), &NOP_WAKER)) };
     let mut task_ctx = task::Context::from_waker(&task_waker);
     Future::poll(future, &mut task_ctx)
+}
+
+/// Poll the `future` until completion, polling `ring` when it can't make
+/// progress.
+pub(crate) fn block_on<Fut>(ring: &mut Ring, future: Fut) -> Fut::Output
+where
+    Fut: IntoFuture,
+{
+    // Pin the `Future` to stack.
+    let mut future = future.into_future();
+    let mut future = unsafe { Pin::new_unchecked(&mut future) };
+
+    let waker = nop_waker();
+    let mut task_ctx = task::Context::from_waker(&waker);
+    loop {
+        match Future::poll(future.as_mut(), &mut task_ctx) {
+            Poll::Ready(res) => return res,
+            // The waking implementation will `unpark` us.
+            Poll::Pending => ring.poll(None).expect("failed to poll ring"),
+        }
+    }
+}
+
+fn nop_waker() -> task::Waker {
+    static VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
+        |_| task::RawWaker::new(ptr::null(), &VTABLE),
+        |_| {},
+        |_| {},
+        |_| {},
+    );
+    unsafe {
+        let raw_waker = task::RawWaker::new(ptr::null(), &VTABLE);
+        task::Waker::from_raw(raw_waker)
+    }
 }
 
 /// Defer execution of function `f`.

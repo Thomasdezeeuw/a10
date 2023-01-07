@@ -6,13 +6,152 @@ use std::env::temp_dir;
 use std::io;
 use std::pin::Pin;
 
+use a10::fixed::ReadBufPool;
 use a10::fs::OpenOptions;
 use a10::io::{stderr, stdout};
+use a10::Ring;
 
 mod util;
 use util::{
-    bind_ipv4, expect_io_errno, expect_io_error_kind, poll_nop, tcp_ipv4_socket, test_queue, Waker,
+    bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init, poll_nop, tcp_ipv4_socket,
+    test_queue, Waker, LOREM_IPSUM_50,
 };
+
+const BUF_SIZE: usize = 4096;
+
+#[test]
+fn read_read_buf_pool() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
+
+    assert_eq!(buf.len(), BUF_SIZE);
+    assert!(
+        &*buf == &test_file.content[..buf.len()],
+        "read content is different"
+    );
+}
+
+#[test]
+fn read_read_buf_pool_multiple_buffers() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let mut read1 = file.read_at(buf_pool.get(), 0);
+    let _ = poll_nop(Pin::new(&mut read1));
+    let mut read2 = file.read_at(buf_pool.get(), 0);
+    let _ = poll_nop(Pin::new(&mut read2));
+    let mut read3 = file.read_at(buf_pool.get(), 0);
+    let _ = poll_nop(Pin::new(&mut read3));
+    let buf1 = block_on(&mut ring, read1).unwrap();
+    let buf2 = block_on(&mut ring, read2).unwrap();
+
+    for buf in [buf1, buf2] {
+        assert_eq!(buf.len(), BUF_SIZE);
+        assert!(
+            &*buf == &test_file.content[..buf.len()],
+            "read content is different"
+        );
+    }
+}
+
+#[test]
+fn read_read_buf_pool_reuse_buffers() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    for _ in 0..4 {
+        let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
+        assert_eq!(buf.len(), BUF_SIZE);
+        assert!(
+            &*buf == &test_file.content[..buf.len()],
+            "read content is different"
+        );
+    }
+}
+
+#[test]
+fn read_read_buf_pool_out_of_buffers() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let futures = (0..8)
+        .map(|_| {
+            let mut read = file.read_at(buf_pool.get(), 0);
+            let _ = poll_nop(Pin::new(&mut read));
+            read
+        })
+        .collect::<Vec<_>>();
+
+    for future in futures {
+        let buf = match block_on(&mut ring, future) {
+            Ok(buf) => buf,
+            Err(err) => {
+                if let Some(libc::ENOBUFS) = err.raw_os_error() {
+                    continue;
+                }
+                panic!("unexpected {err}");
+            }
+        };
+        assert_eq!(buf.len(), BUF_SIZE);
+        assert!(
+            &*buf == &test_file.content[..buf.len()],
+            "read content is different"
+        );
+    }
+}
+
+#[test]
+fn two_read_buf_pools() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let test_file = &LOREM_IPSUM_50;
+
+    let buf_pool1 = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+    let buf_pool2 = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    for buf_pool in [buf_pool1, buf_pool2] {
+        let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
+        assert_eq!(buf.len(), BUF_SIZE);
+        assert!(
+            &*buf == &test_file.content[..buf.len()],
+            "read content is different"
+        );
+    }
+}
 
 #[test]
 fn cancel_previous_accept() {

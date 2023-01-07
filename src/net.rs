@@ -7,6 +7,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+use crate::fixed::BufIdx;
 use crate::io::{ReadBuf, WriteBuf};
 use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
@@ -186,9 +187,14 @@ op_future! {
     setup: |submission, fd, (buf,), flags| unsafe {
         let (ptr, len) = buf.parts();
         submission.recv(fd.fd, ptr, len, flags);
+        if let Some(buf_group) = buf.buffer_group() {
+            submission.set_buffer_select(buf_group.0);
+        }
     },
-    map_result: |this, (mut buf,), n| {
-        unsafe { buf.set_init(n as usize) };
+    map_result: |this, (mut buf,), buf_idx, n| {
+        // SAFETY: the kernel initialised the bytes for us as part of the read
+        // call.
+        unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
     },
 }

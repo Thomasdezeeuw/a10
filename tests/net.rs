@@ -7,10 +7,11 @@ use std::mem;
 use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 use std::pin::Pin;
 
-use a10::Extract;
+use a10::fixed::ReadBufPool;
+use a10::{Extract, Ring};
 
 mod util;
-use util::{bind_ipv4, poll_nop, tcp_ipv4_socket, test_queue, Waker};
+use util::{bind_ipv4, block_on, init, poll_nop, tcp_ipv4_socket, test_queue, Waker};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -184,6 +185,46 @@ fn recv() {
     let buf = waker
         .block_on(stream.recv(buf, 0))
         .expect("failed to receive");
+    assert!(buf.is_empty());
+}
+
+#[test]
+fn recv_read_buf_pool() {
+    const BUF_SIZE: usize = 4096;
+
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    block_on(&mut ring, connect_future).expect("failed to connect");
+
+    // Receive some data.
+    let recv_future = stream.recv(buf_pool.get(), 0);
+    client.write_all(DATA1).expect("failed to send data");
+    let buf = block_on(&mut ring, recv_future).expect("failed to receive");
+    assert_eq!(buf.as_slice(), DATA1);
+
+    // We should detect the peer closing the stream.
+    drop(client);
+    let buf = block_on(&mut ring, stream.recv(buf_pool.get(), 0)).expect("failed to receive");
     assert!(buf.is_empty());
 }
 

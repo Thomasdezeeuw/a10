@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
+use crate::fixed::{BufGroupId, BufIdx};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -163,11 +164,14 @@ op_future! {
     setup: |submission, fd, (buf,), offset| unsafe {
         let (ptr, len) = buf.parts();
         submission.read_at(fd.fd, ptr, len, offset);
+        if let Some(buf_group) = buf.buffer_group() {
+            submission.set_buffer_select(buf_group.0);
+        }
     },
-    map_result: |this, (mut buf,), n| {
+    map_result: |this, (mut buf,), buf_idx, n| {
         // SAFETY: the kernel initialised the bytes for us as part of the read
         // call.
-        unsafe { buf.set_init(n as usize) };
+        unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
     },
 }
@@ -300,6 +304,23 @@ pub unsafe trait ReadBuf: 'static {
     /// The caller must ensure that `n` bytes, starting at the pointer returned
     /// by [`ReadBuf::parts`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
+
+    /// Buffer group id, or `None` if it's not part of a buffer pool.
+    ///
+    /// Don't implement this.
+    #[doc(hidden)]
+    fn buffer_group(&self) -> Option<BufGroupId> {
+        None
+    }
+
+    /// Mark `n` bytes as initialised in buffer with `idx`.
+    ///
+    /// Don't implement this.
+    #[doc(hidden)]
+    unsafe fn buffer_init(&mut self, idx: BufIdx, n: u32) {
+        debug_assert!(idx.0 == 0);
+        self.set_init(n as usize);
+    }
 }
 
 /// The implementation for `Vec<u8>` only uses the unused capacity, so any bytes
