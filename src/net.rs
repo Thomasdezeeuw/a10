@@ -72,6 +72,16 @@ impl AsyncFd {
         Recv::new(self, buf, flags)
     }
 
+    /// Shuts down the read, write, or both halves of this connection.
+    pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
+        let how = match how {
+            std::net::Shutdown::Read => libc::SHUT_RD,
+            std::net::Shutdown::Write => libc::SHUT_WR,
+            std::net::Shutdown::Both => libc::SHUT_RDWR,
+        };
+        Shutdown::new(self, how)
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -196,6 +206,19 @@ op_future! {
         unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
     },
+}
+
+// Shutdown.
+op_future! {
+    fn AsyncFd::shutdown -> (),
+    struct Shutdown<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (), how| unsafe {
+        submission.shutdown(fd.fd, how);
+    },
+    map_result: |n| Ok(debug_assert!(n == 0)),
 }
 
 // Accept.

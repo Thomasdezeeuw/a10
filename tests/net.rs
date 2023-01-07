@@ -4,7 +4,7 @@
 
 use std::io::{Read, Write};
 use std::mem;
-use std::net::{SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::net::{Shutdown, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
 use std::pin::Pin;
 
 use a10::io::ReadBufPool;
@@ -412,6 +412,38 @@ fn send_zc_extractor() {
     let mut buf = vec![0; DATA2.len() + 2];
     let n = client.read(&mut buf).expect("failed to send data");
     assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
+fn shutdown() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    waker
+        .block_on(stream.shutdown(Shutdown::Write))
+        .expect("failed to shutdown");
+    let mut buf = vec![0; 10];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(n, 0);
 }
 
 fn addr_storage(addres: &SocketAddrV4) -> libc::sockaddr_storage {
