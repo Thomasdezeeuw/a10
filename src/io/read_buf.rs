@@ -434,9 +434,26 @@ impl ReadBuf {
     }
 }
 
+/// The implementation for `ReadBuf` is a special one as we don't actually pass
+/// a "real" buffer. Instead we pass special flags to the kernel that allows it
+/// to select a buffer from the connected [`ReadBufPool`] once the actual read
+/// operation starts.
+///
+/// If the `ReadBuf` is used a second time in a read call this changes as at
+/// that point it owns an actual buffer. At that point it will behave more like
+/// the `Vec<u8>` implementation is that it only uses the unused capacity, so
+/// any bytes already in the buffer will be untouched.
+///
+/// To revert to the original behaviour of allowing the kernel to select a
+/// buffer call [`ReadBuf::release`] first.
 unsafe impl BufMut for ReadBuf {
     unsafe fn parts(&mut self) -> (*mut u8, u32) {
-        (ptr::null_mut(), self.shared.buf_size)
+        if let Some(ptr) = self.owned {
+            let len = self.shared.buf_size - ptr.len() as u32;
+            (ptr.as_mut_ptr().add(ptr.len()), len)
+        } else {
+            (ptr::null_mut(), self.shared.buf_size)
+        }
     }
 
     unsafe fn set_init(&mut self, _: usize) {
@@ -444,18 +461,28 @@ unsafe impl BufMut for ReadBuf {
     }
 
     fn buffer_group(&self) -> Option<BufGroupId> {
-        Some(self.shared.id)
+        if self.owned.is_none() {
+            Some(self.shared.id)
+        } else {
+            // Already have an allocated buffer, don't need another one.
+            None
+        }
     }
 
     unsafe fn buffer_init(&mut self, idx: BufIdx, n: u32) {
-        debug_assert!(self.owned.is_none());
-        let data = self
-            .shared
-            .bufs_addr
-            .add(idx.0 as usize * self.shared.buf_size as usize);
-        // SAFETY: `bufs_addr` is not NULL.
-        let data = unsafe { NonNull::new_unchecked(data) };
-        self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));
+        if let Some(ptr) = self.owned {
+            debug_assert!(idx.0 == 0);
+            let len = ptr.len() + n as usize;
+            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), len));
+        } else {
+            let data = self
+                .shared
+                .bufs_addr
+                .add(idx.0 as usize * self.shared.buf_size as usize);
+            // SAFETY: `bufs_addr` is not NULL.
+            let data = unsafe { NonNull::new_unchecked(data) };
+            self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));
+        }
     }
 }
 

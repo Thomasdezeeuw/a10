@@ -159,6 +159,37 @@ fn read_read_buf_pool_reuse_buffers() {
 }
 
 #[test]
+fn read_read_buf_pool_reuse_same_buffer() {
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let test_file = &LOREM_IPSUM_50;
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    let path = test_file.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
+    assert_eq!(buf.len(), BUF_SIZE);
+    assert_eq!(&*buf, &test_file.content[..buf.len()]);
+
+    // When reusing the buffer it shouldn't overwrite the existing data.
+    buf.truncate(100);
+    let mut buf = block_on(&mut ring, file.read_at(buf, 0)).unwrap();
+    assert_eq!(buf.len(), BUF_SIZE);
+    assert_eq!(&buf[0..100], &test_file.content[0..100]);
+    assert_eq!(&buf[100..], &test_file.content[0..BUF_SIZE - 100]);
+
+    // After releasing the buffer to the pool it should "overwrite" everything
+    // again.
+    buf.release();
+    let buf = block_on(&mut ring, file.read_at(buf, 0)).unwrap();
+    assert_eq!(buf.len(), BUF_SIZE);
+    assert_eq!(&*buf, &test_file.content[..buf.len()]);
+}
+
+#[test]
 fn read_read_buf_pool_out_of_buffers() {
     init();
     let mut ring = Ring::new(2).expect("failed to create test ring");
