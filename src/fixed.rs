@@ -11,15 +11,16 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::{fmt, io, slice};
 
+use crate::io::BufMut;
 use crate::{libc, SubmissionQueue};
 
 /// Id for a [`BufPool`].
-#[doc(hidden)] // Public because it's used in [`ReadBuf`].
+#[doc(hidden)] // Public because it's used in [`BufMut`].
 #[derive(Copy, Clone, Debug)]
 pub struct BufGroupId(pub(crate) u16);
 
 /// Index for a [`BufPool`].
-#[doc(hidden)] // Public because it's used in [`ReadBuf`].
+#[doc(hidden)] // Public because it's used in [`BufMut`].
 #[derive(Copy, Clone, Debug)]
 pub struct BufIdx(pub(crate) u16);
 
@@ -280,7 +281,7 @@ impl ReadBuf {
     }
 }
 
-unsafe impl crate::io::ReadBuf for ReadBuf {
+unsafe impl BufMut for ReadBuf {
     unsafe fn parts(&mut self) -> (*mut u8, u32) {
         (ptr::null_mut(), self.shared.buf_size)
     }
