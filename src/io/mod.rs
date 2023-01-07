@@ -58,7 +58,7 @@ impl AsyncFd {
     /// spare capacity.
     pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
     where
-        B: ReadBuf,
+        B: BufMut,
     {
         self.read_at(buf, NO_OFFSET)
     }
@@ -75,7 +75,7 @@ impl AsyncFd {
     /// spare capacity.
     pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
     where
-        B: ReadBuf,
+        B: BufMut,
     {
         Read::new(self, buf, offset)
     }
@@ -155,7 +155,7 @@ impl AsyncFd {
 // Read.
 op_future! {
     fn AsyncFd::read -> B,
-    struct Read<'fd, B: ReadBuf> {
+    struct Read<'fd, B: BufMut> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
         buf: B,
@@ -251,7 +251,8 @@ impl Future for Close {
     }
 }
 
-/// Trait that defines the behaviour of buffers used in reading.
+/// Trait that defines the behaviour of buffers used in reading, which requires
+/// mutable access.
 ///
 /// # Safety
 ///
@@ -261,12 +262,12 @@ impl Future for Close {
 /// If the operation (that uses this buffer) is not polled to completion, i.e.
 /// the `Future` is dropped before it returns `Poll::Ready` the kernel still has
 /// access to the buffer and will still attempt to write into it. This means
-/// that we must ensure that we can leak the buffer in such a way that the
-/// kernel will not write into memory we don't have access to any more. This
-/// makes, for example, stack based buffers unfit to implement `ReadBuf`.
-/// Because if they were to be leaked the kernel will overwrite part of your
-/// stack (where the buffer used to be)!
-pub unsafe trait ReadBuf: 'static {
+/// that we must delay allocation in such a way that the kernel will not write
+/// into memory we don't have access to any more. This makes, for example, stack
+/// based buffers unfit to implement `BufMut`. Because we can't delay the
+/// allocation once its dropped and the kernel will overwrite part of your stack
+/// (where the buffer used to be)!
+pub unsafe trait BufMut: 'static {
     /// Returns the writable buffer as pointer and length parts.
     ///
     /// # Safety
@@ -280,6 +281,9 @@ pub unsafe trait ReadBuf: 'static {
     /// that the returned length is, in combination with the pointer, valid. In
     /// other words the memory the pointer and length are pointing to must be a
     /// valid memory address and owned by the buffer.
+    ///
+    /// Note that the above requirements are only required for implementations
+    /// outside of A10. **This trait is unfit for external use!**
     ///
     /// # Why not a slice?
     ///
@@ -302,7 +306,7 @@ pub unsafe trait ReadBuf: 'static {
     /// # Safety
     ///
     /// The caller must ensure that `n` bytes, starting at the pointer returned
-    /// by [`ReadBuf::parts`], are initialised.
+    /// by [`BufMut::parts`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 
     /// Buffer group id, or `None` if it's not part of a buffer pool.
@@ -328,7 +332,7 @@ pub unsafe trait ReadBuf: 'static {
 // SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
 // alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
 // will also be leaked.
-unsafe impl ReadBuf for Vec<u8> {
+unsafe impl BufMut for Vec<u8> {
     unsafe fn parts(&mut self) -> (*mut u8, u32) {
         let slice = self.spare_capacity_mut();
         (slice.as_mut_ptr().cast(), slice.len() as u32)

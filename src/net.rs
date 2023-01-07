@@ -8,7 +8,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::fixed::BufIdx;
-use crate::io::{ReadBuf, WriteBuf};
+use crate::io::{BufMut, WriteBuf};
 use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -68,7 +68,7 @@ impl AsyncFd {
     /// connected.
     pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B>
     where
-        B: ReadBuf,
+        B: BufMut,
     {
         Recv::new(self, buf, flags)
     }
@@ -178,7 +178,7 @@ op_future! {
 // Recv.
 op_future! {
     fn AsyncFd::recv -> B,
-    struct Recv<'fd, B: ReadBuf> {
+    struct Recv<'fd, B: BufMut> {
         /// Buffer to write into, needs to stay in memory so the kernel can
         /// access it safely.
         buf: B,
