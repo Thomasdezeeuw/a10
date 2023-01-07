@@ -62,11 +62,10 @@ impl ReadBufPool {
     /// Create a new buffer pool.
     ///
     /// `pool_size` must be a power of 2, with a maximum of 2^15 (32768).
-    ///
-    /// # Notes
-    ///
-    /// Only a single `ReadBufPool` can be active per `Ring`.
     pub fn new(sq: SubmissionQueue, pool_size: u16, buf_size: u32) -> io::Result<ReadBufPool> {
+        debug_assert!(pool_size <= 2 ^ 15);
+        debug_assert!(pool_size.is_power_of_two());
+
         let ring_fd = sq.shared.ring_fd.as_raw_fd();
         let id = ID.fetch_add(1, Ordering::SeqCst);
 
