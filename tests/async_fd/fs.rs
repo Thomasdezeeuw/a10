@@ -1,7 +1,5 @@
 //! Tests for the filesystem operations.
 
-#![feature(once_cell)]
-
 use std::env::temp_dir;
 use std::fs::remove_file;
 use std::path::Path;
@@ -11,8 +9,7 @@ use std::{io, panic, str};
 use a10::fs::OpenOptions;
 use a10::{Extract, SubmissionQueue};
 
-mod util;
-use util::{defer, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE};
+use crate::util::{defer, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE};
 
 #[test]
 fn open_extractor() {

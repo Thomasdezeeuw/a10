@@ -1,3 +1,5 @@
+//! Tests for [`a10::Ring`].
+
 #![feature(once_cell)]
 
 use std::pin::Pin;

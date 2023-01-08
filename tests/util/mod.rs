@@ -1,3 +1,5 @@
+//! Test utilities.
+
 #![allow(dead_code)] // Not all tests use all code here.
 
 use std::any::Any;

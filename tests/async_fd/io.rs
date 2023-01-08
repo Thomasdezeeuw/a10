@@ -1,7 +1,5 @@
 //! Tests for the I/O operations.
 
-#![feature(once_cell)]
-
 use std::env::temp_dir;
 use std::io;
 use std::pin::Pin;
@@ -10,8 +8,7 @@ use a10::fs::OpenOptions;
 use a10::io::{stderr, stdout, ReadBufPool};
 use a10::Ring;
 
-mod util;
-use util::{
+use crate::util::{
     bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init, poll_nop, tcp_ipv4_socket,
     test_queue, Waker, LOREM_IPSUM_50,
 };

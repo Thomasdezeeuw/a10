@@ -1,7 +1,5 @@
 //! Tests for the networking operations.
 
-#![feature(once_cell)]
-
 use std::io::{Read, Write};
 use std::mem;
 use std::net::{Shutdown, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
@@ -10,8 +8,7 @@ use std::pin::Pin;
 use a10::io::ReadBufPool;
 use a10::{Extract, Ring};
 
-mod util;
-use util::{bind_ipv4, block_on, init, poll_nop, tcp_ipv4_socket, test_queue, Waker};
+use crate::util::{bind_ipv4, block_on, init, poll_nop, tcp_ipv4_socket, test_queue, Waker};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
