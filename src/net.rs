@@ -1,4 +1,7 @@
 //! Asynchronous networking.
+//!
+//! To create a new socket ([`AsyncFd`]) use the [`socket`] function, which
+//! issues a non-blocking `socket(2)` call.
 
 use std::future::Future;
 use std::io;
@@ -12,6 +15,8 @@ use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
+///
+/// See the `socket(2)` manual for more information.
 pub const fn socket(
     sq: SubmissionQueue,
     domain: libc::c_int,
