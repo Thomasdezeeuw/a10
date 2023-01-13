@@ -3,6 +3,7 @@
 //! See [`ReadBufPool`].
 
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
+use std::borrow::{Borrow, BorrowMut};
 use std::mem::{size_of, MaybeUninit};
 use std::ops::{Deref, DerefMut};
 use std::os::fd::AsRawFd;
@@ -518,6 +519,24 @@ impl DerefMut for ReadBuf {
 
 impl AsRef<[u8]> for ReadBuf {
     fn as_ref(&self) -> &[u8] {
+        self
+    }
+}
+
+impl AsMut<[u8]> for ReadBuf {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self
+    }
+}
+
+impl Borrow<[u8]> for ReadBuf {
+    fn borrow(&self) -> &[u8] {
+        self
+    }
+}
+
+impl BorrowMut<[u8]> for ReadBuf {
+    fn borrow_mut(&mut self) -> &mut [u8] {
         self
     }
 }
