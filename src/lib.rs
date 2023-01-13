@@ -894,8 +894,8 @@ impl AsyncFd {
     ///
     /// # Safety
     ///
-    /// The call must ensure that `fd` is valid and that it's no longer used by
-    /// anything other than the returned `AsyncFd`.
+    /// The caller must ensure that `fd` is valid and that it's no longer used
+    /// by anything other than the returned `AsyncFd`.
     pub const unsafe fn new(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
         AsyncFd { fd, sq }
     }

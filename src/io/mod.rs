@@ -65,11 +65,6 @@ stdio!(stderr() -> Stderr, libc::STDERR_FILENO);
 /// I/O system calls.
 impl AsyncFd {
     /// Read from this fd into `buf`.
-    ///
-    /// # Notes
-    ///
-    /// This leave the current contents of `buf` untouched and only uses the
-    /// spare capacity.
     pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
     where
         B: BufMut,
@@ -82,11 +77,6 @@ impl AsyncFd {
     /// The current file cursor is not affected by this function. This means
     /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
     /// continue reading at 2kb in the next call to `read`.
-    ///
-    /// # Notes
-    ///
-    /// This leave the current contents of `buf` untouched and only uses the
-    /// spare capacity.
     pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
     where
         B: BufMut,
@@ -114,9 +104,9 @@ impl AsyncFd {
 
     /// Attempt to cancel an in progress operation.
     ///
-    /// If the previous I/O operation was succesfully canceled this return
-    /// `Ok(())` and the canceled operation will return an `ECANCELED` "error"
-    /// to indicate it was canceled.
+    /// If the previous I/O operation was succesfully canceled this returns
+    /// `Ok(())` and the canceled operation will return `ECANCELED` to indicate
+    /// it was canceled.
     ///
     /// If no previous operation was found, for example if it was already
     /// completed, this will return `io::ErrorKind::NotFound`.

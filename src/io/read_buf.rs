@@ -353,7 +353,7 @@ impl ReadBuf {
     /// Appends `other` to `self`.
     ///
     /// If `self` doesn't have sufficient capacity it will return `Err(())` and
-    /// not append anything.
+    /// will not append anything.
     pub fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), ()> {
         if let Some(ptr) = self.owned {
             let new_len = ptr.len() + other.len();
