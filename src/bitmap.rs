@@ -31,8 +31,10 @@ impl AtomicBitMap {
         self.data.len() * usize::BITS as usize
     }
 
-    /// Returns the index of the available slot, or `None`.
-    pub(crate) fn next_available(&self) -> Option<usize> {
+    /// Returns the indices of the `N` available slot, or `None`.
+    pub(crate) fn next_available<const N: usize>(&self) -> Option<[usize; N]> {
+        let mut results = [0; N];
+        let mut n = 0;
         for (idx, data) in self.data.iter().enumerate() {
             let mut value = data.load(Ordering::Relaxed);
             let mut i = value.trailing_ones();
@@ -43,12 +45,20 @@ impl AtomicBitMap {
                 // setting, so we need to make sure we actually set the bit
                 // (i.e. check if was unset in the previous state).
                 if is_unset(value, i as usize) {
-                    return Some((idx * usize::BITS as usize) + i as usize);
+                    results[n] = (idx * usize::BITS as usize) + i as usize;
+                    n += 1;
+                    if n >= N {
+                        return Some(results);
+                    }
                 }
                 i += (value >> i).trailing_ones();
             }
         }
-        None
+        // Failed to get all slots, so release any slots we reserved.
+        for index in results[0..n].iter() {
+            self.make_available(*index);
+        }
+        return None;
     }
 
     /// Mark `index` as available.
@@ -57,6 +67,13 @@ impl AtomicBitMap {
         let n = index % usize::BITS as usize;
         let old_value = self.data[idx].fetch_and(!(1 << n), Ordering::SeqCst);
         debug_assert!(!is_unset(old_value, n));
+    }
+
+    /// Mark `indices` as available.
+    pub(crate) fn make_available_many<const N: usize>(&self, indices: [usize; N]) {
+        for index in indices {
+            self.make_available(index);
+        }
     }
 }
 
@@ -79,55 +96,57 @@ impl fmt::Debug for AtomicBitMap {
 
 #[test]
 fn setting_and_unsetting_one() {
-    setting_and_unsetting(64)
+    setting_and_unsetting::<64>()
 }
 
 #[test]
 fn setting_and_unsetting_two() {
-    setting_and_unsetting(128)
+    setting_and_unsetting::<128>()
 }
 
 #[test]
 fn setting_and_unsetting_three() {
-    setting_and_unsetting(192)
+    setting_and_unsetting::<192>()
 }
 
 #[test]
 fn setting_and_unsetting_four() {
-    setting_and_unsetting(256)
+    setting_and_unsetting::<256>()
 }
 
 #[test]
 fn setting_and_unsetting_eight() {
-    setting_and_unsetting(512)
+    setting_and_unsetting::<512>()
 }
 
 #[test]
 fn setting_and_unsetting_sixteen() {
-    setting_and_unsetting(1024)
+    setting_and_unsetting::<1024>()
 }
 
 #[cfg(test)]
-fn setting_and_unsetting(entries: usize) {
+fn setting_and_unsetting<const N: usize>() {
+    let entries = N;
     let map = AtomicBitMap::new(entries);
     assert_eq!(map.capacity(), entries);
 
     // Ask for all indices.
-    for n in 0..entries {
-        assert!(matches!(map.next_available(), Some(i) if i == n));
+    let indices = map.next_available::<N>().unwrap();
+    for (i, index) in indices.into_iter().enumerate() {
+        assert_eq!(index, i);
     }
     // All bits should be set.
     for data in &map.data {
         assert!(data.load(Ordering::Relaxed) == usize::MAX);
     }
     // No more indices left.
-    assert!(matches!(map.next_available(), None));
+    assert!(matches!(map.next_available::<1>(), None));
 
     // Test unsetting an index not in order.
     map.make_available(63);
     map.make_available(0);
-    assert!(matches!(map.next_available(), Some(i) if i == 0));
-    assert!(matches!(map.next_available(), Some(i) if i == 63));
+    assert!(matches!(map.next_available::<1>(), Some(i) if i[0] == 0));
+    assert!(matches!(map.next_available::<1>(), Some(i) if i[0] == 63));
 
     // Unset all indices again.
     for n in (0..entries).into_iter().rev() {
@@ -138,7 +157,31 @@ fn setting_and_unsetting(entries: usize) {
         assert!(data.load(Ordering::Relaxed) == 0);
     }
     // Next avaiable index should be 0 again.
-    assert!(matches!(map.next_available(), Some(i) if i == 0));
+    assert!(matches!(map.next_available::<1>(), Some(i) if i[0] == 0));
+}
+
+#[test]
+fn setting_and_unsetting_many() {
+    let map = AtomicBitMap::new(64);
+
+    let indices = map.next_available::<32>().unwrap();
+    for (n, index) in indices.iter().copied().enumerate() {
+        assert_eq!(index, n);
+    }
+
+    // Reserving too many should fail.
+    assert!(map.next_available::<64>().is_none());
+    // Any reserved token should be reset.
+    let indices = map.next_available::<32>().unwrap();
+    for (n, index) in indices.iter().copied().enumerate() {
+        assert_eq!(index, 32 + n);
+    }
+
+    let mut indices = [0; 64];
+    for (i, index) in indices.iter_mut().enumerate() {
+        *index = i;
+    }
+    map.make_available_many(indices);
 }
 
 #[test]
@@ -161,8 +204,8 @@ fn setting_and_unsetting_concurrent() {
 
                 if i % 2 == 0 {
                     for _ in 0..M {
-                        let idx = bitmap.next_available().expect("failed to get index");
-                        indices.push(idx);
+                        let idx = bitmap.next_available::<1>().expect("failed to get index");
+                        indices.push(idx[0]);
                     }
 
                     for idx in indices {
@@ -170,8 +213,8 @@ fn setting_and_unsetting_concurrent() {
                     }
                 } else {
                     for _ in 0..M {
-                        let idx = bitmap.next_available().expect("failed to get index");
-                        bitmap.make_available(idx);
+                        let idx = bitmap.next_available::<1>().expect("failed to get index");
+                        bitmap.make_available(idx[0]);
                     }
                 }
             })

@@ -356,31 +356,45 @@ impl SubmissionQueue {
     where
         F: FnOnce(&mut Submission),
     {
-        // Get an index to the queued operation queue.
+        self.add_many::<1, _>(|submissions| submit(submissions[0]))
+            .map(|i| i[0])
+    }
+
+    fn add_many<const N: usize, F>(&self, submit: F) -> Result<[OpIndex; N], QueueFull>
+    where
+        F: FnOnce([&mut Submission; N]),
+    {
+        // Get N indices to the queued operations queue.
         let shared = &*self.shared;
-        let op_index = match shared.op_indices.next_available() {
-            Some(idx) => idx,
+        let op_indices = match shared.op_indices.next_available::<N>() {
+            Some(indices) => indices,
             None => return Err(QueueFull(())),
         };
 
-        let queued_op = QueuedOperation::new();
-        // SAFETY: the `AtomicBitMap` always returns valid indices for
-        // `op_queue` (it's the whole point of it).
-        let mut op = shared.queued_ops[op_index].lock().unwrap();
-        let old_queued_op = replace(&mut *op, Some(queued_op));
-        debug_assert!(old_queued_op.is_none());
+        for op_index in op_indices.iter().copied() {
+            let queued_op = QueuedOperation::new();
+            // SAFETY: the `AtomicBitMap` always returns valid indices for
+            // `op_queue` (it's the whole point of it).
+            let mut op = shared.queued_ops[op_index].lock().unwrap();
+            let old_queued_op = replace(&mut *op, Some(queued_op));
+            debug_assert!(old_queued_op.is_none());
+        }
 
-        let res = self.add_no_result(|submission| {
-            submit(submission);
-            submission.set_user_data(op_index as u64);
+        let res = self.add_no_result_many::<N, _>(|submissions| {
+            for (i, op_index) in op_indices.iter().copied().enumerate() {
+                submissions[i].set_user_data(op_index as u64);
+            }
+            submit(submissions);
         });
 
         match res {
-            Ok(()) => Ok(OpIndex(op_index)),
+            Ok(()) => Ok(op_indices.map(OpIndex)),
             Err(err) => {
-                // Make the index available, we're not going to use it.
-                *op = None;
-                shared.op_indices.make_available(op_index);
+                // Make the indices available, we're not going to use it.
+                for op_index in op_indices.iter().copied() {
+                    *shared.queued_ops[op_index].lock().unwrap() = None;
+                }
+                shared.op_indices.make_available_many(op_indices);
                 Err(err)
             }
         }
@@ -396,21 +410,27 @@ impl SubmissionQueue {
     where
         F: FnOnce(&mut Submission),
     {
+        self.add_no_result_many::<1, _>(|submissions| submit(submissions[0]))
+    }
+
+    /// Same as [`SubmissionQueue::add`], but ignores the result.
+    fn add_no_result_many<const N: usize, F>(&self, submit: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce([&mut Submission; N]),
+    {
         let shared = &*self.shared;
-        // First we need to acquire mutable access to an `Submission` entry in
+        // First we need to acquire mutable access to N `Submission` entries in
         // the `entries` array.
         //
-        // We do this by increasing `pending_tail` by 1, reserving
-        // `entries[pending_tail]` for ourselves, while ensuring we don't go
-        // beyond what the kernel has processed by checking `tail - kernel_read`
-        // is less then the length of the submission queue.
+        // We do this by increasing `pending_tail` by N, reserving
+        // `entries[pending_tail..pending_tail+N]` for ourselves, while ensuring
+        // we don't go beyond what the kernel has processed.
         let kernel_read = self.kernel_read();
         let tail = shared
             .pending_tail
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                if tail - kernel_read < shared.len {
-                    // Still an entry available.
-                    Some(tail + 1) // TODO: handle overflows.
+                if (tail + N as u32) - kernel_read <= shared.len {
+                    Some(tail + N as u32) // TODO: handle overflows.
                 } else {
                     None
                 }
@@ -420,27 +440,42 @@ impl SubmissionQueue {
             Err(_) => return Err(QueueFull(())),
         };
 
-        // SAFETY: the `ring_mask` ensures we can never get an index larger
-        // then the size of the queue. Above we've already ensured that
-        // we're the only thread  with mutable access to the entry.
-        let submission_index = tail & shared.ring_mask;
-        let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
+        let mut i = tail;
+        let submissions = [(); N].map(|()| {
+            // SAFETY: the `ring_mask` ensures we can never get an index larger
+            // then the size of the queue. Above we've already ensured that
+            // we're the only thread  with mutable access to the entry.
+            let submission_index = i & shared.ring_mask;
+            let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
+
+            // Reset the submission before the caller fills it again.
+            submission.reset();
+            submission.set_user_data(u64::MAX);
+
+            i += 1;
+            submission
+        });
 
         // Let the caller fill the `submission`.
-        submission.reset();
-        submission.set_user_data(u64::MAX);
-        submit(submission);
-        #[cfg(debug_assertions)]
-        debug_assert!(!submission.is_unchanged());
+        submit(submissions);
+        i = tail;
+        let submissions = [(); N].map(|()| {
+            // SAFETY: same as above.
+            let submission_index = i & shared.ring_mask;
+            let submission = unsafe { &*shared.entries.add(submission_index as usize) };
+            debug_assert!(!submission.is_unchanged());
+            i += 1;
+            submission
+        });
 
-        // Ensure that all writes to the `submission` are done.
+        // Ensure that all writes to the `submissions` are done.
         atomic::fence(Ordering::SeqCst);
 
-        // Now that we've written our submission we need add it to the
-        // `array` so that the kernel can process it.
-        log::trace!(submission = log::as_debug!(submission); "queueing submission");
+        // Now that we've written our submissions we need add it to the `array`
+        // so that the kernel can process it.
+        log::trace!(submissions = log::as_debug!(submissions); "queueing {N} submissions");
         {
-            // Now that the submission is filled we need to add it to the
+            // Now that the submissions are filled we need to add it to the
             // `shared.array` so that the kernel can read from it.
             //
             // We do this with a lock to avoid a race condition between two
@@ -460,13 +495,16 @@ impl SubmissionQueue {
             //                                    | `shared.tail.fetch_add` to 2.
 
             let mut array_index = shared.array_index.lock().unwrap();
-            let idx = (*array_index & shared.ring_mask) as usize;
-            // SAFETY: `idx` is masked above to be within the correct bounds.
-            unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
+            for i in 0..N as u32 {
+                let idx = (*array_index & shared.ring_mask) as usize;
+                let submission_index = (tail + i) & shared.ring_mask;
+                // SAFETY: `idx` is masked above to be within the correct bounds.
+                unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
+            }
             // SAFETY: we filled the array above.
-            let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
+            let old_tail = unsafe { (*shared.array_tail).fetch_add(N as u32, Ordering::AcqRel) };
             debug_assert!(old_tail == *array_index);
-            *array_index += 1;
+            *array_index += N as u32;
             Mutex::unlock(array_index);
         }
 
