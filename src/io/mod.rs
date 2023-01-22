@@ -415,3 +415,20 @@ unsafe impl Buf for &'static str {
         (self.as_bytes().as_ptr(), self.len() as u32)
     }
 }
+
+/// Trait that defines the behaviour of buffers used in writing using vectored
+/// I/O, which requires read only access.
+///
+/// # Safety
+///
+/// This has the same safety requirements as [`Buf`], but then for all buffers
+/// used.
+pub unsafe trait BufSlice<const N: usize>: 'static {
+    /// Returns the reabable buffer as `iovec` structures.
+    ///
+    /// # Safety
+    ///
+    /// This has the same safety requirements as [`Buf::parts`], but then for
+    /// all buffers used.
+    unsafe fn as_iovec(&self) -> [libc::iovec; N];
+}
