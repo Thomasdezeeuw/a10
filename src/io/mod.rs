@@ -466,7 +466,7 @@ unsafe impl BufMut for Vec<u8> {
 /// This has the same safety requirements as [`BufMut`], but then for all
 /// buffers used.
 pub unsafe trait BufMutSlice<const N: usize>: 'static {
-    /// Returns the reabable buffer as `iovec` structures.
+    /// Returns the writable buffers as `iovec` structures.
     ///
     /// # Safety
     ///
@@ -514,7 +514,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
             let (_, len) = buf.parts();
             let len = len as usize;
             if len < left {
-                // Full initialised the buffer.
+                // Fully initialised the buffer.
                 buf.set_init(len);
                 left -= len;
             } else {
@@ -644,7 +644,7 @@ macro_rules! buf_slice_for_tuple {
     ) => {
         // SAFETY: `BufMutSlice` has the same safety requirements as `BufMut`
         // and since all generic buffers must implement `BufMut` it's safe to
-        // implement `BufMutSlice` a tuple of all those buffers.
+        // implement `BufMutSlice` for a tuple of all those buffers.
         unsafe impl<$( $generic: BufMut ),+> BufMutSlice<$N> for ($( $generic ),+) {
             unsafe fn as_iovec(&mut self) -> [libc::iovec; $N] {
                 [
@@ -668,7 +668,7 @@ macro_rules! buf_slice_for_tuple {
                     let (_, len) = self.$index.parts();
                     let len = len as usize;
                     if len < left {
-                        // Full initialised the buffer.
+                        // Fully initialised the buffer.
                         self.$index.set_init(len);
                         left -= len;
                     } else {
@@ -686,7 +686,7 @@ macro_rules! buf_slice_for_tuple {
 
         // SAFETY: `BufSlice` has the same safety requirements as `Buf` and
         // since all generic buffers must implement `Buf` it's safe to implement
-        // `BufSlice` a tuple of all those buffers.
+        // `BufSlice` for a tuple of all those buffers.
         unsafe impl<$( $generic: Buf ),+> BufSlice<$N> for ($( $generic ),+) {
             unsafe fn as_iovec(&self) -> [libc::iovec; $N] {
                 [
