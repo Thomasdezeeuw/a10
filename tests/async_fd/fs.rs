@@ -267,7 +267,7 @@ fn write_vectored() {
     let waker = Waker::new();
 
     let mut path = temp_dir();
-    path.push("write_vectored_array");
+    path.push("write_vectored");
     let _d = defer(|| remove_test_file(&path));
 
     let open_file = OpenOptions::new()
@@ -293,7 +293,7 @@ fn write_vectored_extractor() {
     let waker = Waker::new();
 
     let mut path = temp_dir();
-    path.push("write_vectored_array");
+    path.push("write_vectored_extractor");
     let _d = defer(|| remove_test_file(&path));
 
     let open_file = OpenOptions::new()

@@ -453,6 +453,11 @@ impl ReadBuf {
 ///
 /// To revert to the original behaviour of allowing the kernel to select a
 /// buffer call [`ReadBuf::release`] first.
+///
+/// Note that this can **not** be used in vectored I/O as a part of the
+/// [`ButMutSlice`] trait.
+///
+/// [`ButMutSlice`]: crate::io::BufMutSlice
 unsafe impl BufMut for ReadBuf {
     unsafe fn parts(&mut self) -> (*mut u8, u32) {
         if let Some(ptr) = self.owned {
