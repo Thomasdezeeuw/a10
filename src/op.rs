@@ -498,12 +498,18 @@ macro_rules! op_future {
         // Future structure.
         struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
             $(
-            // Field passed to io_uring, always wrapped in an `Option`. Syntax
-            // is the same a struct definition.
+            // Field(s) passed to io_uring, always wrapped in an `Option`.
+            // Syntax is the same a struct definition.
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
             )*
         },
+        // Whether or not the structure should be `!Unpin` by including
+        // `PhantomPinned`.
+        $(
+            $(#[ $phantom_doc: meta ])*
+            impl !Upin,
+        )?
         // State held in the setup function.
         setup_state: $setup_field: ident : $setup_ty: ty,
         // Function to setup the operation.
@@ -523,25 +529,31 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+                $(#[ $phantom_doc ])*
+                impl !Upin,
+            )?
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
             map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
-        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
+        impl<$lifetime $(, $generic $(: $trait )? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
 
-        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)*>> {
+        impl<$lifetime $(, $generic $(: $trait )? )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)*>> {
             type Output = std::io::Result<$extract_result>;
 
-            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                let op_index = std::task::ready!(self.fut.poll_op_index(ctx));
+            fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                // SAFETY: we're not moving anything out of `self.
+                let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
+                let op_index = std::task::ready!($self.fut.poll_op_index(ctx));
 
-                match self.fut.fd.sq.poll_op(ctx, op_index) {
+                match $self.fut.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
-                        self.fut.state = $crate::op::OpState::Done;
+                        $self.fut.state = $crate::op::OpState::Done;
                         match result {
                             std::result::Result::Ok(($extract_flags, $extract_arg)) => {
-                                let $extract_self = &mut self.fut;
+                                let $extract_self = &mut $self.fut;
                                 // SAFETY: this will not panic because we need
                                 // to keep the resources around until the
                                 // operation is completed.
@@ -565,6 +577,10 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        $(
+            $(#[ $phantom_doc: meta ])*
+            impl !Upin,
+        )?
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
         map_result: |$self: ident, $resources: tt, $flags: ident, $map_arg: ident| $map_result: expr,
@@ -583,6 +599,10 @@ macro_rules! op_future {
             fd: &$lifetime $crate::AsyncFd,
             /// State of the operation.
             state: $crate::op::OpState<$setup_ty>,
+            $(
+                $( #[ $phantom_doc ] )*
+                _phantom: std::marker::PhantomPinned,
+            )?
         }
 
         impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
@@ -594,11 +614,15 @@ macro_rules! op_future {
                     ))),
                     fd,
                     state: $crate::op::OpState::NotStarted($setup_field),
+                    $(
+                        $( #[ $phantom_doc ] )*
+                        _phantom: std::marker::PhantomPinned,
+                    )?
                 }
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait)? )*> $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic $(: $trait )? )*> $name<$lifetime $(, $generic)*> {
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
@@ -607,18 +631,19 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic: std::marker::Unpin $(+ $trait)? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic $(: $trait )? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
             type Output = std::io::Result<$result>;
 
-            fn poll(mut self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
-                let op_index = std::task::ready!(self.poll_op_index(ctx));
+            fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
+                // SAFETY: we're not moving anything out of `self.
+                let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
+                let op_index = std::task::ready!($self.poll_op_index(ctx));
 
-                match self.fd.sq.poll_op(ctx, op_index) {
+                match $self.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
-                        self.state = $crate::op::OpState::Done;
+                        $self.state = $crate::op::OpState::Done;
                         match result {
                             std::result::Result::Ok(($flags, $map_arg)) => {
-                                let $self = &mut self;
                                 // SAFETY: this will not panic because we need
                                 // to keep the resources around until the
                                 // operation is completed.
@@ -656,6 +681,10 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        $(
+            $(#[ $phantom_doc: meta ])*
+            impl !Upin,
+        )?
         setup_state: $setup_data: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
         map_result: |$self: ident, $resources: tt, $map_arg: ident| $map_result: expr,
@@ -669,6 +698,10 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+                $(#[ $phantom_doc ])*
+                impl !Upin,
+            )?
             setup_state: $setup_data: $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
             map_result: |$self, $resources, _unused_flags, $map_arg| $map_result,
@@ -684,6 +717,10 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        $(
+            $(#[ $phantom_doc: meta ])*
+            impl !Upin,
+        )?
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
         map_result: |$map_arg: ident| $map_result: expr, // Only difference: 1 argument.
@@ -697,6 +734,10 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+                $(#[ $phantom_doc ])*
+                impl !Upin,
+            )?
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
             map_result: |_unused_this, _unused_resources, _unused_flags, $map_arg| $map_result,
