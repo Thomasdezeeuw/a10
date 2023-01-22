@@ -92,7 +92,7 @@ impl AsyncFd {
         self.write_at(buf, NO_OFFSET)
     }
 
-    /// Write `buf` to this file.
+    /// Write `buf` to this file at `offset`.
     ///
     /// The current file cursor is not affected by this function.
     pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
@@ -100,6 +100,29 @@ impl AsyncFd {
         B: Buf,
     {
         Write::new(self, buf, offset)
+    }
+
+    /// Write `bufs` to this file.
+    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.write_vectored_at(bufs, NO_OFFSET)
+    }
+
+    /// Write `bufs` to this file at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn write_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        offset: u64,
+    ) -> WriteVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        let iovecs = unsafe { bufs.as_iovec() };
+        WriteVectored::new(self, bufs, iovecs, offset)
     }
 
     /// Attempt to cancel an in progress operation.
@@ -195,6 +218,37 @@ op_future! {
     },
     map_result: |n| Ok(n as usize),
     extract: |this, (buf,), n| -> (B, usize) {
+        Ok((buf, n as usize))
+    },
+}
+
+// WriteVectored.
+op_future! {
+    fn AsyncFd::write_vectored -> usize,
+    struct WriteVectored<'fd, B: BufSlice<N>; const N: usize> {
+        /// Buffers to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        bufs: B,
+        /// Buffer references used by the kernel.
+        ///
+        /// NOTE: we only need these iovecs in the submission, we don't have to
+        /// keep around during the operation. Because of this we don't heap
+        /// allocate it like we for other operations. This leaves a small
+        /// duration between the submission of the entry and the submission
+        /// being read by the kernel in which this future could be dropped and
+        /// the kernel will read memory we don't own. However because we wake
+        /// the kernel after submitting the timeout entry it's not really worth
+        /// to heap allocation.
+        iovecs: [libc::iovec; N],
+    },
+    /// `iovecs` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: offset: u64,
+    setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
+        submission.write_vectored_at(fd.fd, iovecs, offset);
+    },
+    map_result: |n| Ok(n as usize),
+    extract: |this, (buf, _iovecs), n| -> (B, usize) {
         Ok((buf, n as usize))
     },
 }
