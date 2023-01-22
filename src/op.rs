@@ -220,6 +220,22 @@ impl Submission {
         self.inner.len = len;
     }
 
+    /// Create a read vectored submission starting at `offset`.
+    pub(crate) unsafe fn read_vectored_at(
+        &mut self,
+        fd: RawFd,
+        bufs: &mut [libc::iovec],
+        offset: u64,
+    ) {
+        self.inner.opcode = libc::IORING_OP_READV as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: bufs.as_ptr() as _,
+        };
+        self.inner.len = bufs.len() as _;
+    }
+
     /// Create a write submission starting at `offset`.
     ///
     /// Avaialable since Linux kernel 5.6.
@@ -430,6 +446,7 @@ impl fmt::Debug for Submission {
                     });
             }
             libc::IORING_OP_READ => io_op(&mut f, &self.inner, "IORING_OP_READ"),
+            libc::IORING_OP_READV => io_op(&mut f, &self.inner, "IORING_OP_READV"),
             libc::IORING_OP_WRITE => io_op(&mut f, &self.inner, "IORING_OP_WRITE"),
             libc::IORING_OP_WRITEV => io_op(&mut f, &self.inner, "IORING_OP_WRITEV"),
             libc::IORING_OP_SOCKET => {

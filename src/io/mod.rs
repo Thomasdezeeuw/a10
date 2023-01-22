@@ -85,7 +85,30 @@ impl AsyncFd {
         Read::new(self, buf, offset)
     }
 
-    /// Write `buf` to this file.
+    /// Read from this fd into `buf`.
+    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        self.read_vectored_at(bufs, NO_OFFSET)
+    }
+
+    /// Read from this fd into `buf` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn read_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        offset: u64,
+    ) -> ReadVectored<'fd, B, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        let iovecs = unsafe { bufs.as_iovec() };
+        ReadVectored::new(self, bufs, iovecs, offset)
+    }
+
+    /// Write `buf` to this fd.
     pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
     where
         B: Buf,
@@ -93,7 +116,7 @@ impl AsyncFd {
         self.write_at(buf, NO_OFFSET)
     }
 
-    /// Write `buf` to this file at `offset`.
+    /// Write `buf` to this fd at `offset`.
     ///
     /// The current file cursor is not affected by this function.
     pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
@@ -201,6 +224,39 @@ op_future! {
         // call.
         unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
+    },
+}
+
+// ReadVectored.
+op_future! {
+    fn AsyncFd::read_vectored -> B,
+    struct ReadVectored<'fd, B: BufMutSlice<N>; const N: usize> {
+        /// Buffers to write into, needs to stay in memory so the kernel can
+        /// access it safely.
+        bufs: B,
+        /// Buffer references used by the kernel.
+        ///
+        /// NOTE: we only need these iovecs in the submission, we don't have to
+        /// keep around during the operation. Because of this we don't heap
+        /// allocate it like we for other operations. This leaves a small
+        /// duration between the submission of the entry and the submission
+        /// being read by the kernel in which this future could be dropped and
+        /// the kernel will read memory we don't own. However because we wake
+        /// the kernel after submitting the timeout entry it's not really worth
+        /// to heap allocation.
+        iovecs: [libc::iovec; N],
+    },
+    /// `iovecs` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: offset: u64,
+    setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
+        submission.read_vectored_at(fd.fd, iovecs, offset);
+    },
+    map_result: |this, (mut bufs, _iovecs), _flags, n| {
+        // SAFETY: the kernel initialised the bytes for us as part of the read
+        // call.
+        unsafe { bufs.set_init(n as usize) };
+        Ok(bufs)
     },
 }
 
