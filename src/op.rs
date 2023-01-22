@@ -496,7 +496,7 @@ macro_rules! op_future {
         // File type and function name.
         fn $type: ident :: $method: ident -> $result: ty,
         // Future structure.
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* $(; const $const_generic: ident : $const_ty: ty )* > {
             $(
             // Field(s) passed to io_uring, always wrapped in an `Option`.
             // Syntax is the same a struct definition.
@@ -523,7 +523,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
@@ -538,9 +538,9 @@ macro_rules! op_future {
             map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )*> $crate::Extract for $name<$lifetime $(, $generic)*> {}
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
 
-        impl<$lifetime $(, $generic $(: $trait )? )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)*>> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*>> {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -571,7 +571,7 @@ macro_rules! op_future {
     // Base version (without any additional implementations).
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* $(; const $const_generic: ident : $const_ty: ty )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -587,7 +587,7 @@ macro_rules! op_future {
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
-        pub struct $name<$lifetime $(, $generic)*> {
+        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> {
             /// Resoures used in the operation.
             ///
             /// If this is `Some` when the future is dropped it will assume it
@@ -605,9 +605,9 @@ macro_rules! op_future {
             )?
         }
 
-        impl<$lifetime $(, $generic )*> $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)*> {
+            const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
                 $name {
                     resources: std::option::Option::Some(std::cell::UnsafeCell::new((
                         $( $field, )*
@@ -622,7 +622,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )*> $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
@@ -631,7 +631,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )*> std::future::Future for $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             type Output = std::io::Result<$result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -658,7 +658,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic)*> std::ops::Drop for $name<$lifetime $(, $generic)*> {
+        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
@@ -675,7 +675,7 @@ macro_rules! op_future {
     // Version that doesn't need the `flags` from the result in `$map_result`.
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* $(; const $const_generic: ident : $const_ty: ty )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -692,7 +692,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
@@ -711,7 +711,7 @@ macro_rules! op_future {
     // Version that doesn't need `self` (this) or resources in `$map_result`.
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* $(; const $const_generic: ident : $const_ty: ty )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -728,7 +728,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
