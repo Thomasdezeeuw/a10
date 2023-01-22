@@ -363,7 +363,7 @@ unsafe impl BufMut for Vec<u8> {
 /// based buffers unfit to implement `Buf`.  Because we can't delay the
 /// deallocation once its dropped and the kernel will read part of your stack
 /// (where the buffer used to be)! This would be a huge security risk.
-pub unsafe trait Buf {
+pub unsafe trait Buf: 'static {
     /// Returns the reabable buffer as pointer and length parts.
     ///
     /// # Safety
