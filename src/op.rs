@@ -496,7 +496,7 @@ macro_rules! op_future {
         // File type and function name.
         fn $type: ident :: $method: ident -> $result: ty,
         // Future structure.
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
             $(
             // Field(s) passed to io_uring, always wrapped in an `Option`.
             // Syntax is the same a struct definition.
@@ -523,7 +523,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic: $($trait)? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
@@ -571,7 +571,7 @@ macro_rules! op_future {
     // Base version (without any additional implementations).
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -675,7 +675,7 @@ macro_rules! op_future {
     // Version that doesn't need the `flags` from the result in `$map_result`.
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -692,7 +692,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic: $($trait)? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
@@ -711,7 +711,7 @@ macro_rules! op_future {
     // Version that doesn't need `self` (this) or resources in `$map_result`.
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime $(, $generic: ident: $($trait: ident)? )* > {
+        struct $name: ident < $lifetime: lifetime $(, $generic: ident $(: $trait: path )? )* > {
             $(
             $(#[ $field_doc: meta ])*
             $field: ident : $value: ty,
@@ -728,7 +728,7 @@ macro_rules! op_future {
     ) => {
         $crate::op::op_future!{
             fn $type::$method -> $result,
-            struct $name<$lifetime $(, $generic: $($trait)? )*> {
+            struct $name<$lifetime $(, $generic $(: $trait )? )*> {
                 $(
                 $(#[$field_doc])*
                 $field: $value,
