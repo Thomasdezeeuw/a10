@@ -130,6 +130,66 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
 }
 
 #[test]
+fn read_vectored_array() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let test_file = &LOREM_IPSUM_50;
+    let path = test_file.path.into();
+    let open_file = OpenOptions::new().open(sq, path);
+    let file = waker.block_on(open_file).unwrap();
+
+    let bufs = [
+        Vec::with_capacity(4096),
+        Vec::with_capacity(32),
+        Vec::with_capacity(4096 - 32),
+    ];
+    let read = file.read_vectored(bufs);
+    let bufs = waker.block_on(read).unwrap();
+    drop(file);
+
+    let mut start = 0;
+    for buf in bufs.iter() {
+        assert!(
+            buf == &test_file.content[start..start + buf.len()],
+            "read content is different"
+        );
+        start += buf.len();
+    }
+    assert_eq!(start, 2 * 4096);
+}
+
+#[test]
+fn read_vectored_tuple() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let test_file = &LOREM_IPSUM_50;
+    let path = test_file.path.into();
+    let open_file = OpenOptions::new().open(sq, path);
+    let file = waker.block_on(open_file).unwrap();
+
+    let bufs = (
+        Vec::with_capacity(4096),
+        Vec::with_capacity(32),
+        Vec::with_capacity(4096 - 32),
+    );
+    let read = file.read_vectored(bufs);
+    let bufs = waker.block_on(read).unwrap();
+    drop(file);
+
+    let mut start = 0;
+    for buf in [bufs.0, bufs.1, bufs.2] {
+        assert!(
+            buf == &test_file.content[start..start + buf.len()],
+            "read content is different"
+        );
+        start += buf.len();
+    }
+    assert_eq!(start, 2 * 4096);
+}
+
+#[test]
 fn write_hello_world() {
     let sq = test_queue();
     let bufs = vec![b"Hello world".to_vec()];
