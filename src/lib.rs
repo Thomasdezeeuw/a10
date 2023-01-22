@@ -555,7 +555,7 @@ impl SubmissionQueue {
                 // We achieve 1 by creating a special waker that just drops the
                 // resources in `resources`.
                 // SAFETY: we're not going to clone the `waker`.
-                let waker = unsafe { Box::from(resources).into_waker() };
+                let waker = unsafe { drop_task_waker(Box::from(resources)) };
                 // We achive 2 by setting the operation state to dropped, so
                 // that `QueuedOperation::set_result` returns true, which makes
                 // `complete` below make the queued operation slot available
@@ -643,14 +643,38 @@ impl SubmissionQueue {
     }
 }
 
-/// Trait that turns a value into a [`task::Waker`] that will drop itself when
-/// the waker is dropped.
+/// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
 /// # Safety
 ///
 /// The returned `task::Waker` cannot be cloned, it will panic.
-trait IntoDropWaker {
-    unsafe fn into_waker(self) -> task::Waker;
+unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
+    unsafe fn drop_by_ptr<T: DropWaker>(data: *const ()) {
+        T::drop_from_waker_data(data)
+    }
+
+    // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
+    unsafe {
+        task::Waker::from_raw(task::RawWaker::new(
+            to_drop.into_waker_data(),
+            &task::RawWakerVTable::new(
+                |_| panic!("attempted to clone `a10::drop_task_waker`"),
+                // SAFETY: `wake` takes ownership, so dropping is safe.
+                drop_by_ptr::<T>,
+                |_| { /* `wake_by_ref` is a no-op. */ },
+                drop_by_ptr::<T>,
+            ),
+        ))
+    }
+}
+
+/// Trait used by [`drop_task_waker`].
+trait DropWaker {
+    /// Return itself as waker data.
+    fn into_waker_data(self) -> *const ();
+
+    /// Drop the waker `data` created by `into_waker_data`.
+    unsafe fn drop_from_waker_data(data: *const ());
 }
 
 /* TODO: enable this once the specialization feature is closer to stabalisation,
@@ -662,51 +686,23 @@ default impl<T> IntoDropWaker for T {
 }
 */
 
-impl<T> IntoDropWaker for Box<T> {
-    unsafe fn into_waker(self) -> task::Waker {
-        // SAFETY: this is safe because we just passed the pointer created by
-        // `Box::into_raw` to this function.
-        unsafe fn drop_by_ptr<T>(ptr: *const ()) {
-            drop(Box::<T>::from_raw(ptr as _))
-        }
+impl<T> DropWaker for Box<T> {
+    fn into_waker_data(self) -> *const () {
+        Box::into_raw(self).cast()
+    }
 
-        // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
-        unsafe {
-            task::Waker::from_raw(task::RawWaker::new(
-                Box::into_raw(self) as _,
-                &task::RawWakerVTable::new(
-                    |_| panic!("attempted to clone `a10::drop_task_waker`"),
-                    // SAFETY: `wake` takes ownership, so dropping is safe.
-                    drop_by_ptr::<T>,
-                    |_| { /* `wake_by_ref` is a no-op. */ },
-                    drop_by_ptr::<T>,
-                ),
-            ))
-        }
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(Box::<T>::from_raw(data as _))
     }
 }
 
-impl<T> IntoDropWaker for Arc<T> {
-    unsafe fn into_waker(self) -> task::Waker {
-        // SAFETY: this is safe because we just passed the pointer created by
-        // `Arc::into_raw` to this function.
-        unsafe fn drop_by_ptr<T>(ptr: *const ()) {
-            drop(Arc::<T>::from_raw(ptr as _))
-        }
+impl<T> DropWaker for Arc<T> {
+    fn into_waker_data(self) -> *const () {
+        Arc::into_raw(self).cast()
+    }
 
-        // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
-        unsafe {
-            task::Waker::from_raw(task::RawWaker::new(
-                Arc::into_raw(self) as _,
-                &task::RawWakerVTable::new(
-                    |_| panic!("attempted to clone `a10::drop_task_waker`"),
-                    // SAFETY: `wake` takes ownership, so dropping is safe.
-                    drop_by_ptr::<T>,
-                    |_| { /* `wake_by_ref` is a no-op. */ },
-                    drop_by_ptr::<T>,
-                ),
-            ))
-        }
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(Arc::<T>::from_raw(data as _))
     }
 }
 
