@@ -401,6 +401,36 @@ unsafe impl BufMut for Vec<u8> {
     }
 }
 
+/// Trait that defines the behaviour of buffers used in reading using vectored
+/// I/O, which requires mutable access.
+///
+/// # Safety
+///
+/// This has the same safety requirements as [`BufMut`], but then for all
+/// buffers used.
+pub unsafe trait BufMutSlice<const N: usize>: 'static {
+    /// Returns the reabable buffer as `iovec` structures.
+    ///
+    /// # Safety
+    ///
+    /// This has the same safety requirements as [`BufMut::parts`], but then for
+    /// all buffers used.
+    unsafe fn as_iovec(&mut self) -> [libc::iovec; N];
+
+    /// Mark `n` bytes as initialised.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `n` bytes are initialised in the vectors
+    /// return by [`BufMutSlice::as_iovec`].
+    ///
+    /// The implementation must ensure that that proper buffer(s) are
+    /// initialised. For example when this is called with `n = 10` with two
+    /// buffers of size `8` the implementation should initialise the first
+    /// buffer with `n = 8` and the second with `n = 10 - 8 = 2`.
+    unsafe fn set_init(&mut self, n: usize);
+}
+
 /// Trait that defines the behaviour of buffers used in writing, which requires
 /// read only access.
 ///
