@@ -25,6 +25,8 @@
 #![feature(
     const_mut_refs,
     io_error_more,
+    maybe_uninit_array_assume_init,
+    maybe_uninit_uninit_array,
     mutex_unlock,
     new_uninit,
     nonnull_slice_from_raw_parts,

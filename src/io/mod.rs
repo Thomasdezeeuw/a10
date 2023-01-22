@@ -12,7 +12,7 @@
 //! `AsyncFd`s for standard in, out and error respectively.
 
 use std::future::Future;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::unix::io::RawFd;
 use std::pin::Pin;
 use std::task::{self, Poll};
@@ -432,3 +432,53 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
     /// all buffers used.
     unsafe fn as_iovec(&self) -> [libc::iovec; N];
 }
+
+// SAFETY: `BufSlice` has the same safety requirements as `Buf` and since `B`
+// implements `Buf` it's safe to implement `BufSlice` for an array of `B`.
+unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
+    unsafe fn as_iovec(&self) -> [libc::iovec; N] {
+        let mut iovecs = MaybeUninit::uninit_array();
+        for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
+            let (ptr, len) = buf.parts();
+            iovec.write(libc::iovec {
+                iov_base: ptr as _,
+                iov_len: len as _,
+            });
+        }
+        MaybeUninit::array_assume_init(iovecs)
+    }
+}
+
+macro_rules! buf_slice_for_tuple {
+    (
+        // Number of values.
+        $N: expr,
+        // Generic parameter name and tuple index.
+        $( $generic: ident . $index: tt ),+
+    ) => {
+        // SAFETY: `BufSlice` has the same safety requirements as `Buf` and
+        // since all generic buffer must implement `Buf` it's safe to implement
+        // `BufSlice` a tuple of all those buffers.
+        unsafe impl<$( $generic: Buf ),+> BufSlice<$N> for ($( $generic ),+) {
+            unsafe fn as_iovec(&self) -> [libc::iovec; $N] {
+                [
+                    $({
+                        let (ptr, len) = self.$index.parts();
+                        libc::iovec {
+                            iov_base: ptr as _,
+                            iov_len: len as _,
+                        }
+                    }),+
+                ]
+            }
+        }
+    };
+}
+
+buf_slice_for_tuple!(2, A.0, B.1);
+buf_slice_for_tuple!(3, A.0, B.1, C.2);
+buf_slice_for_tuple!(4, A.0, B.1, C.2, D.3);
+buf_slice_for_tuple!(5, A.0, B.1, C.2, D.3, E.4);
+buf_slice_for_tuple!(6, A.0, B.1, C.2, D.3, E.4, F.5);
+buf_slice_for_tuple!(7, A.0, B.1, C.2, D.3, E.4, F.5, G.6);
+buf_slice_for_tuple!(8, A.0, B.1, C.2, D.3, E.4, F.5, G.6, I.7);
