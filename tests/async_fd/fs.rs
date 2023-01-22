@@ -202,6 +202,61 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
 }
 
 #[test]
+fn write_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("write_vectored_array");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let bufs = ["hello", ", ", "world!"];
+    let write = file.write_vectored(bufs);
+    let n = waker.block_on(write).unwrap();
+    assert_eq!(n, 13);
+    drop(file);
+
+    let got = std::fs::read(&path).unwrap();
+    assert!(got == b"hello, world!", "file can't be read back");
+}
+
+#[test]
+fn write_vectored_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("write_vectored_array");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let bufs = ("hello", vec![b',', b' '], b"world!".as_slice());
+    let write = file.write_vectored(bufs).extract();
+    let (bufs, n) = waker.block_on(write).unwrap();
+    assert_eq!(n, 13);
+    assert_eq!(bufs.0, "hello");
+    assert_eq!(bufs.1, b", ");
+    assert_eq!(bufs.2, b"world!");
+    drop(file);
+
+    let got = std::fs::read(&path).unwrap();
+    assert!(got == b"hello, world!", "file can't be read back");
+}
+
+#[test]
 fn sync_all() {
     let sq = test_queue();
     let waker = Waker::new();
