@@ -2,7 +2,8 @@
 //!
 //! The main types of this module are the [`Buf`] and [`BufMut`] traits, which
 //! define the requirements on buffers using the I/O system calls on an file
-//! descriptor ([`AsyncFd`]).
+//! descriptor ([`AsyncFd`]). Additionally the [`BufSlice`] and [`BufMutSlice`]
+//! traits existing to define the behaviour of buffers in vectored I/O.
 //!
 //! A speciailised read buffer pool implementation exists in [`ReadBufPool`],
 //! which is a buffer pool managed by the kernel when making `read(2)`-like
@@ -44,7 +45,7 @@ macro_rules! stdio {
                     "An [`AsyncFd`] for ", stringify!($fn), ".\n\n",
                     "# Notes\n\n",
                     "This directly writes to the raw file descriptor, which means it's not buffered and will not flush anything buffered by the standard library.\n\n",
-                    "When the returned type is dropped it will not close ", stringify!($fn), ".",
+                    "When this type is dropped it will not close ", stringify!($fn), ".",
                 )]
         pub struct $name(std::mem::ManuallyDrop<$crate::AsyncFd>);
 
