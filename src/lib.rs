@@ -417,7 +417,12 @@ impl SubmissionQueue {
             });
         let tail = match tail {
             Ok(tail) => tail,
-            Err(_) => return Err(QueueFull(())),
+            Err(_) => {
+                // If the kernel thread is not awake we'll need to wake it to
+                // make space in the submission queue.
+                self.maybe_wake_kernel_thread();
+                return Err(QueueFull(()));
+            }
         };
 
         // SAFETY: the `ring_mask` ensures we can never get an index larger
@@ -470,29 +475,29 @@ impl SubmissionQueue {
             Mutex::unlock(array_index);
         }
 
-        if self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0 {
-            // If the kernel thread is not awake we'll need to wake it for it to
-            // process our submission.
-            if let Err(err) = self.wake_kernel_thread() {
-                log::warn!("failed to wake submission queue polling kernel thread: {err}");
-            }
-        }
-
+        // If the kernel thread is not awake we'll need to wake it for it to
+        // process our submission.
+        self.maybe_wake_kernel_thread();
         Ok(())
     }
 
-    /// Wake up the kernel thread polling for submission events.
-    fn wake_kernel_thread(&self) -> io::Result<()> {
-        log::debug!("waking submission queue polling kernel thread");
-        libc::syscall!(io_uring_enter2(
-            self.shared.ring_fd.as_raw_fd(),
-            0,                            // We've already queued our submissions.
-            0,                            // Don't wait for any completion events.
-            libc::IORING_ENTER_SQ_WAKEUP, // Wake up the kernel.
-            ptr::null(),                  // We don't pass any additional arguments.
-            0,
-        ))?;
-        Ok(())
+    /// Wake up the kernel thread polling for submission events, if the kernel
+    /// thread needs a wakeup.
+    fn maybe_wake_kernel_thread(&self) {
+        if self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0 {
+            log::debug!("waking submission queue polling kernel thread");
+            let res = libc::syscall!(io_uring_enter2(
+                self.shared.ring_fd.as_raw_fd(),
+                0,                            // We've already queued our submissions.
+                0,                            // Don't wait for any completion events.
+                libc::IORING_ENTER_SQ_WAKEUP, // Wake up the kernel.
+                ptr::null(),                  // We don't pass any additional arguments.
+                0,
+            ));
+            if let Err(err) = res {
+                log::warn!("failed to wake submission queue polling kernel thread: {err}");
+            }
+        }
     }
 
     /// Poll a queued operation with `op_index` to check if it's ready.
