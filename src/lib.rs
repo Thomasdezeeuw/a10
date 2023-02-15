@@ -23,6 +23,7 @@
 //! [`Extract`] trait.
 
 #![feature(
+    async_iterator,
     const_mut_refs,
     io_error_more,
     maybe_uninit_array_assume_init,
@@ -347,6 +348,23 @@ impl SubmissionQueue {
     where
         F: FnOnce(&mut Submission),
     {
+        self._add(submit, QueuedOperation::new)
+    }
+
+    /// Same as [`add`] but uses a multishot `QueuedOperation`.
+    fn add_multishot<F>(&self, submit: F) -> Result<OpIndex, QueueFull>
+    where
+        F: FnOnce(&mut Submission),
+    {
+        self._add(submit, QueuedOperation::new_multishot)
+    }
+
+    /// See [`add`] or [`add_multishot`].
+    fn _add<F, O>(&self, submit: F, new_op: O) -> Result<OpIndex, QueueFull>
+    where
+        F: FnOnce(&mut Submission),
+        O: FnOnce() -> QueuedOperation,
+    {
         // Get an index to the queued operation queue.
         let shared = &*self.shared;
         let op_index = match shared.op_indices.next_available() {
@@ -354,7 +372,7 @@ impl SubmissionQueue {
             None => return Err(QueueFull(())),
         };
 
-        let queued_op = QueuedOperation::new();
+        let queued_op = new_op();
         // SAFETY: the `AtomicBitMap` always returns valid indices for
         // `op_queue` (it's the whole point of it).
         let mut op = shared.queued_ops[op_index].lock().unwrap();
@@ -514,6 +532,36 @@ impl SubmissionQueue {
             }
         }
         panic!("a10::SubmissionQueue::poll called incorrectly");
+    }
+
+    /// Poll a queued multishot operation with `op_index` to check if it's
+    /// ready.
+    ///
+    /// # Notes
+    ///
+    /// If this return [`Poll::Ready(None)`] it marks `op_index` slot as
+    /// available.
+    pub(crate) fn poll_multishot_op(
+        &self,
+        ctx: &mut task::Context<'_>,
+        op_index: OpIndex,
+    ) -> Poll<Option<io::Result<(u16, i32)>>> {
+        if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
+            let mut operation = operation.lock().unwrap();
+            if let Some(op) = &mut *operation {
+                return match op.poll(ctx) {
+                    Poll::Ready(res) => Poll::Ready(Some(res)),
+                    Poll::Pending if op.is_done() => {
+                        *operation = None;
+                        drop(operation);
+                        self.shared.op_indices.make_available(op_index.0);
+                        Poll::Ready(None)
+                    }
+                    Poll::Pending => Poll::Pending,
+                };
+            }
+        }
+        panic!("a10::SubmissionQueue::poll_multishot called incorrectly");
     }
 
     /// Mark the operation with `op_index` as dropped.

@@ -645,6 +645,7 @@ macro_rules! op_future {
             resources: std::option::Option<std::cell::UnsafeCell<(
                 $( $value, )*
             )>>,
+            /// File descriptor used in the operation.
             fd: &$lifetime $crate::AsyncFd,
             /// State of the operation.
             state: $crate::op::OpState<$setup_ty>,
@@ -898,6 +899,114 @@ macro_rules! poll_state {
 }
 
 pub(crate) use poll_state;
+
+/// Macro to create an operation [`AsyncIterator`] structure based on multishot
+/// operations.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+macro_rules! op_async_iter {
+    (
+        fn $type: ident :: $method: ident -> $result: ty,
+        struct $name: ident < $lifetime: lifetime >;
+        setup_state: $setup_field: ident : $setup_ty: ty,
+        setup: |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr,
+        map_result: |$self: ident, $map_arg: ident| $map_result: expr,
+    ) => {
+        #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
+        #[derive(Debug)]
+        pub struct $name<$lifetime> {
+            /// File descriptor used in the operation.
+            fd: &$lifetime $crate::AsyncFd,
+            /// State of the operation.
+            state: $crate::op::IterState<$setup_ty>,
+        }
+
+        impl<$lifetime> $name<$lifetime> {
+            #[doc = concat!("Create a new `", stringify!($name), "`.")]
+            const fn new(fd: &$lifetime $crate::AsyncFd, $setup_field : $setup_ty) -> $name<$lifetime> {
+                $name {
+                    fd,
+                    state: $crate::op::IterState::NotStarted($setup_field),
+                }
+            }
+        }
+
+        impl<$lifetime> $name<$lifetime> {
+            /// Poll for the `OpIndex`.
+            fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
+                std::task::Poll::Ready($crate::op::poll_iter_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_state| {
+                    $setup_fn
+                }))
+            }
+        }
+
+        impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
+            type Item = std::io::Result<$result>;
+
+            fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+                // SAFETY: we're not moving anything out of `self.
+                let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
+                let op_index = std::task::ready!($self.poll_op_index(ctx));
+
+                match $self.fd.sq.poll_multishot_op(ctx, op_index) {
+                    std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok((_, $map_arg)))) => {
+                        std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok($map_result)))
+                    },
+                    std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
+                        std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err)))
+                    },
+                    std::task::Poll::Ready(std::option::Option::None) => {
+                        std::task::Poll::Ready(std::option::Option::None)
+                    },
+                    std::task::Poll::Pending => std::task::Poll::Pending,
+                }
+            }
+        }
+
+        // FIXME: cancel on drop.
+    };
+}
+
+pub(crate) use op_async_iter;
+
+/// State of an [`op_async_iter!`] [`AsyncIterator`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[derive(Debug)]
+pub(crate) enum IterState<S> {
+    /// The operation has not started yet.
+    NotStarted(S),
+    /// Operation is running, waiting for more results.
+    Running(OpIndex),
+}
+
+/// Poll an [`IterState`].
+macro_rules! poll_iter_state {
+    (
+        $name: ident, $self: expr, $ctx: expr,
+        |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr $(,)?
+    ) => {
+        match $self.state {
+            $crate::op::IterState::Running(op_index) => op_index,
+            $crate::op::IterState::NotStarted($setup_state) => {
+                let $name { fd: $setup_fd, .. } = &mut $self;
+                let result = $setup_fd.sq.add_multishot(|$setup_submission| $setup_fn);
+                match result {
+                    Ok(op_index) => {
+                        $self.state = $crate::op::IterState::Running(op_index);
+                        op_index
+                    }
+                    Err($crate::QueueFull(())) => {
+                        $self.fd.sq.wait_for_submission($ctx.waker().clone());
+                        return std::task::Poll::Pending;
+                    }
+                }
+            }
+        }
+    };
+}
+
+pub(crate) use poll_iter_state;
 
 #[test]
 fn size_assertion() {
