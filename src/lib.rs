@@ -139,19 +139,8 @@ impl Ring {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
             log::trace!(completion = log::as_debug!(completion); "dequeued completion event");
-            let flags = completion.operation_flags();
-            if completion.is_in_progress() {
-                // SAFETY: we're calling this with information from the kernel.
-                unsafe {
-                    sq.set_op_in_progress_result(completion.index(), flags, completion.result());
-                };
-            } else if completion.is_notification() {
-                // SAFETY: we're calling this with information from the kernel.
-                unsafe { sq.complete_in_progress_op(completion.index()) };
-            } else {
-                // SAFETY: we're calling this with information from the kernel.
-                unsafe { sq.complete_op(completion.index(), flags, completion.result()) };
-            }
+            // SAFETY: we're calling this based on information from the kernel.
+            unsafe { sq.update_op(completion) };
         }
 
         self.wake_blocked_futures();
@@ -574,56 +563,17 @@ impl SubmissionQueue {
         panic!("a10::SubmissionQueue::drop_op called incorrectly");
     }
 
-    /// Set the result of asynchronous operation, but don't mark it as complete.
-    /// This is for zero copy operations which report their result in one
-    /// completion and releasing of the buffer in another.
+    /// Update an operation based on `completion`.
     ///
     /// # Safety
     ///
     /// This may only be called based on information form the kernel.
-    unsafe fn set_op_in_progress_result(&self, op_index: usize, flags: u16, result: i32) {
+    unsafe fn update_op(&self, completion: &Completion) {
+        let op_index = completion.index();
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                op.set_in_progress_result(flags, result);
-            }
-        }
-    }
-
-    /// Mark in in-progress operation (as set by `set_op_in_progress_result`) as
-    /// completed.
-    ///
-    /// # Safety
-    ///
-    /// This may only be called when the kernel is no longer using the resources
-    /// (e.g. read buffer) for the operation.
-    unsafe fn complete_in_progress_op(&self, op_index: usize) {
-        if let Some(operation) = self.shared.queued_ops.get(op_index) {
-            let mut operation = operation.lock().unwrap();
-            if let Some(op) = &mut *operation {
-                let is_dropped = op.complete_in_progress();
-                if is_dropped {
-                    // The Future was previously dropped so no one is waiting on
-                    // the result. We can make the slot avaiable again.
-                    *operation = None;
-                    drop(operation);
-                    self.shared.op_indices.make_available(op_index);
-                }
-            }
-        }
-    }
-
-    /// Mark an asynchronous operation as complete with `result`.
-    ///
-    /// # Safety
-    ///
-    /// This may only be called when the kernel is no longer using the resources
-    /// (e.g. read buffer) for the operation.
-    unsafe fn complete_op(&self, op_index: usize, flags: u16, result: i32) {
-        if let Some(operation) = self.shared.queued_ops.get(op_index) {
-            let mut operation = operation.lock().unwrap();
-            if let Some(op) = &mut *operation {
-                let is_dropped = op.complete(flags, result);
+                let is_dropped = op.update(completion);
                 if is_dropped {
                     // The Future was previously dropped so no one is waiting on
                     // the result. We can make the slot avaiable again.
