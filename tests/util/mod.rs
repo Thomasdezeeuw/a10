@@ -3,6 +3,7 @@
 #![allow(dead_code)] // Not all tests use all code here.
 
 use std::any::Any;
+use std::async_iter::AsyncIterator;
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
@@ -177,6 +178,23 @@ fn nop_waker() -> task::Waker {
     unsafe {
         let raw_waker = task::RawWaker::new(ptr::null(), &VTABLE);
         task::Waker::from_raw(raw_waker)
+    }
+}
+
+/// Return a [`Future`] that return the next item in the `iter` or `None`.
+pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {
+    Next { iter }
+}
+
+pub(crate) struct Next<I> {
+    iter: I,
+}
+
+impl<I: AsyncIterator + Unpin> Future for Next<I> {
+    type Output = Option<I::Item>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.iter).poll_next(ctx)
     }
 }
 

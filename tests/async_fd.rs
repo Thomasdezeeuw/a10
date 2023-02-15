@@ -1,6 +1,6 @@
 //! Tests for [`a10::AsyncFd`].
 
-#![feature(once_cell)]
+#![feature(async_iterator, once_cell)]
 
 mod util;
 

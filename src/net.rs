@@ -11,7 +11,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::io::{Buf, BufIdx, BufMut};
-use crate::op::{op_future, poll_state, OpState};
+use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
@@ -104,6 +104,23 @@ impl AsyncFd {
         let length = size_of::<libc::sockaddr_storage>() as libc::socklen_t;
         let address = Box::new((address, length));
         Accept::new(self, address, flags)
+    }
+
+    /// Accept multiple socket streams.
+    ///
+    /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
+    /// uses a multishot operation, which means only a single operation is
+    /// created kernel side and makes this more efficient.
+    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
+        self.multishot_accept4(libc::SOCK_CLOEXEC)
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::multishot_accept`].
+    pub fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
+        MultishotAccept::new(self, flags)
     }
 }
 
@@ -273,5 +290,19 @@ op_future! {
         };
 
         address.map(|address| (stream, address))
+    },
+}
+
+// MultishotAccept.
+op_async_iter! {
+    fn AsyncFd::multishot_accept -> AsyncFd,
+    struct MultishotAccept<'fd>;
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, flags| unsafe {
+        submission.multishot_accept(fd.fd, flags);
+    },
+    map_result: |this, fd| {
+        let sq = this.fd.sq.clone();
+        AsyncFd { fd, sq }
     },
 }

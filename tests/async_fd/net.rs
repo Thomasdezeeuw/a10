@@ -1,14 +1,20 @@
 //! Tests for the networking operations.
 
-use std::io::{Read, Write};
-use std::mem;
-use std::net::{Shutdown, SocketAddr, SocketAddrV4, TcpListener, TcpStream};
+use std::io::{self, Read, Write};
+use std::mem::{self, size_of};
+use std::net::{
+    Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream,
+};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::pin::Pin;
+use std::ptr;
 
 use a10::io::ReadBufPool;
 use a10::{Extract, Ring};
 
-use crate::util::{bind_ipv4, block_on, init, poll_nop, tcp_ipv4_socket, test_queue, Waker};
+use crate::util::{
+    bind_ipv4, block_on, init, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, Waker,
+};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -50,6 +56,79 @@ fn accept() {
     buf.clear();
     let buf = waker.block_on(client.read(buf)).expect("failed to read");
     assert!(buf.is_empty());
+}
+
+#[test]
+fn multishot_accept() {
+    test_multishot_accept(0);
+    test_multishot_accept(1);
+    test_multishot_accept(5);
+
+    fn test_multishot_accept(n: usize) {
+        let sq = test_queue();
+        let waker = Waker::new();
+
+        // Bind a socket.
+        let listener = waker.block_on(tcp_ipv4_socket(sq));
+        let local_addr = bind_ipv4(&listener);
+
+        let mut accept_stream = listener.multishot_accept();
+
+        // Create connections and accept them.
+        let streams = (0..n)
+            .map(|_| {
+                let stream = TcpStream::connect(local_addr).expect("failed to connect");
+                let addr = stream.local_addr().expect("failed to get address");
+                (stream, addr)
+            })
+            .collect::<Vec<_>>();
+        let mut clients = (0..n)
+            .map(|_| {
+                let client = waker
+                    .block_on(next(&mut accept_stream))
+                    .expect("missing a connection")
+                    .expect("failed to accept connection");
+                let addr = peer_addr(client.as_fd()).expect("failed to get address");
+                (client, addr)
+            })
+            .collect::<Vec<_>>();
+
+        // Make sure we use the correct stream, client pair.
+        let mut tests = Vec::with_capacity(clients.len());
+        for (stream, addr) in streams {
+            let idx = clients
+                .iter()
+                .position(|(_, a)| *a == addr)
+                .expect("failed to find client");
+            let client = clients.remove(idx);
+            tests.push((stream, client.0));
+        }
+
+        // Test each connection.
+        for (mut stream, client) in tests {
+            // Read some data.
+            stream.write(DATA1).expect("failed to write");
+            let mut buf = waker
+                .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
+                .expect("failed to read");
+            assert_eq!(buf, DATA1);
+
+            // Write some data.
+            let n = waker
+                .block_on(client.write(DATA2))
+                .expect("failed to write");
+            assert_eq!(n, DATA2.len());
+            buf.resize(DATA2.len() + 1, 0);
+            let n = stream.read(&mut buf).expect("failed to read");
+            assert_eq!(&buf[..n], DATA2);
+
+            // Closing the client should get a result.
+            drop(stream);
+            buf.clear();
+            let buf = waker.block_on(client.read(buf)).expect("failed to read");
+            assert!(buf.is_empty());
+        }
+    }
 }
 
 #[test]
@@ -454,4 +533,29 @@ fn addr_storage(addres: &SocketAddrV4) -> libc::sockaddr_storage {
         s_addr: u32::from_ne_bytes(addres.ip().octets()),
     };
     addr
+}
+
+fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
+    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
+    let mut len = size_of::<libc::sockaddr_storage>() as u32;
+    syscall!(getpeername(
+        fd.as_raw_fd(),
+        ptr::addr_of_mut!(storage).cast::<libc::sockaddr>(),
+        &mut len
+    ))?;
+    if storage.ss_family == libc::AF_INET as libc::sa_family_t {
+        let storage = unsafe { &mut *ptr::addr_of_mut!(storage).cast::<libc::sockaddr_in>() };
+        let addr = Ipv4Addr::from(storage.sin_addr.s_addr.to_ne_bytes());
+        let port = storage.sin_port.to_be();
+        Ok(SocketAddr::V4(SocketAddrV4::new(addr, port)))
+    } else {
+        let storage = unsafe { &mut *ptr::addr_of_mut!(storage).cast::<libc::sockaddr_in6>() };
+        let addr = Ipv6Addr::from(storage.sin6_addr.s6_addr);
+        let port = storage.sin6_port.to_be();
+        let flowinfo = storage.sin6_flowinfo;
+        let scope_id = storage.sin6_scope_id;
+        Ok(SocketAddr::V6(SocketAddrV6::new(
+            addr, port, flowinfo, scope_id,
+        )))
+    }
 }

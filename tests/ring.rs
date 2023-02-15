@@ -1,6 +1,6 @@
 //! Tests for [`a10::Ring`].
 
-#![feature(once_cell)]
+#![feature(async_iterator, once_cell)]
 
 use std::pin::Pin;
 use std::task::Poll;
