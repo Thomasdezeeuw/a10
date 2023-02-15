@@ -5,13 +5,22 @@ use std::os::unix::io::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::{libc, OpIndex};
+use crate::{libc, Completion, OpIndex};
 
-/// State of a queue operation.
+/// State of a queued operation.
 #[derive(Debug)]
 pub(crate) struct QueuedOperation {
-    /// Result of the operation.
-    result: OperationResult,
+    /// Operation kind.
+    kind: QueuedOperationKind,
+    /// True if the connected `Future`/`AsyncIterator` is dropped and thus no
+    /// longer will retrieve the result.
+    dropped: bool,
+    /// Boolean used by operations that result in multiple completion events.
+    /// For example zero copy: one completion to report the result another to
+    /// indicate the resources are no longer used.
+    /// For multishot this will be true if no more completion events are coming,
+    /// for example in case a previous event returned an error.
+    done: bool,
     /// Waker to wake when the operation is done.
     waker: Option<task::Waker>,
 }
@@ -19,143 +28,149 @@ pub(crate) struct QueuedOperation {
 impl QueuedOperation {
     /// Create a queued operation.
     pub(crate) const fn new() -> QueuedOperation {
+        QueuedOperation::_new(QueuedOperationKind::Single { result: None })
+    }
+
+    /// Create a queued multishot operation.
+    pub(crate) const fn new_multishot() -> QueuedOperation {
+        QueuedOperation::_new(QueuedOperationKind::Multishot {
+            results: Vec::new(),
+        })
+    }
+
+    const fn _new(kind: QueuedOperationKind) -> QueuedOperation {
         QueuedOperation {
-            result: OperationResult::Started,
+            kind,
+            done: false,
+            dropped: false,
             waker: None,
         }
     }
 
-    /// Set the result of the operation, but don't mark it as complete.
-    pub(crate) fn set_in_progress_result(&mut self, flags: u16, result: i32) {
-        match self.result {
-            OperationResult::Started => self.result = OperationResult::InProgress { flags, result },
-            OperationResult::Dropped => {
-                self.result = OperationResult::InProgressDropped { flags, result }
-            }
-            OperationResult::InProgress { .. }
-            | OperationResult::InProgressDropped { .. }
-            | OperationResult::Done { .. } => {
-                unreachable!("set_in_progress_result called incorrectly")
-            }
-        }
-    }
-
-    /// Wake to `Future` waiting for the result.
-    ///
-    /// Returns `true` if the operation was previously dropped.
-    pub(crate) fn complete_in_progress(&mut self) -> bool {
-        let is_dropped = match self.result {
-            OperationResult::InProgress { flags, result } => {
-                self.result = OperationResult::Done { flags, result };
-                false
-            }
-            OperationResult::InProgressDropped { flags, result } => {
-                self.result = OperationResult::Done { flags, result };
-                true
-            }
-            OperationResult::Started | OperationResult::Dropped | OperationResult::Done { .. } => {
-                unreachable!("complete_in_progress called incorrectly")
-            }
+    /// Update the operation based on a completion `event`.
+    pub(crate) fn update(&mut self, event: &Completion) -> bool {
+        let completion = CompletionResult {
+            result: event.result(),
+            flags: event.operation_flags(),
         };
-        // NOTE: if `is_dropped` is true this drops the operations' resources
-        // (e.g. buffers).
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
-        }
-        is_dropped
-    }
+        match &mut self.kind {
+            QueuedOperationKind::Single { result } => {
+                if event.is_notification() {
+                    // Zero copy completed, we can now mark ourselves as done.
+                    self.done = true;
+                } else {
+                    let old = replace(result, Some(completion));
+                    debug_assert!(old.is_none());
+                    // For zero copy this may be false, in which case we get a
+                    // notification (see above) in a future completion event.
+                    self.done = !event.is_in_progress();
+                }
 
-    /// Set the result of the operation to `result` and wake to `Future` waiting
-    /// for the result.
-    ///
-    /// Returns `true` if the operation was previously dropped.
-    pub(crate) fn complete(&mut self, flags: u16, result: i32) -> bool {
-        let old_state = replace(&mut self.result, OperationResult::Done { flags, result });
-        debug_assert!(match old_state {
-            OperationResult::Started | OperationResult::Dropped => true,
-            OperationResult::InProgress { .. }
-            | OperationResult::InProgressDropped { .. }
-            | OperationResult::Done { .. } => false,
-        });
-        if let Some(waker) = self.waker.take() {
-            waker.wake();
+                if self.done {
+                    // NOTE: if `dropped` is true this drops the operations's
+                    // resources (e.g. buffers).
+                    if let Some(waker) = self.waker.take() {
+                        waker.wake();
+                    }
+                }
+            }
+            QueuedOperationKind::Multishot { results } => {
+                results.push(completion);
+                self.done = !event.is_in_progress();
+                if let Some(waker) = self.waker.take() {
+                    waker.wake();
+                }
+            }
         }
-        // NOTE: `OperationResult::InProgressDropped` shouldn't be reachable
-        // here.
-        matches!(old_state, OperationResult::Dropped)
+        self.dropped
     }
 
     /// Poll the operation check if it's ready.
     ///
     /// Returns the `flags` and the `result` (always positive).
+    ///
+    /// For multishot operations: if this returns `Poll::Pending` the caller
+    /// should check `is_done` to determine if the previous result was the last
+    /// one.
     pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<(u16, i32)>> {
-        match self.result {
-            OperationResult::Started | OperationResult::InProgress { .. } => {
-                let waker = ctx.waker();
-                if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
-                    self.waker = Some(waker.clone());
+        match &mut self.kind {
+            QueuedOperationKind::Single { result } => {
+                if let (true, Some(result)) = (self.done, result.as_ref()) {
+                    return Poll::Ready(result.as_result());
                 }
-                Poll::Pending
             }
-            OperationResult::Dropped | OperationResult::InProgressDropped { .. } => {
-                unreachable!("polling a dropped Future")
-            }
-            OperationResult::Done { flags, result } => {
-                if result.is_negative() {
-                    // TODO: handle `-EBUSY` on operations.
-                    // TODO: handle io_uring specific errors here, read CQE
-                    // ERRORS in the manual.
-                    Poll::Ready(Err(io::Error::from_raw_os_error(-result)))
-                } else {
-                    Poll::Ready(Ok((flags, result)))
+            QueuedOperationKind::Multishot { results } => {
+                if let Some(result) = results.pop() {
+                    return Poll::Ready(result.as_result());
                 }
             }
         }
+
+        if !self.done {
+            // Still in progress.
+            let waker = ctx.waker();
+            if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
+                self.waker = Some(waker.clone());
+            }
+        } else {
+            // NOTE: we can get here multishot operations (see note in docs) or
+            // if the `Future` is used in an invalid way (e.g. poll after
+            // completion). In either case we don't to set the waker.
+        }
+        Poll::Pending
     }
 
     /// Returns true if the operation is done.
     pub(crate) const fn is_done(&self) -> bool {
-        matches!(self.result, OperationResult::Done { .. })
+        self.done
     }
 
     /// Set the state of the operation as dropped, but still in progress kernel
     /// side. This set the waker to `waker` and make `set_result` return `true`.
     pub(crate) fn set_dropped(&mut self, waker: task::Waker) {
-        let res = replace(&mut self.result, OperationResult::Dropped);
-        debug_assert!(match res {
-            OperationResult::Started | OperationResult::InProgress { .. } => true,
-            OperationResult::Dropped
-            | OperationResult::InProgressDropped { .. }
-            | OperationResult::Done { .. } => false,
-        });
+        self.dropped = true;
         self.waker = Some(waker);
     }
 }
 
-/// Result of an operation.
+/// [`QueuedOperation`] kind.
+#[derive(Debug)]
+enum QueuedOperationKind {
+    /// Single result operation.
+    Single {
+        /// Result of the operation.
+        result: Option<CompletionResult>,
+    },
+    /// Multishot operation, which expects multiple results for the same
+    /// operation.
+    Multishot {
+        /// Results for the operation.
+        results: Vec<CompletionResult>,
+    },
+}
+
+/// Completed result of an operation.
 #[derive(Copy, Clone, Debug)]
-enum OperationResult {
-    /// Operation has started, but hasn't report a result yet.
-    Started,
-    /// Operation is in progress, but has already reported the result.
-    ///
-    /// This is for zero copy operations which report the result in one
-    /// completion and notify us in another completion when the buffer can be
-    /// released.
-    ///
-    InProgress { flags: u16, result: i32 },
-    /// The `Future` waiting for this operation has been dropped, but kernel
-    /// side it's still in progress.
-    Dropped,
-    /// Combination of `InProgress` and `Dropped`.
-    InProgressDropped { flags: u16, result: i32 },
-    /// Operation done.
-    ///
-    /// The `flags` are the 16 upper bits of `io_uring_cqe::flags`, usually the
-    /// index of a buffer in a buffer pool. `result` is the result of an
-    /// operation; negative is a (negative) errno, positive a successful result.
-    /// The meaning of both fields are depended on the operation itself.
-    Done { flags: u16, result: i32 },
+struct CompletionResult {
+    /// The 16 upper bits of `io_uring_cqe::flags`, e.g. the index of a buffer
+    /// in a buffer pool.
+    flags: u16,
+    /// The result of an operation; negative is a (negative) errno, positive a
+    /// successful result. The meaning is depended on the operation itself.
+    result: i32,
+}
+
+impl CompletionResult {
+    fn as_result(&self) -> io::Result<(u16, i32)> {
+        if self.result.is_negative() {
+            // TODO: handle `-EBUSY` on operations.
+            // TODO: handle io_uring specific errors here, read CQE
+            // ERRORS in the manual.
+            Err(io::Error::from_raw_os_error(-self.result))
+        } else {
+            Ok((self.flags, self.result))
+        }
+    }
 }
 
 /// Submission event.
@@ -886,9 +901,11 @@ pub(crate) use poll_state;
 
 #[test]
 fn size_assertion() {
-    assert_eq!(std::mem::size_of::<QueuedOperation>(), 24);
-    assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 24);
-    assert_eq!(std::mem::size_of::<OperationResult>(), 8);
+    assert_eq!(std::mem::size_of::<CompletionResult>(), 8);
+    assert_eq!(std::mem::size_of::<QueuedOperationKind>(), 32);
+    assert_eq!(std::mem::size_of::<Option<task::Waker>>(), 16);
+    assert_eq!(std::mem::size_of::<QueuedOperation>(), 56);
+    assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 56);
     assert_eq!(std::mem::size_of::<OpState<()>>(), 16);
     assert_eq!(std::mem::size_of::<OpState<u8>>(), 16);
     assert_eq!(std::mem::size_of::<OpState<u16>>(), 16);
