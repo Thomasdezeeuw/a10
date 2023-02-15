@@ -370,6 +370,15 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn multishot_accept(&mut self, fd: RawFd, flags: libc::c_int) {
+        self.inner.opcode = libc::IORING_OP_ACCEPT as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            accept_flags: flags as _,
+        };
+        self.inner.ioprio = libc::IORING_ACCEPT_MULTISHOT as _;
+    }
+
     /// Attempt to cancel an already issued request.
     ///
     /// Avaialable since Linux kernel 5.5.
