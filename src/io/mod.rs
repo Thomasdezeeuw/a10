@@ -20,7 +20,7 @@ use std::task::{self, Poll};
 use std::{io, ptr};
 
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{libc, AsyncFd, SubmissionQueue};
+use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 mod read_buf;
 pub(crate) use read_buf::{BufGroupId, BufIdx};
@@ -334,6 +334,40 @@ impl<'fd> Future for Cancel<'fd> {
                 }
             }
             Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// [`Future`] behind functions such as [`MultishotAccept::cancel`].
+///
+///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
+#[derive(Debug)]
+pub struct CancelOp<'fd> {
+    pub(crate) sq: &'fd SubmissionQueue,
+    pub(crate) op_index: Option<OpIndex>,
+}
+
+impl<'fd> Future for CancelOp<'fd> {
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let op_index = if let Some(op_index) = self.op_index {
+            op_index
+        } else {
+            return Poll::Ready(());
+        };
+        let res = self
+            .sq
+            .add_no_result(|submission| unsafe { submission.cancel_op(op_index) });
+        match res {
+            Ok(()) => {
+                self.op_index = None;
+                Poll::Ready(())
+            }
+            Err(QueueFull(())) => {
+                self.sq.wait_for_submission(ctx.waker().clone());
+                Poll::Pending
+            }
         }
     }
 }

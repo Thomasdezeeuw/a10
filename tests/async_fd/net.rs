@@ -155,9 +155,7 @@ fn cancel_multishot_accept() {
     let c_addr1 = peer_addr(client1.as_fd()).expect("failed to get address");
 
     // Then cancel the accept multishot call.
-    if !matches!(accept_stream.try_cancel(), CancelResult::Canceled) {
-        panic!("failed to cancel");
-    }
+    waker.block_on(accept_stream.cancel());
 
     // We should still be able to accept the second connection.
     let client2 = waker
@@ -202,7 +200,7 @@ fn cancel_multishot_accept() {
 }
 
 #[test]
-fn cancel_multishot_accept_before_poll() {
+fn try_cancel_multishot_accept_before_poll() {
     let sq = test_queue();
     let waker = Waker::new();
 
