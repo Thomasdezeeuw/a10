@@ -110,7 +110,7 @@ impl AsyncFd {
     ///
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
-    /// created kernel side and makes this more efficient.
+    /// created kernel side, making this more efficient.
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
         self.multishot_accept4(libc::SOCK_CLOEXEC)
     }
