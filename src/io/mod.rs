@@ -366,6 +366,21 @@ impl Future for Close {
     }
 }
 
+/// Result of a cancelation attempt.
+#[derive(Copy, Clone, Debug)]
+pub enum CancelResult {
+    /// Operation was cancelled.
+    Canceled,
+    /// Operation was not started.
+    NotStarted,
+    /// Operation queue is currently full, can't cancel the operation.
+    ///
+    /// To resolve this call [`Ring::poll`].
+    ///
+    /// [`Ring::poll`]: crate::Ring::poll
+    QueueFull,
+}
+
 /// Trait that defines the behaviour of buffers used in reading, which requires
 /// mutable access.
 ///

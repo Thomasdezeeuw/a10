@@ -390,6 +390,13 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn cancel_op(&mut self, op_index: OpIndex) {
+        self.inner.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: op_index.0 as u64,
+        };
+    }
+
     /// Open a file by `pathname` in directory `dir_fd`.
     pub(crate) unsafe fn open_at(
         &mut self,
@@ -941,6 +948,19 @@ macro_rules! op_async_iter {
         }
 
         impl<$lifetime> $name<$lifetime> {
+            /// Attempt to cancel this operation.
+            pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
+                match self.state {
+                    $crate::op::IterState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
+                    $crate::op::IterState::Running(op_index) => {
+                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
+                            std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
+                            std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
+                        }
+                    },
+                }
+            }
+
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_iter_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_state| {
@@ -962,7 +982,13 @@ macro_rules! op_async_iter {
                         std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok($map_result)))
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
-                        std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err)))
+                        if let Some(libc::ECANCELED) = err.raw_os_error() {
+                            // Operation was canceled, so we expect no more
+                            // results.
+                            std::task::Poll::Ready(std::option::Option::None)
+                        } else {
+                            std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err)))
+                        }
                     },
                     std::task::Poll::Ready(std::option::Option::None) => {
                         std::task::Poll::Ready(std::option::Option::None)
