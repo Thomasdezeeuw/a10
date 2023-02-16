@@ -949,6 +949,8 @@ macro_rules! op_async_iter {
 
         impl<$lifetime> $name<$lifetime> {
             /// Attempt to cancel this operation.
+            ///
+            #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
             pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
                 match self.state {
                     $crate::op::IterState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
@@ -959,6 +961,15 @@ macro_rules! op_async_iter {
                         }
                     },
                 }
+            }
+
+            /// Cancel this operation.
+            pub fn cancel(&mut self) -> $crate::io::CancelOp {
+                let op_index = match self.state {
+                    $crate::op::IterState::NotStarted(_) => None,
+                    $crate::op::IterState::Running(op_index) => Some(op_index),
+                };
+                $crate::io::CancelOp { sq: &self.fd.sq, op_index }
             }
 
             /// Poll for the `OpIndex`.
