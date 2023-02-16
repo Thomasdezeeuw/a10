@@ -340,6 +340,15 @@ impl<'fd> Future for Cancel<'fd> {
 
 /// [`Future`] behind functions such as [`MultishotAccept::cancel`].
 ///
+/// Once this future is completed it will asynchronously cancel the related
+/// operation. This means that it *may* still return results that were created
+/// before the operation was actually canceled.
+///
+/// For example using a TCP listener and multishot accept it's possible that
+/// `MultishotAccept` will return more accepted connections after it's canceled.
+/// Simply keep accepting the connections and it will return `None` after all
+/// pending connections have been accepted.
+///
 ///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
 #[derive(Debug)]
 pub struct CancelOp<'fd> {
