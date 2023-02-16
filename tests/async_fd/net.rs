@@ -220,6 +220,21 @@ fn try_cancel_multishot_accept_before_poll() {
 }
 
 #[test]
+fn multishot_accept_incorrect_usage() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Create a socket, but don't bind it.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+
+    let mut accept_stream = listener.multishot_accept();
+
+    let res = waker.block_on(next(&mut accept_stream)).unwrap();
+    assert!(res.is_err(), "unexpected ok result: {:?}", res);
+    assert!(waker.block_on(next(&mut accept_stream)).is_none());
+}
+
+#[test]
 fn connect() {
     let sq = test_queue();
     let waker = Waker::new();
