@@ -973,13 +973,6 @@ macro_rules! op_async_iter {
                 };
                 $crate::io::CancelOp { sq: &self.fd.sq, op_index }
             }
-
-            /// Poll for the `OpIndex`.
-            fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
-                std::task::Poll::Ready($crate::op::poll_iter_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_state| {
-                    $setup_fn
-                }))
-            }
         }
 
         impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
@@ -988,7 +981,28 @@ macro_rules! op_async_iter {
             fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
                 // SAFETY: we're not moving anything out of `self.
                 let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
-                let op_index = std::task::ready!($self.poll_op_index(ctx));
+                let op_index = match $self.state {
+                    $crate::op::IterState::Running(op_index) => op_index,
+                    $crate::op::IterState::NotStarted($setup_state) => {
+                        let result = $self.fd.sq.add_multishot(|$setup_submission| {
+                            let $setup_fd = $self.fd;
+                            $setup_fn
+                        });
+                        match result {
+                            Ok(op_index) => {
+                                $self.state = $crate::op::IterState::Running(op_index);
+                                op_index
+                            }
+                            Err($crate::QueueFull(())) => {
+                                $self.fd.sq.wait_for_submission(ctx.waker().clone());
+                                return std::task::Poll::Pending;
+                            }
+                        }
+                    }
+                    // We can reach this if we return an error, but not `None`
+                    // yet.
+                    $crate::op::IterState::Done(_) => return std::task::Poll::Ready(std::option::Option::None),
+                };
 
                 match $self.fd.sq.poll_multishot_op(ctx, op_index) {
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok((_, $map_arg)))) => {
@@ -1051,39 +1065,6 @@ pub(crate) enum IterState<S> {
     /// Operation is done.
     Done(OpIndex),
 }
-
-/// Poll an [`IterState`].
-macro_rules! poll_iter_state {
-    (
-        $name: ident, $self: expr, $ctx: expr,
-        |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr $(,)?
-    ) => {
-        match $self.state {
-            $crate::op::IterState::Running(op_index) => op_index,
-            $crate::op::IterState::NotStarted($setup_state) => {
-                let $name { fd: $setup_fd, .. } = &mut $self;
-                let result = $setup_fd.sq.add_multishot(|$setup_submission| $setup_fn);
-                match result {
-                    Ok(op_index) => {
-                        $self.state = $crate::op::IterState::Running(op_index);
-                        op_index
-                    }
-                    Err($crate::QueueFull(())) => {
-                        $self.fd.sq.wait_for_submission($ctx.waker().clone());
-                        return std::task::Poll::Pending;
-                    }
-                }
-            }
-            $crate::op::IterState::Done(_) => unreachable!(concat!(
-                "a10::",
-                stringify!($name),
-                " polled after completion"
-            )),
-        }
-    };
-}
-
-pub(crate) use poll_iter_state;
 
 #[test]
 fn size_assertion() {
