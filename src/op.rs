@@ -127,9 +127,9 @@ impl QueuedOperation {
 
     /// Set the state of the operation as dropped, but still in progress kernel
     /// side. This set the waker to `waker` and make `set_result` return `true`.
-    pub(crate) fn set_dropped(&mut self, waker: task::Waker) {
+    pub(crate) fn set_dropped(&mut self, waker: Option<task::Waker>) {
         self.dropped = true;
-        self.waker = Some(waker);
+        self.waker = waker;
     }
 }
 
