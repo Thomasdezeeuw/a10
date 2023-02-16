@@ -960,6 +960,7 @@ macro_rules! op_async_iter {
                             std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
                         }
                     },
+                    $crate::op::IterState::Done(_) => $crate::io::CancelResult::Canceled,
                 }
             }
 
@@ -968,6 +969,7 @@ macro_rules! op_async_iter {
                 let op_index = match self.state {
                     $crate::op::IterState::NotStarted(_) => None,
                     $crate::op::IterState::Running(op_index) => Some(op_index),
+                    $crate::op::IterState::Done(_) => None,
                 };
                 $crate::io::CancelOp { sq: &self.fd.sq, op_index }
             }
@@ -993,6 +995,8 @@ macro_rules! op_async_iter {
                         std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok($map_result)))
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
+                        // After an error we also don't expect any more results.
+                        $self.state = $crate::op::IterState::Done(op_index);
                         if let Some(libc::ECANCELED) = err.raw_os_error() {
                             // Operation was canceled, so we expect no more
                             // results.
@@ -1002,6 +1006,7 @@ macro_rules! op_async_iter {
                         }
                     },
                     std::task::Poll::Ready(std::option::Option::None) => {
+                        $self.state = $crate::op::IterState::Done(op_index);
                         std::task::Poll::Ready(std::option::Option::None)
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -1011,9 +1016,22 @@ macro_rules! op_async_iter {
 
         impl<$lifetime> std::ops::Drop for $name<$lifetime> {
             fn drop(&mut self) {
-                if let $crate::io::CancelResult::QueueFull = self.try_cancel() {
-                    log::error!(concat!("failed to cancel", stringify!($name), ", will leak file descriptors: queue full"));
-                }
+                let op_index = match self.state {
+                    $crate::op::IterState::Running(op_index) =>  {
+                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
+                            // Canceled the operation.
+                            std::result::Result::Ok(()) => {},
+                            // Failed to cancel, this will lead to fd leaks.
+                            std::result::Result::Err($crate::QueueFull(())) => {
+                                log::error!(concat!("failed to cancel", stringify!($name), ", will leak file descriptors: queue full"));
+                            }
+                        }
+                        op_index
+                    },
+                    $crate::op::IterState::Done(op_index) => op_index,
+                    $crate::op::IterState::NotStarted(_) => return,
+                };
+                self.fd.sq.drop_op(op_index, ());
             }
         }
     };
@@ -1030,6 +1048,8 @@ pub(crate) enum IterState<S> {
     NotStarted(S),
     /// Operation is running, waiting for more results.
     Running(OpIndex),
+    /// Operation is done.
+    Done(OpIndex),
 }
 
 /// Poll an [`IterState`].
@@ -1054,6 +1074,11 @@ macro_rules! poll_iter_state {
                     }
                 }
             }
+            $crate::op::IterState::Done(_) => unreachable!(concat!(
+                "a10::",
+                stringify!($name),
+                " polled after completion"
+            )),
         }
     };
 }
