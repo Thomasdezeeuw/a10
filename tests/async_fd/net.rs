@@ -9,7 +9,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::pin::Pin;
 use std::ptr;
 
-use a10::io::ReadBufPool;
+use a10::io::{CancelResult, ReadBufPool};
 use a10::{Extract, Ring};
 
 use crate::util::{
@@ -128,6 +128,96 @@ fn multishot_accept() {
             let buf = waker.block_on(client.read(buf)).expect("failed to read");
             assert!(buf.is_empty());
         }
+    }
+}
+
+#[test]
+fn cancel_multishot_accept() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    let local_addr = bind_ipv4(&listener);
+
+    let mut accept_stream = listener.multishot_accept();
+
+    // Start two connections.
+    let stream1 = TcpStream::connect(local_addr).expect("failed to connect");
+    let s_addr1 = stream1.local_addr().expect("failed to get address");
+    let stream2 = TcpStream::connect(local_addr).expect("failed to connect");
+
+    // Accept the first.
+    let client1 = waker
+        .block_on(next(&mut accept_stream))
+        .expect("missing a connection")
+        .expect("failed to accept connection");
+    let c_addr1 = peer_addr(client1.as_fd()).expect("failed to get address");
+
+    // Then cancel the accept multishot call.
+    if !matches!(accept_stream.try_cancel(), CancelResult::Canceled) {
+        panic!("failed to cancel");
+    }
+
+    // We should still be able to accept the second connection.
+    let client2 = waker
+        .block_on(next(&mut accept_stream))
+        .expect("missing a connection")
+        .expect("failed to accept connection");
+
+    // After that we expect no more connections.
+    assert!(waker.block_on(next(&mut accept_stream)).is_none());
+
+    // Match the connections.
+    let tests = if s_addr1 == c_addr1 {
+        [(stream1, client1), (stream2, client2)]
+    } else {
+        [(stream1, client2), (stream2, client1)]
+    };
+
+    // Test each connection.
+    for (mut stream, client) in tests {
+        // Read some data.
+        stream.write(DATA1).expect("failed to write");
+        let mut buf = waker
+            .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
+            .expect("failed to read");
+        assert_eq!(buf, DATA1);
+
+        // Write some data.
+        let n = waker
+            .block_on(client.write(DATA2))
+            .expect("failed to write");
+        assert_eq!(n, DATA2.len());
+        buf.resize(DATA2.len() + 1, 0);
+        let n = stream.read(&mut buf).expect("failed to read");
+        assert_eq!(&buf[..n], DATA2);
+
+        // Closing the client should get a result.
+        drop(stream);
+        buf.clear();
+        let buf = waker.block_on(client.read(buf)).expect("failed to read");
+        assert!(buf.is_empty());
+    }
+}
+
+#[test]
+fn cancel_multishot_accept_before_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    let local_addr = bind_ipv4(&listener);
+
+    let mut accept_stream = listener.multishot_accept();
+
+    // Start a connection.
+    let _stream = TcpStream::connect(local_addr).expect("failed to connect");
+
+    // But before we accept we cancel the accept call.
+    if !matches!(accept_stream.try_cancel(), CancelResult::NotStarted) {
+        panic!("failed to cancel");
     }
 }
 
