@@ -76,7 +76,6 @@ impl QueuedOperation {
             }
             QueuedOperationKind::Multishot { results } => {
                 results.push(completion);
-                self.done = !event.is_in_progress();
                 if let Some(waker) = self.waker.take() {
                     waker.wake();
                 }
@@ -101,6 +100,10 @@ impl QueuedOperation {
             }
             QueuedOperationKind::Multishot { results } => {
                 if let Some(result) = results.pop() {
+                    if result.result.is_negative() {
+                        // If we get an error the multishot operation is done.
+                        self.done = true;
+                    }
                     return Poll::Ready(result.as_result());
                 }
             }
@@ -960,7 +963,7 @@ macro_rules! op_async_iter {
                             std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
                         }
                     },
-                    $crate::op::IterState::Done(_) => $crate::io::CancelResult::Canceled,
+                    $crate::op::IterState::Done => $crate::io::CancelResult::Canceled,
                 }
             }
 
@@ -969,7 +972,7 @@ macro_rules! op_async_iter {
                 let op_index = match self.state {
                     $crate::op::IterState::NotStarted(_) => None,
                     $crate::op::IterState::Running(op_index) => Some(op_index),
-                    $crate::op::IterState::Done(_) => None,
+                    $crate::op::IterState::Done => None,
                 };
                 $crate::io::CancelOp { sq: &self.fd.sq, op_index }
             }
@@ -1001,7 +1004,7 @@ macro_rules! op_async_iter {
                     }
                     // We can reach this if we return an error, but not `None`
                     // yet.
-                    $crate::op::IterState::Done(_) => return std::task::Poll::Ready(std::option::Option::None),
+                    $crate::op::IterState::Done => return std::task::Poll::Ready(std::option::Option::None),
                 };
 
                 match $self.fd.sq.poll_multishot_op(ctx, op_index) {
@@ -1010,7 +1013,7 @@ macro_rules! op_async_iter {
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
                         // After an error we also don't expect any more results.
-                        $self.state = $crate::op::IterState::Done(op_index);
+                        $self.state = $crate::op::IterState::Done;
                         if let Some(libc::ECANCELED) = err.raw_os_error() {
                             // Operation was canceled, so we expect no more
                             // results.
@@ -1020,7 +1023,7 @@ macro_rules! op_async_iter {
                         }
                     },
                     std::task::Poll::Ready(std::option::Option::None) => {
-                        $self.state = $crate::op::IterState::Done(op_index);
+                        $self.state = $crate::op::IterState::Done;
                         std::task::Poll::Ready(std::option::Option::None)
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -1030,22 +1033,17 @@ macro_rules! op_async_iter {
 
         impl<$lifetime> std::ops::Drop for $name<$lifetime> {
             fn drop(&mut self) {
-                let op_index = match self.state {
-                    $crate::op::IterState::Running(op_index) =>  {
-                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                            // Canceled the operation.
-                            std::result::Result::Ok(()) => {},
-                            // Failed to cancel, this will lead to fd leaks.
-                            std::result::Result::Err($crate::QueueFull(())) => {
-                                log::error!(concat!("failed to cancel", stringify!($name), ", will leak file descriptors: queue full"));
-                            }
+                if let $crate::op::IterState::Running(op_index) = self.state {
+                    match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
+                        // Canceled the operation.
+                        std::result::Result::Ok(()) => {},
+                        // Failed to cancel, this will lead to fd leaks.
+                        std::result::Result::Err(err) => {
+                            log::error!(concat!("dropped ", stringify!($name), " before canceling it, attempt to cancel failed, will leak file descriptors: {}"), err);
                         }
-                        op_index
-                    },
-                    $crate::op::IterState::Done(op_index) => op_index,
-                    $crate::op::IterState::NotStarted(_) => return,
-                };
-                self.fd.sq.drop_op(op_index, ());
+                    }
+                    self.fd.sq.drop_op(op_index, ());
+                }
             }
         }
     };
@@ -1063,7 +1061,7 @@ pub(crate) enum IterState<S> {
     /// Operation is running, waiting for more results.
     Running(OpIndex),
     /// Operation is done.
-    Done(OpIndex),
+    Done,
 }
 
 #[test]
