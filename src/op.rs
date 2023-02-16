@@ -998,7 +998,13 @@ macro_rules! op_async_iter {
             }
         }
 
-        // FIXME: cancel on drop.
+        impl<$lifetime> std::ops::Drop for $name<$lifetime> {
+            fn drop(&mut self) {
+                if let $crate::io::CancelResult::QueueFull = self.try_cancel() {
+                    log::error!(concat!("failed to cancel", stringify!($name), ", will leak file descriptors: queue full"));
+                }
+            }
+        }
     };
 }
 
