@@ -37,7 +37,7 @@
 )]
 
 use std::marker::PhantomData;
-use std::mem::{replace, size_of};
+use std::mem::{needs_drop, replace, size_of};
 use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{self, AtomicU32, Ordering};
@@ -598,8 +598,14 @@ impl SubmissionQueue {
                 //
                 // We achieve 1 by creating a special waker that just drops the
                 // resources in `resources`.
-                // SAFETY: we're not going to clone the `waker`.
-                let waker = unsafe { drop_task_waker(Box::from(resources)) };
+                let waker = if needs_drop::<T>() {
+                    // SAFETY: we're not going to clone the `waker`.
+                    Some(unsafe { drop_task_waker(Box::from(resources)) })
+                } else {
+                    // Of course if we don't need to drop `T`, then we don't
+                    // have to use a special waker.
+                    None
+                };
                 // We achive 2 by setting the operation state to dropped, so
                 // that `QueuedOperation::set_result` returns true, which makes
                 // `complete` below make the queued operation slot available
