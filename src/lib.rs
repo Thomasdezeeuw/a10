@@ -628,7 +628,7 @@ impl SubmissionQueue {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
                 let is_dropped = op.update(completion);
-                if is_dropped {
+                if is_dropped && op.is_done() {
                     // The Future was previously dropped so no one is waiting on
                     // the result. We can make the slot avaiable again.
                     *operation = None;
