@@ -182,6 +182,37 @@ impl ReadBufPool {
             owned: None,
         }
     }
+
+    /// Returns the group id for this pool.
+    pub(crate) fn group_id(&self) -> BufGroupId {
+        self.shared.id
+    }
+
+    /// Initialise a new buffer with `index` with `len` size.
+    ///
+    /// # Safety
+    ///
+    /// The provided index must come from the kernel, reusing the same index
+    /// will cause data races.
+    pub(crate) unsafe fn new_buffer(&self, index: BufIdx, len: u32) -> ReadBuf {
+        let owned = if len == 0 && index.0 == 0 {
+            // If we read 0 bytes it means the kernel didn't actually allocate a
+            // buffer.
+            None
+        } else {
+            let data = self
+                .shared
+                .bufs_addr
+                .add(index.0 as usize * self.shared.buf_size as usize);
+            // SAFETY: `bufs_addr` is not NULL.
+            let data = unsafe { NonNull::new_unchecked(data) };
+            Some(NonNull::slice_from_raw_parts(data, len as usize))
+        };
+        ReadBuf {
+            shared: self.shared.clone(),
+            owned,
+        }
+    }
 }
 
 impl Shared {

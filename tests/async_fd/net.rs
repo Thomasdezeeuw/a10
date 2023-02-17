@@ -456,6 +456,155 @@ fn recv_read_buf_pool_send_read_buf() {
 }
 
 #[test]
+fn multishot_recv() {
+    const BUF_SIZE: usize = 512;
+    const BUFS: usize = 2;
+    init();
+
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    block_on(&mut ring, connect_future).expect("failed to connect");
+
+    let mut stream_recv = stream.multishot_recv(buf_pool, 0);
+
+    // Write some data and read it back.
+    client.write_all(DATA1).expect("failed to write");
+    let buf = block_on(&mut ring, next(&mut stream_recv))
+        .unwrap()
+        .expect("failed to receive");
+    assert_eq!(&*buf, DATA1);
+
+    client.shutdown(Shutdown::Write).unwrap();
+
+    let buf = block_on(&mut ring, next(&mut stream_recv))
+        .unwrap()
+        .expect("failed to receive");
+    assert!(buf.is_empty(), "unexpected buf: {buf:?}");
+    let res = block_on(&mut ring, next(&mut stream_recv));
+    assert!(res.is_none(), "unexpected result: {res:?}");
+}
+
+#[test]
+fn multishot_recv_large_send() {
+    const BUF_SIZE: usize = 512;
+    const BUFS: usize = 2;
+    const N: usize = 4;
+    const DATA: &[u8] = &[123; N * 4];
+    init();
+
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    block_on(&mut ring, connect_future).expect("failed to connect");
+
+    let mut stream_recv = stream.multishot_recv(buf_pool, 0);
+
+    // Write some data and read it back.
+    client.write_all(DATA).expect("failed to write");
+    client.shutdown(Shutdown::Write).unwrap();
+    let mut data_left = DATA;
+    while !data_left.is_empty() {
+        let buf = block_on(&mut ring, next(&mut stream_recv))
+            .unwrap()
+            .expect("failed to receive");
+        assert_eq!(&*buf, &data_left[..buf.len()]);
+        data_left = &data_left[buf.len()..];
+    }
+
+    let buf = block_on(&mut ring, next(&mut stream_recv))
+        .unwrap()
+        .expect("failed to receive");
+    assert!(buf.is_empty(), "unexpected buf: {buf:?}");
+    let res = block_on(&mut ring, next(&mut stream_recv));
+    assert!(res.is_none(), "unexpected result: {res:?}");
+}
+
+#[test]
+fn multishot_recv_all_buffers_used() {
+    const BUF_SIZE: usize = 512;
+    const BUFS: usize = 2;
+    const DATA: &[u8] = &[255; BUF_SIZE];
+    init();
+
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
+    let mut connect_future = stream.connect(addr, addr_len);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    block_on(&mut ring, connect_future).expect("failed to connect");
+
+    let mut stream_recv = stream.multishot_recv(buf_pool, 0);
+
+    // Write some much data that all buffers are used.
+    for _ in 0..BUFS + 1 {
+        client.write_all(DATA).expect("failed to write");
+    }
+    client.shutdown(Shutdown::Write).unwrap();
+    // Give the kernel some time to process the write otherwise the last call to
+    // recv will not fail with `ENOBUFS`.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    for _ in 0..BUFS {
+        let buf = block_on(&mut ring, next(&mut stream_recv))
+            .unwrap()
+            .expect("failed to receive");
+        assert_eq!(&*buf, DATA);
+    }
+
+    let err = block_on(&mut ring, next(&mut stream_recv))
+        .unwrap()
+        .expect_err("got a response");
+    assert_eq!(err.raw_os_error(), Some(libc::ENOBUFS));
+}
+
+#[test]
 fn send() {
     let sq = test_queue();
     let waker = Waker::new();
