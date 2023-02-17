@@ -559,7 +559,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
             );
             let (ptr, len) = buf.parts();
             iovec.write(libc::iovec {
-                iov_base: ptr as _,
+                iov_base: ptr.cast(),
                 iov_len: len as _,
             });
         }
@@ -713,7 +713,7 @@ macro_rules! buf_slice_for_tuple {
                         );
                         let (ptr, len) = self.$index.parts();
                         libc::iovec {
-                            iov_base: ptr as _,
+                            iov_base: ptr.cast(),
                             iov_len: len as _,
                         }
                     }),+

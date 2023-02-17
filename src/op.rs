@@ -165,7 +165,7 @@ struct CompletionResult {
 }
 
 impl CompletionResult {
-    fn as_result(&self) -> io::Result<(u16, i32)> {
+    fn as_result(self) -> io::Result<(u16, i32)> {
         if self.result.is_negative() {
             // TODO: handle `-EBUSY` on operations.
             // TODO: handle io_uring specific errors here, read CQE

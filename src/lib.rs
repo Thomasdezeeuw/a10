@@ -661,7 +661,7 @@ impl SubmissionQueue {
 /// The returned `task::Waker` cannot be cloned, it will panic.
 unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
     unsafe fn drop_by_ptr<T: DropWaker>(data: *const ()) {
-        T::drop_from_waker_data(data)
+        T::drop_from_waker_data(data);
     }
 
     // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
@@ -703,7 +703,7 @@ impl<T> DropWaker for Box<T> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Box::<T>::from_raw(data as _))
+        drop(Box::<T>::from_raw(data.cast_mut().cast()));
     }
 }
 
@@ -713,7 +713,7 @@ impl<T> DropWaker for Arc<T> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Arc::<T>::from_raw(data as _))
+        drop(Arc::<T>::from_raw(data.cast_mut().cast()));
     }
 }
 
