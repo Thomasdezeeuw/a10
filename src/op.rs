@@ -926,26 +926,39 @@ pub(crate) use poll_state;
 macro_rules! op_async_iter {
     (
         fn $type: ident :: $method: ident -> $result: ty,
-        struct $name: ident < $lifetime: lifetime >;
-        setup_state: $setup_field: ident : $setup_ty: ty,
-        setup: |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr,
-        map_result: |$self: ident, $map_arg: ident| $map_result: expr,
+        struct $name: ident < $lifetime: lifetime > {
+            // Additional and optional state field. The lifetime of this field
+            // MUST NOT connected to the operation, in other words this must be
+            // able to be dropped before the operation completes.
+            $(
+            $(#[ $field_doc: meta ])*
+            $field: ident : $value: ty,
+            )?
+        },
+        setup_state: $state: ident : $setup_ty: ty,
+        setup: |$setup_submission: ident, $setup_self: ident, $setup_state: tt| $setup_fn: expr,
+        map_result: |$self: ident, $map_flags: ident, $map_arg: ident| $map_result: expr,
     ) => {
         #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         pub struct $name<$lifetime> {
             /// File descriptor used in the operation.
             fd: &$lifetime $crate::AsyncFd,
+            $(
+            $(#[ $field_doc ])*
+            $field: $value,
+            )?
             /// State of the operation.
             state: $crate::op::IterState<$setup_ty>,
         }
 
         impl<$lifetime> $name<$lifetime> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $setup_field : $setup_ty) -> $name<$lifetime> {
+            const fn new(fd: &$lifetime $crate::AsyncFd, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime> {
                 $name {
                     fd,
-                    state: $crate::op::IterState::NotStarted($setup_field),
+                    $( $field, )?
+                    state: $crate::op::IterState::NotStarted($state),
                 }
             }
         }
@@ -988,7 +1001,7 @@ macro_rules! op_async_iter {
                     $crate::op::IterState::Running(op_index) => op_index,
                     $crate::op::IterState::NotStarted($setup_state) => {
                         let result = $self.fd.sq.add_multishot(|$setup_submission| {
-                            let $setup_fd = $self.fd;
+                            let $setup_self = &mut *$self;
                             $setup_fn
                         });
                         match result {
@@ -1008,7 +1021,7 @@ macro_rules! op_async_iter {
                 };
 
                 match $self.fd.sq.poll_multishot_op(ctx, op_index) {
-                    std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok((_, $map_arg)))) => {
+                    std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok(($map_flags, $map_arg)))) => {
                         std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Ok($map_result)))
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {

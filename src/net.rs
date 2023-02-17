@@ -296,12 +296,14 @@ op_future! {
 // MultishotAccept.
 op_async_iter! {
     fn AsyncFd::multishot_accept -> AsyncFd,
-    struct MultishotAccept<'fd>;
-    setup_state: flags: libc::c_int,
-    setup: |submission, fd, flags| unsafe {
-        submission.multishot_accept(fd.fd, flags);
+    struct MultishotAccept<'fd> {
+        // No additional state.
     },
-    map_result: |this, fd| {
+    setup_state: flags: libc::c_int,
+    setup: |submission, this, flags| unsafe {
+        submission.multishot_accept(this.fd.fd, flags);
+    },
+    map_result: |this, _flags, fd| {
         let sq = this.fd.sq.clone();
         AsyncFd { fd, sq }
     },
