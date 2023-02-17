@@ -10,7 +10,7 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::io::{Buf, BufIdx, BufMut};
+use crate::io::{Buf, BufIdx, BufMut, ReadBuf, ReadBufPool};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -75,6 +75,24 @@ impl AsyncFd {
         B: BufMut,
     {
         Recv::new(self, buf, flags)
+    }
+
+    /// Continuously receive data on the socket from the remote address to which
+    /// it is connected.
+    ///
+    /// # Notes
+    ///
+    /// This will return `ENOBUFS` if no buffer is available in the `pool` to
+    /// read into.
+    ///
+    /// Be careful when using this as a peer writing a lot data might take up
+    /// all your buffers from your pool!
+    pub const fn multishot_recv<'fd>(
+        &'fd self,
+        pool: ReadBufPool,
+        flags: libc::c_int,
+    ) -> MultishotRecv<'fd> {
+        MultishotRecv::new(self, pool, flags)
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -227,6 +245,28 @@ op_future! {
         // call.
         unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
+    },
+}
+
+// MultishotRecv.
+op_async_iter! {
+    fn AsyncFd::multishot_recv -> ReadBuf,
+    struct MultishotRecv<'fd> {
+        /// Buffer pool used in the receive operation.
+        buf_pool: ReadBufPool,
+    },
+    setup_state: flags: libc::c_int,
+    setup: |submission, this, flags| unsafe {
+        submission.multishot_recv(this.fd.fd, flags, this.buf_pool.group_id().0);
+    },
+    map_result: |this, buf_idx, n| {
+        if n == 0 {
+            // Peer closed it's writing half.
+            this.state = crate::op::IterState::Done;
+        }
+        // SAFETY: the kernel initialised the buffers for us as part of the read
+        // call.
+        unsafe { this.buf_pool.new_buffer(BufIdx(buf_idx), n as u32) }
     },
 }
 

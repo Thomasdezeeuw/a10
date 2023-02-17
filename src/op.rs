@@ -99,12 +99,13 @@ impl QueuedOperation {
                 }
             }
             QueuedOperationKind::Multishot { results } => {
-                if let Some(result) = results.pop() {
-                    if result.result.is_negative() {
+                if !results.is_empty() {
+                    let completion = results.remove(0);
+                    if completion.result.is_negative() {
                         // If we get an error the multishot operation is done.
                         self.done = true;
                     }
-                    return Poll::Ready(result.as_result());
+                    return Poll::Ready(completion.as_result());
                 }
             }
         }
@@ -342,6 +343,16 @@ impl Submission {
             msg_flags: flags as _,
         };
         self.inner.len = len;
+    }
+
+    pub(crate) unsafe fn multishot_recv(&mut self, fd: RawFd, flags: libc::c_int, buf_group: u16) {
+        self.inner.opcode = libc::IORING_OP_RECV as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: flags as _,
+        };
+        self.inner.ioprio = libc::IORING_RECV_MULTISHOT as _;
+        self.set_buffer_select(buf_group);
     }
 
     pub(crate) unsafe fn shutdown(&mut self, fd: RawFd, how: libc::c_int) {
