@@ -111,7 +111,7 @@ impl AsyncFd {
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
-    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
+    pub const fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
         self.multishot_accept4(libc::SOCK_CLOEXEC)
     }
 
@@ -119,7 +119,7 @@ impl AsyncFd {
     /// socket.
     ///
     /// Also see [`AsyncFd::multishot_accept`].
-    pub fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
+    pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
         MultishotAccept::new(self, flags)
     }
 }
