@@ -131,6 +131,7 @@
     slice_ptr_get
 )]
 
+use std::cmp::min;
 use std::marker::PhantomData;
 use std::mem::{needs_drop, replace, size_of};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
@@ -318,35 +319,35 @@ impl Ring {
         unsafe { (*self.cq.tail).load(Ordering::Acquire) }
     }
 
-    /// Wake all [`SharedSubmissionQueue::blocked_futures`].
+    /// Wake [`SharedSubmissionQueue::blocked_futures`].
     fn wake_blocked_futures(&mut self) {
         // This not particullary efficient, but with a large enough number of
         // entries, `IORING_SETUP_SQPOLL` and suffcient calls to [`Ring::poll`]
         // this shouldn't be used at all.
 
+        let n = self.sq.available_space();
+        if n == 0 {
+            return;
+        }
+
         let mut blocked_futures = {
-            let mut blocked_futures = self.sq.shared.blocked_futures.lock().unwrap();
+            let blocked_futures = &mut *self.sq.shared.blocked_futures.lock().unwrap();
             if blocked_futures.is_empty() {
                 return;
             }
 
-            replace(&mut *blocked_futures, Vec::new())
+            replace(blocked_futures, Vec::new())
         };
         // Do the waking outside of the lock.
-        for waker in blocked_futures.drain(..) {
+        for waker in blocked_futures.drain(..min(n, blocked_futures.len())) {
             waker.wake();
         }
 
-        // Keep the allocation around, just in case.
-        let blocked_futures = {
-            replace(
-                &mut *self.sq.shared.blocked_futures.lock().unwrap(),
-                blocked_futures,
-            )
-        };
-        for waker in blocked_futures {
-            waker.wake();
-        }
+        // Put the remaining wakers back, even if it's empty to keep the
+        // allocation.
+        let got = &mut *self.sq.shared.blocked_futures.lock().unwrap();
+        let mut added = replace(got, blocked_futures);
+        got.append(&mut added);
     }
 }
 
@@ -581,6 +582,22 @@ impl SubmissionQueue {
         // process our submission.
         self.maybe_wake_kernel_thread();
         Ok(())
+    }
+
+    /// Returns the number of slots available.
+    ///
+    /// # Notes
+    ///
+    /// The value return can be outdated the nanosecond it is returned, don't
+    /// make a safety decisions based on it.
+    fn available_space(&self) -> usize {
+        // SAFETY: the `kernel_read` pointer itself is valid as long as
+        // `Ring.fd` is alive.
+        // We use Relaxed here because the caller knows the value will be
+        // outdated.
+        let kernel_read = unsafe { (*self.shared.kernel_read).load(Ordering::Relaxed) };
+        let pending_tail = self.shared.pending_tail.load(Ordering::Relaxed);
+        (pending_tail - kernel_read) as usize
     }
 
     /// Wake up the kernel thread polling for submission events, if the kernel
