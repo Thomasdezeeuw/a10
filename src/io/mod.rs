@@ -36,7 +36,7 @@ macro_rules! stdio {
         #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
         pub const fn $fn(sq: $crate::SubmissionQueue) -> $name {
             $name(std::mem::ManuallyDrop::new($crate::AsyncFd {
-                fd: libc::STDOUT_FILENO as std::os::unix::io::RawFd,
+                fd: $fd as std::os::unix::io::RawFd,
                 sq,
             }))
         }
