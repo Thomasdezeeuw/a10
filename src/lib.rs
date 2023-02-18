@@ -1021,7 +1021,6 @@ impl fmt::Debug for Completion {
 /// All functions on `AsyncFd` are asynchronous and return a [`Future`].
 ///
 /// [`Future`]: std::future::Future
-#[derive(Debug)]
 pub struct AsyncFd {
     pub(crate) fd: RawFd,
     pub(crate) sq: SubmissionQueue,
@@ -1045,6 +1044,15 @@ impl AsyncFd {
 impl AsFd for AsyncFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
         unsafe { BorrowedFd::borrow_raw(self.fd) }
+    }
+}
+
+impl fmt::Debug for AsyncFd {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncFd")
+            .field("fd", &self.fd)
+            .field("sq", &"SubmissionQueue")
+            .finish()
     }
 }
 
