@@ -339,7 +339,9 @@ impl Ring {
             replace(blocked_futures, Vec::new())
         };
         // Do the waking outside of the lock.
-        for waker in blocked_futures.drain(..min(n, blocked_futures.len())) {
+        let waking = min(n, blocked_futures.len());
+        log::trace!(waking_amount = n, waiting_futures = blocked_futures.len(); "waking blocked futures");
+        for waker in blocked_futures.drain(..waking) {
             waker.wake();
         }
 
@@ -489,11 +491,6 @@ impl SubmissionQueue {
         }
     }
 
-    /// Wait for a submission slot, waking `waker` once one is available.
-    fn wait_for_submission(&self, waker: task::Waker) {
-        self.shared.blocked_futures.lock().unwrap().push(waker);
-    }
-
     /// Same as [`SubmissionQueue::add`], but ignores the result.
     fn add_no_result<F>(&self, submit: F) -> Result<(), QueueFull>
     where
@@ -584,6 +581,12 @@ impl SubmissionQueue {
         Ok(())
     }
 
+    /// Wait for a submission slot, waking `waker` once one is available.
+    fn wait_for_submission(&self, waker: task::Waker) {
+        log::trace!(waker = log::as_debug!(waker); "adding blocked future");
+        self.shared.blocked_futures.lock().unwrap().push(waker);
+    }
+
     /// Returns the number of slots available.
     ///
     /// # Notes
@@ -629,6 +632,7 @@ impl SubmissionQueue {
         ctx: &mut task::Context<'_>,
         op_index: OpIndex,
     ) -> Poll<io::Result<(u16, i32)>> {
+        log::trace!(op_index = op_index.0; "polling operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
@@ -656,6 +660,7 @@ impl SubmissionQueue {
         ctx: &mut task::Context<'_>,
         op_index: OpIndex,
     ) -> Poll<Option<io::Result<(u16, i32)>>> {
+        log::trace!(op_index = op_index.0; "polling multishot operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
@@ -680,6 +685,7 @@ impl SubmissionQueue {
     /// do some trickery to delay the deallocation of `resources` and making the
     /// queued operation slot available again.
     pub(crate) fn drop_op<T>(&self, op_index: OpIndex, resources: T) {
+        log::trace!(op_index = op_index.0; "dropping operation receiver (Future) before completion");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
@@ -737,6 +743,7 @@ impl SubmissionQueue {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
+                log::trace!(op_index = op_index, completion = log::as_debug!(completion); "updating operation");
                 let is_dropped = op.update(completion);
                 if is_dropped && op.is_done() {
                     // The Future was previously dropped so no one is waiting on
@@ -745,6 +752,8 @@ impl SubmissionQueue {
                     drop(operation);
                     self.shared.op_indices.make_available(op_index);
                 }
+            } else {
+                log::trace!(op_index = op_index, completion = log::as_debug!(completion); "operation gone, but got completion event");
             }
         }
     }
