@@ -133,8 +133,7 @@
 
 use std::marker::PhantomData;
 use std::mem::{needs_drop, replace, size_of};
-use std::os::fd::{AsFd, BorrowedFd};
-use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::sync::atomic::{self, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};

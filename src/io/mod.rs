@@ -14,7 +14,7 @@
 
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::os::unix::io::RawFd;
+use std::os::fd::RawFd;
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
@@ -36,7 +36,7 @@ macro_rules! stdio {
         #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
         pub const fn $fn(sq: $crate::SubmissionQueue) -> $name {
             $name(std::mem::ManuallyDrop::new($crate::AsyncFd {
-                fd: $fd as std::os::unix::io::RawFd,
+                fd: $fd as std::os::fd::RawFd,
                 sq,
             }))
         }

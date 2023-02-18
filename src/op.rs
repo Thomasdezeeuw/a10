@@ -1,7 +1,7 @@
 //! Code related to executing an asynchronous operations.
 
 use std::mem::{replace, MaybeUninit};
-use std::os::unix::io::RawFd;
+use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
