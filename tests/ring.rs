@@ -2,8 +2,11 @@
 
 #![feature(async_iterator, once_cell)]
 
+use std::future::Future;
+use std::mem::take;
 use std::pin::Pin;
-use std::task::Poll;
+use std::sync::{Arc, Mutex};
+use std::task::{self, Poll, Wake};
 use std::time::{Duration, Instant};
 use std::{io, thread};
 
@@ -58,32 +61,70 @@ fn submission_queue_full_is_handle_internally() {
         }
     };
 
-    let mut futures = (0..N)
-        .into_iter()
-        .map(|i| Some(file.read_at(Vec::with_capacity(BUF_SIZE), (i * BUF_SIZE) as u64)))
-        .collect::<Vec<_>>();
-    loop {
-        let mut needs_poll = false;
-        for (i, fut) in futures.iter_mut().enumerate() {
-            if let Some(future) = fut {
-                match poll_nop(Pin::new(future)) {
-                    Poll::Ready(result) => {
-                        *fut = None;
-                        let read_buf = result.unwrap();
-                        assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
-                    }
-                    Poll::Pending => needs_poll = true,
-                }
-            }
-        }
-        if needs_poll {
-            ring.poll(None).unwrap();
-        } else {
-            break;
+    let indices = Arc::new(Mutex::new(Vec::new()));
+
+    struct Waker {
+        index: usize,
+        /// Indices of task that are awoken.
+        indices: Arc<Mutex<Vec<usize>>>,
+    }
+
+    impl Wake for Waker {
+        fn wake(self: Arc<Self>) {
+            self.indices.lock().unwrap().push(self.index);
         }
     }
 
-    assert!(futures.iter().all(Option::is_none));
+    let mut futures = (0..N)
+        .into_iter()
+        .map(|i| {
+            let fut = file.read_at(Vec::with_capacity(BUF_SIZE), (i * BUF_SIZE) as u64);
+            let waker = Arc::new(Waker {
+                index: i,
+                indices: indices.clone(),
+            });
+            Some((fut, task::Waker::from(waker)))
+        })
+        .collect::<Vec<_>>();
+
+    // Run all futures once to register the operation or them waiting for a
+    // submission slot.
+    for (i, fut) in futures.iter_mut().enumerate() {
+        if let Some((future, waker)) = fut {
+            let mut ctx = task::Context::from_waker(&waker);
+            match Pin::new(future).poll(&mut ctx) {
+                Poll::Ready(result) => {
+                    *fut = None;
+                    let read_buf = result.unwrap();
+                    assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
+                }
+                Poll::Pending => {}
+            }
+        }
+    }
+
+    loop {
+        // Poll all futures that got a wake up.
+        for i in take(&mut *indices.lock().unwrap()).into_iter() {
+            if let Some((future, waker)) = &mut futures[i] {
+                let mut ctx = task::Context::from_waker(&waker);
+                match Pin::new(future).poll(&mut ctx) {
+                    Poll::Ready(result) => {
+                        futures[i] = None;
+                        let read_buf = result.unwrap();
+                        assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
+                    }
+                    Poll::Pending => {}
+                }
+            }
+        }
+
+        if futures.iter().all(Option::is_some) {
+            break;
+        }
+
+        ring.poll(None).unwrap();
+    }
 }
 
 #[test]
