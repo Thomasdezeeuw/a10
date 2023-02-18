@@ -359,13 +359,12 @@ impl Ring {
 /// The submission queue can be shared by cloning it, it's a cheap operation.
 ///
 /// [`OpenOptions`]: fs::OpenOptions
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SubmissionQueue {
     shared: Arc<SharedSubmissionQueue>,
 }
 
 /// Shared internals of [`SubmissionQueue`].
-#[derive(Debug)]
 struct SharedSubmissionQueue {
     /// File descriptor of the io_uring.
     ring_fd: OwnedFd,
@@ -808,6 +807,38 @@ impl<T> DropWaker for Arc<T> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(Arc::<T>::from_raw(data.cast_mut().cast()));
+    }
+}
+
+impl fmt::Debug for SubmissionQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        /// Load a `u32` using relaxed ordering from `ptr`.
+        fn load_atomic_u32(ptr: *const AtomicU32) -> u32 {
+            unsafe { (*ptr).load(Ordering::Relaxed) }
+        }
+
+        let shared = &*self.shared;
+        let all = f.alternate();
+        let mut f = f.debug_struct("SubmissionQueue");
+
+        f.field("ring_fd", &shared.ring_fd)
+            .field("len", &shared.len)
+            .field("ring_mask", &shared.ring_mask)
+            .field("flags", &load_atomic_u32(shared.flags))
+            .field("pending_tail", &shared.pending_tail)
+            .field("kernel_read", &load_atomic_u32(shared.kernel_read))
+            .field("array_index", &shared.array_index)
+            .field("array_tail", &load_atomic_u32(shared.array_tail));
+
+        if all {
+            f.field("op_indices", &shared.op_indices)
+                .field("queued_ops", &shared.queued_ops)
+                .field("blocked_futures", &shared.blocked_futures)
+                .field("mmap_ptr", &shared.ptr)
+                .field("mmap_size", &shared.size);
+        }
+
+        f.finish()
     }
 }
 
