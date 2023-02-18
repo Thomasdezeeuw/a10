@@ -204,6 +204,7 @@ impl ReadBufPool {
                 .shared
                 .bufs_addr
                 .add(index.0 as usize * self.shared.buf_size as usize);
+            log::trace!(bid = index.0, addr = log::as_debug!(data), len = len; "kernel initialised buffer");
             // SAFETY: `bufs_addr` is not NULL.
             let data = unsafe { NonNull::new_unchecked(data) };
             Some(NonNull::slice_from_raw_parts(data, len as usize))
@@ -514,6 +515,8 @@ unsafe impl BufMut for ReadBuf {
 
     unsafe fn buffer_init(&mut self, idx: BufIdx, n: u32) {
         if let Some(ptr) = self.owned {
+            // We shouldn't be assigned another buffer, we should be resizing
+            // the current one.
             debug_assert!(idx.0 == 0);
             let len = ptr.len() + n as usize;
             self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), len));
@@ -522,6 +525,7 @@ unsafe impl BufMut for ReadBuf {
                 .shared
                 .bufs_addr
                 .add(idx.0 as usize * self.shared.buf_size as usize);
+            log::trace!(bid = idx.0, addr = log::as_debug!(data), len = n; "kernel initialised buffer");
             // SAFETY: `bufs_addr` is not NULL.
             let data = unsafe { NonNull::new_unchecked(data) };
             self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));
