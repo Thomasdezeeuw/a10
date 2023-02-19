@@ -4,6 +4,7 @@ use std::env::args;
 use std::io;
 
 use a10::fs::OpenOptions;
+use a10::io::ReadBufPool;
 use a10::{Extract, SubmissionQueue};
 
 mod runtime;
@@ -27,9 +28,9 @@ fn main() -> io::Result<()> {
 
 async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
     let stdout = a10::io::stdout(sq.clone());
-
     // Read and write 8 pages at a time.
-    let mut buf = Vec::with_capacity(8 * 4096);
+    let buf_pool = ReadBufPool::new(sq.clone(), 1, 8 * 4096)?;
+    let mut buf = buf_pool.get();
     let mut n;
     for filename in filenames {
         let stdin;
@@ -46,7 +47,7 @@ async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
         };
 
         loop {
-            buf.clear();
+            buf.release();
             buf = file.read(buf).await?;
             if buf.is_empty() {
                 // Read the entire file.
@@ -60,7 +61,7 @@ async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
                     break;
                 } else {
                     // Remove the bytes we've already written and try again.
-                    buf.drain(..n);
+                    buf.remove(..n);
                 }
             }
         }
