@@ -5,7 +5,7 @@
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
 use std::borrow::{Borrow, BorrowMut};
 use std::mem::{size_of, MaybeUninit};
-use std::ops::{Deref, DerefMut};
+use std::ops::{Bound, Deref, DerefMut, RangeBounds};
 use std::os::fd::AsRawFd;
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU16, Ordering};
@@ -364,6 +364,55 @@ impl ReadBuf {
     pub fn clear(&mut self) {
         if let Some(ptr) = self.owned {
             self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), 0));
+        }
+    }
+
+    /// Remove the bytes in `range` from the buffer.
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the `range` is invalid.
+    pub fn remove<R>(&mut self, range: R)
+    where
+        R: RangeBounds<usize>,
+    {
+        let original_len = self.len();
+        let start = match range.start_bound() {
+            Bound::Unbounded => 0,
+            Bound::Included(start_idx) => *start_idx,
+            Bound::Excluded(start_idx) => start_idx + 1,
+        };
+        let end = match range.end_bound() {
+            Bound::Unbounded => original_len,
+            Bound::Included(end_idx) => end_idx + 1,
+            Bound::Excluded(end_idx) => *end_idx,
+        };
+
+        if let Some(ptr) = self.owned {
+            if start > end {
+                panic!("slice index starts at {start} but ends at {end}");
+            } else if end > original_len {
+                panic!("range end index {end} out of range for slice of length {original_len}");
+            }
+
+            let remove_len = end - start;
+            let new_len = original_len - remove_len;
+            self.owned = Some(NonNull::slice_from_raw_parts(
+                ptr.as_non_null_ptr(),
+                new_len,
+            ));
+
+            if new_len == 0 || start >= new_len {
+                // No need to copy data round.
+                return;
+            }
+
+            // We start copy where the remove range ends.
+            let start_ptr = unsafe { ptr.as_mut_ptr().add(end) };
+            let to_copy = new_len - start;
+            unsafe { ptr.as_mut_ptr().add(start).copy_from(start_ptr, to_copy) };
+        } else if start != 0 && end != 0 {
+            panic!("attempting to remove range from empty buffer");
         }
     }
 

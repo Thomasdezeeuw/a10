@@ -2,6 +2,8 @@
 
 use std::env::temp_dir;
 use std::io;
+use std::ops::Bound;
+use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
@@ -244,6 +246,110 @@ fn two_read_buf_pools() {
             &*buf == &test_file.content[..buf.len()],
             "read content is different"
         );
+    }
+}
+
+#[test]
+fn read_buf_remove() {
+    const BUF_SIZE: usize = 64;
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
+
+    let path = LOREM_IPSUM_50.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
+    assert!(!buf.is_empty());
+
+    let tests = &[
+        (
+            // RangeToInclusive, `..=end`.
+            Bound::Unbounded,
+            Bound::Included(5),
+        ),
+        (
+            // RangeTo, `..end`.
+            Bound::Unbounded,
+            Bound::Excluded(5),
+        ),
+        (
+            // RangeFull, `..`.
+            Bound::Unbounded,
+            Bound::Unbounded,
+        ),
+        (
+            // RangeFrom, `start..`.
+            Bound::Included(1),
+            Bound::Unbounded,
+        ),
+        (
+            // RangeInclusive, `start..=end`.
+            Bound::Included(1),
+            Bound::Included(4),
+        ),
+        (
+            // Range, `start..end`.
+            Bound::Included(1),
+            Bound::Excluded(5),
+        ),
+        // The following are unused.
+        (Bound::Excluded(1), Bound::Unbounded),
+        (Bound::Excluded(1), Bound::Included(5)),
+        (Bound::Excluded(1), Bound::Excluded(5)),
+    ];
+
+    buf.clear();
+    const DATA: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    buf.extend_from_slice(&[255; 11]).unwrap(); // Detect errors more easily.
+    for (lower, upper) in tests.iter().copied() {
+        // We'll use the `Vec::drain` implementation as expected value as it's
+        // the API we're trying to match.
+        let mut expected = Vec::from(DATA);
+        expected.drain((lower, upper));
+
+        buf.clear();
+        buf.extend_from_slice(DATA).unwrap();
+        buf.remove((lower, upper));
+
+        assert_eq!(
+            buf.as_slice(),
+            expected,
+            "lower: {lower:?}, upper: {upper:?}"
+        );
+    }
+}
+
+#[test]
+fn read_buf_remove_invalid_range() {
+    const BUF_SIZE: usize = 64;
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+
+    let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
+
+    let path = LOREM_IPSUM_50.path.into();
+    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+
+    let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
+    assert!(!buf.is_empty());
+
+    buf.truncate(10);
+    let tests = &[
+        (Bound::Unbounded, Bound::Included(20)),
+        (Bound::Unbounded, Bound::Excluded(20)),
+        (Bound::Included(20), Bound::Unbounded),
+        (Bound::Excluded(20), Bound::Unbounded),
+    ];
+
+    for (lower, upper) in tests.iter().copied() {
+        let result = panic::catch_unwind(AssertUnwindSafe(|| {
+            buf.remove((lower, upper));
+        }));
+        let _ = result.unwrap_err();
     }
 }
 
