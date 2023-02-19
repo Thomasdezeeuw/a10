@@ -1,0 +1,69 @@
+//! cat - concatenate and print files.
+
+use std::env::args;
+use std::io;
+
+use a10::fs::OpenOptions;
+use a10::{Extract, SubmissionQueue};
+
+mod runtime;
+
+fn main() -> io::Result<()> {
+    // Create a new I/O uring.
+    let mut ring = a10::Ring::new(1)?;
+    // Get our copy of the submission queue.
+    let sq = ring.submission_queue().clone();
+
+    // Collect the files we want to concatenate.
+    let mut filenames: Vec<String> = args().skip(1).collect();
+    // Default to reading from standard in.
+    if filenames.is_empty() {
+        filenames.push(String::from("-"));
+    }
+
+    // Run our cat program.
+    runtime::block_on(&mut ring, cat(sq, filenames))
+}
+
+async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
+    let stdout = a10::io::stdout(sq.clone());
+
+    // Read and write 8 pages at a time.
+    let mut buf = Vec::with_capacity(8 * 4096);
+    let mut n;
+    for filename in filenames {
+        let stdin;
+        let file;
+        let file = if filename == "-" {
+            stdin = a10::io::stdin(sq.clone());
+            &*stdin
+        } else {
+            file = OpenOptions::new()
+                .read()
+                .open(sq.clone(), filename.into())
+                .await?;
+            &file
+        };
+
+        loop {
+            buf.clear();
+            buf = file.read(buf).await?;
+            if buf.is_empty() {
+                // Read the entire file.
+                break;
+            }
+
+            loop {
+                (buf, n) = stdout.write(buf).extract().await?;
+                if n == buf.len() {
+                    // Written all the bytes, try reading again.
+                    break;
+                } else {
+                    // Remove the bytes we've already written and try again.
+                    buf.drain(..n);
+                }
+            }
+        }
+    }
+    Ok(())
+}
