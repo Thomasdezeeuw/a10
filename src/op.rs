@@ -474,15 +474,25 @@ impl fmt::Debug for Submission {
                 .field("len", &submission.len);
         }
         fn net_op(f: &mut fmt::DebugStruct<'_, '_>, submission: &libc::io_uring_sqe, name: &str) {
+            // NOTE: can't reference a packed struct's field.
+            let buf_group = unsafe { submission.__bindgen_anon_4.buf_group };
             f.field("opcode", &name)
                 .field("fd", &submission.fd)
                 .field("addr", unsafe { &submission.__bindgen_anon_2.addr })
                 .field("len", &submission.len)
-                .field("flags", unsafe { &submission.__bindgen_anon_3.msg_flags });
+                .field("msg_flags", unsafe {
+                    &submission.__bindgen_anon_3.msg_flags
+                })
+                .field("ioprio", &submission.ioprio)
+                .field("buf_group", &buf_group)
+                .field("flags", &submission.flags);
         }
 
         let mut f = f.debug_struct("Submission");
         match self.inner.opcode as u32 {
+            libc::IORING_OP_NOP => {
+                f.field("opcode", &"IORING_OP_NOP");
+            }
             libc::IORING_OP_FSYNC => {
                 f.field("opcode", &"IORING_OP_FSYNC")
                     .field("fd", &self.inner.fd)
@@ -510,6 +520,11 @@ impl fmt::Debug for Submission {
             libc::IORING_OP_SEND => net_op(&mut f, &self.inner, "IORING_OP_SEND"),
             libc::IORING_OP_SEND_ZC => net_op(&mut f, &self.inner, "IORING_OP_SEND_ZC"),
             libc::IORING_OP_RECV => net_op(&mut f, &self.inner, "IORING_OP_RECV"),
+            libc::IORING_OP_SHUTDOWN => {
+                f.field("opcode", &"IORING_OP_SHUTDOWN")
+                    .field("fd", &self.inner.fd)
+                    .field("how", &self.inner.len);
+            }
             libc::IORING_OP_ACCEPT => {
                 f.field("opcode", &"IORING_OP_ACCEPT")
                     .field("fd", &self.inner.fd)
@@ -517,14 +532,19 @@ impl fmt::Debug for Submission {
                     .field("addr_size", unsafe { &self.inner.__bindgen_anon_1.off })
                     .field("flags", unsafe {
                         &self.inner.__bindgen_anon_3.accept_flags
-                    });
+                    })
+                    .field("ioprio", &self.inner.ioprio);
             }
             libc::IORING_OP_ASYNC_CANCEL => {
-                f.field("opcode", &"IORING_OP_ASYNC_CANCEL")
-                    .field("fd", &self.inner.fd)
-                    .field("flags", unsafe {
+                f.field("opcode", &"IORING_OP_ASYNC_CANCEL");
+                if self.inner.fd != 0 {
+                    f.field("fd", &self.inner.fd).field("flags", unsafe {
                         &self.inner.__bindgen_anon_3.cancel_flags
                     });
+                } else {
+                    f.field("fd", &self.inner.fd)
+                        .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr });
+                }
             }
             libc::IORING_OP_OPENAT => {
                 f.field("opcode", &"IORING_OP_OPENAT")
