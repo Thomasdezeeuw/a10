@@ -6,15 +6,20 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 use std::{io, panic, str};
 
-use a10::fs::OpenOptions;
+use a10::fs::{self, OpenOptions};
 use a10::{Extract, SubmissionQueue};
 
-use crate::util::{defer, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE};
+use crate::util::{
+    defer, is_send, is_sync, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE,
+};
 
 #[test]
 fn open_extractor() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<OpenOptions>();
+    is_sync::<OpenOptions>();
 
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     // Extract the file path.
@@ -321,6 +326,9 @@ fn sync_all() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<fs::SyncData>();
+    is_sync::<fs::SyncData>();
+
     let mut path = temp_dir();
     path.push("sync_all");
 
@@ -387,6 +395,9 @@ fn metadata_big() {
 fn test_metadata(test_file: &TestFile, created: SystemTime) {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<fs::Stat>();
+    is_sync::<fs::Stat>();
 
     let open_file = OpenOptions::new().open(sq, test_file.path.into());
     let file = waker.block_on(open_file).unwrap();
