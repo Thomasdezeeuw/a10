@@ -10,10 +10,12 @@ use std::pin::Pin;
 use std::ptr;
 
 use a10::io::{CancelResult, ReadBufPool};
+use a10::net::{Accept, MultishotAccept, MultishotRecv, Recv, Send, Socket};
 use a10::{Extract, Ring};
 
 use crate::util::{
-    bind_ipv4, block_on, init, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, Waker,
+    bind_ipv4, block_on, init, is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket,
+    test_queue, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -23,6 +25,9 @@ const DATA2: &[u8] = b"Hello, Mars!";
 fn accept() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<Accept>();
+    is_sync::<Accept>();
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
@@ -67,6 +72,9 @@ fn multishot_accept() {
     fn test_multishot_accept(n: usize) {
         let sq = test_queue();
         let waker = Waker::new();
+
+        is_send::<MultishotAccept>();
+        is_sync::<MultishotAccept>();
 
         // Bind a socket.
         let listener = waker.block_on(tcp_ipv4_socket(sq));
@@ -239,6 +247,9 @@ fn connect() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<Socket>();
+    is_sync::<Socket>();
+
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
     let local_addr = match listener.local_addr().unwrap() {
@@ -332,6 +343,9 @@ fn connect_extractor() {
 fn recv() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<Recv<Vec<u8>>>();
+    is_sync::<Recv<Vec<u8>>>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
@@ -460,6 +474,9 @@ fn multishot_recv() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
     init();
+
+    is_send::<MultishotRecv>();
+    is_sync::<MultishotRecv>();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
@@ -613,6 +630,9 @@ fn send() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<Send<Vec<u8>>>();
+    is_sync::<Send<Vec<u8>>>();
+
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
     let local_addr = match listener.local_addr().unwrap() {
@@ -750,6 +770,9 @@ fn send_zc_extractor() {
 fn shutdown() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<Shutdown>();
+    is_sync::<Shutdown>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");

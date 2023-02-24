@@ -11,10 +11,10 @@ use std::time::{Duration, Instant};
 use std::{io, thread};
 
 use a10::fs::OpenOptions;
-use a10::{Ring, Waker};
+use a10::{AsyncFd, Config, Ring, SubmissionQueue, Waker};
 
 mod util;
-use util::{init, poll_nop};
+use util::{init, is_send, is_sync, poll_nop};
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
@@ -23,6 +23,15 @@ fn polling_timeout() -> io::Result<()> {
 
     init();
     let mut ring = Ring::new(1).unwrap();
+
+    is_send::<Ring>();
+    is_sync::<Ring>();
+    is_send::<Config>();
+    is_sync::<Config>();
+    is_send::<SubmissionQueue>();
+    is_sync::<SubmissionQueue>();
+    is_send::<AsyncFd>();
+    is_sync::<AsyncFd>();
 
     let start = Instant::now();
     ring.poll(Some(TIMEOUT)).unwrap();
@@ -132,6 +141,9 @@ fn waker_wake() {
     init();
     let mut ring = Ring::new(2).unwrap();
     let sq = ring.submission_queue().clone();
+
+    is_send::<Waker>();
+    is_sync::<Waker>();
 
     let waker = Waker::new(sq);
     let handle = thread::spawn(move || {
