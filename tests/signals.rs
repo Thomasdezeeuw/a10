@@ -7,11 +7,11 @@ use std::task::Poll;
 use std::time::Instant;
 use std::{io, panic, process, ptr, thread};
 
-use a10::signals::Signals;
+use a10::signals::{self, Signals};
 use a10::Ring;
 
 mod util;
-use util::{poll_nop, syscall};
+use util::{is_send, is_sync, poll_nop, syscall};
 
 const SIGNALS: [libc::c_int; 5] = [
     libc::SIGINT,
@@ -26,6 +26,11 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = ["SIGINT", "SIGQUIT", "SIGTERM", "SI
 fn main() {
     let start = Instant::now();
     println!("\nrunning {} tests", (2 * SIGNALS.len()) + 1);
+
+    is_send::<Signals>();
+    is_sync::<Signals>();
+    is_send::<signals::Receive>();
+    is_sync::<signals::Receive>();
 
     let mut harness = TestHarness::setup();
     harness.test_single_threaded();

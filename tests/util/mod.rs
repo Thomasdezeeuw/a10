@@ -71,6 +71,9 @@ pub(crate) fn test_queue() -> SubmissionQueue {
     TEST_SQ.clone()
 }
 
+pub(crate) fn is_sync<T: Sync>() {}
+pub(crate) fn is_send<T: Send>() {}
+
 pub(crate) struct TestFile {
     pub(crate) path: &'static str,
     pub(crate) content: &'static [u8],

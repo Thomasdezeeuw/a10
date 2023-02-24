@@ -738,6 +738,8 @@ macro_rules! op_future {
             }
         }
 
+        unsafe impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+
         impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
