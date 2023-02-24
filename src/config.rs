@@ -183,11 +183,6 @@ fn mmap_submission_queue(
                 pending_tail: AtomicU32::new(0),
                 // Fields are shared with the kernel.
                 kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
-                /* NOTE: unused because we expect `IORING_FEAT_NODROP`.
-                dropped: submission_queue
-                    .add(parameters.sq_off.dropped as usize)
-                    .cast(),
-                */
                 flags: submission_queue
                     .add(parameters.sq_off.flags as usize)
                     .cast(),
