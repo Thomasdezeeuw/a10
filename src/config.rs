@@ -17,7 +17,7 @@ pub struct Config<'r> {
     completion_entries: Option<u32>,
     clamp: bool,
     cpu_affinity: Option<u32>,
-    attach: Option<&'r Ring>,
+    attach: Option<&'r SubmissionQueue>,
 }
 
 macro_rules! check_feature {
@@ -85,7 +85,12 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach(mut self, other_ring: &'r Ring) -> Self {
+    pub const fn attach(self, other_ring: &'r Ring) -> Self {
+        self.attach_queue(other_ring.submission_queue())
+    }
+
+    /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
+    pub const fn attach_queue(mut self, other_ring: &'r SubmissionQueue) -> Self {
         self.attach = Some(other_ring);
         self
     }
@@ -110,7 +115,7 @@ impl<'r> Config<'r> {
             parameters.sq_thread_cpu = cpu;
         }
         if let Some(other_ring) = self.attach {
-            parameters.wq_fd = other_ring.sq.shared.ring_fd.as_raw_fd() as u32;
+            parameters.wq_fd = other_ring.shared.ring_fd.as_raw_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
