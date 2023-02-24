@@ -537,13 +537,11 @@ impl fmt::Debug for Submission {
             }
             libc::IORING_OP_ASYNC_CANCEL => {
                 f.field("opcode", &"IORING_OP_ASYNC_CANCEL");
-                if self.inner.fd != 0 {
-                    f.field("fd", &self.inner.fd).field("flags", unsafe {
-                        &self.inner.__bindgen_anon_3.cancel_flags
-                    });
+                let cancel_flags = unsafe { self.inner.__bindgen_anon_3.cancel_flags };
+                if (cancel_flags & libc::IORING_ASYNC_CANCEL_FD) != 0 {
+                    f.field("fd", &self.inner.fd).field("flags", &cancel_flags);
                 } else {
-                    f.field("fd", &self.inner.fd)
-                        .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr });
+                    f.field("addr", unsafe { &self.inner.__bindgen_anon_2.addr });
                 }
             }
             libc::IORING_OP_OPENAT => {
