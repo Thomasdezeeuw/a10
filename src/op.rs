@@ -738,7 +738,8 @@ macro_rules! op_future {
             }
         }
 
-        unsafe impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
 
         impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             fn drop(&mut self) {

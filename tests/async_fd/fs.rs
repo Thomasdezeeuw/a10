@@ -7,6 +7,7 @@ use std::time::{Duration, SystemTime};
 use std::{io, panic, str};
 
 use a10::fs::{self, OpenOptions};
+use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
@@ -59,6 +60,9 @@ fn read_multiple_pages_multiple_reads_unaligned() {
 
 fn test_read(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize) {
     let waker = Waker::new();
+
+    is_send::<Read<Vec<u8>>>();
+    is_sync::<Read<Vec<u8>>>();
 
     let path = test_file.path.into();
     let open_file = OpenOptions::new().open(sq, path);
@@ -138,6 +142,9 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
 fn read_vectored_array() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<ReadVectored<Vec<u8>, 2>>();
+    is_sync::<ReadVectored<Vec<u8>, 1>>();
 
     let test_file = &LOREM_IPSUM_50;
     let path = test_file.path.into();
@@ -240,6 +247,9 @@ fn write_multiple_pages_mulitple_writes_unaligned() {
 fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
     let waker = Waker::new();
 
+    is_send::<Write<Vec<u8>>>();
+    is_sync::<Write<Vec<u8>>>();
+
     let mut path = temp_dir();
     path.push(name);
 
@@ -270,6 +280,9 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
 fn write_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<WriteVectored<Vec<u8>, 1>>();
+    is_sync::<WriteVectored<Vec<u8>, 1>>();
 
     let mut path = temp_dir();
     path.push("write_vectored");

@@ -7,12 +7,12 @@ use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, ReadBufPool};
+use a10::io::{stderr, stdout, Cancel, CancelOp, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
 use a10::Ring;
 
 use crate::util::{
-    bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init, poll_nop, tcp_ipv4_socket,
-    test_queue, Waker, LOREM_IPSUM_50,
+    bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init, is_send, is_sync, poll_nop,
+    tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -22,6 +22,11 @@ fn read_read_buf_pool() {
     init();
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
+
+    is_send::<ReadBufPool>();
+    is_sync::<ReadBufPool>();
+    is_send::<ReadBuf>();
+    is_sync::<ReadBuf>();
 
     let test_file = &LOREM_IPSUM_50;
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
@@ -358,6 +363,11 @@ fn cancel_previous_accept() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<Cancel>();
+    is_sync::<Cancel>();
+    is_send::<CancelOp>();
+    is_sync::<CancelOp>();
+
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
@@ -465,6 +475,9 @@ fn close_socket_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<Close>();
+    is_sync::<Close>();
+
     let socket = waker.block_on(tcp_ipv4_socket(sq));
     waker.block_on(socket.close()).expect("failed to close fd");
 }
@@ -500,6 +513,9 @@ fn stdout_write() {
     let sq = test_queue();
     let waker = Waker::new();
 
+    is_send::<Stdout>();
+    is_sync::<Stdout>();
+
     let stdout = stdout(sq);
     waker.block_on(stdout.write("Hello, stdout!\n")).unwrap();
 }
@@ -508,6 +524,9 @@ fn stdout_write() {
 fn stderr_write() {
     let sq = test_queue();
     let waker = Waker::new();
+
+    is_send::<Stderr>();
+    is_sync::<Stderr>();
 
     let stderr = stderr(sq);
     waker.block_on(stderr.write("Hello, stderr!\n")).unwrap();

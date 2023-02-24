@@ -226,6 +226,9 @@ impl Shared {
     }
 }
 
+unsafe impl Sync for Shared {}
+unsafe impl Send for Shared {}
+
 impl Drop for Shared {
     fn drop(&mut self) {
         let page_size = *PAGE_SIZE;
@@ -635,6 +638,9 @@ impl fmt::Debug for ReadBuf {
         self.as_slice().fmt(f)
     }
 }
+
+unsafe impl Sync for ReadBuf {}
+unsafe impl Send for ReadBuf {}
 
 impl Drop for ReadBuf {
     fn drop(&mut self) {
