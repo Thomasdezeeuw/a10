@@ -64,6 +64,45 @@ fn accept() {
 }
 
 #[test]
+fn cancel_accept() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    bind_ipv4(&listener);
+
+    let accept = listener.accept();
+    let mut accept = std::pin::pin!(accept);
+
+    // Poll once to start the operation.
+    assert!(poll_nop(accept.as_mut()).is_pending());
+
+    // Then cancel the accept multishot call.
+    waker.block_on(accept.as_mut().cancel());
+
+    let err = waker.block_on(accept).unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::ECANCELED));
+}
+
+#[test]
+fn try_cancel_accept_before_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    bind_ipv4(&listener);
+
+    let mut accept = listener.accept();
+
+    // Before we accept we cancel the accept call.
+    if !matches!(accept.try_cancel(), CancelResult::NotStarted) {
+        panic!("failed to cancel");
+    }
+}
+
+#[test]
 fn multishot_accept() {
     test_multishot_accept(0);
     test_multishot_accept(1);

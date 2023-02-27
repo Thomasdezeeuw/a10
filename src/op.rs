@@ -718,6 +718,32 @@ macro_rules! op_future {
                     )?
                 }
             }
+
+            /// Attempt to cancel this operation.
+            ///
+            #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
+            pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
+                match self.state {
+                    $crate::op::OpState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
+                    $crate::op::OpState::Waiting(op_index) => {
+                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
+                            std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
+                            std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
+                        }
+                    },
+                    $crate::op::OpState::Done => $crate::io::CancelResult::Canceled,
+                }
+            }
+
+            /// Cancel this operation.
+            pub fn cancel(&mut self) -> $crate::io::CancelOp {
+                let op_index = match self.state {
+                    $crate::op::OpState::NotStarted(_) => None,
+                    $crate::op::OpState::Waiting(op_index) => Some(op_index),
+                    $crate::op::OpState::Done => None,
+                };
+                $crate::io::CancelOp { sq: &self.fd.sq, op_index }
+            }
         }
 
         impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
