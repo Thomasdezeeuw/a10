@@ -725,7 +725,7 @@ macro_rules! op_future {
             pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
                 match self.state {
                     $crate::op::OpState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
-                    $crate::op::OpState::Waiting(op_index) => {
+                    $crate::op::OpState::Running(op_index) => {
                         match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
                             std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
                             std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
@@ -739,7 +739,7 @@ macro_rules! op_future {
             pub fn cancel(&mut self) -> $crate::io::CancelOp {
                 let op_index = match self.state {
                     $crate::op::OpState::NotStarted(_) => None,
-                    $crate::op::OpState::Waiting(op_index) => Some(op_index),
+                    $crate::op::OpState::Running(op_index) => Some(op_index),
                     $crate::op::OpState::Done => None,
                 };
                 $crate::io::CancelOp { sq: &self.fd.sq, op_index }
@@ -789,7 +789,7 @@ macro_rules! op_future {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
-                        $crate::op::OpState::Waiting(op_index) => self.fd.sq.drop_op(op_index, resources),
+                        $crate::op::OpState::Running(op_index) => self.fd.sq.drop_op(op_index, resources),
                         // NOTE: `Done` should not be reachable, but no point in
                         // creating another branch.
                         #[allow(clippy::drop_non_drop)]
@@ -875,15 +875,17 @@ macro_rules! op_future {
 
 pub(crate) use op_future;
 
-/// State of an [`op_future!`] [`Future`].
+/// State of an [`op_future!`] [`Future`] or [`op_async_iter!`]
+/// [`AsyncIterator`].
 ///
 /// [`Future`]: std::future::Future
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
 pub(crate) enum OpState<S> {
     /// The operation has not started yet.
     NotStarted(S),
-    /// Operation has started, waiting for the result.
-    Waiting(OpIndex),
+    /// Operation is running, waiting for the (next) result.
+    Running(OpIndex),
     /// Operation is done.
     Done,
 }
@@ -896,7 +898,7 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $self.state {
-            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::Running(op_index) => op_index,
             $crate::op::OpState::NotStarted($setup_state) => {
                 let $name {
                     fd: $setup_fd,
@@ -910,7 +912,7 @@ macro_rules! poll_state {
                 let result = $setup_fd.sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $self.state = $crate::op::OpState::Waiting(op_index);
+                        $self.state = $crate::op::OpState::Running(op_index);
                         op_index
                     }
                     Err($crate::QueueFull(())) => {
@@ -928,13 +930,13 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $self.state {
-            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::Running(op_index) => op_index,
             $crate::op::OpState::NotStarted($setup_state) => {
                 let $setup_fd = $self.fd;
                 let result = $self.fd.sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $self.state = $crate::op::OpState::Waiting(op_index);
+                        $self.state = $crate::op::OpState::Running(op_index);
                         op_index
                     }
                     Err($crate::QueueFull(())) => {
@@ -953,12 +955,12 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $state {
-            $crate::op::OpState::Waiting(op_index) => op_index,
+            $crate::op::OpState::Running(op_index) => op_index,
             $crate::op::OpState::NotStarted($setup_state) => {
                 let result = $sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $state = $crate::op::OpState::Waiting(op_index);
+                        $state = $crate::op::OpState::Running(op_index);
                         op_index
                     }
                     Err($crate::QueueFull(())) => {
@@ -1007,7 +1009,7 @@ macro_rules! op_async_iter {
             $field: $value,
             )?
             /// State of the operation.
-            state: $crate::op::IterState<$setup_ty>,
+            state: $crate::op::OpState<$setup_ty>,
         }
 
         impl<$lifetime> $name<$lifetime> {
@@ -1016,7 +1018,7 @@ macro_rules! op_async_iter {
                 $name {
                     fd,
                     $( $field, )?
-                    state: $crate::op::IterState::NotStarted($state),
+                    state: $crate::op::OpState::NotStarted($state),
                 }
             }
         }
@@ -1027,23 +1029,23 @@ macro_rules! op_async_iter {
             #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
             pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
                 match self.state {
-                    $crate::op::IterState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
-                    $crate::op::IterState::Running(op_index) => {
+                    $crate::op::OpState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
+                    $crate::op::OpState::Running(op_index) => {
                         match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
                             std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
                             std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
                         }
                     },
-                    $crate::op::IterState::Done => $crate::io::CancelResult::Canceled,
+                    $crate::op::OpState::Done => $crate::io::CancelResult::Canceled,
                 }
             }
 
             /// Cancel this operation.
             pub fn cancel(&mut self) -> $crate::io::CancelOp {
                 let op_index = match self.state {
-                    $crate::op::IterState::NotStarted(_) => None,
-                    $crate::op::IterState::Running(op_index) => Some(op_index),
-                    $crate::op::IterState::Done => None,
+                    $crate::op::OpState::NotStarted(_) => None,
+                    $crate::op::OpState::Running(op_index) => Some(op_index),
+                    $crate::op::OpState::Done => None,
                 };
                 $crate::io::CancelOp { sq: &self.fd.sq, op_index }
             }
@@ -1056,15 +1058,15 @@ macro_rules! op_async_iter {
                 // SAFETY: we're not moving anything out of `self.
                 let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
                 let op_index = match $self.state {
-                    $crate::op::IterState::Running(op_index) => op_index,
-                    $crate::op::IterState::NotStarted($setup_state) => {
+                    $crate::op::OpState::Running(op_index) => op_index,
+                    $crate::op::OpState::NotStarted($setup_state) => {
                         let result = $self.fd.sq.add_multishot(|$setup_submission| {
                             let $setup_self = &mut *$self;
                             $setup_fn
                         });
                         match result {
                             Ok(op_index) => {
-                                $self.state = $crate::op::IterState::Running(op_index);
+                                $self.state = $crate::op::OpState::Running(op_index);
                                 op_index
                             }
                             Err($crate::QueueFull(())) => {
@@ -1075,7 +1077,7 @@ macro_rules! op_async_iter {
                     }
                     // We can reach this if we return an error, but not `None`
                     // yet.
-                    $crate::op::IterState::Done => return std::task::Poll::Ready(std::option::Option::None),
+                    $crate::op::OpState::Done => return std::task::Poll::Ready(std::option::Option::None),
                 };
 
                 match $self.fd.sq.poll_multishot_op(ctx, op_index) {
@@ -1084,7 +1086,7 @@ macro_rules! op_async_iter {
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
                         // After an error we also don't expect any more results.
-                        $self.state = $crate::op::IterState::Done;
+                        $self.state = $crate::op::OpState::Done;
                         if let Some(libc::ECANCELED) = err.raw_os_error() {
                             // Operation was canceled, so we expect no more
                             // results.
@@ -1094,7 +1096,7 @@ macro_rules! op_async_iter {
                         }
                     },
                     std::task::Poll::Ready(std::option::Option::None) => {
-                        $self.state = $crate::op::IterState::Done;
+                        $self.state = $crate::op::OpState::Done;
                         std::task::Poll::Ready(std::option::Option::None)
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -1104,7 +1106,7 @@ macro_rules! op_async_iter {
 
         impl<$lifetime> std::ops::Drop for $name<$lifetime> {
             fn drop(&mut self) {
-                if let $crate::op::IterState::Running(op_index) = self.state {
+                if let $crate::op::OpState::Running(op_index) = self.state {
                     match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
                         // Canceled the operation.
                         std::result::Result::Ok(()) => {},
@@ -1121,19 +1123,6 @@ macro_rules! op_async_iter {
 }
 
 pub(crate) use op_async_iter;
-
-/// State of an [`op_async_iter!`] [`AsyncIterator`].
-///
-/// [`AsyncIterator`]: std::async_iter::AsyncIterator
-#[derive(Debug)]
-pub(crate) enum IterState<S> {
-    /// The operation has not started yet.
-    NotStarted(S),
-    /// Operation is running, waiting for more results.
-    Running(OpIndex),
-    /// Operation is done.
-    Done,
-}
 
 #[test]
 fn size_assertion() {
