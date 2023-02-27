@@ -236,7 +236,7 @@ impl Drop for Open {
         if let Some(path) = self.path.take() {
             match self.state {
                 // SAFETY: only in the `Drop` state is `selfsq` `None`.
-                OpState::Waiting(op_index) => self.sq.as_ref().unwrap().drop_op(op_index, path),
+                OpState::Running(op_index) => self.sq.as_ref().unwrap().drop_op(op_index, path),
                 // NOTE: `Done` should not be reachable, but no point in
                 // creating another branch.
                 OpState::NotStarted(_) | OpState::Done => drop(path),

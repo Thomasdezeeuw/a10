@@ -262,7 +262,7 @@ op_async_iter! {
     map_result: |this, buf_idx, n| {
         if n == 0 {
             // Peer closed it's writing half.
-            this.state = crate::op::IterState::Done;
+            this.state = crate::op::OpState::Done;
         }
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
