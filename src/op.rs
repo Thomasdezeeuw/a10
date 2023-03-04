@@ -724,11 +724,10 @@ macro_rules! op_future {
                     )?
                 }
             }
+        }
 
-            /// Attempt to cancel this operation.
-            ///
-            #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
-            pub fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::CancelOperation for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
                     $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
                     $crate::op::OpState::Running(op_index) => {
@@ -741,8 +740,7 @@ macro_rules! op_future {
                 }
             }
 
-            /// Cancel this operation.
-            pub fn cancel(&mut self) -> $crate::cancel::CancelOp {
+            fn cancel(&mut self) -> $crate::cancel::CancelOp {
                 let op_index = match self.state {
                     $crate::op::OpState::NotStarted(_) => None,
                     $crate::op::OpState::Running(op_index) => Some(op_index),
@@ -1030,11 +1028,8 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> $name<$lifetime> {
-            /// Attempt to cancel this operation.
-            ///
-            #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
-            pub fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+        impl<$lifetime> $crate::cancel::CancelOperation for $name<$lifetime> {
+            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
                     $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
                     $crate::op::OpState::Running(op_index) => {
@@ -1047,8 +1042,7 @@ macro_rules! op_async_iter {
                 }
             }
 
-            /// Cancel this operation.
-            pub fn cancel(&mut self) -> $crate::cancel::CancelOp {
+            fn cancel(&mut self) -> $crate::cancel::CancelOp {
                 let op_index = match self.state {
                     $crate::op::OpState::NotStarted(_) => None,
                     $crate::op::OpState::Running(op_index) => Some(op_index),

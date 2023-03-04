@@ -72,6 +72,30 @@ impl<'fd> Future for Cancel<'fd> {
     }
 }
 
+/// Cancelation of operations.
+pub trait CancelOperation {
+    /// Attempt to cancel this operation.
+    fn try_cancel(&mut self) -> CancelResult;
+
+    /// Cancel this operation.
+    fn cancel(&mut self) -> CancelOp;
+}
+
+/// Result of a cancelation attempt.
+#[derive(Copy, Clone, Debug)]
+pub enum CancelResult {
+    /// Operation was cancelled.
+    Canceled,
+    /// Operation was not started.
+    NotStarted,
+    /// Operation queue is currently full, can't cancel the operation.
+    ///
+    /// To resolve this call [`Ring::poll`] or use [`CancelOperation::cancel`].
+    ///
+    /// [`Ring::poll`]: crate::Ring::poll
+    QueueFull,
+}
+
 /// [`Future`] behind functions such as [`MultishotAccept::cancel`].
 ///
 /// Once this future is completed it will asynchronously cancel the related
@@ -112,19 +136,4 @@ impl<'fd> Future for CancelOp<'fd> {
             }
         }
     }
-}
-
-/// Result of a cancelation attempt.
-#[derive(Copy, Clone, Debug)]
-pub enum CancelResult {
-    /// Operation was cancelled.
-    Canceled,
-    /// Operation was not started.
-    NotStarted,
-    /// Operation queue is currently full, can't cancel the operation.
-    ///
-    /// To resolve this call [`Ring::poll`].
-    ///
-    /// [`Ring::poll`]: crate::Ring::poll
-    QueueFull,
 }
