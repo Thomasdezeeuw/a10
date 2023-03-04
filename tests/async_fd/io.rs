@@ -6,8 +6,9 @@ use std::ops::Bound;
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
+use a10::cancel::{Cancel, CancelOp};
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, Cancel, CancelOp, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
+use a10::io::{stderr, stdout, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
 use a10::Ring;
 
 use crate::util::{

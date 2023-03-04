@@ -728,27 +728,27 @@ macro_rules! op_future {
             /// Attempt to cancel this operation.
             ///
             #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
-            pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
+            pub fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
-                    $crate::op::OpState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
+                    $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
                     $crate::op::OpState::Running(op_index) => {
                         match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                            std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
-                            std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
+                            std::result::Result::Ok(()) => $crate::cancel::CancelResult::Canceled,
+                            std::result::Result::Err($crate::QueueFull(())) => $crate::cancel::CancelResult::QueueFull,
                         }
                     },
-                    $crate::op::OpState::Done => $crate::io::CancelResult::Canceled,
+                    $crate::op::OpState::Done => $crate::cancel::CancelResult::Canceled,
                 }
             }
 
             /// Cancel this operation.
-            pub fn cancel(&mut self) -> $crate::io::CancelOp {
+            pub fn cancel(&mut self) -> $crate::cancel::CancelOp {
                 let op_index = match self.state {
                     $crate::op::OpState::NotStarted(_) => None,
                     $crate::op::OpState::Running(op_index) => Some(op_index),
                     $crate::op::OpState::Done => None,
                 };
-                $crate::io::CancelOp { sq: &self.fd.sq, op_index }
+                $crate::cancel::CancelOp { sq: &self.fd.sq, op_index }
             }
         }
 
@@ -1034,27 +1034,27 @@ macro_rules! op_async_iter {
             /// Attempt to cancel this operation.
             ///
             #[doc = concat!("Also see [`", stringify!($name), "::cancel`].")]
-            pub fn try_cancel(&mut self) -> $crate::io::CancelResult {
+            pub fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
-                    $crate::op::OpState::NotStarted(_) => $crate::io::CancelResult::NotStarted,
+                    $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
                     $crate::op::OpState::Running(op_index) => {
                         match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                            std::result::Result::Ok(()) => $crate::io::CancelResult::Canceled,
-                            std::result::Result::Err($crate::QueueFull(())) => $crate::io::CancelResult::QueueFull,
+                            std::result::Result::Ok(()) => $crate::cancel::CancelResult::Canceled,
+                            std::result::Result::Err($crate::QueueFull(())) => $crate::cancel::CancelResult::QueueFull,
                         }
                     },
-                    $crate::op::OpState::Done => $crate::io::CancelResult::Canceled,
+                    $crate::op::OpState::Done => $crate::cancel::CancelResult::Canceled,
                 }
             }
 
             /// Cancel this operation.
-            pub fn cancel(&mut self) -> $crate::io::CancelOp {
+            pub fn cancel(&mut self) -> $crate::cancel::CancelOp {
                 let op_index = match self.state {
                     $crate::op::OpState::NotStarted(_) => None,
                     $crate::op::OpState::Running(op_index) => Some(op_index),
                     $crate::op::OpState::Done => None,
                 };
-                $crate::io::CancelOp { sq: &self.fd.sq, op_index }
+                $crate::cancel::CancelOp { sq: &self.fd.sq, op_index }
             }
         }
 

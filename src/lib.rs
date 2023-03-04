@@ -142,6 +142,7 @@ use std::time::Duration;
 use std::{fmt, ptr};
 
 mod bitmap;
+pub mod cancel;
 mod config;
 pub mod extract;
 pub mod fs;
