@@ -172,6 +172,7 @@ fn mmap_submission_queue(
     queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
     let queued_ops = queued_ops.into_boxed_slice();
 
+    #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
     unsafe {
         Ok(SubmissionQueue {
             shared: Arc::new(SharedSubmissionQueue {

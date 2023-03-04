@@ -45,6 +45,7 @@ static ID: AtomicU16 = AtomicU16::new(0);
 /// For example it can't grow beyond the pool's buffer size. However it can be
 /// used in write calls like any other buffer.
 #[derive(Clone, Debug)]
+#[allow(clippy::module_name_repetitions)] // Public in `crate::io`, so N/A.
 pub struct ReadBufPool {
     shared: Arc<Shared>,
 }
@@ -94,6 +95,7 @@ impl ReadBufPool {
         // Allocation for the buffer ring, shared with the kernel.
         let ring_addr = match unsafe { alloc_zeroed(ring_layout) } {
             ring_addr if ring_addr.is_null() => return Err(io::ErrorKind::OutOfMemory.into()),
+            #[allow(clippy::cast_ptr_alignment)] // Did proper alignment in `alloc_layout_ring`.
             ring_addr => ring_addr.cast::<libc::io_uring_buf_ring>(),
         };
 
@@ -439,6 +441,7 @@ impl ReadBuf {
     ///
     /// If `self` doesn't have sufficient capacity it will return `Err(())` and
     /// will not append anything.
+    #[allow(clippy::result_unit_err)]
     pub fn extend_from_slice(&mut self, other: &[u8]) -> Result<(), ()> {
         if let Some(ptr) = self.owned {
             let new_len = ptr.len() + other.len();

@@ -1,7 +1,12 @@
 //! Code that should be moved to libc once C libraries have a wrapper.
 
 #![allow(dead_code, non_camel_case_types, non_snake_case)]
-#![allow(clippy::unreadable_literal, clippy::missing_safety_doc)]
+#![allow(
+    clippy::missing_const_for_fn,
+    clippy::missing_safety_doc,
+    clippy::ptr_as_ptr,
+    clippy::unreadable_literal
+)]
 
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
@@ -15,8 +20,8 @@ macro_rules! syscall {
     }};
 }
 
-pub use syscall;
 pub use libc::*;
+pub use syscall;
 
 pub unsafe fn io_uring_setup(entries: c_uint, p: *mut io_uring_params) -> c_int {
     syscall(SYS_io_uring_setup, entries as c_long, p as c_long) as _

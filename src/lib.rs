@@ -133,7 +133,7 @@
 
 use std::cmp::min;
 use std::marker::PhantomData;
-use std::mem::{needs_drop, replace, size_of};
+use std::mem::{needs_drop, replace, size_of, take};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::sync::atomic::{self, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -280,7 +280,7 @@ impl Ring {
             tv_nsec: 0,
         };
         if let Some(timeout) = timeout {
-            timespec.tv_sec = timeout.as_secs() as _;
+            timespec.tv_sec = timeout.as_secs().try_into().unwrap_or(i64::MAX);
             timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
             args.ts = ptr::addr_of!(timespec) as u64;
         }
@@ -336,7 +336,7 @@ impl Ring {
                 return;
             }
 
-            replace(blocked_futures, Vec::new())
+            take(blocked_futures)
         };
         // Do the waking outside of the lock.
         let waking = min(n, blocked_futures.len());
@@ -459,9 +459,8 @@ impl SubmissionQueue {
     {
         // Get an index to the queued operation queue.
         let shared = &*self.shared;
-        let op_index = match shared.op_indices.next_available() {
-            Some(idx) => idx,
-            None => return Err(QueueFull(())),
+        let Some(op_index) = shared.op_indices.next_available() else {
+            return Err(QueueFull(()));
         };
 
         let queued_op = new_op();
@@ -488,6 +487,7 @@ impl SubmissionQueue {
     }
 
     /// Same as [`SubmissionQueue::add`], but ignores the result.
+    #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
     fn add_no_result<F>(&self, submit: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Submission),
@@ -511,14 +511,11 @@ impl SubmissionQueue {
                     None
                 }
             });
-        let tail = match tail {
-            Ok(tail) => tail,
-            Err(_) => {
-                // If the kernel thread is not awake we'll need to wake it to
-                // make space in the submission queue.
-                self.maybe_wake_kernel_thread();
-                return Err(QueueFull(()));
-            }
+        let Ok(tail) = tail else {
+            // If the kernel thread is not awake we'll need to wake it to make
+            // space in the submission queue.
+            self.maybe_wake_kernel_thread();
+            return Err(QueueFull(()));
         };
 
         // SAFETY: the `ring_mask` ensures we can never get an index larger
@@ -832,6 +829,7 @@ impl<T> DropWaker for Arc<T> {
     }
 }
 
+#[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
 impl fmt::Debug for SubmissionQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         /// Load a `u32` using relaxed ordering from `ptr`.

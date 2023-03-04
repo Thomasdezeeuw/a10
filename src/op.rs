@@ -116,11 +116,10 @@ impl QueuedOperation {
             if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
                 self.waker = Some(waker.clone());
             }
-        } else {
-            // NOTE: we can get here multishot operations (see note in docs) or
-            // if the `Future` is used in an invalid way (e.g. poll after
-            // completion). In either case we don't to set the waker.
         }
+        // NOTE: we can get here multishot operations (see note in docs) or if
+        // the `Future` is used in an invalid way (e.g. poll after completion).
+        // In either case we don't to set the waker.
         Poll::Pending
     }
 
@@ -197,6 +196,7 @@ pub(crate) const NO_OFFSET: u64 = u64::MAX;
 
 impl Submission {
     /// Reset the submission.
+    #[allow(clippy::assertions_on_constants)]
     pub(crate) fn reset(&mut self) {
         debug_assert!(libc::IORING_OP_NOP == 0);
         unsafe { ptr::addr_of_mut!(self.inner).write_bytes(0, 1) };
@@ -464,6 +464,7 @@ impl Submission {
 }
 
 impl fmt::Debug for Submission {
+    #[allow(clippy::too_many_lines)] // Not beneficial to split this up.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Helper functions with common patterns.
         fn io_op(f: &mut fmt::DebugStruct<'_, '_>, submission: &libc::io_uring_sqe, name: &str) {
@@ -538,6 +539,7 @@ impl fmt::Debug for Submission {
             libc::IORING_OP_ASYNC_CANCEL => {
                 f.field("opcode", &"IORING_OP_ASYNC_CANCEL");
                 let cancel_flags = unsafe { self.inner.__bindgen_anon_3.cancel_flags };
+                #[allow(clippy::if_not_else)]
                 if (cancel_flags & libc::IORING_ASYNC_CANCEL_FD) != 0 {
                     f.field("fd", &self.inner.fd).field("flags", &cancel_flags);
                 } else {
