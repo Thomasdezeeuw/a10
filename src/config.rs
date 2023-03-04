@@ -115,6 +115,7 @@ impl<'r> Config<'r> {
         if let Some(cpu) = self.cpu_affinity {
             parameters.sq_thread_cpu = cpu;
         }
+        #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
         if let Some(other_ring) = self.attach {
             parameters.wq_fd = other_ring.shared.ring_fd.as_raw_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
@@ -152,7 +153,7 @@ fn mmap_submission_queue(
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
         ring_fd.as_raw_fd(),
-        libc::IORING_OFF_SQ_RING as libc::off_t,
+        libc::off_t::from(libc::IORING_OFF_SQ_RING),
     )?;
 
     let submission_queue_entries = mmap(
@@ -160,7 +161,7 @@ fn mmap_submission_queue(
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
         ring_fd.as_raw_fd(),
-        libc::IORING_OFF_SQES as libc::off_t,
+        libc::off_t::from(libc::IORING_OFF_SQES),
     )
     .map_err(|err| {
         let _ = munmap(submission_queue, size as usize);
@@ -217,7 +218,7 @@ fn mmap_completion_queue(
         libc::PROT_READ | libc::PROT_WRITE,
         libc::MAP_SHARED | libc::MAP_POPULATE,
         ring_fd.as_raw_fd(),
-        libc::IORING_OFF_CQ_RING as libc::off_t,
+        libc::off_t::from(libc::IORING_OFF_CQ_RING),
     )?;
 
     unsafe {

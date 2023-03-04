@@ -111,7 +111,8 @@ op_future! {
         submission.read_at(fd.fd, ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
     },
     map_result: |this, (info,), n| {
-        debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>());
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        { debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>()) };
         // SAFETY: the kernel initialised the info allocation for us as part of
         // the read call.
         Ok(unsafe { Box::<MaybeUninit<libc::signalfd_siginfo>>::assume_init(info) })

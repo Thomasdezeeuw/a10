@@ -12,6 +12,11 @@
 //! Finally we have the [`stdin`], [`stdout`] and [`stderr`] functions to create
 //! `AsyncFd`s for standard in, out and error respectively.
 
+// This is not ideal.
+// This should only be applied to `ReadVectored` and `WriteVectored` as they use
+// `libc::iovec` internally, which is `!Send`, while it actually is `Send`.
+#![allow(clippy::non_send_fields_in_send_ty)]
+
 use std::future::Future;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
@@ -222,6 +227,7 @@ op_future! {
     map_result: |this, (mut buf,), buf_idx, n| {
         // SAFETY: the kernel initialised the bytes for us as part of the read
         // call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
     },
@@ -255,6 +261,7 @@ op_future! {
     map_result: |this, (mut bufs, _iovecs), _flags, n| {
         // SAFETY: the kernel initialised the bytes for us as part of the read
         // call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { bufs.set_init(n as usize) };
         Ok(bufs)
     },
@@ -273,8 +280,12 @@ op_future! {
         let (ptr, len) = buf.parts();
         submission.write_at(fd.fd, ptr, len, offset);
     },
-    map_result: |n| Ok(n as usize),
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
     extract: |this, (buf,), n| -> (B, usize) {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
 }
@@ -304,8 +315,12 @@ op_future! {
     setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
         submission.write_vectored_at(fd.fd, iovecs, offset);
     },
-    map_result: |n| Ok(n as usize),
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
     extract: |this, (buf, _iovecs), n| -> (B, usize) {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
 }

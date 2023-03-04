@@ -194,6 +194,9 @@ pub(crate) struct Submission {
 /// `-1` cast as `unsigned long long` in C is the same as as `u64::MAX`.
 pub(crate) const NO_OFFSET: u64 = u64::MAX;
 
+// Can't do much about this, flags are defined as signed, but io_uring mostly
+// uses unsigned.
+#[allow(clippy::cast_sign_loss)]
 impl Submission {
     /// Reset the submission.
     #[allow(clippy::assertions_on_constants)]
@@ -307,7 +310,7 @@ impl Submission {
         self.inner.opcode = libc::IORING_OP_CONNECT as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: address_length as _,
+            off: u64::from(address_length),
         };
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: address as *mut _ as _,
@@ -490,7 +493,7 @@ impl fmt::Debug for Submission {
         }
 
         let mut f = f.debug_struct("Submission");
-        match self.inner.opcode as u32 {
+        match u32::from(self.inner.opcode) {
             libc::IORING_OP_NOP => {
                 f.field("opcode", &"IORING_OP_NOP");
             }

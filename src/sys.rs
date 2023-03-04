@@ -2,6 +2,8 @@
 
 #![allow(dead_code, non_camel_case_types, non_snake_case)]
 #![allow(
+    clippy::cast_lossless,
+    clippy::cast_possible_truncation,
     clippy::missing_const_for_fn,
     clippy::missing_safety_doc,
     clippy::ptr_as_ptr,

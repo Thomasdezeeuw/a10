@@ -219,8 +219,12 @@ op_future! {
         let (ptr, len) = buf.parts();
         submission.send(op, fd.fd, ptr, len, flags);
     },
-    map_result: |n| Ok(n as usize),
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
     extract: |this, (buf,), n| -> (B, usize) {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
 }
@@ -244,6 +248,7 @@ op_future! {
     map_result: |this, (mut buf,), buf_idx, n| {
         // SAFETY: the kernel initialised the bytes for us as part of the read
         // call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
         Ok(buf)
     },
@@ -267,6 +272,7 @@ op_async_iter! {
         }
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { this.buf_pool.new_buffer(BufIdx(buf_idx), n as u32) }
     },
 }
@@ -303,7 +309,7 @@ op_future! {
         let storage = unsafe { address.0.assume_init_ref() };
         let address_length = address.1 as usize;
 
-        let address = match storage.ss_family as libc::c_int {
+        let address = match libc::c_int::from(storage.ss_family) {
             libc::AF_INET => {
                 // SAFETY: if the `ss_family` field is `AF_INET` then storage
                 // must be a `sockaddr_in`.

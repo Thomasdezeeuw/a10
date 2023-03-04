@@ -28,10 +28,17 @@ test_sanitizer:
 check:
 	cargo check --all-targets
 
-# TODO: Review and fix:
-# * cast-possible-wrap
-# * cast-sign-loss
-# * cast-possible-truncation
+# Disabled lints:
+# * `doc-markdown`: has some annoying false positives.
+# * `equatable-if-let`: strongly disagree with this lint.
+# * `missing-errors-doc`, `missing-panics-doc`: not worth it.
+# * `must-use-candidate`: too many bad suggestions.
+# * `needless-lifetimes`: lifetimes are additional docs.
+# * `option-if-let-else`: don't want to introduce more closures.
+# * `redundant-pub-crate`: useless lint.
+# * `single-match-else`: prefer match statements over if statements.
+# * `use-self`: strongly disagree.
+# TODO: resolve `cast-possible-truncation` errors.
 lint: clippy
 clippy:
 	cargo clippy --all-features --workspace -- \
@@ -43,19 +50,17 @@ clippy:
 		--deny clippy::pedantic \
 		--deny clippy::nursery \
 		--deny clippy::cargo \
-		--allow clippy::needless-lifetimes \
-		--allow clippy::match-bool \
-		--allow clippy::use-self \
-		--allow clippy::must-use-candidate \
-		--allow clippy::return-self-not-must-use \
-		--allow clippy::redundant-pub-crate \
-		--allow clippy::len-without-is-empty \
-		--allow clippy::single-match-else \
+		--allow clippy::doc-markdown \
+		--allow clippy::equatable-if-let \
 		--allow clippy::missing-errors-doc \
 		--allow clippy::missing-panics-doc \
-		--allow clippy::cast-possible-wrap \
-		--allow clippy::cast-sign-loss \
-		--allow clippy::cast-lossless \
+		--allow clippy::must-use-candidate \
+		--allow clippy::needless-lifetimes \
+		--allow clippy::option-if-let-else \
+		--allow clippy::redundant-pub-crate \
+		--allow clippy::single-match-else \
+		--allow clippy::use-self \
+		\
 		--allow clippy::cast-possible-truncation \
 
 doc_private:
