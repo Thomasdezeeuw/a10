@@ -684,6 +684,7 @@ macro_rules! op_future {
     ) => {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
+        #[must_use = "`Future`s do nothing unless polled"]
         pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> {
             /// Resoures used in the operation.
             ///
@@ -1001,6 +1002,7 @@ macro_rules! op_async_iter {
     ) => {
         #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
+        #[must_use = "`AsyncIterator`s do nothing unless polled"]
         pub struct $name<$lifetime> {
             /// File descriptor used in the operation.
             fd: &$lifetime $crate::AsyncFd,

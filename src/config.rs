@@ -12,6 +12,7 @@ use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, Su
 ///
 /// Created by calling [`Ring::config`].
 #[derive(Debug)]
+#[must_use = "no ring is created until `a10::Config::build` is called"]
 pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,

@@ -146,6 +146,7 @@ impl AsyncFd {
 ///
 /// If you're looking for a socket type, there is none, see [`AsyncFd`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct Socket {
     sq: Option<SubmissionQueue>,
     state: OpState<(libc::c_int, libc::c_int, libc::c_int, libc::c_int)>,

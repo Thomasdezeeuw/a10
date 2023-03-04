@@ -312,6 +312,7 @@ op_future! {
 
 /// [`Future`] behind [`AsyncFd::cancel_previous`] and [`AsyncFd::cancel_all`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct Cancel<'fd> {
     fd: &'fd AsyncFd,
     state: OpState<u32>,
@@ -351,6 +352,7 @@ impl<'fd> Future for Cancel<'fd> {
 ///
 ///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct CancelOp<'fd> {
     pub(crate) sq: &'fd SubmissionQueue,
     pub(crate) op_index: Option<OpIndex>,
@@ -383,6 +385,7 @@ impl<'fd> Future for CancelOp<'fd> {
 
 /// [`Future`] behind [`AsyncFd::close`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct Close {
     sq: SubmissionQueue,
     state: OpState<RawFd>,
