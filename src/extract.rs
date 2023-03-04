@@ -86,6 +86,7 @@ pub trait Extract {
 /// See the [`Extract`] trait for more information.
 ///
 /// [`Future`]: std::future::Future
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct Extractor<Fut> {
     pub(crate) fut: Fut,
 }

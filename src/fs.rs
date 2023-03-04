@@ -28,6 +28,7 @@ const METADATA_FLAGS: u32 = libc::STATX_TYPE
 
 /// Options used to configure how a file ([`AsyncFd`]) is opened.
 #[derive(Clone, Debug)]
+#[must_use = "no file is opened until `a10::fs::OpenOptions::open` or `open_temp_file` is called"]
 pub struct OpenOptions {
     flags: libc::c_int,
     mode: libc::mode_t,
@@ -172,6 +173,7 @@ impl OpenOptions {
 ///
 /// Implements [`Extract`] to extract the path buffer.
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct Open {
     /// Path used to open the file, need to stay in memory so the kernel can
     /// access it safely.
