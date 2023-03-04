@@ -35,37 +35,44 @@ pub struct OpenOptions {
 }
 
 impl OpenOptions {
-    /// Empty `OpenOptions`.
+    /// Empty `OpenOptions`, has reading enabled by default.
     pub const fn new() -> OpenOptions {
         OpenOptions {
-            flags: libc::O_CLOEXEC,
-            mode: 0o666, // Same as in std lib.
+            flags: libc::O_RDONLY | libc::O_CLOEXEC, // NOTE: `O_RDONLY` is 0.
+            mode: 0o666,                             // Same as in std lib.
         }
     }
 
     /// Enable read access.
+    ///
+    /// Note that read access is already enabled by default, so this is only
+    /// useful if you called [`OpenOptions::write_only`] and want to enable read
+    /// access as well.
     #[doc(alias = "O_RDONLY")]
     #[doc(alias = "O_RDWR")]
     pub const fn read(mut self) -> Self {
-        if self.flags & libc::O_WRONLY == 0 {
-            self.flags |= libc::O_RDONLY;
-        } else {
-            self.flags &= !libc::O_WRONLY;
+        if (self.flags & libc::O_ACCMODE) == libc::O_WRONLY {
+            self.flags &= !libc::O_ACCMODE;
             self.flags |= libc::O_RDWR;
-        }
+        } // Else we're already in read mode.
         self
     }
 
     /// Enable write access.
-    #[doc(alias = "O_WRONLY")]
     #[doc(alias = "O_RDWR")]
     pub const fn write(mut self) -> Self {
-        if self.flags & libc::O_RDONLY == 0 {
-            self.flags |= libc::O_WRONLY;
-        } else {
-            self.flags &= !libc::O_RDONLY;
+        if (self.flags & libc::O_ACCMODE) == libc::O_RDONLY {
+            self.flags &= !libc::O_ACCMODE;
             self.flags |= libc::O_RDWR;
-        }
+        } // Else we're already in write mode.
+        self
+    }
+
+    /// Only enable write access, disabling read access.
+    #[doc(alias = "O_WRONLY")]
+    pub const fn write_only(mut self) -> Self {
+        self.flags &= !libc::O_ACCMODE;
+        self.flags |= libc::O_WRONLY;
         self
     }
 

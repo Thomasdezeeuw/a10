@@ -43,10 +43,7 @@ fn main() -> io::Result<()> {
 }
 
 async fn cp(sq: SubmissionQueue, source: String, destination: String) -> io::Result<()> {
-    let input = OpenOptions::new()
-        .read()
-        .open(sq.clone(), source.into())
-        .await?;
+    let input = OpenOptions::new().open(sq.clone(), source.into()).await?;
     let output = OpenOptions::new()
         .write()
         .create_new()
