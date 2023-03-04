@@ -10,6 +10,11 @@ For simplicity this only has two main types and a number of helper types:
 
 [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
 
+## Linux Required
+
+Currently this requires a new Linux kernel version, everything should work on
+Linux v6.1 and up (currently the latest TLS).
+
 ## Examples
 
 A10 is expected to be integrated into a `Future` runtime, but it can work as a
