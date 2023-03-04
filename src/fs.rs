@@ -394,8 +394,14 @@ impl Metadata {
     }
 }
 
+#[allow(clippy::cast_sign_loss)] // Checked.
 fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::new(ts.tv_sec as u64, ts.tv_nsec)
+    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
+    if ts.tv_sec.is_negative() {
+        SystemTime::UNIX_EPOCH - dur
+    } else {
+        SystemTime::UNIX_EPOCH + dur
+    }
 }
 
 impl fmt::Debug for Metadata {

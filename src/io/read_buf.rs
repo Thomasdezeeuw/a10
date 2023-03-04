@@ -26,6 +26,7 @@ pub struct BufGroupId(pub(crate) u16);
 pub struct BufIdx(pub(crate) u16);
 
 /// Size of a single page, often 4096.
+#[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
 static PAGE_SIZE: LazyLock<usize> =
     LazyLock::new(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize });
 
@@ -102,7 +103,7 @@ impl ReadBufPool {
         // Register the buffer ring with the kernel.
         let buf_register = libc::io_uring_buf_reg {
             ring_addr: ring_addr as u64,
-            ring_entries: pool_size as u32,
+            ring_entries: u32::from(pool_size),
             bgid: id,
             // Padding and reserved for future use.
             pad: 0,
