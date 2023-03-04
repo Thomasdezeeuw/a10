@@ -39,10 +39,7 @@ async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
             stdin = a10::io::stdin(sq.clone());
             &*stdin
         } else {
-            file = OpenOptions::new()
-                .read()
-                .open(sq.clone(), filename.into())
-                .await?;
+            file = OpenOptions::new().open(sq.clone(), filename.into()).await?;
             &file
         };
 
