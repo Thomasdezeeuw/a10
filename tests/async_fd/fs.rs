@@ -33,6 +33,27 @@ fn open_extractor() {
 }
 
 #[test]
+fn create_temp_file() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = OpenOptions::new().write().open_temp_file(sq, "/tmp".into());
+    let file = waker.block_on(open_file).expect("failed to open temp file");
+
+    let expected = LOREM_IPSUM_5.content;
+    let n = waker
+        .block_on(file.write(LOREM_IPSUM_5.content))
+        .expect("failed to write");
+    assert_eq!(n, expected.len());
+
+    let buf = Vec::with_capacity(expected.len());
+    let buf = waker
+        .block_on(file.read_at(buf, 0))
+        .expect("failed to read");
+    assert!(buf == expected, "read content is different");
+}
+
+#[test]
 fn read_one_page() {
     let sq = test_queue();
     test_read(sq, &LOREM_IPSUM_5, LOREM_IPSUM_5.content.len() + 1)
