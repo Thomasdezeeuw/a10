@@ -362,9 +362,7 @@ impl<'fd> Future for CancelOp<'fd> {
     type Output = ();
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let op_index = if let Some(op_index) = self.op_index {
-            op_index
-        } else {
+        let Some(op_index) = self.op_index else {
             return Poll::Ready(());
         };
         let res = self
