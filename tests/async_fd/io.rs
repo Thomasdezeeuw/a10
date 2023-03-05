@@ -369,15 +369,16 @@ fn cancel_all_accept() {
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 
-    waker
+    let n = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
+    assert_eq!(n, 1);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
 
 #[test]
-fn cancel_all_accept_twice() {
+fn cancel_all_twice_accept() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -388,13 +389,14 @@ fn cancel_all_accept_twice() {
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 
-    waker
+    let n = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
-    // And again. Unlike `cancel_previous`, this should return ok.
-    waker
+    assert_eq!(n, 1);
+    let n = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
+    assert_eq!(n, 0);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
@@ -406,8 +408,10 @@ fn cancel_all_no_operation_in_progress() {
 
     let socket = waker.block_on(tcp_ipv4_socket(sq));
 
-    let cancel = socket.cancel_all();
-    waker.block_on(cancel).expect("failed to cancel");
+    let n = waker
+        .block_on(socket.cancel_all())
+        .expect("failed to cancel");
+    assert_eq!(n, 0);
 }
 
 #[test]
