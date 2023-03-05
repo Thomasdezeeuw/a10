@@ -76,6 +76,7 @@ pub trait Cancel {
 
 /// Result of a cancelation attempt.
 #[derive(Copy, Clone, Debug)]
+#[allow(clippy::module_name_repetitions)] // Don't care.
 pub enum CancelResult {
     /// Operation was cancelled.
     Canceled,
@@ -104,6 +105,7 @@ pub enum CancelResult {
 ///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
+#[allow(clippy::module_name_repetitions)] // Don't care.
 pub struct CancelOp<'fd> {
     pub(crate) sq: &'fd SubmissionQueue,
     pub(crate) op_index: Option<OpIndex>,
