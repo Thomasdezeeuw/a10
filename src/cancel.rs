@@ -8,7 +8,7 @@ use std::task::{self, Poll};
 use crate::op::{poll_state, OpState};
 use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
-/// Cancelation of operations.
+/// Cancelation of operations, also see the [`Cancel`] trait.
 impl AsyncFd {
     /// Attempt to cancel all in progress operations on this fd.
     ///
@@ -65,8 +65,8 @@ impl<'fd> Future for CancelAll<'fd> {
     }
 }
 
-/// Cancelation of operations.
-pub trait CancelOperation {
+/// Cancelation of in-progress operations.
+pub trait Cancel {
     /// Attempt to cancel this operation.
     fn try_cancel(&mut self) -> CancelResult;
 
@@ -83,13 +83,14 @@ pub enum CancelResult {
     NotStarted,
     /// Operation queue is currently full, can't cancel the operation.
     ///
-    /// To resolve this call [`Ring::poll`] or use [`CancelOperation::cancel`].
+    /// To resolve this call [`Ring::poll`] or use [`Cancel::cancel`] to await
+    /// the cancelation.
     ///
     /// [`Ring::poll`]: crate::Ring::poll
     QueueFull,
 }
 
-/// [`Future`] behind functions such as [`MultishotAccept::cancel`].
+/// [`Future`] behind [`Cancel::cancel`].
 ///
 /// Once this future is completed it will asynchronously cancel the related
 /// operation. This means that it *may* still return results that were created

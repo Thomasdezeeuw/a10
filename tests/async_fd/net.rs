@@ -9,7 +9,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::pin::Pin;
 use std::ptr;
 
-use a10::cancel::{CancelOperation, CancelResult};
+use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{Accept, MultishotAccept, MultishotRecv, Recv, Send, Socket};
 use a10::{Extract, Ring};

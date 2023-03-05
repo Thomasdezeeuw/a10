@@ -2,7 +2,7 @@
 //!
 //! See the [`Extract`] trait for more information.
 
-use crate::cancel::{CancelOp, CancelOperation, CancelResult};
+use crate::cancel::{Cancel, CancelOp, CancelResult};
 
 /// Extract input arguments from operations.
 ///
@@ -93,7 +93,7 @@ pub struct Extractor<Fut> {
     pub(crate) fut: Fut,
 }
 
-impl<Fut: CancelOperation> CancelOperation for Extractor<Fut> {
+impl<Fut: Cancel> Cancel for Extractor<Fut> {
     fn try_cancel(&mut self) -> CancelResult {
         self.fut.try_cancel()
     }
