@@ -164,7 +164,7 @@ fn mmap_submission_queue(
         libc::off_t::from(libc::IORING_OFF_SQES),
     )
     .map_err(|err| {
-        let _ = munmap(submission_queue, size as usize);
+        _ = munmap(submission_queue, size as usize); // Can't handle two errors.
         err
     })?;
 
@@ -254,8 +254,9 @@ fn mmap(
     match unsafe { libc::madvise(addr, len, libc::MADV_DONTFORK) } {
         0 => Ok(addr),
         _ => {
-            let _ = munmap(addr, len);
-            Err(io::Error::last_os_error())
+            let err = io::Error::last_os_error();
+            _ = munmap(addr, len); // Can't handle two errors.
+            Err(err)
         }
     }
 }
