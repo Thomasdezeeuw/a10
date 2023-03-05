@@ -28,8 +28,8 @@ impl AsyncFd {
     /// Due to the lazyness of [`Future`]s it is possible that this will return
     /// `Ok(())` if operations were never polled only to start it after the
     /// first poll.
-    pub const fn cancel_all<'fd>(&'fd self) -> Cancel<'fd> {
-        Cancel {
+    pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd> {
+        CancelAll {
             fd: self,
             state: OpState::NotStarted(libc::IORING_ASYNC_CANCEL_ALL),
         }
@@ -39,12 +39,12 @@ impl AsyncFd {
 /// [`Future`] behind [`AsyncFd::cancel_all`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
-pub struct Cancel<'fd> {
+pub struct CancelAll<'fd> {
     fd: &'fd AsyncFd,
     state: OpState<u32>,
 }
 
-impl<'fd> Future for Cancel<'fd> {
+impl<'fd> Future for CancelAll<'fd> {
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
