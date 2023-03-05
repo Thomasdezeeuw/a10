@@ -1,4 +1,7 @@
 //! Cancelation of operations.
+//!
+//! See the [`Cancel`] trait to cancel a specific operation or
+//! [`AsyncFd::cancel_all`] to cancel all operations on a fd.
 
 use std::future::Future;
 use std::io;
@@ -8,7 +11,8 @@ use std::task::{self, Poll};
 use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
-/// Cancelation of operations, also see the [`Cancel`] trait.
+/// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
+/// operations.
 impl AsyncFd {
     /// Attempt to cancel all in progress operations on this fd.
     ///
@@ -49,9 +53,15 @@ op_future! {
     },
 }
 
-/// Cancelation of in-progress operations.
+/// Cancelation of an in progress operations.
 pub trait Cancel {
     /// Attempt to cancel this operation.
+    ///
+    /// The cancelation attempt will be done asynchronously, without returning
+    /// the result. If you want to know the result of the cancelation attempt
+    /// use [`cancel`] instead.
+    ///
+    /// [`cancel`]: Cancel::cancel
     fn try_cancel(&mut self) -> CancelResult;
 
     /// Cancel this operation.
@@ -64,6 +74,11 @@ pub trait Cancel {
     /// already canceled previously.
     ///
     /// If the operation was found and canceled this returns `Ok(())`.
+    ///
+    /// If this is called on an [`AsyncIterator`] it will cause them to return
+    /// `None` (eventuaully, it may still return pending items).
+    ///
+    /// [`AsyncIterator`]: std::async_iter::AsyncIterator
     fn cancel(&mut self) -> CancelOp;
 }
 
@@ -71,7 +86,7 @@ pub trait Cancel {
 #[derive(Copy, Clone, Debug)]
 #[allow(clippy::module_name_repetitions)] // Don't care.
 pub enum CancelResult {
-    /// Operation was cancelled.
+    /// Operation was cancelled asynchronously.
     Canceled,
     /// Operation was not started.
     NotStarted,
