@@ -746,7 +746,7 @@ macro_rules! op_future {
                     $crate::op::OpState::Running(op_index) => Some(op_index),
                     $crate::op::OpState::Done => None,
                 };
-                $crate::cancel::CancelOp { sq: &self.fd.sq, op_index }
+                $crate::cancel::CancelOp::new(&self.fd.sq, op_index)
             }
         }
 
@@ -1048,7 +1048,7 @@ macro_rules! op_async_iter {
                     $crate::op::OpState::Running(op_index) => Some(op_index),
                     $crate::op::OpState::Done => None,
                 };
-                $crate::cancel::CancelOp { sq: &self.fd.sq, op_index }
+                $crate::cancel::CancelOp::new(&self.fd.sq, op_index)
             }
         }
 
