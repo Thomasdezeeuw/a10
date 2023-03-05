@@ -1,23 +1,22 @@
 //! Cancelation of operations.
 
 use std::future::Future;
-use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::op::{poll_state, OpState};
+use crate::op::op_future;
 use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait.
 impl AsyncFd {
     /// Attempt to cancel all in progress operations on this fd.
     ///
-    /// If the I/O operations were succesfully canceled this returns `Ok(())`
-    /// and the canceled operations will return `ECANCELED` to indicate they
-    /// were canceled.
+    /// If the I/O operations were succesfully canceled this returns `Ok(n)`,
+    /// where `n` is the number of operations canceled, and the canceled
+    /// operations will return `ECANCELED` to indicate they were canceled.
     ///
     /// If no operations were found, for example if they were already completed,
-    /// this will return `Ok(())`.
+    /// this will return `Ok(0)`.
     ///
     /// In general, operations that are interruptible (like socket IO) will get
     /// canceled, while disk IO operations cannot be canceled if already
@@ -26,43 +25,27 @@ impl AsyncFd {
     /// # Notes
     ///
     /// Due to the lazyness of [`Future`]s it is possible that this will return
-    /// `Ok(())` if operations were never polled only to start it after the
+    /// `Ok(0)` if operations were never polled only to start it after their
     /// first poll.
     pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd> {
-        CancelAll {
-            fd: self,
-            state: OpState::NotStarted(libc::IORING_ASYNC_CANCEL_ALL),
-        }
+        CancelAll::new(self, libc::IORING_ASYNC_CANCEL_ALL)
     }
 }
 
-/// [`Future`] behind [`AsyncFd::cancel_all`].
-#[derive(Debug)]
-#[must_use = "`Future`s do nothing unless polled"]
-pub struct CancelAll<'fd> {
-    fd: &'fd AsyncFd,
-    state: OpState<u32>,
-}
-
-impl<'fd> Future for CancelAll<'fd> {
-    type Output = io::Result<()>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let op_index = poll_state!(Cancel, *self, ctx, |submission, fd, flags| unsafe {
-            submission.cancel(fd.fd, flags);
-        });
-
-        match self.fd.sq.poll_op(ctx, op_index) {
-            Poll::Ready(result) => {
-                self.state = OpState::Done;
-                match result {
-                    Ok(_) => Poll::Ready(Ok(())),
-                    Err(err) => Poll::Ready(Err(err)),
-                }
-            }
-            Poll::Pending => Poll::Pending,
-        }
-    }
+// CancelAll.
+op_future! {
+    fn AsyncFd::cancel_all -> usize,
+    struct CancelAll<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: u32,
+    setup: |submission, fd, (), flags| unsafe {
+        submission.cancel(fd.fd, flags);
+    },
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
 }
 
 /// Cancelation of in-progress operations.
