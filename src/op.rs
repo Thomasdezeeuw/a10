@@ -726,7 +726,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::CancelOperation for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
                     $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
@@ -1028,7 +1028,7 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> $crate::cancel::CancelOperation for $name<$lifetime> {
+        impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 match self.state {
                     $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
