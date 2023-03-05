@@ -1,19 +1,17 @@
 //! Tests for the I/O operations.
 
 use std::env::temp_dir;
-use std::io;
 use std::ops::Bound;
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
-use a10::cancel::{Cancel, CancelOp};
 use a10::fs::OpenOptions;
 use a10::io::{stderr, stdout, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
 use a10::Ring;
 
 use crate::util::{
-    bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init, is_send, is_sync, poll_nop,
-    tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_50,
+    bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, poll_nop, tcp_ipv4_socket,
+    test_queue, Waker, LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -360,30 +358,6 @@ fn read_buf_remove_invalid_range() {
 }
 
 #[test]
-fn cancel_previous_accept() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    is_send::<Cancel>();
-    is_sync::<Cancel>();
-    is_send::<CancelOp>();
-    is_sync::<CancelOp>();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
-
-    let mut accept = listener.accept();
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut accept)).is_pending());
-
-    waker
-        .block_on(listener.cancel_previous())
-        .expect("failed to cancel accept call");
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
 fn cancel_all_accept() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -398,30 +372,6 @@ fn cancel_all_accept() {
     waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_previous_accept_twice() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
-
-    let mut accept = listener.accept();
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut accept)).is_pending());
-
-    waker
-        .block_on(listener.cancel_previous())
-        .expect("failed to cancel accept call");
-    // And again.
-    expect_io_error_kind(
-        waker.block_on(listener.cancel_previous()),
-        io::ErrorKind::NotFound,
-    );
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
@@ -447,17 +397,6 @@ fn cancel_all_accept_twice() {
         .expect("failed to cancel all calls");
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_previous_no_operation_in_progress() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let socket = waker.block_on(tcp_ipv4_socket(sq));
-
-    let cancel = socket.cancel_previous();
-    expect_io_error_kind(waker.block_on(cancel), io::ErrorKind::NotFound);
 }
 
 #[test]

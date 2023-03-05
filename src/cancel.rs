@@ -10,31 +10,24 @@ use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 /// Cancelation of operations.
 impl AsyncFd {
-    /// Attempt to cancel an in progress operation.
+    /// Attempt to cancel all in progress operations on this fd.
     ///
-    /// If the previous I/O operation was succesfully canceled this returns
-    /// `Ok(())` and the canceled operation will return `ECANCELED` to indicate
-    /// it was canceled.
+    /// If the I/O operations were succesfully canceled this returns `Ok(())`
+    /// and the canceled operations will return `ECANCELED` to indicate they
+    /// were canceled.
     ///
-    /// If no previous operation was found, for example if it was already
-    /// completed, this will return `io::ErrorKind::NotFound`.
+    /// If no operations were found, for example if they were already completed,
+    /// this will return `Ok(())`.
     ///
-    /// In general, requests that are interruptible (like socket IO) will get
-    /// canceled, while disk IO requests cannot be canceled if already started.
+    /// In general, operations that are interruptible (like socket IO) will get
+    /// canceled, while disk IO operations cannot be canceled if already
+    /// started.
     ///
     /// # Notes
     ///
-    /// Due to the lazyness of [`Future`]s it's possible that this will return
-    /// `NotFound` if the previous operation was never polled.
-    pub const fn cancel_previous<'fd>(&'fd self) -> Cancel<'fd> {
-        Cancel {
-            fd: self,
-            state: OpState::NotStarted(0),
-        }
-    }
-
-    /// Same as [`AsyncFd::cancel_previous`], but attempts to cancel all
-    /// operations.
+    /// Due to the lazyness of [`Future`]s it is possible that this will return
+    /// `Ok(())` if operations were never polled only to start it after the
+    /// first poll.
     pub const fn cancel_all<'fd>(&'fd self) -> Cancel<'fd> {
         Cancel {
             fd: self,
@@ -43,7 +36,7 @@ impl AsyncFd {
     }
 }
 
-/// [`Future`] behind [`AsyncFd::cancel_previous`] and [`AsyncFd::cancel_all`].
+/// [`Future`] behind [`AsyncFd::cancel_all`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct Cancel<'fd> {
