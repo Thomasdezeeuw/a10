@@ -15,8 +15,8 @@ use a10::net::{Accept, MultishotAccept, MultishotRecv, Recv, Send, Socket};
 use a10::{Extract, Ring};
 
 use crate::util::{
-    bind_ipv4, block_on, init, is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket,
-    test_queue, Waker,
+    bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next, poll_nop, syscall,
+    tcp_ipv4_socket, test_queue, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -80,7 +80,9 @@ fn cancel_accept() {
     assert!(poll_nop(accept.as_mut()).is_pending());
 
     // Then cancel the accept multishot call.
-    waker.block_on(accept.as_mut().cancel());
+    waker
+        .block_on(accept.as_mut().cancel())
+        .expect("failed to cancel");
 
     let err = waker.block_on(accept).unwrap_err();
     assert_eq!(err.raw_os_error(), Some(libc::ECANCELED));
@@ -203,7 +205,9 @@ fn cancel_multishot_accept() {
     let c_addr1 = peer_addr(client1.as_fd()).expect("failed to get address");
 
     // Then cancel the accept multishot call.
-    waker.block_on(accept_stream.cancel());
+    waker
+        .block_on(accept_stream.cancel())
+        .expect("failed to cancel");
 
     // We should still be able to accept the second connection.
     let client2 = waker
@@ -265,6 +269,20 @@ fn try_cancel_multishot_accept_before_poll() {
     if !matches!(accept_stream.try_cancel(), CancelResult::NotStarted) {
         panic!("failed to cancel");
     }
+}
+
+#[test]
+fn cancel_multishot_accept_before_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    bind_ipv4(&listener);
+
+    let mut accept_stream = listener.multishot_accept();
+
+    expect_io_errno(waker.block_on(accept_stream.cancel()), libc::ENOENT)
 }
 
 #[test]

@@ -1,10 +1,11 @@
 //! Cancelation of operations.
 
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::op::op_future;
+use crate::op::{op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait.
@@ -54,6 +55,15 @@ pub trait Cancel {
     fn try_cancel(&mut self) -> CancelResult;
 
     /// Cancel this operation.
+    ///
+    /// If this returns `ENOENT` it means the operation was not found. This can
+    /// be caused by the operation never starting, due to the inert nature of
+    /// [`Future`]s, or the operation has already been completed.
+    ///
+    /// If this returns `EALREADY` it means the operation was found, but it was
+    /// already canceled previously.
+    ///
+    /// If the operation was found and canceled this returns `Ok(())`.
     fn cancel(&mut self) -> CancelOp;
 }
 
@@ -90,29 +100,60 @@ pub enum CancelResult {
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)] // Don't care.
 pub struct CancelOp<'fd> {
-    pub(crate) sq: &'fd SubmissionQueue,
-    pub(crate) op_index: Option<OpIndex>,
+    sq: &'fd SubmissionQueue,
+    state: OpState<Option<OpIndex>>,
+}
+
+impl<'fd> CancelOp<'fd> {
+    /// Create a new `CancelOp`.
+    pub(crate) const fn new(sq: &'fd SubmissionQueue, op_index: Option<OpIndex>) -> CancelOp<'fd> {
+        CancelOp {
+            sq,
+            state: OpState::NotStarted(op_index),
+        }
+    }
 }
 
 impl<'fd> Future for CancelOp<'fd> {
-    type Output = ();
+    type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let Some(op_index) = self.op_index else {
-            return Poll::Ready(());
+        let op_index = match self.state {
+            OpState::Running(op_index) => op_index,
+            OpState::NotStarted(Some(to_cancel_op_index)) => {
+                // SAFETY: this will not panic as the resources are only removed
+                // after the state is set to `Done`.
+                let result = self
+                    .sq
+                    .add(|submission| unsafe { submission.cancel_op(to_cancel_op_index) });
+                match result {
+                    Ok(op_index) => {
+                        self.state = OpState::Running(op_index);
+                        op_index
+                    }
+                    Err(QueueFull(())) => {
+                        self.sq.wait_for_submission(ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            // If the operation is not started we pretend like we didn't find
+            // it.
+            OpState::NotStarted(None) => {
+                return Poll::Ready(Err(io::Error::from_raw_os_error(libc::ENOENT)))
+            }
+            OpState::Done => poll_state!(__panic CancelOp),
         };
-        let res = self
-            .sq
-            .add_no_result(|submission| unsafe { submission.cancel_op(op_index) });
-        match res {
-            Ok(()) => {
-                self.op_index = None;
-                Poll::Ready(())
+
+        match self.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok((_, res)) => Poll::Ready(Ok(debug_assert!(res == 0))),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
             }
-            Err(QueueFull(())) => {
-                self.sq.wait_for_submission(ctx.waker().clone());
-                Poll::Pending
-            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }
