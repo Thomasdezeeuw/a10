@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Barrier};
 use std::task::Poll;
 use std::time::Instant;
-use std::{io, panic, process, ptr, thread};
+use std::{env, fmt, io, panic, process, ptr, thread};
 
 use a10::signals::{self, Signals};
 use a10::Ring;
@@ -32,7 +32,8 @@ fn main() {
     is_send::<signals::Receive>();
     is_sync::<signals::Receive>();
 
-    let mut harness = TestHarness::setup();
+    let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
+    let mut harness = TestHarness::setup(quiet);
     harness.test_single_threaded();
     harness.test_multi_threaded();
 
@@ -41,7 +42,7 @@ fn main() {
 
     // Final test, make sure the cleanup is done properly.
     drop(harness);
-    test_cleanup(&mut passed, &mut failed);
+    test_cleanup(quiet, &mut passed, &mut failed);
 
     println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:?}\n", start.elapsed());
 }
@@ -51,10 +52,11 @@ struct TestHarness {
     signals: Signals,
     passed: usize,
     failed: usize,
+    quiet: bool,
 }
 
 impl TestHarness {
-    fn setup() -> TestHarness {
+    fn setup(quiet: bool) -> TestHarness {
         let ring = Ring::new(2).unwrap();
         let sq = ring.submission_queue().clone();
         let signals = create_sigset().unwrap();
@@ -64,22 +66,23 @@ impl TestHarness {
             signals,
             passed: 0,
             failed: 0,
+            quiet,
         }
     }
 
     fn test_single_threaded(&mut self) {
         let pid = process::id();
         for (signal, name) in SIGNALS.iter().zip(SIGNAL_NAMES) {
-            print!("test single_threaded ({name}) ... ");
+            print_test_start(self.quiet, format_args!("single_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, *signal).unwrap();
                 receive_signal(&mut self.ring, &self.signals, *signal);
             }));
             if res.is_ok() {
-                print!("ok\n");
+                print_test_ok(self.quiet);
                 self.passed += 1
             } else {
-                print!("FAILED\n");
+                print_test_failed(self.quiet);
                 self.failed += 1
             };
         }
@@ -104,15 +107,15 @@ impl TestHarness {
         });
 
         for (signal, name) in SIGNALS.iter().zip(SIGNAL_NAMES) {
-            print!("test multi_threaded ({name}) ... ");
+            print_test_start(self.quiet, format_args!("multi_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 receive_signal(&mut self.ring, &self.signals, *signal);
             }));
             if res.is_ok() {
-                print!("ok\n");
+                print_test_ok(self.quiet);
                 self.passed += 1
             } else {
-                print!("FAILED\n");
+                print_test_failed(self.quiet);
                 self.failed += 1
             };
             barrier.wait();
@@ -122,8 +125,8 @@ impl TestHarness {
     }
 }
 
-fn test_cleanup(passed: &mut usize, failed: &mut usize) {
-    print!("test cleanup ... ");
+fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
+    print_test_start(quiet, format_args!("cleanup"));
     let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         // After `Signals` is dropped all signals should be unblocked.
         let set = blocked_signalset().unwrap();
@@ -132,10 +135,10 @@ fn test_cleanup(passed: &mut usize, failed: &mut usize) {
         }
     }));
     if res.is_ok() {
-        print!("ok\n");
+        print_test_ok(quiet);
         *passed += 1
     } else {
-        print!("FAILED\n");
+        print_test_failed(quiet);
         *failed += 1
     };
 }
@@ -178,5 +181,27 @@ fn in_signalset(set: &libc::sigset_t, signal: libc::c_int) -> bool {
     match syscall!(sigismember(set, signal)).unwrap() {
         1 => true,
         _ => false,
+    }
+}
+
+fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
+    if !quiet {
+        print!("test {name} ... ");
+    }
+}
+
+fn print_test_ok(quiet: bool) {
+    if quiet {
+        print!(".")
+    } else {
+        print!("ok\n")
+    }
+}
+
+fn print_test_failed(quiet: bool) {
+    if quiet {
+        print!("F")
+    } else {
+        print!("FAILED\n")
     }
 }
