@@ -3,7 +3,6 @@
 use std::env::temp_dir;
 use std::fs::remove_file;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
 use std::{io, panic, str};
 
 use a10::fs::{self, OpenOptions};
@@ -416,17 +415,15 @@ fn sync_data() {
 
 #[test]
 fn metadata_small() {
-    let created = SystemTime::UNIX_EPOCH + Duration::new(1664033209, 759488874);
-    test_metadata(&LOREM_IPSUM_5, created)
+    test_metadata(&LOREM_IPSUM_5)
 }
 
 #[test]
 fn metadata_big() {
-    let created = SystemTime::UNIX_EPOCH + Duration::new(1664033209, 759488874);
-    test_metadata(&LOREM_IPSUM_50, created)
+    test_metadata(&LOREM_IPSUM_50)
 }
 
-fn test_metadata(test_file: &TestFile, created: SystemTime) {
+fn test_metadata(test_file: &TestFile) {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -452,9 +449,8 @@ fn test_metadata(test_file: &TestFile, created: SystemTime) {
     assert!(permissions.others_can_read());
     assert!(!permissions.others_can_write());
     assert!(!permissions.others_can_execute());
-    // Can never get `accessed` right and `modified` is too much of a moving
-    // target.
-    assert_eq!(metadata.created(), created);
+    // NOTE: we don't check the access, modification or creation timestamp are
+    // those re to different between test runs.
 }
 
 fn remove_test_file(path: &Path) {
