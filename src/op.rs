@@ -458,11 +458,29 @@ impl Submission {
     }
 
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
+        self.msg(ring_fd, u64::MAX, u32::MAX, 0)
+    }
+
+    /// Note that the argument `user_data` and `res` names are the same as the
+    /// field names on the completion event.
+    // TODO: we can add another ~`u32` by setting `file_index` (returned as
+    // `flags` on the completion) and using `IORING_MSG_RING_FLAGS_PASS`, should
+    // be available in 6.3.
+    pub(crate) unsafe fn msg(
+        &mut self,
+        ring_fd: RawFd,
+        user_data: u64,
+        res: u32,
+        msg_ring_flags: u32,
+    ) {
         self.inner.opcode = libc::IORING_OP_MSG_RING as u8;
         self.inner.fd = ring_fd;
-        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: u64::MAX, // `user_data` in the completion event.
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: libc::IORING_MSG_DATA as _,
         };
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: user_data };
+        self.inner.len = res;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_ring_flags };
     }
 }
 
