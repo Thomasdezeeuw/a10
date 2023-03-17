@@ -354,6 +354,12 @@ impl Ring {
     }
 }
 
+impl AsFd for Ring {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.sq.shared.ring_fd.as_fd()
+    }
+}
+
 /// Queue to submit asynchronous operations to.
 ///
 /// This type doesn't have any public methods, but is used by all I/O types,
