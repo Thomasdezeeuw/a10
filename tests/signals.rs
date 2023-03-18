@@ -228,10 +228,8 @@ fn blocked_signalset() -> io::Result<libc::sigset_t> {
 }
 
 fn in_signalset(set: &libc::sigset_t, signal: libc::c_int) -> bool {
-    match syscall!(sigismember(set, signal)).unwrap() {
-        1 => true,
-        _ => false,
-    }
+    // SAFETY: we ensure the signal set is a valid pointer.
+    unsafe { libc::sigismember(set, signal) == 1 }
 }
 
 fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {

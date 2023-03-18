@@ -60,12 +60,17 @@ use crate::{AsyncFd, SubmissionQueue};
 /// }
 /// # }
 /// ```
+#[derive(Debug)]
 pub struct Signals {
     /// `signalfd(2)` file descriptor.
     fd: AsyncFd,
     /// All signals this is listening for, used in resetting the signal handlers.
-    signals: libc::sigset_t,
+    signals: SignalSet,
 }
+
+/// Wrapper around [`libc::sigset_t`] to implement Debug.
+#[repr(transparent)]
+struct SignalSet(libc::sigset_t);
 
 impl Signals {
     /// Create a new signal notifier from a signal set.
@@ -74,7 +79,10 @@ impl Signals {
         let fd = AsyncFd { fd, sq };
         // Block all `signals` as we're going to read them from the signalfd.
         sigprocmask(libc::SIG_BLOCK, &signals)?;
-        Ok(Signals { fd, signals })
+        Ok(Signals {
+            fd,
+            signals: SignalSet(signals),
+        })
     }
 
     /// Create a new signal notified from an iterator of signals.
@@ -127,16 +135,58 @@ op_future! {
     },
 }
 
-impl fmt::Debug for Signals {
+/// Known signals supported by Linux as of v6.3.
+const KNOWN_SIGNALS: [(libc::c_int, &'static str); 33] = [
+    (libc::SIGHUP, "SIGHUP"),
+    (libc::SIGINT, "SIGINT"),
+    (libc::SIGQUIT, "SIGQUIT"),
+    (libc::SIGILL, "SIGILL"),
+    (libc::SIGTRAP, "SIGTRAP"),
+    (libc::SIGABRT, "SIGABRT"),
+    (libc::SIGIOT, "SIGIOT"),
+    (libc::SIGBUS, "SIGBUS"),
+    (libc::SIGFPE, "SIGFPE"),
+    (libc::SIGKILL, "SIGKILL"),
+    (libc::SIGUSR1, "SIGUSR1"),
+    (libc::SIGSEGV, "SIGSEGV"),
+    (libc::SIGUSR2, "SIGUSR2"),
+    (libc::SIGPIPE, "SIGPIPE"),
+    (libc::SIGALRM, "SIGALRM"),
+    (libc::SIGTERM, "SIGTERM"),
+    (libc::SIGSTKFLT, "SIGSTKFLT"),
+    (libc::SIGCHLD, "SIGCHLD"),
+    (libc::SIGCONT, "SIGCONT"),
+    (libc::SIGSTOP, "SIGSTOP"),
+    (libc::SIGTSTP, "SIGTSTP"),
+    (libc::SIGTTIN, "SIGTTIN"),
+    (libc::SIGTTOU, "SIGTTOU"),
+    (libc::SIGURG, "SIGURG"),
+    (libc::SIGXCPU, "SIGXCPU"),
+    (libc::SIGXFSZ, "SIGXFSZ"),
+    (libc::SIGVTALRM, "SIGVTALRM"),
+    (libc::SIGPROF, "SIGPROF"),
+    (libc::SIGWINCH, "SIGWINCH"),
+    (libc::SIGIO, "SIGIO"),
+    (libc::SIGPOLL, "SIGPOLL"), // NOTE: same value as `SIGIO`.
+    //(libc::SIGLOST, "SIGLOST"),
+    (libc::SIGPWR, "SIGPWR"),
+    (libc::SIGSYS, "SIGSYS"),
+];
+
+impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Signals").field("fd", &self.fd).finish()
+        let signals = KNOWN_SIGNALS.into_iter().filter_map(|(signal, name)| {
+            // SAFETY: we ensure the pointer to the signal set is valid.
+            (unsafe { libc::sigismember(&self.0, signal) } == 1).then_some(name)
+        });
+        f.debug_list().entries(signals).finish()
     }
 }
 
 impl Drop for Signals {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
-        if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals) {
+        if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
             error!("error unblocking signals: {err}");
         }
     }
