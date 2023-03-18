@@ -5,7 +5,7 @@
 use std::mem::{size_of, MaybeUninit};
 use std::{fmt, io, ptr};
 
-use log::error;
+use log::{error, trace};
 
 use crate::libc::{self, syscall};
 use crate::op::{op_future, NO_OFFSET};
@@ -29,9 +29,9 @@ use crate::{AsyncFd, SubmissionQueue};
 /// This will block all signals in the signal set given when creating `Signals`,
 /// using [`pthread_sigmask(3)`]. This means that the thread in which `Signals`
 /// was created (and it's children) is not interrupted, or in any way notified
-/// of signal until [`Signals::receive`] is called (and the returned [`Future`]
-/// polled to completion). Under the hood [`Signals`] is just a wrapper around
-/// [`signalfd(2)`].
+/// of a signal until [`Signals::receive`] is called (and the returned
+/// [`Future`] polled to completion). Under the hood [`Signals`] is just a
+/// wrapper around [`signalfd(2)`].
 ///
 /// [`pthread_sigmask(3)`]: https://man7.org/linux/man-pages/man3/pthread_sigmask.3.html
 /// [`Future`]: std::future::Future
@@ -75,14 +75,13 @@ struct SignalSet(libc::sigset_t);
 impl Signals {
     /// Create a new signal notifier from a signal set.
     pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
-        let fd = libc::syscall!(signalfd(-1, &signals, libc::SFD_CLOEXEC))?;
+        let signals = SignalSet(signals);
+        trace!(signals = log::as_debug!(signals); "setting up signal handling");
+        let fd = libc::syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
         let fd = AsyncFd { fd, sq };
         // Block all `signals` as we're going to read them from the signalfd.
-        sigprocmask(libc::SIG_BLOCK, &signals)?;
-        Ok(Signals {
-            fd,
-            signals: SignalSet(signals),
-        })
+        sigprocmask(libc::SIG_BLOCK, &signals.0)?;
+        Ok(Signals { fd, signals })
     }
 
     /// Create a new signal notified from an iterator of signals.
@@ -187,7 +186,7 @@ impl Drop for Signals {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
-            error!("error unblocking signals: {err}");
+            error!(signals = log::as_debug!(self.signals); "error unblocking signals: {err}");
         }
     }
 }
