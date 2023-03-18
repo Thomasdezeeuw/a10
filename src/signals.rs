@@ -68,7 +68,7 @@ pub struct Signals {
     signals: SignalSet,
 }
 
-/// Wrapper around [`libc::sigset_t`] to implement Debug.
+/// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
 #[repr(transparent)]
 struct SignalSet(libc::sigset_t);
 
@@ -84,7 +84,7 @@ impl Signals {
         Ok(Signals { fd, signals })
     }
 
-    /// Create a new signal notified from an iterator of signals.
+    /// Create a new signal notified from a collection of signals.
     pub fn from_signals<I>(sq: SubmissionQueue, signals: I) -> io::Result<Signals>
     where
         I: IntoIterator<Item = libc::c_int>,
