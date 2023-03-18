@@ -84,12 +84,21 @@ impl Signals {
         Ok(Signals { fd, signals })
     }
 
-    /// Create a new signal notified from a collection of signals.
+    /// Create a new signal notifier from a collection of signals.
     pub fn from_signals<I>(sq: SubmissionQueue, signals: I) -> io::Result<Signals>
     where
         I: IntoIterator<Item = libc::c_int>,
     {
         let set = create_sigset(signals)?;
+        Signals::from_set(sq, set)
+    }
+
+    /// Create a new signal notifier for all supported signals (set by `sigfillset(3)`).
+    pub fn for_all_signals(sq: SubmissionQueue) -> io::Result<Signals> {
+        let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
+        syscall!(sigfillset(set.as_mut_ptr()))?;
+        // SAFETY: initialised the set in the call to `sigfillset`.
+        let set = unsafe { set.assume_init() };
         Signals::from_set(sq, set)
     }
 
