@@ -59,8 +59,7 @@ impl TestHarness {
     fn setup(quiet: bool) -> TestHarness {
         let ring = Ring::new(2).unwrap();
         let sq = ring.submission_queue().clone();
-        let signals = create_sigset().unwrap();
-        let signals = Signals::new(sq, signals).unwrap();
+        let signals = Signals::from_signals(sq, SIGNALS).unwrap();
         TestHarness {
             ring,
             signals,
@@ -152,17 +151,6 @@ fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: libc::c_i
         }
     };
     assert_eq!(signal_info.ssi_signo as libc::c_int, expected_signal);
-}
-
-fn create_sigset() -> io::Result<libc::sigset_t> {
-    let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
-    syscall!(sigemptyset(set.as_mut_ptr()))?;
-    // SAFETY: initialised the set in the call to `sigemptyset`.
-    let mut set = unsafe { set.assume_init() };
-    for signal in SIGNALS {
-        syscall!(sigaddset(&mut set, signal))?;
-    }
-    Ok(set)
 }
 
 fn send_signal(pid: u32, signal: libc::c_int) -> std::io::Result<()> {

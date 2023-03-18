@@ -7,8 +7,9 @@ use std::{fmt, io, ptr};
 
 use log::error;
 
+use crate::libc::{self, syscall};
 use crate::op::{op_future, NO_OFFSET};
-use crate::{libc, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue};
 
 /// Notification of process signals.
 ///
@@ -51,27 +52,13 @@ use crate::{libc, AsyncFd, SubmissionQueue};
 ///     let sq = ring.submission_queue().clone();
 ///
 ///     // Create a new `Signals` instance.
-///     let sigset = create_sigset(&[libc::SIGINT, libc::SIGQUIT, libc::SIGTERM])?;
-///     let signals = Signals::new(sq, sigset)?;
+///     let signals = Signals::from_signals(sq, [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM])?;
 ///
 ///     let signal_info = signals.receive().await?;
 ///     println!("Got process signal: {}", signal_info.ssi_signo);
 ///     Ok(())
 /// }
 /// # }
-///
-/// /// Create a `sigset_t` from `signals`.
-/// fn create_sigset(signals: &[libc::c_int]) -> io::Result<libc::sigset_t> {
-/// #   macro_rules! syscall { ( $( $t: tt )*  ) => { io::Result::Ok(()) } }
-///     let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
-///     syscall!(sigemptyset(set.as_mut_ptr()))?;
-///     // SAFETY: initialised the set in the call to `sigemptyset`.
-///     let mut set = unsafe { set.assume_init() };
-///     for signal in signals {
-///         syscall!(sigaddset(&mut set, signal))?;
-///     }
-///     Ok(set)
-/// }
 /// ```
 pub struct Signals {
     /// `signalfd(2)` file descriptor.
@@ -90,11 +77,32 @@ impl Signals {
         Ok(Signals { fd, signals })
     }
 
+    /// Create a new signal notified from an iterator of signals.
+    pub fn from_signals<I>(sq: SubmissionQueue, signals: I) -> io::Result<Signals>
+    where
+        I: IntoIterator<Item = libc::c_int>,
+    {
+        let set = create_sigset(signals)?;
+        Signals::new(sq, set)
+    }
+
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> Receive<'fd> {
         let info = Box::new_uninit();
         Receive::new(&self.fd, info, ())
     }
+}
+
+/// Create a `sigset_t` from `signals`.
+fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<libc::sigset_t> {
+    let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
+    syscall!(sigemptyset(set.as_mut_ptr()))?;
+    // SAFETY: initialised the set in the call to `sigemptyset`.
+    let mut set = unsafe { set.assume_init() };
+    for signal in signals {
+        syscall!(sigaddset(&mut set, signal))?;
+    }
+    Ok(set)
 }
 
 // Receive.
