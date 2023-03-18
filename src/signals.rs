@@ -20,7 +20,7 @@ use crate::{AsyncFd, SubmissionQueue};
 /// an implementation detail where the spawned threads must inherit various
 /// signal related thread options from the parent thread.
 ///
-/// Any threads spawned before calling `Signals::new` will experience the
+/// Any threads spawned before creating a `Signals` instance will experience the
 /// default process signals behaviour, i.e. sending it a signal will interrupt
 /// or stop it.
 ///
@@ -68,8 +68,8 @@ pub struct Signals {
 }
 
 impl Signals {
-    /// Create a new signal notifier.
-    pub fn new(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
+    /// Create a new signal notifier from a signal set.
+    pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
         let fd = libc::syscall!(signalfd(-1, &signals, libc::SFD_CLOEXEC))?;
         let fd = AsyncFd { fd, sq };
         // Block all `signals` as we're going to read them from the signalfd.
@@ -83,7 +83,7 @@ impl Signals {
         I: IntoIterator<Item = libc::c_int>,
     {
         let set = create_sigset(signals)?;
-        Signals::new(sq, set)
+        Signals::from_set(sq, set)
     }
 
     /// Receive a signal.
