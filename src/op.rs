@@ -458,7 +458,7 @@ impl Submission {
     }
 
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
-        self.msg(ring_fd, u64::MAX, u32::MAX, 0)
+        self.msg(ring_fd, u64::MAX, u32::MAX, 0);
     }
 
     /// Note that the argument `user_data` and `res` names are the same as the
@@ -476,7 +476,7 @@ impl Submission {
         self.inner.opcode = libc::IORING_OP_MSG_RING as u8;
         self.inner.fd = ring_fd;
         self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: libc::IORING_MSG_DATA as _,
+            addr: u64::from(libc::IORING_MSG_DATA),
         };
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: user_data };
         self.inner.len = res;

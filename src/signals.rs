@@ -135,7 +135,7 @@ op_future! {
 }
 
 /// Known signals supported by Linux as of v6.3.
-const KNOWN_SIGNALS: [(libc::c_int, &'static str); 33] = [
+const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
     (libc::SIGHUP, "SIGHUP"),
     (libc::SIGINT, "SIGINT"),
     (libc::SIGQUIT, "SIGQUIT"),
