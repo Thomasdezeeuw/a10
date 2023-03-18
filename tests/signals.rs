@@ -80,7 +80,7 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
     "SIGPROF",
     "SIGWINCH",
     "SIGIO",
-    "SIGPOLL", // NOTE: same value as `SIGIO`.
+    "SIGPOLL",
     "SIGPWR",
     "SIGSYS",
 ];
@@ -191,7 +191,7 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
     let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         // After `Signals` is dropped all signals should be unblocked.
         let set = blocked_signalset().unwrap();
-        for signal in SIGNALS.iter().copied() {
+        for signal in SIGNALS.into_iter() {
             assert!(!in_signalset(&set, signal));
         }
     }));
