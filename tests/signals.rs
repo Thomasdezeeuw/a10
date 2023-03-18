@@ -13,15 +13,77 @@ use a10::Ring;
 mod util;
 use util::{is_send, is_sync, poll_nop, syscall};
 
-const SIGNALS: [libc::c_int; 5] = [
+const SIGNALS: [libc::c_int; 31] = [
+    libc::SIGHUP,
     libc::SIGINT,
     libc::SIGQUIT,
-    libc::SIGTERM,
+    libc::SIGILL,
+    libc::SIGTRAP,
+    libc::SIGABRT,
+    libc::SIGIOT,
+    libc::SIGBUS,
+    libc::SIGFPE,
+    //libc::SIGKILL, // Can't handle this.
     libc::SIGUSR1,
+    libc::SIGSEGV,
     libc::SIGUSR2,
+    libc::SIGPIPE,
+    libc::SIGALRM,
+    libc::SIGTERM,
+    libc::SIGSTKFLT,
+    libc::SIGCHLD,
+    libc::SIGCONT,
+    //libc::SIGSTOP, // Can't handle this.
+    libc::SIGTSTP,
+    libc::SIGTTIN,
+    libc::SIGTTOU,
+    libc::SIGURG,
+    libc::SIGXCPU,
+    libc::SIGXFSZ,
+    libc::SIGVTALRM,
+    libc::SIGPROF,
+    libc::SIGWINCH,
+    libc::SIGIO,
+    libc::SIGPOLL, // NOTE: same value as `SIGIO`.
+    libc::SIGPWR,
+    libc::SIGSYS,
 ];
 
-const SIGNAL_NAMES: [&str; SIGNALS.len()] = ["SIGINT", "SIGQUIT", "SIGTERM", "SIGUSR1", "SIGUSR2"];
+const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
+    "SIGHUP",
+    "SIGINT",
+    "SIGQUIT",
+    "SIGILL",
+    "SIGTRAP",
+    "SIGABRT",
+    "SIGIOT",
+    "SIGBUS",
+    "SIGFPE",
+    //"SIGKILL",
+    "SIGUSR1",
+    "SIGSEGV",
+    "SIGUSR2",
+    "SIGPIPE",
+    "SIGALRM",
+    "SIGTERM",
+    "SIGSTKFLT",
+    "SIGCHLD",
+    "SIGCONT",
+    //"SIGSTOP",
+    "SIGTSTP",
+    "SIGTTIN",
+    "SIGTTOU",
+    "SIGURG",
+    "SIGXCPU",
+    "SIGXFSZ",
+    "SIGVTALRM",
+    "SIGPROF",
+    "SIGWINCH",
+    "SIGIO",
+    "SIGPOLL", // NOTE: same value as `SIGIO`.
+    "SIGPWR",
+    "SIGSYS",
+];
 
 fn main() {
     let start = Instant::now();
@@ -71,11 +133,11 @@ impl TestHarness {
 
     fn test_single_threaded(&mut self) {
         let pid = process::id();
-        for (signal, name) in SIGNALS.iter().zip(SIGNAL_NAMES) {
+        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(self.quiet, format_args!("single_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                send_signal(pid, *signal).unwrap();
-                receive_signal(&mut self.ring, &self.signals, *signal);
+                send_signal(pid, signal).unwrap();
+                receive_signal(&mut self.ring, &self.signals, signal);
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -105,10 +167,10 @@ impl TestHarness {
             }
         });
 
-        for (signal, name) in SIGNALS.iter().zip(SIGNAL_NAMES) {
+        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(self.quiet, format_args!("multi_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                receive_signal(&mut self.ring, &self.signals, *signal);
+                receive_signal(&mut self.ring, &self.signals, signal);
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -129,7 +191,7 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
     let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
         // After `Signals` is dropped all signals should be unblocked.
         let set = blocked_signalset().unwrap();
-        for signal in SIGNALS {
+        for signal in SIGNALS.iter().copied() {
             assert!(!in_signalset(&set, signal));
         }
     }));
