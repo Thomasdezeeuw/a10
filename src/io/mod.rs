@@ -49,11 +49,11 @@ macro_rules! stdio {
         }
 
         #[doc = concat!(
-                    "An [`AsyncFd`] for ", stringify!($fn), ".\n\n",
-                    "# Notes\n\n",
-                    "This directly writes to the raw file descriptor, which means it's not buffered and will not flush anything buffered by the standard library.\n\n",
-                    "When this type is dropped it will not close ", stringify!($fn), ".",
-                )]
+            "An [`AsyncFd`] for ", stringify!($fn), ".\n\n",
+            "# Notes\n\n",
+            "This directly writes to the raw file descriptor, which means it's not buffered and will not flush anything buffered by the standard library.\n\n",
+            "When this type is dropped it will not close ", stringify!($fn), ".",
+        )]
         pub struct $name(std::mem::ManuallyDrop<$crate::AsyncFd>);
 
         impl std::ops::Deref for $name {
