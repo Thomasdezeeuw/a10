@@ -1,16 +1,16 @@
 //! Tests for the filesystem operations.
 
 use std::env::temp_dir;
-use std::fs::remove_file;
 use std::path::Path;
-use std::{io, panic, str};
+use std::{panic, str};
 
 use a10::fs::{self, OpenOptions};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
-    defer, is_send, is_sync, test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50, PAGE_SIZE,
+    defer, is_send, is_sync, remove_test_file, test_queue, TestFile, Waker, LOREM_IPSUM_5,
+    LOREM_IPSUM_50, PAGE_SIZE,
 };
 
 #[test]
@@ -451,12 +451,4 @@ fn test_metadata(test_file: &TestFile) {
     assert!(!permissions.others_can_execute());
     // NOTE: we don't check the access, modification or creation timestamp are
     // those re to different between test runs.
-}
-
-fn remove_test_file(path: &Path) {
-    match remove_file(path) {
-        Ok(()) => {}
-        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
-        Err(err) => panic!("unexpected error removing test file: {err}"),
-    }
 }

@@ -24,6 +24,8 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
+use crate::cancel::{Cancel, CancelOp, CancelResult};
+use crate::extract::{Extract, Extractor};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -129,6 +131,24 @@ impl AsyncFd {
         B: Buf,
     {
         Write::new(self, buf, offset)
+    }
+
+    /// Write all of `buf` to this fd.
+    pub const fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
+    where
+        B: Buf,
+    {
+        self.write_all_at(buf, NO_OFFSET)
+    }
+
+    /// Write all of `buf` to this fd at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub const fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
+    where
+        B: Buf,
+    {
+        WriteAll::new(self, buf, offset)
     }
 
     /// Write `bufs` to this file.
@@ -256,6 +276,99 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
+}
+
+/// [`Future`] behind [`AsyncFd::write_all`].
+#[derive(Debug)]
+pub struct WriteAll<'fd, B> {
+    write: Extractor<Write<'fd, SkipBuf<B>>>,
+    offset: u64,
+}
+
+impl<'fd, B: Buf> WriteAll<'fd, B> {
+    const fn new(fd: &'fd AsyncFd, buf: B, offset: u64) -> WriteAll<'fd, B> {
+        let buf = SkipBuf { buf, skip: 0 };
+        WriteAll {
+            // TODO: once `Extract` is a constant trait use that.
+            write: Extractor {
+                fut: fd.write_at(buf, offset),
+            },
+            offset,
+        }
+    }
+
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn inner_poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut write = unsafe { Pin::new_unchecked(&mut this.write) };
+        match write.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((mut buf, n))) => {
+                buf.skip += n as u32;
+                if this.offset != NO_OFFSET {
+                    this.offset += n as u64;
+                }
+
+                if let (_, 0) = unsafe { buf.parts() } {
+                    // Written everything.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                write.set(write.fut.fd.write_at(buf, this.offset).extract());
+                unsafe { Pin::new_unchecked(this) }.inner_poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B> Cancel for WriteAll<'fd, B> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.write.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.write.cancel()
+    }
+}
+
+impl<'fd, B: Buf> Future for WriteAll<'fd, B> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.inner_poll(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: Buf> Extract for WriteAll<'fd, B> {}
+
+impl<'fd, B: Buf> Future for Extractor<WriteAll<'fd, B>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.inner_poll(ctx)
+    }
+}
+
+/// Wrapper around a buffer `B` to skip a number of bytes.
+#[derive(Debug)]
+struct SkipBuf<B> {
+    buf: B,
+    skip: u32,
+}
+
+unsafe impl<B: Buf> Buf for SkipBuf<B> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let (ptr, size) = self.buf.parts();
+        if self.skip >= size {
+            (ptr, 0)
+        } else {
+            (ptr.add(self.skip as usize), size - self.skip)
+        }
+    }
 }
 
 // WriteVectored.

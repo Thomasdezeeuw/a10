@@ -4,9 +4,11 @@
 
 use std::any::Any;
 use std::async_iter::AsyncIterator;
+use std::fs::remove_file;
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::{Arc, LazyLock, Once};
 use std::task::{self, Poll};
@@ -221,6 +223,14 @@ impl<F: FnOnce()> Drop for Defer<F> {
         } else {
             f()
         }
+    }
+}
+
+pub(crate) fn remove_test_file(path: &Path) {
+    match remove_file(path) {
+        Ok(()) => {}
+        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => panic!("unexpected error removing test file: {err}"),
     }
 }
 
