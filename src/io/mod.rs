@@ -174,6 +174,31 @@ impl AsyncFd {
         WriteVectored::new(self, bufs, iovecs, offset)
     }
 
+    /// Write all `bufs` to this file.
+    pub fn write_all_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> WriteAllVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.write_all_vectored_at(bufs, NO_OFFSET)
+    }
+
+    /// Write all `bufs` to this file at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn write_all_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        offset: u64,
+    ) -> WriteAllVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        WriteAllVectored::new(self, bufs, offset)
+    }
+
     /// Explicitly close the file descriptor.
     ///
     /// # Notes
@@ -404,6 +429,92 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
+}
+
+/// [`Future`] behind [`AsyncFd::write_all_vectored`].
+#[derive(Debug)]
+pub struct WriteAllVectored<'fd, B, const N: usize> {
+    write: Extractor<WriteVectored<'fd, B, N>>,
+    offset: u64,
+    skip: u64,
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
+    fn new(fd: &'fd AsyncFd, buf: B, offset: u64) -> WriteAllVectored<'fd, B, N> {
+        WriteAllVectored {
+            write: fd.write_vectored_at(buf, offset).extract(),
+            offset,
+            skip: 0,
+        }
+    }
+
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn inner_poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut write = unsafe { Pin::new_unchecked(&mut this.write) };
+        match write.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((bufs, n))) => {
+                this.skip += n as u64;
+                if this.offset != NO_OFFSET {
+                    this.offset += n as u64;
+                }
+
+                let mut iovecs = unsafe { bufs.as_iovec() };
+                let mut skip = this.skip;
+                for iovec in iovecs.iter_mut() {
+                    if iovec.iov_len as u64 <= skip {
+                        // Skip entire buf.
+                        skip -= iovec.iov_len as u64;
+                        iovec.iov_len = 0;
+                    } else {
+                        iovec.iov_len -= skip as usize;
+                        break;
+                    }
+                }
+
+                if iovecs[N - 1].iov_len == 0 {
+                    // Written everything.
+                    return Poll::Ready(Ok(bufs));
+                }
+
+                write.set(WriteVectored::new(write.fut.fd, bufs, iovecs, this.offset).extract());
+                unsafe { Pin::new_unchecked(this) }.inner_poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B, const N: usize> Cancel for WriteAllVectored<'fd, B, N> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.write.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.write.cancel()
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for WriteAllVectored<'fd, B, N> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.inner_poll(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Extract for WriteAllVectored<'fd, B, N> {}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<WriteAllVectored<'fd, B, N>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.inner_poll(ctx)
+    }
 }
 
 /// [`Future`] behind [`AsyncFd::close`].

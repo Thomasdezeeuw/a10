@@ -9,7 +9,7 @@ use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, Buf, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
+use a10::io::{stderr, stdout, Buf, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
@@ -435,6 +435,94 @@ unsafe impl Buf for BadBuf {
             3 | 4 => (ptr, 30),
             _ => (ptr, 0),
         }
+    }
+}
+
+#[test]
+fn write_all_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    let buf = BadBufSlice {
+        calls: Cell::new(0),
+    };
+    waker.block_on(w.write_all_vectored(buf)).unwrap();
+
+    let buf = waker.block_on(r.read(Vec::with_capacity(31))).unwrap();
+    debug_assert_eq!(buf[..10], BadBufSlice::DATA1);
+    debug_assert_eq!(buf[10..20], BadBufSlice::DATA2);
+    debug_assert_eq!(buf[20..], BadBufSlice::DATA3);
+}
+
+#[test]
+fn write_all_vectored_at_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("write_all_vectored_at_extract");
+
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let mut expected = Vec::from("Hello".as_bytes());
+    waker.block_on(file.write("Hello world")).unwrap();
+
+    let buf = BadBufSlice {
+        calls: Cell::new(0),
+    };
+    waker.block_on(file.write_all_vectored_at(buf, 5)).unwrap();
+
+    let got = std::fs::read(&path).unwrap();
+    expected.extend_from_slice(BadBufSlice::DATA1.as_slice());
+    expected.extend_from_slice(BadBufSlice::DATA2.as_slice());
+    expected.extend_from_slice(BadBufSlice::DATA3.as_slice());
+    assert!(got == expected, "file can't be read back");
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the
+// write_all_vectored method.
+struct BadBufSlice {
+    calls: Cell<usize>,
+}
+
+impl BadBufSlice {
+    const DATA1: [u8; 10] = [123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
+    const DATA2: [u8; 10] = [200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
+    const DATA3: [u8; 10] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+}
+
+unsafe impl BufSlice<3> for BadBufSlice {
+    unsafe fn as_iovec(&self) -> [libc::iovec; 3] {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+
+        fn cast(ptr: &[u8]) -> *mut libc::c_void {
+            ptr.as_ptr().cast_mut().cast()
+        }
+
+        [
+            libc::iovec {
+                iov_base: cast(BadBufSlice::DATA1.as_slice()),
+                iov_len: 10,
+            },
+            libc::iovec {
+                iov_base: cast(BadBufSlice::DATA2.as_slice()),
+                iov_len: 10,
+            },
+            libc::iovec {
+                iov_base: cast(BadBufSlice::DATA3.as_slice()),
+                iov_len: if calls == 0 { 5 } else { 10 },
+            },
+        ]
     }
 }
 
