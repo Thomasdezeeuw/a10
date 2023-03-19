@@ -1,17 +1,20 @@
 //! Tests for the I/O operations.
 
+use std::cell::Cell;
 use std::env::temp_dir;
+use std::io;
 use std::ops::Bound;
+use std::os::fd::RawFd;
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
-use a10::Ring;
+use a10::io::{stderr, stdout, Buf, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
+use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
-    bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, poll_nop, tcp_ipv4_socket,
-    test_queue, Waker, LOREM_IPSUM_50,
+    bind_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
+    remove_test_file, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -358,6 +361,84 @@ fn read_buf_remove_invalid_range() {
 }
 
 #[test]
+fn write_all() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    let buf = BadBuf {
+        calls: Cell::new(0),
+    };
+    waker.block_on(w.write_all(buf)).unwrap();
+
+    let buf = waker
+        .block_on(r.read(Vec::with_capacity(BadBuf::DATA.len() + 1)))
+        .unwrap();
+    debug_assert_eq!(buf, BadBuf::DATA);
+}
+
+#[test]
+fn write_all_at_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("write_all_at_extract");
+
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let mut expected = Vec::from("Hello".as_bytes());
+    waker.block_on(file.write("Hello world")).unwrap();
+
+    let buf = BadBuf {
+        calls: Cell::new(0),
+    };
+    waker.block_on(file.write_all_at(buf, 5).extract()).unwrap();
+
+    let got = std::fs::read(&path).unwrap();
+    expected.extend_from_slice(BadBuf::DATA.as_slice());
+    assert!(got == expected, "file can't be read back");
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+struct BadBuf {
+    calls: Cell<usize>,
+}
+
+impl BadBuf {
+    const DATA: [u8; 30] = [
+        123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
+        200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+}
+
+unsafe impl Buf for BadBuf {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+
+        let ptr = BadBuf::DATA.as_slice().as_ptr();
+        // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
+        // to the WriteAll future already does that for us.
+        match calls {
+            0 => (ptr, 10),
+            1 | 2 => (ptr, 20),
+            3 | 4 => (ptr, 30),
+            _ => (ptr, 0),
+        }
+    }
+}
+
+#[test]
 fn cancel_all_accept() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -474,4 +555,16 @@ fn stderr_write() {
 
     let stderr = stderr(sq);
     waker.block_on(stderr.write("Hello, stderr!\n")).unwrap();
+}
+
+fn pipe2(sq: SubmissionQueue) -> io::Result<(AsyncFd, AsyncFd)> {
+    let mut fds: [RawFd; 2] = [-1, -1];
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+
+    // SAFETY: we just initialised the `fds` above.
+    let r = unsafe { AsyncFd::new(fds[0], sq.clone()) };
+    let w = unsafe { AsyncFd::new(fds[1], sq) };
+    Ok((r, w))
 }
