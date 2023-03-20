@@ -547,7 +547,7 @@ impl ReadBuf {
 ///
 /// [`ButMutSlice`]: crate::io::BufMutSlice
 unsafe impl BufMut for ReadBuf {
-    unsafe fn parts(&mut self) -> (*mut u8, u32) {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         if let Some(ptr) = self.owned {
             let len = self.shared.buf_size - ptr.len() as u32;
             (ptr.as_mut_ptr().add(ptr.len()), len)

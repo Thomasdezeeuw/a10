@@ -239,7 +239,7 @@ op_future! {
     },
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (buf,), flags| unsafe {
-        let (ptr, len) = buf.parts();
+        let (ptr, len) = buf.parts_mut();
         submission.recv(fd.fd, ptr, len, flags);
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);

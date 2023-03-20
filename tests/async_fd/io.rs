@@ -572,8 +572,8 @@ struct BadReadBuf {
 }
 
 unsafe impl BufMut for BadReadBuf {
-    unsafe fn parts(&mut self) -> (*mut u8, u32) {
-        let (ptr, size) = BufMut::parts(&mut self.data);
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        let (ptr, size) = self.data.parts_mut();
         if size >= 10 {
             (ptr, 10)
         } else {
