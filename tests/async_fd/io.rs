@@ -503,7 +503,7 @@ impl BadBufSlice {
 }
 
 unsafe impl BufSlice<3> for BadBufSlice {
-    unsafe fn as_iovec(&self) -> [libc::iovec; 3] {
+    unsafe fn as_iovecs(&self) -> [libc::iovec; 3] {
         let calls = self.calls.get();
         self.calls.set(calls + 1);
 
@@ -615,8 +615,8 @@ struct BadReadBufSlice {
 }
 
 unsafe impl BufMutSlice<2> for BadReadBufSlice {
-    unsafe fn as_iovec(&mut self) -> [libc::iovec; 2] {
-        let mut iovecs = BufMutSlice::as_iovec(&mut self.data);
+    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; 2] {
+        let mut iovecs = self.data.as_iovecs_mut();
         if iovecs[0].iov_len >= 10 {
             iovecs[0].iov_len = 10;
             iovecs[1].iov_len = 5;
@@ -625,7 +625,7 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
     }
 
     unsafe fn set_init(&mut self, n: usize) {
-        if self.as_iovec()[0].iov_len == 10 {
+        if self.as_iovecs_mut()[0].iov_len == 10 {
             self.data[0].set_init(10);
             self.data[1].set_init(n - 10);
         } else {
@@ -665,8 +665,8 @@ struct GrowingBufSlice {
 }
 
 unsafe impl BufMutSlice<2> for GrowingBufSlice {
-    unsafe fn as_iovec(&mut self) -> [libc::iovec; 2] {
-        BufMutSlice::as_iovec(&mut self.data)
+    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; 2] {
+        self.data.as_iovecs_mut()
     }
 
     unsafe fn set_init(&mut self, n: usize) {
