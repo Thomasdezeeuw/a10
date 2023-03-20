@@ -9,12 +9,12 @@ use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, Buf, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
+use a10::io::{stderr, stdout, Buf, BufMut, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     bind_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
-    remove_test_file, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_50,
+    remove_test_file, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -523,6 +523,64 @@ unsafe impl BufSlice<3> for BadBufSlice {
                 iov_len: if calls == 0 { 5 } else { 10 },
             },
         ]
+    }
+}
+
+#[test]
+fn read_n() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    const DATA: &[u8] = b"hello world";
+    waker.block_on(w.write(DATA)).unwrap();
+
+    let buf = BadReadBuf {
+        data: Vec::with_capacity(30),
+    };
+    let buf = waker.block_on(r.read_n(buf, DATA.len())).unwrap();
+    debug_assert_eq!(&buf.data, DATA);
+}
+
+#[test]
+fn read_n_at() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let test_file = &LOREM_IPSUM_5;
+
+    let path = test_file.path.into();
+    let open_file = OpenOptions::new().open(sq, path);
+    let file = waker.block_on(open_file).unwrap();
+
+    let buf = BadReadBuf {
+        data: Vec::with_capacity(test_file.content.len()),
+    };
+    let buf = waker
+        .block_on(file.read_n_at(buf, 5, test_file.content.len() - 5))
+        .unwrap();
+    assert_eq!(&buf.data, &test_file.content[5..]);
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+struct BadReadBuf {
+    data: Vec<u8>,
+}
+
+unsafe impl BufMut for BadReadBuf {
+    unsafe fn parts(&mut self) -> (*mut u8, u32) {
+        let (ptr, size) = BufMut::parts(&mut self.data);
+        if size >= 10 {
+            (ptr, 10)
+        } else {
+            (ptr, size)
+        }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        self.data.set_init(n);
     }
 }
 

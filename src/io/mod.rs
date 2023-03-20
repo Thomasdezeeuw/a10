@@ -92,6 +92,24 @@ impl AsyncFd {
         Read::new(self, buf, offset)
     }
 
+    /// Read at least `n` bytes from this fd into `buf`.
+    pub const fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
+    where
+        B: BufMut,
+    {
+        self.read_n_at(buf, NO_OFFSET, n)
+    }
+
+    /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub const fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
+    where
+        B: BufMut,
+    {
+        ReadN::new(self, buf, offset, n)
+    }
+
     /// Read from this fd into `buf`.
     pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N>
     where
@@ -246,6 +264,68 @@ op_future! {
     },
 }
 
+/// [`Future`] behind [`AsyncFd::read_n`].
+#[derive(Debug)]
+pub struct ReadN<'fd, B> {
+    read: Read<'fd, ReadNBuf<B>>,
+    offset: u64,
+    /// Number of bytes we still need to read to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMut> ReadN<'fd, B> {
+    const fn new(fd: &'fd AsyncFd, buf: B, offset: u64, n: usize) -> ReadN<'fd, B> {
+        let buf = ReadNBuf { buf, last_read: 0 };
+        ReadN {
+            read: fd.read_at(buf, offset),
+            offset,
+            left: n,
+        }
+    }
+}
+
+impl<'fd, B> Cancel for ReadN<'fd, B> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.read.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.read.cancel()
+    }
+}
+
+impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut read = unsafe { Pin::new_unchecked(&mut this.read) };
+        match read.as_mut().poll(ctx) {
+            Poll::Ready(Ok(buf)) => {
+                if buf.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if buf.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                this.left -= buf.last_read;
+                if this.offset != NO_OFFSET {
+                    this.offset += buf.last_read as u64;
+                }
+
+                read.set(read.fd.read_at(buf, this.offset));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
 // ReadVectored.
 op_future! {
     fn AsyncFd::read_vectored -> B,
@@ -278,6 +358,24 @@ op_future! {
         unsafe { bufs.set_init(n as usize) };
         Ok(bufs)
     },
+}
+
+/// Wrapper around a buffer `B` to keep track of the number of bytes written,
+#[derive(Debug)]
+struct ReadNBuf<B> {
+    buf: B,
+    last_read: usize,
+}
+
+unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
+    unsafe fn parts(&mut self) -> (*mut u8, u32) {
+        self.buf.parts()
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        self.last_read = n;
+        self.buf.set_init(n);
+    }
 }
 
 // Write.
