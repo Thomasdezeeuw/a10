@@ -9,7 +9,9 @@ use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
-use a10::io::{stderr, stdout, Buf, BufMut, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout};
+use a10::io::{
+    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout,
+};
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
@@ -581,6 +583,95 @@ unsafe impl BufMut for BadReadBuf {
 
     unsafe fn set_init(&mut self, n: usize) {
         self.data.set_init(n);
+    }
+}
+
+#[test]
+fn read_n_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    const DATA: &[u8] = b"Hello marsBooo!! Hi. How are you?";
+    waker.block_on(w.write(DATA)).unwrap();
+
+    let buf = BadReadBufSlice {
+        data: [Vec::with_capacity(15), Vec::with_capacity(20)],
+    };
+    let buf = waker.block_on(r.read_n_vectored(buf, DATA.len())).unwrap();
+    //debug_assert_eq!(&buf.data[0], b"Hello mars! Hi.");
+    debug_assert_eq!(
+        std::str::from_utf8(&buf.data[0]).unwrap(),
+        "Hello mars! Hi."
+    );
+    debug_assert_eq!(&buf.data[1], b"Booo! How are you?");
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+struct BadReadBufSlice {
+    data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for BadReadBufSlice {
+    unsafe fn as_iovec(&mut self) -> [libc::iovec; 2] {
+        let mut iovecs = BufMutSlice::as_iovec(&mut self.data);
+        if iovecs[0].iov_len >= 10 {
+            iovecs[0].iov_len = 10;
+            iovecs[1].iov_len = 5;
+        }
+        iovecs
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        if self.as_iovec()[0].iov_len == 10 {
+            self.data[0].set_init(10);
+            self.data[1].set_init(n - 10);
+        } else {
+            self.data.set_init(n);
+        }
+    }
+}
+
+#[test]
+fn read_n_vectored_at() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let test_file = &LOREM_IPSUM_5;
+
+    let path = test_file.path.into();
+    let open_file = OpenOptions::new().open(sq, path);
+    let file = waker.block_on(open_file).unwrap();
+
+    let buf = GrowingBufSlice {
+        data: [
+            Vec::with_capacity(100),
+            Vec::with_capacity(test_file.content.len() - 200),
+        ],
+    };
+    let buf = waker
+        .block_on(file.read_n_vectored_at(buf, 5, test_file.content.len() - 5))
+        .unwrap();
+    assert_eq!(&buf.data[0], &test_file.content[5..105]);
+    assert_eq!(&buf.data[1], &test_file.content[105..]);
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+struct GrowingBufSlice {
+    data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for GrowingBufSlice {
+    unsafe fn as_iovec(&mut self) -> [libc::iovec; 2] {
+        BufMutSlice::as_iovec(&mut self.data)
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        self.data.set_init(n);
+        self.data[1].reserve(200);
     }
 }
 
