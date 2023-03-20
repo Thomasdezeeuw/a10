@@ -276,7 +276,7 @@ op_future! {
     },
     setup_state: offset: u64,
     setup: |submission, fd, (buf,), offset| unsafe {
-        let (ptr, len) = buf.parts();
+        let (ptr, len) = buf.parts_mut();
         submission.read_at(fd.fd, ptr, len, offset);
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
@@ -460,8 +460,8 @@ struct ReadNBuf<B> {
 }
 
 unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
-    unsafe fn parts(&mut self) -> (*mut u8, u32) {
-        self.buf.parts()
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        self.buf.parts_mut()
     }
 
     unsafe fn set_init(&mut self, n: usize) {
@@ -795,14 +795,14 @@ pub unsafe trait BufMut: 'static {
     ///
     /// Most Rust API use a `usize` for length, but io_uring uses `u32`, hence
     /// we do also.
-    unsafe fn parts(&mut self) -> (*mut u8, u32);
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32);
 
     /// Mark `n` bytes as initialised.
     ///
     /// # Safety
     ///
     /// The caller must ensure that `n` bytes, starting at the pointer returned
-    /// by [`BufMut::parts`], are initialised.
+    /// by [`BufMut::parts_mut`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 
     /// Buffer group id, or `None` if it's not part of a buffer pool.
@@ -829,7 +829,7 @@ pub unsafe trait BufMut: 'static {
 // alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
 // will also be leaked.
 unsafe impl BufMut for Vec<u8> {
-    unsafe fn parts(&mut self) -> (*mut u8, u32) {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         let slice = self.spare_capacity_mut();
         (slice.as_mut_ptr().cast(), slice.len() as u32)
     }
@@ -851,8 +851,8 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
     ///
     /// # Safety
     ///
-    /// This has the same safety requirements as [`BufMut::parts`], but then for
-    /// all buffers used.
+    /// This has the same safety requirements as [`BufMut::parts_mut`], but then
+    /// for all buffers used.
     unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N];
 
     /// Mark `n` bytes as initialised.
@@ -880,7 +880,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
                 buf.buffer_group().is_none(),
                 "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
             );
-            let (ptr, len) = buf.parts();
+            let (ptr, len) = buf.parts_mut();
             iovec.write(libc::iovec {
                 iov_base: ptr.cast(),
                 iov_len: len as _,
@@ -892,7 +892,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn set_init(&mut self, n: usize) {
         let mut left = n;
         for buf in self.iter_mut() {
-            let (_, len) = buf.parts();
+            let (_, len) = buf.parts_mut();
             let len = len as usize;
             if len < left {
                 // Fully initialised the buffer.
@@ -1034,7 +1034,7 @@ macro_rules! buf_slice_for_tuple {
                             self.$index.buffer_group().is_none(),
                             "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
                         );
-                        let (ptr, len) = self.$index.parts();
+                        let (ptr, len) = self.$index.parts_mut();
                         libc::iovec {
                             iov_base: ptr.cast(),
                             iov_len: len as _,
@@ -1046,7 +1046,7 @@ macro_rules! buf_slice_for_tuple {
             unsafe fn set_init(&mut self, n: usize) {
                 let mut left = n;
                 $({
-                    let (_, len) = self.$index.parts();
+                    let (_, len) = self.$index.parts_mut();
                     let len = len as usize;
                     if len < left {
                         // Fully initialised the buffer.
