@@ -396,3 +396,16 @@ impl SocketAddress for libc::sockaddr_un {
         (ptr.cast(), size_of::<Self>() as _)
     }
 }
+
+/// When [`accept`]ing connections we're not interested in the address.
+///
+/// [`accept`]: AsyncFd::accept
+pub struct NoAddress;
+
+impl SocketAddress for NoAddress {
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        _ = ptr;
+        // NOTE: this goes against the requirements of `cast_ptr`.
+        (ptr::null_mut(), 0)
+    }
+}

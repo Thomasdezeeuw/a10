@@ -11,7 +11,7 @@ use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
-use a10::net::{Accept, MultishotAccept, MultishotRecv, Recv, Send, Socket};
+use a10::net::{Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, Send, Socket};
 use a10::{Extract, Ring};
 
 use crate::util::{
@@ -41,6 +41,47 @@ fn accept() {
     let address = from_storage(addr, addr_len);
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
     assert_eq!(stream.local_addr().unwrap(), address.into());
+
+    // Read some data.
+    stream.write(DATA1).expect("failed to write");
+    let mut buf = waker
+        .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
+        .expect("failed to read");
+    assert_eq!(buf, DATA1);
+
+    // Write some data.
+    let n = waker
+        .block_on(client.write(DATA2))
+        .expect("failed to write");
+    assert_eq!(n, DATA2.len());
+    buf.resize(DATA2.len() + 1, 0);
+    let n = stream.read(&mut buf).expect("failed to read");
+    assert_eq!(&buf[..n], DATA2);
+
+    // Closing the client should get a result.
+    drop(stream);
+    buf.clear();
+    let buf = waker.block_on(client.read(buf)).expect("failed to read");
+    assert!(buf.is_empty());
+}
+
+#[test]
+fn accept_no_address() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Accept<libc::sockaddr_storage>>();
+    is_sync::<Accept<libc::sockaddr_storage>>();
+
+    // Bind a socket.
+    let listener = waker.block_on(tcp_ipv4_socket(sq));
+    let local_addr = bind_ipv4(&listener);
+
+    // Accept a connection.
+    let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
+    assert_eq!(stream.peer_addr().unwrap(), local_addr);
+    let accept = listener.accept::<NoAddress>();
+    let (client, _, _) = waker.block_on(accept).expect("failed to accept connection");
 
     // Read some data.
     stream.write(DATA1).expect("failed to write");
