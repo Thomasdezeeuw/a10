@@ -4,11 +4,11 @@
 //! issues a non-blocking `socket(2)` call.
 
 use std::future::Future;
+use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{io, ptr};
 
 use crate::io::{Buf, BufIdx, BufMut, ReadBuf, ReadBufPool};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
@@ -197,7 +197,7 @@ op_future! {
     },
     setup_state: _unused: (),
     setup: |submission, fd, (address,), ()| unsafe {
-        let (ptr, len) = address.as_ptr_mut();
+        let (ptr, len) = A::cast_ptr(&mut **address);
         submission.connect(fd.fd, ptr, len);
     },
     map_result: |result| Ok(debug_assert!(result == 0)),
@@ -371,7 +371,7 @@ pub trait SocketAddress {
     // TODO: once we can cast integers during const eval make the size a
     // constant.
 
-    /// Returns the address storage as pointer and length parts.
+    /// Cast the pointer `ptr` to self to an adress storage and it's length.
     ///
     /// # Safety
     ///
@@ -387,40 +387,40 @@ pub trait SocketAddress {
     ///
     /// Note that the above requirements are only required for implementations
     /// outside of A10. **This trait is unfit for external use!**
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t);
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t);
 }
 
 /// Socket address.
 impl SocketAddress for libc::sockaddr {
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr::addr_of_mut!(*self), size_of::<Self>() as _)
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr, size_of::<Self>() as _)
     }
 }
 
 /// Any kind of address.
 impl SocketAddress for libc::sockaddr_storage {
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr.cast(), size_of::<Self>() as _)
     }
 }
 
 /// IPv4 address.
 impl SocketAddress for libc::sockaddr_in {
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr.cast(), size_of::<Self>() as _)
     }
 }
 
 /// IPv6 address.
 impl SocketAddress for libc::sockaddr_in6 {
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr.cast(), size_of::<Self>() as _)
     }
 }
 
 /// Unix address.
 impl SocketAddress for libc::sockaddr_un {
-    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr.cast(), size_of::<Self>() as _)
     }
 }
