@@ -1,5 +1,5 @@
 use std::net::{SocketAddr, SocketAddrV4};
-use std::{env, io, mem, ptr, str};
+use std::{env, io, mem, str};
 
 use a10::net::socket;
 use a10::{Ring, SubmissionQueue};
@@ -59,8 +59,8 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     let socket = socket(sq, domain, r#type, protocol, flags).await?;
 
     // Connect.
-    let (addr, addr_len) = to_sockaddr_storage(address);
-    socket.connect(addr, addr_len).await?;
+    let addr = to_sockaddr_storage(address);
+    socket.connect(addr).await?;
 
     // Send a HTTP GET / request to the socket.
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
@@ -78,18 +78,13 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     Ok(recv_buf)
 }
 
-fn to_sockaddr_storage(addr: SocketAddrV4) -> (libc::sockaddr_storage, libc::socklen_t) {
-    // SAFETY: a `sockaddr_storage` of all zeros is valid.
-    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
-    let len = {
-        let storage: &mut libc::sockaddr_in = unsafe { &mut *ptr::addr_of_mut!(storage).cast() };
-        storage.sin_family = libc::AF_INET as _;
-        storage.sin_port = addr.port().to_be();
-        storage.sin_addr = libc::in_addr {
-            s_addr: u32::from_ne_bytes(addr.ip().octets()),
-        };
-        storage.sin_zero = Default::default();
-        mem::size_of::<libc::sockaddr_in>() as _
+fn to_sockaddr_storage(addr: SocketAddrV4) -> libc::sockaddr_in {
+    // SAFETY: a `sockaddr_in` of all zeros is valid.
+    let mut storage: libc::sockaddr_in = unsafe { mem::zeroed() };
+    storage.sin_family = libc::AF_INET as _;
+    storage.sin_port = addr.port().to_be();
+    storage.sin_addr = libc::in_addr {
+        s_addr: u32::from_ne_bytes(addr.ip().octets()),
     };
-    (storage, len)
+    storage
 }

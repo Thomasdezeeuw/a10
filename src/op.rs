@@ -304,7 +304,7 @@ impl Submission {
     pub(crate) unsafe fn connect(
         &mut self,
         fd: RawFd,
-        address: &mut libc::sockaddr_storage,
+        address: *mut libc::sockaddr,
         address_length: libc::socklen_t,
     ) {
         self.inner.opcode = libc::IORING_OP_CONNECT as u8;

@@ -33,12 +33,12 @@ pub const fn socket(
 /// Socket related system calls.
 impl AsyncFd {
     /// Initiate a connection on this socket to the specified address.
-    pub fn connect<'fd, A>(&'fd self, address: A, address_length: libc::socklen_t) -> Connect<'fd>
+    pub fn connect<'fd, A>(&'fd self, address: impl Into<Box<A>>) -> Connect<'fd, A>
     where
-        A: Into<Box<libc::sockaddr_storage>>,
+        A: SocketAddress,
     {
         let address = address.into();
-        Connect::new(self, address, address_length)
+        Connect::new(self, address, ())
     }
 
     /// Sends data on the socket to a connected peer.
@@ -191,16 +191,17 @@ impl Future for Socket {
 // Connect.
 op_future! {
     fn AsyncFd::connect -> (),
-    struct Connect<'fd> {
+    struct Connect<'fd, A: SocketAddress> {
         /// Address needs to stay alive for as long as the kernel is connecting.
-        address: Box<libc::sockaddr_storage>,
+        address: Box<A>,
     },
-    setup_state: address_length: libc::socklen_t,
-    setup: |submission, fd, (address,), address_length| unsafe {
-        submission.connect(fd.fd, &mut *address, address_length);
+    setup_state: _unused: (),
+    setup: |submission, fd, (address,), ()| unsafe {
+        let (ptr, len) = address.as_ptr_mut();
+        submission.connect(fd.fd, ptr, len);
     },
     map_result: |result| Ok(debug_assert!(result == 0)),
-    extract: |this, (address,), res| -> Box<libc::sockaddr_storage> {
+    extract: |this, (address,), res| -> Box<A> {
         debug_assert!(res == 0);
         Ok(address)
     },
