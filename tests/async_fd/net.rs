@@ -317,18 +317,8 @@ fn connect() {
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = {
-        let mut addr: libc::sockaddr_storage = unsafe { mem::zeroed() };
-        let a = unsafe { &mut *(&mut addr as *mut _ as *mut libc::sockaddr_in) };
-        a.sin_family = libc::AF_INET as libc::sa_family_t;
-        a.sin_port = local_addr.port().to_be();
-        a.sin_addr = libc::in_addr {
-            s_addr: u32::from_ne_bytes(local_addr.ip().octets()),
-        };
-        addr
-    };
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -372,8 +362,7 @@ fn connect_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len).extract();
+    let mut connect_future = stream.connect(addr).extract();
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -415,8 +404,7 @@ fn recv() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -458,8 +446,7 @@ fn recv_read_buf_pool() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -498,8 +485,7 @@ fn recv_read_buf_pool_send_read_buf() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -550,8 +536,7 @@ fn multishot_recv() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -598,8 +583,7 @@ fn multishot_recv_large_send() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -649,8 +633,7 @@ fn multishot_recv_all_buffers_used() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -701,8 +684,7 @@ fn send() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -735,8 +717,7 @@ fn send_zc() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -769,8 +750,7 @@ fn send_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -804,8 +784,7 @@ fn send_zc_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -842,8 +821,7 @@ fn shutdown() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    let mut connect_future = stream.connect(addr, addr_len);
+    let mut connect_future = stream.connect(addr);
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
@@ -859,17 +837,15 @@ fn shutdown() {
     assert_eq!(n, 0);
 }
 
-fn addr_storage(addres: &SocketAddrV4) -> libc::sockaddr_storage {
-    // SAFETY: zeroed out `sockaddr_storage` is valid.
-    let mut addr: libc::sockaddr_storage = unsafe { mem::zeroed() };
-    addr.ss_family = libc::AF_INET as libc::sa_family_t;
-    // SAFETY: `sockaddr_in` is a valid variant size we se `AF_INET` above.
-    let a = unsafe { &mut *(&mut addr as *mut _ as *mut libc::sockaddr_in) };
-    a.sin_port = addres.port().to_be();
-    a.sin_addr = libc::in_addr {
-        s_addr: u32::from_ne_bytes(addres.ip().octets()),
+fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
+    // SAFETY: a `sockaddr_in` of all zeros is valid.
+    let mut storage: libc::sockaddr_in = unsafe { mem::zeroed() };
+    storage.sin_family = libc::AF_INET as libc::sa_family_t;
+    storage.sin_port = address.port().to_be();
+    storage.sin_addr = libc::in_addr {
+        s_addr: u32::from_ne_bytes(address.ip().octets()),
     };
-    addr
+    storage
 }
 
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
