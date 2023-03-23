@@ -4,11 +4,11 @@
 //! issues a non-blocking `socket(2)` call.
 
 use std::future::Future;
-use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::pin::Pin;
 use std::task::{self, Poll};
+use std::{io, ptr};
 
 use crate::io::{Buf, BufIdx, BufMut, ReadBuf, ReadBufPool};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
@@ -354,4 +354,72 @@ op_async_iter! {
         let sq = this.fd.sq.clone();
         AsyncFd { fd, sq }
     },
+}
+
+/// Trait that defines the behaviour of socket addresses.
+///
+/// Linux (Unix) uses different address types for different sockets, to support
+/// all of them A10 uses a trait to define the behaviour.
+///
+/// Current implementations include
+///  * IPv4 addresses: [`libc::sockaddr_in`],
+///  * IPv6 addresses: [`libc::sockaddr_in6`],
+///  * Unix addresses: [`libc::sockaddr_un`],
+///  * Storage of any address [`libc::sockaddr_storage`] kind.
+pub trait SocketAddress {
+    // TODO: once we can cast integers during const eval make the size a
+    // constant.
+
+    /// Returns the address storage as pointer and length parts.
+    ///
+    /// # Safety
+    ///
+    /// Only initialised bytes may be written to the pointer returned. The
+    /// pointer *may* point to uninitialised bytes, so reading from the pointer
+    /// is UB.
+    ///
+    /// The implementation must ensure that the pointer is valid, i.e. not null
+    /// and pointing to memory owned by the address. Furthermore it must ensure
+    /// that the returned length is, in combination with the pointer, valid. In
+    /// other words the memory the pointer and length are pointing to must be a
+    /// valid memory address and owned by the address.
+    ///
+    /// Note that the above requirements are only required for implementations
+    /// outside of A10. **This trait is unfit for external use!**
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t);
+}
+
+/// Socket address.
+impl SocketAddress for libc::sockaddr {
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of_mut!(*self), size_of::<Self>() as _)
+    }
+}
+
+/// Any kind of address.
+impl SocketAddress for libc::sockaddr_storage {
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    }
+}
+
+/// IPv4 address.
+impl SocketAddress for libc::sockaddr_in {
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    }
+}
+
+/// IPv6 address.
+impl SocketAddress for libc::sockaddr_in6 {
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    }
+}
+
+/// Unix address.
+impl SocketAddress for libc::sockaddr_un {
+    unsafe fn as_ptr_mut(&mut self) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of_mut!(*self).cast(), size_of::<Self>() as _)
+    }
 }
