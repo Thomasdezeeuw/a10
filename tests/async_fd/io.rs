@@ -683,7 +683,7 @@ fn cancel_all_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
-    let mut accept = listener.accept();
+    let mut accept = listener.accept::<libc::sockaddr_in>();
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 
@@ -703,7 +703,7 @@ fn cancel_all_twice_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
-    let mut accept = listener.accept();
+    let mut accept = listener.accept::<libc::sockaddr_in>();
     // Poll the future to schedule the operation.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 

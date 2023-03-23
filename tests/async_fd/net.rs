@@ -27,8 +27,8 @@ fn accept() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Accept>();
-    is_sync::<Accept>();
+    is_send::<Accept<libc::sockaddr_storage>>();
+    is_sync::<Accept<libc::sockaddr_storage>>();
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
@@ -36,10 +36,11 @@ fn accept() {
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
-    let accept = listener.accept();
-    let (client, addr) = waker.block_on(accept).expect("failed to accept connection");
+    let accept = listener.accept::<libc::sockaddr_in>();
+    let (client, addr, addr_len) = waker.block_on(accept).expect("failed to accept connection");
+    let address = from_storage(addr, addr_len);
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
-    assert_eq!(stream.local_addr().unwrap(), addr);
+    assert_eq!(stream.local_addr().unwrap(), address.into());
 
     // Read some data.
     stream.write(DATA1).expect("failed to write");
@@ -73,7 +74,7 @@ fn cancel_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
-    let accept = listener.accept();
+    let accept = listener.accept::<libc::sockaddr_storage>();
     let mut accept = std::pin::pin!(accept);
 
     // Poll once to start the operation.
@@ -84,8 +85,7 @@ fn cancel_accept() {
         .block_on(accept.as_mut().cancel())
         .expect("failed to cancel");
 
-    let err = waker.block_on(accept).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::ECANCELED));
+    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn try_cancel_accept_before_poll() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
-    let mut accept = listener.accept();
+    let mut accept = listener.accept::<libc::sockaddr_storage>();
 
     // Before we accept we cancel the accept call.
     if !matches!(accept.try_cancel(), CancelResult::NotStarted) {
@@ -846,6 +846,14 @@ fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
         s_addr: u32::from_ne_bytes(address.ip().octets()),
     };
     storage
+}
+
+fn from_storage(addr: libc::sockaddr_in, addr_len: libc::socklen_t) -> SocketAddrV4 {
+    assert!(addr.sin_family as libc::c_int == libc::AF_INET);
+    assert!(addr_len as usize == size_of::<libc::sockaddr_in>());
+    let ip = Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes());
+    let port = u16::from_be(addr.sin_port);
+    SocketAddrV4::new(ip, port)
 }
 
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {

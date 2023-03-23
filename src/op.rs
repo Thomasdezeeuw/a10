@@ -1,6 +1,6 @@
 //! Code related to executing an asynchronous operations.
 
-use std::mem::{replace, MaybeUninit};
+use std::mem::replace;
 use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
@@ -370,8 +370,8 @@ impl Submission {
     pub(crate) unsafe fn accept(
         &mut self,
         fd: RawFd,
-        address: &mut MaybeUninit<libc::sockaddr_storage>,
-        address_length: &mut libc::socklen_t,
+        address: *mut libc::sockaddr,
+        address_length: *mut libc::socklen_t,
         flags: libc::c_int,
     ) {
         self.inner.opcode = libc::IORING_OP_ACCEPT as u8;
