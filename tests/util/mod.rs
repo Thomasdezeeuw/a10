@@ -259,9 +259,9 @@ pub(crate) fn expect_io_error_kind<T: fmt::Debug>(
 
 /// Expect `result` to contain an [`io::Error`] with `expected` error number.
 #[track_caller]
-pub(crate) fn expect_io_errno<T: fmt::Debug>(result: Result<T, io::Error>, expected: libc::c_int) {
+pub(crate) fn expect_io_errno<T>(result: Result<T, io::Error>, expected: libc::c_int) {
     match result {
-        Ok(value) => panic!("unexpected ok result, value: {value:?}"),
+        Ok(_) => panic!("unexpected ok result"),
         Err(ref err) if err.raw_os_error() == Some(expected) => return,
         Err(err) => panic!("unexpected error result, error: {err:?}"),
     }
