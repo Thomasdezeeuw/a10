@@ -312,9 +312,7 @@ impl Submission {
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             off: u64::from(address_length),
         };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: address as *mut _ as _,
-        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: address as _ };
     }
 
     /// `opcode` must be `IORING_OP_SEND` or `IORING_OP_SEND_ZC`.
@@ -377,11 +375,9 @@ impl Submission {
         self.inner.opcode = libc::IORING_OP_ACCEPT as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: address_length as *mut _ as _,
+            off: address_length as _,
         };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: address as *mut _ as _,
-        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: address as _ };
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             accept_flags: flags as _,
         };
