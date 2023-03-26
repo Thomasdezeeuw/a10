@@ -278,6 +278,17 @@ pub(crate) async fn tcp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
         .expect("failed to create socket")
 }
 
+/// Create an IPv4, UPD socket.
+pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_DGRAM | libc::SOCK_CLOEXEC;
+    let protocol = libc::IPPROTO_UDP;
+    let flags = 0;
+    socket(sq, domain, r#type, protocol, flags)
+        .await
+        .expect("failed to create socket")
+}
+
 /// Bind `socket` to a local IPv4 addres with a random port and starts listening
 /// on it. Returns the bound address.
 pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {

@@ -67,6 +67,37 @@ impl AsyncFd {
         Send::new(self, buf, (libc::IORING_OP_SEND_ZC as u8, flags))
     }
 
+    /// Sends data on the socket to a connected peer.
+    pub const fn sendto<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendTo<'fd, B, A>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        SendTo::new(self, buf, address, (libc::IORING_OP_SEND as u8, flags))
+    }
+
+    /// Same as [`AsyncFd::sendto`], but tries to avoid making intermediate copies
+    /// of `buf`.
+    ///
+    /// See [`AsyncFd::send_zc`] for additional notes.
+    pub const fn sendto_zc<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendTo<'fd, B, A>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        SendTo::new(self, buf, address, (libc::IORING_OP_SEND_ZC as u8, flags))
+    }
+
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B>
@@ -224,6 +255,32 @@ op_future! {
     extract: |this, (buf,), n| -> (B, usize) {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
+    },
+}
+
+// SendTo.
+op_future! {
+    fn AsyncFd::sendto -> usize,
+    struct SendTo<'fd, B: Buf, A: SocketAddress> {
+        /// Buffer to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: B,
+        /// Address to send to.
+        address: A,
+    },
+    setup_state: flags: (u8, libc::c_int),
+    setup: |submission, fd, (buf, address), (op, flags)| unsafe {
+        let (buf, buf_len) = buf.parts();
+        let (addr, addr_len) = A::cast_ptr(address);
+        submission.sendto(op, fd.fd, buf, buf_len, addr, addr_len, flags);
+    },
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
+    extract: |this, (buf, address), n| -> (B, A, usize) {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok((buf, address, n as usize))
     },
 }
 

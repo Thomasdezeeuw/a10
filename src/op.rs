@@ -336,6 +336,23 @@ impl Submission {
         self.inner.len = len;
     }
 
+    /// `opcode` must be `IORING_OP_SEND` or `IORING_OP_SEND_ZC`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) unsafe fn sendto(
+        &mut self,
+        opcode: u8,
+        fd: RawFd,
+        buf_ptr: *const u8,
+        buf_len: u32,
+        address: *const libc::sockaddr,
+        address_length: libc::socklen_t,
+        flags: libc::c_int,
+    ) {
+        self.send(opcode, fd, buf_ptr, buf_len, flags);
+        self.inner.__bindgen_anon_1.addr2 = address as _;
+        self.inner.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as _;
+    }
+
     pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, flags: libc::c_int) {
         self.inner.opcode = libc::IORING_OP_RECV as u8;
         self.inner.fd = fd;
