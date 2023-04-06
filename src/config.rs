@@ -10,7 +10,7 @@ use std::{io, ptr};
 
 use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
 
-/// Configuration for a [`Ring`].
+/// Configuration of a [`Ring`].
 ///
 /// Created by calling [`Ring::config`].
 #[derive(Debug, Clone)]
@@ -83,13 +83,13 @@ impl<'r> Config<'r> {
     }
 
     /// Set the idle timeout of the kernel thread polling the submission queue.
-    /// After `timeout` has passed after the last I/O submission the kernel
+    /// After `timeout` time has passed after the last I/O submission the kernel
     /// thread will go to sleep. If the I/O is kept busy the kernel thread will
     /// never sleep. Note that A10 will ensure the kernel thread is woken up
     /// when more submissions are added.
     ///
-    /// This accuracy of `timeout` is only in milliseconds, anything more
-    /// precise will be discarded.
+    /// The accuracy of `timeout` is only in milliseconds, anything more precise
+    /// will be discarded.
     #[doc(alias = "sq_thread_idle")]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
         self.idle_timeout = Some(min(timeout.as_millis(), u32::MAX as u128) as u32);

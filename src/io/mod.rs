@@ -5,7 +5,7 @@
 //! descriptor ([`AsyncFd`]). Additionally the [`BufSlice`] and [`BufMutSlice`]
 //! traits existing to define the behaviour of buffers in vectored I/O.
 //!
-//! A speciailised read buffer pool implementation exists in [`ReadBufPool`],
+//! A specialised read buffer pool implementation exists in [`ReadBufPool`],
 //! which is a buffer pool managed by the kernel when making `read(2)`-like
 //! system calls.
 //!
