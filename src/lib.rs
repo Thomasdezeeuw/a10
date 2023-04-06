@@ -163,12 +163,12 @@ use op::{QueuedOperation, Submission};
 /// This type represents the user space side of an io_uring.
 ///
 /// An io_uring is split into two queues: the submissions and completions queue.
-/// The [`SubmissionQueue`] is public, but doesn't provide any methods. The
-/// `SubmissionQueue` is only used by I/O types in the crate to schedule
-/// asynchronous operations.
+/// The [`SubmissionQueue`] is public, but doesn't provide many methods. The
+/// `SubmissionQueue` is used by I/O types in the crate to schedule asynchronous
+/// operations.
 ///
 /// The completions queue is not exposed by the crate and only used internally.
-/// Instead it will wake the [`Future`]s exposed by the various I/O type, such
+/// Instead it will wake the [`Future`]s exposed by the various I/O types, such
 /// as [`AsyncFd::write`]'s [`Write`] `Future`.
 ///
 /// [`Future`]: std::future::Future
@@ -221,7 +221,7 @@ impl Ring {
     /// Poll the ring for completions.
     ///
     /// This will wake all completed [`Future`]s with the result of their
-    /// operation.
+    /// operations.
     ///
     /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
     /// function will only wake all already completed operations. It guarantees

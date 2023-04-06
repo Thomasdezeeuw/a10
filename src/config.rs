@@ -70,8 +70,7 @@ impl<'r> Config<'r> {
         self
     }
 
-    /// Set the CPU affinity of the returned [`Ring`]. This means that only the
-    /// thread running on `cpu` may call [`Ring::poll`].
+    /// Set the CPU affinity of kernel thread polling the [`Ring`].
     #[doc(alias = "IORING_SETUP_SQ_AFF")]
     pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
         self.cpu_affinity = Some(cpu);
@@ -113,6 +112,7 @@ impl<'r> Config<'r> {
             parameters.flags |= libc::IORING_SETUP_CLAMP;
         }
         if let Some(cpu) = self.cpu_affinity {
+            parameters.flags |= libc::IORING_SETUP_SQ_AFF;
             parameters.sq_thread_cpu = cpu;
         }
         #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
