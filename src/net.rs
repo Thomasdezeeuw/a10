@@ -225,7 +225,7 @@ op_future! {
     },
     setup_state: _unused: (),
     setup: |submission, fd, (address,), ()| unsafe {
-        let (ptr, len) = A::cast_ptr(&mut **address);
+        let (ptr, len) = SocketAddress::as_ptr(&**address);
         submission.connect(fd.fd, ptr, len);
     },
     map_result: |result| Ok(debug_assert!(result == 0)),
@@ -271,7 +271,7 @@ op_future! {
     setup_state: flags: (u8, libc::c_int),
     setup: |submission, fd, (buf, address), (op, flags)| unsafe {
         let (buf, buf_len) = buf.parts();
-        let (addr, addr_len) = A::cast_ptr(address);
+        let (addr, addr_len) = SocketAddress::as_ptr(address);
         submission.sendto(op, fd.fd, buf, buf_len, addr, addr_len, flags);
     },
     map_result: |n| {
@@ -347,7 +347,7 @@ op_future! {
 
 // Accept.
 op_future! {
-    fn AsyncFd::accept -> (AsyncFd, A, libc::socklen_t),
+    fn AsyncFd::accept -> (AsyncFd, A),
     struct Accept<'fd, A: SocketAddress> {
         /// Address for the accepted connection, needs to stay in memory so the
         /// kernel can access it safely.
@@ -355,18 +355,17 @@ op_future! {
     },
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (address,), flags| unsafe {
-        let (ptr, len) = A::cast_ptr(ptr::addr_of_mut!(address.0).cast());
-        let len_ptr = ptr::addr_of_mut!(address.1);
-        len_ptr.write(len);
-        submission.accept(fd.fd, ptr, len_ptr, flags);
+        let (ptr, len) = SocketAddress::as_mut_ptr(&mut address.0);
+        address.1 = len;
+        submission.accept(fd.fd, ptr, &mut address.1, flags);
     },
     map_result: |this, (address,), fd| {
         let sq = this.fd.sq.clone();
         let stream = AsyncFd { fd, sq };
         let len = address.1;
         // SAFETY: kernel initialised the memory for us.
-        let address = unsafe { address.0.assume_init() };
-        Ok((stream, address, len))
+        let address = unsafe { SocketAddress::init(address.0, len) };
+        Ok((stream, address))
     },
 }
 
@@ -396,17 +395,15 @@ op_async_iter! {
 ///  * IPv6 addresses: [`libc::sockaddr_in6`],
 ///  * Unix addresses: [`libc::sockaddr_un`],
 ///  * Storage of any address [`libc::sockaddr_storage`] kind.
-pub trait SocketAddress {
-    // TODO: once we can cast integers during const eval make the size a
-    // constant.
-
-    /// Cast the pointer `ptr` to self to an adress storage and it's length.
+///
+/// For the last two types we need to keep track of the length of the address,
+/// for which it uses a tuple `(addr, `[`libc::socklen_t`]`)`.
+pub trait SocketAddress: Sized {
+    /// Returns itself as raw pointer and length.
     ///
     /// # Safety
     ///
-    /// Only initialised bytes may be written to the pointer returned. The
-    /// pointer *may* point to uninitialised bytes, so reading from the pointer
-    /// is UB.
+    /// The pointer must be valid to read up to length bytes from.
     ///
     /// The implementation must ensure that the pointer is valid, i.e. not null
     /// and pointing to memory owned by the address. Furthermore it must ensure
@@ -416,53 +413,163 @@ pub trait SocketAddress {
     ///
     /// Note that the above requirements are only required for implementations
     /// outside of A10. **This trait is unfit for external use!**
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t);
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t);
+
+    /// Returns `address` as an adress storage and it's length.
+    ///
+    /// # Safety
+    ///
+    /// Only initialised bytes may be written to the pointer returned.
+    ///
+    /// The implementation must ensure that the pointer is valid, i.e. not null
+    /// and pointing to memory owned by the address. Furthermore it must ensure
+    /// that the returned length is, in combination with the pointer, valid. In
+    /// other words the memory the pointer and length are pointing to must be a
+    /// valid memory address and owned by the address.
+    ///
+    /// Note that the above requirements are only required for implementations
+    /// outside of A10. **This trait is unfit for external use!**
+    unsafe fn as_mut_ptr(address: &mut MaybeUninit<Self>)
+        -> (*mut libc::sockaddr, libc::socklen_t);
+
+    /// Initialise `address` to which at least `length` bytes have been written
+    /// (by the kernel).
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that at least `length` bytes have been written to
+    /// `address`.
+    unsafe fn init(address: MaybeUninit<Self>, length: libc::socklen_t) -> Self;
 }
 
 /// Socket address.
-impl SocketAddress for libc::sockaddr {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr, size_of::<Self>() as _)
+impl SocketAddress for (libc::sockaddr, libc::socklen_t) {
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of!(self.0).cast(), self.1)
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (
+            ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
+            size_of::<Self>() as _,
+        )
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == size_of::<libc::sa_family_t>() as _);
+        // SAFETY: caller must initialise the address.
+        let mut this = this.assume_init();
+        this.1 = length;
+        this
     }
 }
 
 /// Any kind of address.
-impl SocketAddress for libc::sockaddr_storage {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr.cast(), size_of::<Self>() as _)
+impl SocketAddress for (libc::sockaddr_storage, libc::socklen_t) {
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of!(self.0).cast(), self.1)
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (
+            ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
+            size_of::<Self>() as _,
+        )
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == size_of::<libc::sa_family_t>() as _);
+        // SAFETY: caller must initialise the address.
+        let mut this = this.assume_init();
+        this.1 = length;
+        this
     }
 }
 
 /// IPv4 address.
 impl SocketAddress for libc::sockaddr_in {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr.cast(), size_of::<Self>() as _)
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        (
+            (self as *const libc::sockaddr_in).cast(),
+            size_of::<Self>() as _,
+        )
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (this.as_mut_ptr().cast(), size_of::<Self>() as _)
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == size_of::<Self>() as _);
+        // SAFETY: caller must initialise the address.
+        this.assume_init()
     }
 }
 
 /// IPv6 address.
 impl SocketAddress for libc::sockaddr_in6 {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr.cast(), size_of::<Self>() as _)
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        (
+            (self as *const libc::sockaddr_in6).cast(),
+            size_of::<Self>() as _,
+        )
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (this.as_mut_ptr().cast(), size_of::<Self>() as _)
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == size_of::<Self>() as _);
+        // SAFETY: caller must initialise the address.
+        this.assume_init()
     }
 }
 
 /// Unix address.
-impl SocketAddress for libc::sockaddr_un {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (ptr.cast(), size_of::<Self>() as _)
+impl SocketAddress for (libc::sockaddr_un, libc::socklen_t) {
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
+        (ptr::addr_of!(self.0).cast(), self.1)
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        (
+            ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
+            size_of::<Self>() as _,
+        )
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == size_of::<libc::sa_family_t>() as _);
+        // SAFETY: caller must initialise the address.
+        let mut this = this.assume_init();
+        this.1 = length;
+        this
     }
 }
 
 /// When [`accept`]ing connections we're not interested in the address.
 ///
+/// This is not acceptable in calls to [`connect`].
+///
 /// [`accept`]: AsyncFd::accept
+/// [`connect`]: AsyncFd::connect
 pub struct NoAddress;
 
 impl SocketAddress for NoAddress {
-    unsafe fn cast_ptr(ptr: *mut Self) -> (*mut libc::sockaddr, libc::socklen_t) {
-        _ = ptr;
+    unsafe fn as_ptr(&self) -> (*const libc::sockaddr, libc::socklen_t) {
         // NOTE: this goes against the requirements of `cast_ptr`.
         (ptr::null_mut(), 0)
+    }
+
+    unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+        _ = this;
+        // NOTE: this goes against the requirements of `as_mut_ptr`.
+        (ptr::null_mut(), 0)
+    }
+
+    unsafe fn init(this: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
+        debug_assert!(length == 0);
+        this.assume_init()
     }
 }

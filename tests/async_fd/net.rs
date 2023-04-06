@@ -38,8 +38,8 @@ fn accept() {
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
     let accept = listener.accept::<libc::sockaddr_in>();
-    let (client, addr, addr_len) = waker.block_on(accept).expect("failed to accept connection");
-    let address = from_storage(addr, addr_len);
+    let (client, addr) = waker.block_on(accept).expect("failed to accept connection");
+    let address = from_storage(addr);
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
     assert_eq!(stream.local_addr().unwrap(), address.into());
 
@@ -82,7 +82,7 @@ fn accept_no_address() {
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
     let accept = listener.accept::<NoAddress>();
-    let (client, _, _) = waker.block_on(accept).expect("failed to accept connection");
+    let (client, _) = waker.block_on(accept).expect("failed to accept connection");
 
     // Read some data.
     stream.write(DATA1).expect("failed to write");
@@ -116,7 +116,7 @@ fn cancel_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_ipv4(&listener);
 
-    let accept = listener.accept::<libc::sockaddr_storage>();
+    let accept = listener.accept::<(libc::sockaddr_storage, libc::socklen_t)>();
     let mut accept = std::pin::pin!(accept);
 
     // Poll once to start the operation.
@@ -1007,9 +1007,8 @@ fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
     storage
 }
 
-fn from_storage(addr: libc::sockaddr_in, addr_len: libc::socklen_t) -> SocketAddrV4 {
+fn from_storage(addr: libc::sockaddr_in) -> SocketAddrV4 {
     assert!(addr.sin_family as libc::c_int == libc::AF_INET);
-    assert!(addr_len as usize == size_of::<libc::sockaddr_in>());
     let ip = Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes());
     let port = u16::from_be(addr.sin_port);
     SocketAddrV4::new(ip, port)
