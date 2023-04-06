@@ -9,7 +9,7 @@ use std::ops::{Bound, Deref, DerefMut, RangeBounds};
 use std::os::fd::AsRawFd;
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Arc, LazyLock, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::{fmt, io, slice};
 
 use crate::io::{Buf, BufMut};
@@ -27,8 +27,10 @@ pub struct BufIdx(pub(crate) u16);
 
 /// Size of a single page, often 4096.
 #[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
-static PAGE_SIZE: LazyLock<usize> =
-    LazyLock::new(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize });
+fn page_size() -> usize {
+    static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
+    *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
+}
 
 /// Buffer group ID generator.
 static ID: AtomicU16 = AtomicU16::new(0);
@@ -88,7 +90,7 @@ impl ReadBufPool {
         let id = ID.fetch_add(1, Ordering::SeqCst);
 
         // This allocation must be page aligned.
-        let page_size = *PAGE_SIZE;
+        let page_size = page_size();
         // NOTE: do the layout calculations first in case of an error.
         let ring_layout = alloc_layout_ring(pool_size, page_size)?;
         let bufs_layout = alloc_layout_buffers(pool_size, buf_size, page_size)?;
@@ -234,7 +236,7 @@ unsafe impl Send for Shared {}
 
 impl Drop for Shared {
     fn drop(&mut self) {
-        let page_size = *PAGE_SIZE;
+        let page_size = page_size();
 
         // Unregister the buffer pool with the ring.
         let buf_register = libc::io_uring_buf_reg {

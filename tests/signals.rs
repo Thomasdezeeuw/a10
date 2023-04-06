@@ -1,4 +1,4 @@
-#![feature(async_iterator, once_cell)]
+#![feature(async_iterator)]
 
 use std::mem::MaybeUninit;
 use std::pin::Pin;

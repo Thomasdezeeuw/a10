@@ -10,7 +10,7 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
 use std::path::Path;
 use std::pin::Pin;
-use std::sync::{Arc, LazyLock, Once};
+use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, io, mem, panic, process, ptr, str};
@@ -28,49 +28,56 @@ pub(crate) fn init() {
     });
 }
 
-/// Size of a single page in bytes.
-pub(crate) const PAGE_SIZE: usize = 4096;
+/// Size of a single page, often 4096.
+#[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
+pub(crate) fn page_size() -> usize {
+    static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
+    *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
+}
 
 /// Start a single background thread for polling and return the submission
 /// queue.
 /// Create a [`Ring`] for testing.
 pub(crate) fn test_queue() -> SubmissionQueue {
-    static TEST_SQ: LazyLock<SubmissionQueue> = LazyLock::new(|| {
-        init();
+    static TEST_SQ: OnceLock<SubmissionQueue> = OnceLock::new();
+    TEST_SQ
+        .get_or_init(|| {
+            init();
 
-        let mut ring = Ring::new(128).expect("failed to create test ring");
-        let sq = ring.submission_queue().clone();
-        thread::spawn(move || {
-            let res = panic::catch_unwind(move || loop {
-                match ring.poll(None) {
-                    Ok(()) => continue,
-                    Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                    Err(err) => panic!("unexpected error polling: {err}"),
+            let mut ring = Ring::new(128).expect("failed to create test ring");
+            let sq = ring.submission_queue().clone();
+            thread::spawn(move || {
+                let res = panic::catch_unwind(move || loop {
+                    match ring.poll(None) {
+                        Ok(()) => continue,
+                        Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                        Err(err) => panic!("unexpected error polling: {err}"),
+                    }
+                });
+                match res {
+                    Ok(()) => (),
+                    Err(err) => {
+                        let msg = panic_message(&err);
+                        let msg = format!("Polling thread panicked: {msg}\n");
+
+                        // Bypass the buffered output and write directly to standard
+                        // error.
+                        let stderr = io::stderr();
+                        let guard = stderr.lock();
+                        let _ = unsafe {
+                            libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len())
+                        };
+                        drop(guard);
+
+                        // Since all the tests depend on this thread we'll abort the
+                        // process since otherwise they'll wait for ever.
+                        process::abort()
+                    }
                 }
             });
-            match res {
-                Ok(()) => (),
-                Err(err) => {
-                    let msg = panic_message(&err);
-                    let msg = format!("Polling thread panicked: {msg}\n");
-
-                    // Bypass the buffered output and write directly to standard
-                    // error.
-                    let stderr = io::stderr();
-                    let guard = stderr.lock();
-                    let _ =
-                        unsafe { libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len()) };
-                    drop(guard);
-
-                    // Since all the tests depend on this thread we'll abort the
-                    // process since otherwise they'll wait for ever.
-                    process::abort()
-                }
-            }
-        });
-        sq
-    });
-    TEST_SQ.clone()
+            sq
+        })
+        .clone()
 }
 
 pub(crate) fn is_sync<T: Sync>() {}

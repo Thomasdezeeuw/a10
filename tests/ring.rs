@@ -1,6 +1,6 @@
 //! Tests for [`a10::Ring`].
 
-#![feature(async_iterator, once_cell)]
+#![feature(async_iterator)]
 
 use std::future::Future;
 use std::mem::take;
