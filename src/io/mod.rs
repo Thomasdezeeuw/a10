@@ -958,6 +958,15 @@ unsafe impl Buf for Vec<u8> {
     }
 }
 
+// SAFETY: `Box<[u8]>` manages the allocation of the bytes, so as long as it's
+// alive, so is the slice of bytes. When the `Box` is leaked the allocation will
+// also be leaked.
+unsafe impl Buf for Box<[u8]> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_ptr().cast(), self.len() as u32)
+    }
+}
+
 // SAFETY: `String` is just a `Vec<u8>`, see it's implementation for the safety
 // reasoning.
 unsafe impl Buf for String {
