@@ -139,14 +139,14 @@ fn submission_queue_full_is_handle_internally() {
 #[test]
 fn wake_ring() {
     init();
-    let mut ring = Ring::new(2).unwrap();
+    let mut ring = Ring::config(2)
+        .with_idle_timeout(Duration::from_millis(1))
+        .build()
+        .unwrap();
     let sq = ring.submission_queue().clone();
 
     let handle = thread::spawn(move || {
-        // NOTE: this sleep ensures that the "submission queue polling kernel
-        // thread" (the one that reads our submissions) goes to sleep, this way
-        // we can test that we wake that as well.
-        thread::sleep(Duration::from_secs(1));
+        thread::sleep(Duration::from_millis(10));
         sq.wake();
     });
 

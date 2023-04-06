@@ -118,6 +118,7 @@
 //! ```
 
 #![feature(
+    const_cmp,
     async_iterator,
     const_mut_refs,
     io_error_more,

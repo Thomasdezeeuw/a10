@@ -1,9 +1,11 @@
 //! Configuration of a [`Ring`].
 
+use std::cmp::min;
 use std::mem::{self, size_of};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use std::{io, ptr};
 
 use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
@@ -18,6 +20,7 @@ pub struct Config<'r> {
     completion_entries: Option<u32>,
     clamp: bool,
     cpu_affinity: Option<u32>,
+    idle_timeout: Option<u32>,
     attach: Option<&'r SubmissionQueue>,
 }
 
@@ -42,6 +45,7 @@ impl<'r> Config<'r> {
             completion_entries: None,
             clamp: false,
             cpu_affinity: None,
+            idle_timeout: None,
             attach: None,
         }
     }
@@ -72,8 +76,23 @@ impl<'r> Config<'r> {
 
     /// Set the CPU affinity of kernel thread polling the [`Ring`].
     #[doc(alias = "IORING_SETUP_SQ_AFF")]
+    #[doc(alias = "sq_thread_cpu")]
     pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
         self.cpu_affinity = Some(cpu);
+        self
+    }
+
+    /// Set the idle timeout of the kernel thread polling the submission queue.
+    /// After `timeout` has passed after the last I/O submission the kernel
+    /// thread will go to sleep. If the I/O is kept busy the kernel thread will
+    /// never sleep. Note that A10 will ensure the kernel thread is woken up
+    /// when more submissions are added.
+    ///
+    /// This accuracy of `timeout` is only in milliseconds, anything more
+    /// precise will be discarded.
+    #[doc(alias = "sq_thread_idle")]
+    pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
+        self.idle_timeout = Some(min(timeout.as_millis(), u32::MAX as u128) as u32);
         self
     }
 
@@ -114,6 +133,9 @@ impl<'r> Config<'r> {
         if let Some(cpu) = self.cpu_affinity {
             parameters.flags |= libc::IORING_SETUP_SQ_AFF;
             parameters.sq_thread_cpu = cpu;
+        }
+        if let Some(idle_timeout) = self.idle_timeout {
+            parameters.sq_thread_idle = idle_timeout;
         }
         #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
         if let Some(other_ring) = self.attach {
