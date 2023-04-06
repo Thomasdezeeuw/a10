@@ -18,7 +18,7 @@ use util::{init, is_send, is_sync, poll_nop};
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
-    const TIMEOUT: Duration = Duration::from_millis(400);
+    const TIMEOUT: Duration = Duration::from_millis(100);
     const MARGIN: Duration = Duration::from_millis(10);
 
     init();
