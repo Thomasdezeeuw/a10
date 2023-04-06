@@ -13,7 +13,7 @@ use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, Su
 /// Configuration for a [`Ring`].
 ///
 /// Created by calling [`Ring::config`].
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
 pub struct Config<'r> {
     submission_entries: u32,
