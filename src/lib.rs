@@ -9,7 +9,8 @@
 //!
 //! Some modules provide ways to create `AsyncFd`, e.g. [`OpenOptions`], others
 //! are simply a place to expose the [`Future`]s supporting the scheduled
-//! operations. The modules try to follow the same structure as that of std lib.
+//! operations. The modules try to follow the same structure as that of the
+//! standard library.
 //!
 //! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
 //! [`OpenOptions`]: fs::OpenOptions
@@ -24,7 +25,8 @@
 //!
 //! ## Examples
 //!
-//! The example below
+//! The example below implements the `cat(1)` program that concatenates files
+//! and prints them to standard out.
 //!
 //! ```
 //! use std::path::PathBuf;
@@ -225,9 +227,9 @@ impl Ring {
     /// operations.
     ///
     /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
-    /// function will only wake all already completed operations. It guarantees
-    /// to not make a system call, but it also means it doesn't gurantee at
-    /// least one completion was processed.
+    /// function will only wake all already completed operations. It then
+    /// guarantees to not make a system call, but it also means it doesn't
+    /// gurantee at least one completion was processed.
     ///
     /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]

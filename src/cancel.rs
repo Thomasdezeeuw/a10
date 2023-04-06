@@ -17,8 +17,8 @@ impl AsyncFd {
     /// Attempt to cancel all in progress operations on this fd.
     ///
     /// If the I/O operations were succesfully canceled this returns `Ok(n)`,
-    /// where `n` is the number of operations canceled, and the canceled
-    /// operations will return `ECANCELED` to indicate they were canceled.
+    /// where `n` is the number of operations canceled. The canceled operations
+    /// will return `ECANCELED` to indicate they were canceled.
     ///
     /// If no operations were found, for example if they were already completed,
     /// this will return `Ok(0)`.

@@ -7,19 +7,19 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 /// Extract input arguments from operations.
 ///
 /// Because of the way that io_uring works the kernel needs mutable access to
-/// the input to a system call for entire duration the operation is in progress.
-/// For example when reading into a buffer the buffer needs to stay alive until
-/// the kernel has written into it, or until the kernel knows the operation is
-/// canceled and won't write into the buffer any more. If we can't ensure this
-/// the kernel might write into memory we don't own causing write-after-free
-/// bugs.
+/// the inputs of a system call for entire duration the operation is in
+/// progress. For example when reading into a buffer the buffer needs to stay
+/// alive until the kernel has written into it, or until the kernel knows the
+/// operation is canceled and won't write into the buffer any more. If we can't
+/// ensure this the kernel might write into memory we don't own causing
+/// write-after-free bugs.
 ///
 /// To ensure the input stays alive A10 needs ownership of the input arguments
-/// and leaks the inputs when a [`Future`] operation is dropped before
-/// completion. However to give the `Future`s a nice API we don't return the
-/// input arguments and try to match the APIs that don't take ownership of
-/// arguments, e.g [`fs::OpenOptions::open`] just returns a [`AsyncFd`] not the
-/// path argument.
+/// and delays the allocation of the inputs when a [`Future`] operation is
+/// dropped before completion. However to give the `Future`s a nice API we don't
+/// return the input arguments and try to match the APIs that don't take
+/// ownership of arguments, e.g [`fs::OpenOptions::open`] just returns a
+/// [`AsyncFd`] not the path argument.
 ///
 /// In some cases though we would like to get back the input arguments from the
 /// operation, e.g. for performance reasons. This trait allow you to do just
@@ -27,8 +27,8 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 ///
 /// All I/O operations, that is the `Future` implementations, that support
 /// extract the input argument will implement this `Extract` trait. A list of
-/// the supported operations can be found [below]. For the actual implementation
-/// see the [`Extractor`] type.
+/// the supported operations can be found [below]. For the actual
+/// implementations see the `Future` implementations on the [`Extractor`] type.
 ///
 /// [`Future`]: std::future::Future
 /// [`fs::OpenOptions::open`]: crate::fs::OpenOptions::open
@@ -37,7 +37,7 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 ///
 /// # Examples
 ///
-/// Extracting the argument from [`fs::OpenOptions::open`] and
+/// Extracting the arguments from [`fs::OpenOptions::open`] and
 /// [`AsyncFd::write`] operations.
 ///
 /// [`AsyncFd::write`]: crate::AsyncFd::write
@@ -52,7 +52,7 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 /// async fn write_all_to_file(sq: SubmissionQueue, path: PathBuf, buf: Vec<u8>) -> io::Result<(PathBuf, Vec<u8>)> {
 ///     // This `Future` returns just the opened file.
 ///     let open_file_future = OpenOptions::new().open(sq, path);
-///     // Calling `extract` and awaiting that will returns both the file and
+///     // Calling `extract` and awaiting that will return both the file and
 ///     // the path buffer.
 ///     let (file, path) = open_file_future.extract().await?;
 ///

@@ -18,7 +18,7 @@ use crate::{AsyncFd, SubmissionQueue};
 /// For `Signals` to function correctly in multithreaded processes it must be
 /// created on the main thread **before** spawning any threads. This is due to
 /// an implementation detail where the spawned threads must inherit various
-/// signal related thread options from the parent thread.
+/// signal related thread properties from the parent thread.
 ///
 /// Any threads spawned before creating a `Signals` instance will experience the
 /// default process signals behaviour, i.e. sending it a signal will interrupt

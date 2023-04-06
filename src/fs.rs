@@ -175,10 +175,6 @@ impl OpenOptions {
 /// [`Future`] to [`open`] an asynchronous file ([`AsyncFd`]).
 ///
 /// [`open`]: OpenOptions::open
-///
-/// # Notes
-///
-/// Implements [`Extract`] to extract the path buffer.
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct Open {
