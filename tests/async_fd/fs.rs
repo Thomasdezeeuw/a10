@@ -9,8 +9,8 @@ use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
-    defer, is_send, is_sync, remove_test_file, test_queue, TestFile, Waker, LOREM_IPSUM_5,
-    LOREM_IPSUM_50, PAGE_SIZE,
+    defer, is_send, is_sync, page_size, remove_test_file, test_queue, TestFile, Waker,
+    LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
 #[test]
@@ -231,21 +231,21 @@ fn write_hello_world() {
 #[test]
 fn write_one_page() {
     let sq = test_queue();
-    let bufs = vec![b"a".repeat(PAGE_SIZE)];
+    let bufs = vec![b"a".repeat(page_size())];
     test_write("a10.write_one_page", sq, bufs)
 }
 
 #[test]
 fn write_multiple_pages_one_write() {
     let sq = test_queue();
-    let bufs = vec![b"b".repeat(4 * PAGE_SIZE)];
+    let bufs = vec![b"b".repeat(4 * page_size())];
     test_write("a10.write_multiple_pages_one_write", sq, bufs)
 }
 
 #[test]
 fn write_multiple_pages_mulitple_writes() {
     let sq = test_queue();
-    let bufs = vec![b"b".repeat(PAGE_SIZE), b"c".repeat(PAGE_SIZE)];
+    let bufs = vec![b"b".repeat(page_size()), b"c".repeat(page_size())];
     test_write("a10.write_multiple_pages_mulitple_writes", sq, bufs)
 }
 
@@ -254,8 +254,8 @@ fn write_multiple_pages_mulitple_writes_unaligned() {
     let sq = test_queue();
     let bufs = vec![
         b"Hello unalignment!".to_vec(),
-        b"b".repeat(PAGE_SIZE),
-        b"c".repeat(PAGE_SIZE),
+        b"b".repeat(page_size()),
+        b"c".repeat(page_size()),
     ];
     test_write(
         "a10.write_multiple_pages_mulitple_writes_unaligned",

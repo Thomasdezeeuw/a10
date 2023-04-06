@@ -125,8 +125,6 @@
     maybe_uninit_uninit_array,
     mutex_unlock,
     new_uninit,
-    nonnull_slice_from_raw_parts,
-    once_cell,
     ptr_sub_ptr,
     slice_ptr_get
 )]
