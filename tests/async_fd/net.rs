@@ -1062,12 +1062,10 @@ fn sendto_extractor() {
 
     // Send some data.
     let addr = addr_storage(&local_addr);
-    let (buf, address, n) = waker
+    let (buf, n) = waker
         .block_on(socket.sendto(DATA1, addr.clone(), 0).extract())
         .expect("failed to sendto");
     assert!(buf == DATA1);
-    assert!(address.sin_port == addr.sin_port);
-    assert!(address.sin_addr.s_addr == addr.sin_addr.s_addr);
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1092,12 +1090,10 @@ fn sendto_zc_extractor() {
 
     // Send some data.
     let addr = addr_storage(&local_addr);
-    let (buf, address, n) = waker
+    let (buf, n) = waker
         .block_on(socket.sendto_zc(DATA1, addr.clone(), 0).extract())
         .expect("failed to sendto");
     assert!(buf == DATA1);
-    assert!(address.sin_port == addr.sin_port);
-    assert!(address.sin_addr.s_addr == addr.sin_addr.s_addr);
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];

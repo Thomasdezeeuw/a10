@@ -320,9 +320,9 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok(n as usize)
     },
-    extract: |this, (buf, address), n| -> (B, A, usize) {
+    extract: |this, (buf, _), n| -> (B, usize) {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
-        Ok((buf, address, n as usize))
+        Ok((buf, n as usize))
     },
 }
 
