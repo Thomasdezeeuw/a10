@@ -200,13 +200,17 @@ impl AsyncFd {
     /// connected using vectored I/O.
     pub fn recv_vectored<'fd, B, const N: usize>(
         &'fd self,
-        bufs: B,
+        mut bufs: B,
         flags: libc::c_int,
-    ) -> RecvMsg<'fd, B, NoAddress, N>
+    ) -> RecvVectored<'fd, B, NoAddress, N>
     where
         B: BufMutSlice<N>,
     {
-        self.recvmsg(bufs, flags)
+        // SAFETY: zeroed `msghdr` is valid.
+        let msg = unsafe { mem::zeroed() };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let msg = Box::new((msg, MaybeUninit::uninit()));
+        RecvVectored::new(self, bufs, msg, iovecs, flags)
     }
 
     /// Receives data on the socket and returns the source address.
@@ -241,22 +245,6 @@ impl AsyncFd {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let msg = Box::new((msg, MaybeUninit::uninit()));
         RecvFromVectored::new(self, bufs, msg, iovecs, flags)
-    }
-
-    fn recvmsg<'fd, B, A, const N: usize>(
-        &'fd self,
-        mut bufs: B,
-        flags: libc::c_int,
-    ) -> RecvMsg<'fd, B, A, N>
-    where
-        B: BufMutSlice<N>,
-        A: SocketAddress,
-    {
-        // SAFETY: zeroed `msghdr` is valid.
-        let msg = unsafe { mem::zeroed() };
-        let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let msg = Box::new((msg, MaybeUninit::uninit()));
-        RecvMsg::new(self, bufs, msg, iovecs, flags)
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -507,10 +495,10 @@ op_async_iter! {
     },
 }
 
-// RecvMsg.
+// RecvVectored.
 op_future! {
     fn AsyncFd::recv_vectored -> (B, libc::c_int),
-    struct RecvMsg<'fd, B: BufMutSlice<N>, A: SocketAddress; const N: usize> {
+    struct RecvVectored<'fd, B: BufMutSlice<N>, A: SocketAddress; const N: usize> {
         /// Buffers to read from, needs to stay in memory so the kernel can
         /// access it safely.
         bufs: B,
