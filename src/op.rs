@@ -393,6 +393,21 @@ impl Submission {
         self.set_buffer_select(buf_group);
     }
 
+    pub(crate) unsafe fn recvmsg(
+        &mut self,
+        fd: RawFd,
+        msg: *const libc::msghdr,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = libc::IORING_OP_RECVMSG as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: msg as u64 };
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: flags as _,
+        };
+        self.inner.len = 1;
+    }
+
     pub(crate) unsafe fn shutdown(&mut self, fd: RawFd, how: libc::c_int) {
         self.inner.opcode = libc::IORING_OP_SHUTDOWN as u8;
         self.inner.fd = fd;
