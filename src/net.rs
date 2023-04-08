@@ -123,6 +123,35 @@ impl AsyncFd {
         SendTo::new(self, buf, address, (libc::IORING_OP_SEND_ZC as u8, flags))
     }
 
+    /// Sends data in `bufs` on the socket to a connected peer.
+    pub fn sendto_vectored<'fd, B, A, const N: usize>(
+        &'fd self,
+        bufs: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        self.sendmsg(libc::IORING_OP_SENDMSG as u8, bufs, address, flags)
+    }
+
+    /// Same as [`AsyncFd::sendto_vectored`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    pub fn sendto_vectored_zc<'fd, B, A, const N: usize>(
+        &'fd self,
+        bufs: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        self.sendmsg(libc::IORING_OP_SENDMSG_ZC as u8, bufs, address, flags)
+    }
+
     fn sendmsg<'fd, B, A, const N: usize>(
         &'fd self,
         op: u8,
