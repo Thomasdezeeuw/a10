@@ -9,7 +9,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::io::{Buf, BufIdx, BufMut, BufSlice, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -196,6 +196,35 @@ impl AsyncFd {
         MultishotRecv::new(self, pool, flags)
     }
 
+    /// Receives data on the socket from the remote address to which it is
+    /// connected using vectored I/O.
+    pub fn recv_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: libc::c_int,
+    ) -> RecvMsg<'fd, B, NoAddress, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        self.recvmsg(bufs, flags)
+    }
+
+    fn recvmsg<'fd, B, A, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: libc::c_int,
+    ) -> RecvMsg<'fd, B, A, N>
+    where
+        B: BufMutSlice<N>,
+        A: SocketAddress,
+    {
+        // SAFETY: zeroed `msghdr` is valid.
+        let msg = unsafe { mem::zeroed() };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let msg = Box::new((msg, MaybeUninit::uninit()));
+        RecvMsg::new(self, bufs, msg, iovecs, flags)
+    }
+
     /// Shuts down the read, write, or both halves of this connection.
     pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
         let how = match how {
@@ -355,7 +384,7 @@ op_future! {
     },
 }
 
-// Sendmsg.
+// SendMsg.
 op_future! {
     fn AsyncFd::send_vectored -> usize,
     struct SendMsg<'fd, B: BufSlice<N>, A: SocketAddress; const N: usize> {
@@ -441,6 +470,48 @@ op_async_iter! {
         // call.
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { this.buf_pool.new_buffer(BufIdx(buf_idx), n as u32) }
+    },
+}
+
+// RecvMsg.
+op_future! {
+    fn AsyncFd::recv_vectored -> (B, libc::c_int),
+    struct RecvMsg<'fd, B: BufMutSlice<N>, A: SocketAddress; const N: usize> {
+        /// Buffers to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        bufs: B,
+        /// The kernel will write to `msghdr` and the address, so both need to
+        /// stay in memory so the kernel can access it safely.
+        msg: Box<(libc::msghdr, MaybeUninit<A>)>,
+        /// NOTE: we only need `iovec` in the submission, we don't have to keep
+        /// around during the operation. Because of this we don't heap allocate
+        /// it like we for other operations. This leaves a small duration
+        /// between the submission of the entry and the submission being read by
+        /// the kernel in which this future could be dropped and the kernel will
+        /// read memory we don't own. However because we wake the kernel after
+        /// submitting the timeout entry it's not really worth to heap
+        /// allocation.
+        iovecs: [libc::iovec; N],
+    },
+    /// `iovecs` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
+        let address = &mut msg.1;
+        let msg = &mut msg.0;
+        msg.msg_iov = iovecs.as_mut_ptr();
+        msg.msg_iovlen = N;
+        let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
+        msg.msg_name = addr.cast();
+        msg.msg_namelen = addr_len;
+        submission.recvmsg(fd.fd, &*msg, flags);
+    },
+    map_result: |this, (mut bufs, msg, _), n| {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        unsafe { bufs.set_init(n as usize) };
+        Ok((bufs, msg.0.msg_flags))
     },
 }
 
