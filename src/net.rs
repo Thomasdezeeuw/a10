@@ -209,6 +209,23 @@ impl AsyncFd {
         self.recvmsg(bufs, flags)
     }
 
+    /// Receives data on the socket and returns the source address.
+    pub fn recvfrom<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A>
+    where
+        B: BufMut,
+        A: SocketAddress,
+    {
+        // SAFETY: zeroed `msghdr` is valid.
+        let msg = unsafe { mem::zeroed() };
+        let (buf_ptr, buf_len) = unsafe { buf.parts_mut() };
+        let iovec = libc::iovec {
+            iov_base: buf_ptr.cast(),
+            iov_len: buf_len as _,
+        };
+        let msg = Box::new((msg, MaybeUninit::uninit()));
+        RecvFrom::new(self, buf, msg, iovec, flags)
+    }
+
     fn recvmsg<'fd, B, A, const N: usize>(
         &'fd self,
         mut bufs: B,
@@ -512,6 +529,53 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { bufs.set_init(n as usize) };
         Ok((bufs, msg.0.msg_flags))
+    },
+}
+
+// RecvFrom.
+op_future! {
+    fn AsyncFd::recvfrom -> (B, A, libc::c_int),
+    struct RecvFrom<'fd, B: BufMut, A: SocketAddress> {
+        /// Buffer to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        buf: B,
+        /// The kernel will write to `msghdr` and the address, so both need to
+        /// stay in memory so the kernel can access it safely.
+        msg: Box<(libc::msghdr, MaybeUninit<A>)>,
+        /// NOTE: we only need `iovec` in the submission, we don't have to keep
+        /// around during the operation. Because of this we don't heap allocate
+        /// it like we for other operations. This leaves a small duration
+        /// between the submission of the entry and the submission being read by
+        /// the kernel in which this future could be dropped and the kernel will
+        /// read memory we don't own. However because we wake the kernel after
+        /// submitting the timeout entry it's not really worth to heap
+        /// allocation.
+        iovec: libc::iovec,
+    },
+    /// `iovec` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (buf, msg, iovec), flags| unsafe {
+        let address = &mut msg.1;
+        let msg = &mut msg.0;
+        msg.msg_iov = &mut *iovec;
+        msg.msg_iovlen = 1;
+        let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
+        msg.msg_name = addr.cast();
+        msg.msg_namelen = addr_len;
+        submission.recvmsg(fd.fd, &*msg, flags);
+        if let Some(buf_group) = buf.buffer_group() {
+            submission.set_buffer_select(buf_group.0);
+        }
+    },
+    map_result: |this, (mut buf, msg, _), buf_idx, n| {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        unsafe { buf.buffer_init(BufIdx(buf_idx), n as u32) };
+        // SAFETY: kernel initialised the address for us.
+        let address = unsafe { SocketAddress::init(msg.1, msg.0.msg_namelen) };
+        Ok((buf, address, msg.0.msg_flags))
     },
 }
 
