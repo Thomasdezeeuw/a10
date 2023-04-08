@@ -16,7 +16,7 @@ use a10::net::{Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, Send, Se
 use a10::{Extract, Ring};
 
 use crate::util::{
-    bind_and_listen_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next,
+    bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next,
     poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
 };
 
@@ -790,6 +790,69 @@ fn recv_vectored_truncated() {
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");
     assert_eq!(flags, libc::MSG_TRUNC);
+}
+
+#[test]
+fn recvfrom() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+    bind_ipv4(&socket);
+    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+
+    listener
+        .send_to(DATA1, socket_addr)
+        .expect("failed to send data");
+
+    // Receive some data.
+    let (buf, address, flags) = waker
+        .block_on(socket.recvfrom(Vec::with_capacity(DATA1.len() + 1), 0))
+        .expect("failed to receive");
+    assert_eq!(buf, DATA1);
+    let address = from_storage(address);
+    assert_eq!(address, local_addr);
+    assert_eq!(flags, 0);
+}
+
+#[test]
+fn recvfrom_read_buf_pool() {
+    const BUF_SIZE: usize = 4096;
+
+    init();
+    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let sq = ring.submission_queue().clone();
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = block_on(&mut ring, udp_ipv4_socket(sq));
+    bind_ipv4(&socket);
+    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+
+    listener
+        .send_to(DATA1, socket_addr)
+        .expect("failed to send data");
+
+    // Receive some data.
+    let (buf, address, flags) =
+        block_on(&mut ring, socket.recvfrom(buf_pool.get(), 0)).expect("failed to receive");
+    assert_eq!(&*buf, DATA1);
+    let address = from_storage(address);
+    assert_eq!(address, local_addr);
+    assert_eq!(flags, 0);
 }
 
 #[test]
