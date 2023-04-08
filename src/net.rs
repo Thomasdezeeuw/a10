@@ -4,12 +4,12 @@
 //! issues a non-blocking `socket(2)` call.
 
 use std::future::Future;
-use std::mem::{size_of, MaybeUninit};
+use std::mem::{self, size_of, MaybeUninit};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::io::{Buf, BufIdx, BufMut, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufIdx, BufMut, BufSlice, ReadBuf, ReadBufPool};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -67,6 +67,31 @@ impl AsyncFd {
         Send::new(self, buf, (libc::IORING_OP_SEND_ZC as u8, flags))
     }
 
+    /// Sends data in `bufs` on the socket to a connected peer.
+    pub fn send_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, NoAddress, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(libc::IORING_OP_SENDMSG as u8, bufs, NoAddress, flags)
+    }
+
+    /// Same as [`AsyncFd::send_vectored`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    pub fn send_vectored_zc<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, NoAddress, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(libc::IORING_OP_SENDMSG_ZC as u8, bufs, NoAddress, flags)
+    }
+
     /// Sends data on the socket to a connected peer.
     pub const fn sendto<'fd, B, A>(
         &'fd self,
@@ -96,6 +121,23 @@ impl AsyncFd {
         A: SocketAddress,
     {
         SendTo::new(self, buf, address, (libc::IORING_OP_SEND_ZC as u8, flags))
+    }
+
+    fn sendmsg<'fd, B, A, const N: usize>(
+        &'fd self,
+        op: u8,
+        bufs: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        // SAFETY: zeroed `msghdr` is valid.
+        let msg = unsafe { mem::zeroed() };
+        let iovecs = unsafe { bufs.as_iovecs() };
+        SendMsg::new(self, bufs, address, msg, iovecs, (op, flags))
     }
 
     /// Receives data on the socket from the remote address to which it is
@@ -281,6 +323,47 @@ op_future! {
     extract: |this, (buf, address), n| -> (B, A, usize) {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, address, n as usize))
+    },
+}
+
+// Sendmsg.
+op_future! {
+    fn AsyncFd::send_vectored -> usize,
+    struct SendMsg<'fd, B: BufSlice<N>, A: SocketAddress; const N: usize> {
+        /// Buffer to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        bufs: B,
+        /// Address to send to.
+        address: A,
+        /// NOTE: we only need `msg` and `iovec` in the submission, we don't
+        /// have to keep around during the operation. Because of this we don't
+        /// heap allocate it like we for other operations. This leaves a small
+        /// duration between the submission of the entry and the submission
+        /// being read by the kernel in which this future could be dropped and
+        /// the kernel will read memory we don't own. However because we wake
+        /// the kernel after submitting the timeout entry it's not really worth
+        /// to heap allocation.
+        msg: libc::msghdr,
+        iovecs: [libc::iovec; N],
+    },
+    /// `msg` and `iovecs` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: flags: (u8, libc::c_int),
+    setup: |submission, fd, (_, address, msg, iovecs), (op, flags)| unsafe {
+        msg.msg_iov = iovecs.as_mut_ptr();
+        msg.msg_iovlen = N;
+        let (addr, addr_len) = SocketAddress::as_ptr(address);
+        msg.msg_name = addr.cast_mut().cast();
+        msg.msg_namelen = addr_len;
+        submission.sendmsg(op, fd.fd, &*msg, flags);
+    },
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
+    extract: |this, (buf, _, _, _), n| -> (B, usize) {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok((buf, n as usize))
     },
 }
 
