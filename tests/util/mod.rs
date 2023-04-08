@@ -298,6 +298,13 @@ pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
 
 /// Bind `socket` to a local IPv4 addres with a random port and starts listening
 /// on it. Returns the bound address.
+pub(crate) fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
+    let address = bind_ipv4(socket);
+    let fd = socket.as_fd().as_raw_fd();
+    syscall!(listen(fd, 128)).expect("failed to listen on socket");
+    address
+}
+
 pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
     let fd = socket.as_fd().as_raw_fd();
     let mut addr = libc::sockaddr_in {
@@ -310,8 +317,6 @@ pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
     };
     let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
     syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
-
-    syscall!(listen(fd, 128)).expect("failed to listen on socket");
 
     syscall!(getsockname(
         fd,

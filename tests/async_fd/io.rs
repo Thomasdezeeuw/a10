@@ -15,7 +15,7 @@ use a10::io::{
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
-    bind_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
+    bind_and_listen_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
     remove_test_file, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
@@ -681,7 +681,7 @@ fn cancel_all_accept() {
     let waker = Waker::new();
 
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
+    bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<libc::sockaddr_in>();
     // Poll the future to schedule the operation.
@@ -701,7 +701,7 @@ fn cancel_all_twice_accept() {
     let waker = Waker::new();
 
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
+    bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<libc::sockaddr_in>();
     // Poll the future to schedule the operation.
