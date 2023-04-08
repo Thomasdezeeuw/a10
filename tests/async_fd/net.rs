@@ -16,8 +16,8 @@ use a10::net::{Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, Send, Se
 use a10::{Extract, Ring};
 
 use crate::util::{
-    bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next, poll_nop, syscall,
-    tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
+    bind_and_listen_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next,
+    poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -33,7 +33,7 @@ fn accept() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = bind_ipv4(&listener);
+    let local_addr = bind_and_listen_ipv4(&listener);
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
@@ -76,7 +76,7 @@ fn accept_no_address() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = bind_ipv4(&listener);
+    let local_addr = bind_and_listen_ipv4(&listener);
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
@@ -114,7 +114,7 @@ fn cancel_accept() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
+    bind_and_listen_ipv4(&listener);
 
     let accept = listener.accept::<(libc::sockaddr_storage, libc::socklen_t)>();
     let mut accept = std::pin::pin!(accept);
@@ -137,7 +137,7 @@ fn try_cancel_accept_before_poll() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
+    bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<libc::sockaddr_storage>();
 
@@ -162,7 +162,7 @@ fn multishot_accept() {
 
         // Bind a socket.
         let listener = waker.block_on(tcp_ipv4_socket(sq));
-        let local_addr = bind_ipv4(&listener);
+        let local_addr = bind_and_listen_ipv4(&listener);
 
         let mut accept_stream = listener.multishot_accept();
 
@@ -230,7 +230,7 @@ fn cancel_multishot_accept() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = bind_ipv4(&listener);
+    let local_addr = bind_and_listen_ipv4(&listener);
 
     let mut accept_stream = listener.multishot_accept();
 
@@ -300,7 +300,7 @@ fn try_cancel_multishot_accept_before_poll() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = bind_ipv4(&listener);
+    let local_addr = bind_and_listen_ipv4(&listener);
 
     let mut accept_stream = listener.multishot_accept();
 
@@ -320,7 +320,7 @@ fn cancel_multishot_accept_before_poll() {
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_ipv4(&listener);
+    bind_and_listen_ipv4(&listener);
 
     let mut accept_stream = listener.multishot_accept();
 
