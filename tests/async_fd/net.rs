@@ -856,6 +856,43 @@ fn recvfrom_read_buf_pool() {
 }
 
 #[test]
+fn recvfrom_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+    bind_ipv4(&socket);
+    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+
+    listener
+        .send_to(DATA1, socket_addr)
+        .expect("failed to send data");
+
+    // Receive some data.
+    let bufs = [
+        Vec::with_capacity(5),
+        Vec::with_capacity(2),
+        Vec::with_capacity(7),
+    ];
+    let (bufs, address, flags) = waker
+        .block_on(socket.recvfrom_vectored(bufs, 0))
+        .expect("failed to receive");
+    assert_eq!(&bufs[0], b"Hello");
+    assert_eq!(&bufs[1], b", ");
+    assert_eq!(&bufs[2], b"World!");
+    let address = from_storage(address);
+    assert_eq!(address, local_addr);
+    assert_eq!(flags, 0);
+}
+
+#[test]
 fn send() {
     let sq = test_queue();
     let waker = Waker::new();

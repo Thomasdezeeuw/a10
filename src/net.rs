@@ -186,7 +186,7 @@ impl AsyncFd {
     /// This will return `ENOBUFS` if no buffer is available in the `pool` to
     /// read into.
     ///
-    /// Be careful when using this as a peer writing a lot data might take up
+    /// Be careful when using this as a peer sending a lot data might take up
     /// all your buffers from your pool!
     pub const fn multishot_recv<'fd>(
         &'fd self,
@@ -224,6 +224,23 @@ impl AsyncFd {
         };
         let msg = Box::new((msg, MaybeUninit::uninit()));
         RecvFrom::new(self, buf, msg, iovec, flags)
+    }
+
+    /// Receives data on the socket and the source address using vectored I/O.
+    pub fn recvfrom_vectored<'fd, B, A, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: libc::c_int,
+    ) -> RecvFromVectored<'fd, B, A, N>
+    where
+        B: BufMutSlice<N>,
+        A: SocketAddress,
+    {
+        // SAFETY: zeroed `msghdr` is valid.
+        let msg = unsafe { mem::zeroed() };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let msg = Box::new((msg, MaybeUninit::uninit()));
+        RecvFromVectored::new(self, bufs, msg, iovecs, flags)
     }
 
     fn recvmsg<'fd, B, A, const N: usize>(
@@ -576,6 +593,50 @@ op_future! {
         // SAFETY: kernel initialised the address for us.
         let address = unsafe { SocketAddress::init(msg.1, msg.0.msg_namelen) };
         Ok((buf, address, msg.0.msg_flags))
+    },
+}
+
+// RecvFromVectored.
+op_future! {
+    fn AsyncFd::recvfrom_vectored -> (B, A, libc::c_int),
+    struct RecvFromVectored<'fd, B: BufMutSlice<N>, A: SocketAddress; const N: usize> {
+        /// Buffers to read from, needs to stay in memory so the kernel can
+        /// access it safely.
+        bufs: B,
+        /// The kernel will write to `msghdr` and the address, so both need to
+        /// stay in memory so the kernel can access it safely.
+        msg: Box<(libc::msghdr, MaybeUninit<A>)>,
+        /// NOTE: we only need `iovec` in the submission, we don't have to keep
+        /// around during the operation. Because of this we don't heap allocate
+        /// it like we for other operations. This leaves a small duration
+        /// between the submission of the entry and the submission being read by
+        /// the kernel in which this future could be dropped and the kernel will
+        /// read memory we don't own. However because we wake the kernel after
+        /// submitting the timeout entry it's not really worth to heap
+        /// allocation.
+        iovecs: [libc::iovec; N],
+    },
+    /// `iovecs` can't move until the kernel has read the submission.
+    impl !Upin,
+    setup_state: flags: libc::c_int,
+    setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
+        let address = &mut msg.1;
+        let msg = &mut msg.0;
+        msg.msg_iov = iovecs.as_mut_ptr();
+        msg.msg_iovlen = N;
+        let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
+        msg.msg_name = addr.cast();
+        msg.msg_namelen = addr_len;
+        submission.recvmsg(fd.fd, &*msg, flags);
+    },
+    map_result: |this, (mut bufs, msg, _), n| {
+        // SAFETY: the kernel initialised the buffers for us as part of the
+        // recvmsg call.
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        unsafe { bufs.set_init(n as usize) };
+        // SAFETY: kernel initialised the address for us.
+        let address = unsafe { SocketAddress::init(msg.1, msg.0.msg_namelen) };
+        Ok((bufs, address, msg.0.msg_flags))
     },
 }
 
