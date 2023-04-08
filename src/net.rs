@@ -3,6 +3,12 @@
 //! To create a new socket ([`AsyncFd`]) use the [`socket`] function, which
 //! issues a non-blocking `socket(2)` call.
 
+// This is not ideal.
+// This should only be applied to `SendMsg` and `RecvVectored` `RecvFrom` and
+// `RecvFromVectored` as they use `libc::iovec` internally, which is `!Send`,
+// while it actually is `Send`.
+#![allow(clippy::non_send_fields_in_send_ty)]
+
 use std::future::Future;
 use std::mem::{self, size_of, MaybeUninit};
 use std::pin::Pin;
