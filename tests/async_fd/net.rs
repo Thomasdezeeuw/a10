@@ -1103,6 +1103,123 @@ fn sendto_zc_extractor() {
 }
 
 #[test]
+fn sendto_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<SendTo<Vec<u8>, ()>>();
+    is_sync::<SendTo<Vec<u8>, ()>>();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "World!"];
+    let addr = addr_storage(&local_addr);
+    let n = waker
+        .block_on(socket.sendto_vectored(bufs, addr, 0))
+        .expect("failed to sendto");
+    assert_eq!(n, DATA1.len());
+
+    let mut buf = vec![0; DATA1.len() + 2];
+    let (n, from_address) = listener.recv_from(&mut buf).expect("failed to recv data");
+    assert_eq!(&buf[0..n], DATA1);
+    assert!(from_address.ip().is_loopback());
+}
+
+#[test]
+fn sendto_vectored_zc() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "World!"];
+    let addr = addr_storage(&local_addr);
+    let n = waker
+        .block_on(socket.sendto_vectored_zc(bufs, addr, 0))
+        .expect("failed to sendto");
+    assert_eq!(n, DATA1.len());
+
+    let mut buf = vec![0; DATA1.len() + 2];
+    let (n, from_address) = listener.recv_from(&mut buf).expect("failed to recv data");
+    assert_eq!(&buf[0..n], DATA1);
+    assert!(from_address.ip().is_loopback());
+}
+
+#[test]
+fn sendto_vectored_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "Mars!"];
+    let addr = addr_storage(&local_addr);
+    let (buf, n) = waker
+        .block_on(socket.sendto_vectored(bufs, addr.clone(), 0).extract())
+        .expect("failed to sendto");
+    assert!(buf[2] == "Mars!");
+    assert_eq!(n, DATA2.len());
+
+    let mut buf = vec![0; DATA2.len() + 2];
+    let (n, from_address) = listener.recv_from(&mut buf).expect("failed to recv data");
+    assert_eq!(&buf[0..n], DATA2);
+    assert!(from_address.ip().is_loopback());
+}
+
+#[test]
+fn sendto_vectored_zc_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "Mars!"];
+    let addr = addr_storage(&local_addr);
+    let (bufs, n) = waker
+        .block_on(socket.sendto_vectored_zc(bufs, addr.clone(), 0).extract())
+        .expect("failed to sendto");
+    assert!(bufs[0] == "Hello");
+    assert_eq!(n, DATA2.len());
+
+    let mut buf = vec![0; DATA2.len() + 2];
+    let (n, from_address) = listener.recv_from(&mut buf).expect("failed to recv data");
+    assert_eq!(&buf[0..n], DATA2);
+    assert!(from_address.ip().is_loopback());
+}
+
+#[test]
 fn shutdown() {
     let sq = test_queue();
     let waker = Waker::new();
