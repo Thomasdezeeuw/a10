@@ -846,6 +846,150 @@ fn send_zc_extractor() {
 }
 
 #[test]
+fn send_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Send<Vec<u8>>>();
+    is_sync::<Send<Vec<u8>>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "World!"];
+    let n = waker
+        .block_on(stream.send_vectored(bufs, 0))
+        .expect("failed to send");
+    assert_eq!(n, DATA1.len());
+    let mut buf = vec![0; DATA1.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA1);
+}
+
+#[test]
+fn send_vectored_zc() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Send<Vec<u8>>>();
+    is_sync::<Send<Vec<u8>>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "World!"];
+    let n = waker
+        .block_on(stream.send_vectored_zc(bufs, 0))
+        .expect("failed to send");
+    assert_eq!(n, DATA1.len());
+    let mut buf = vec![0; DATA1.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA1);
+}
+
+#[test]
+fn send_vectored_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "Mars!"];
+    let (bufs, n) = waker
+        .block_on(stream.send_vectored(bufs, 0).extract())
+        .expect("failed to send");
+    assert_eq!(bufs[0], "Hello");
+    assert_eq!(n, DATA2.len());
+    let mut buf = vec![0; DATA2.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
+fn send_vectored_zc_extractor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send some data.
+    let bufs = ["Hello", ", ", "Mars!"];
+    let (bufs, n) = waker
+        .block_on(stream.send_vectored_zc(bufs, 0).extract())
+        .expect("failed to send");
+    assert_eq!(bufs[0], "Hello");
+    assert_eq!(n, DATA2.len());
+    let mut buf = vec![0; DATA2.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
 fn sendto() {
     let sq = test_queue();
     let waker = Waker::new();

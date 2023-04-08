@@ -353,6 +353,26 @@ impl Submission {
         self.inner.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as _;
     }
 
+    /// `opcode` must be `IORING_OP_SENDMSG` or `IORING_OP_SENDMSG_ZC`.
+    pub(crate) unsafe fn sendmsg(
+        &mut self,
+        opcode: u8,
+        fd: RawFd,
+        msg: *const libc::msghdr,
+        flags: libc::c_int,
+    ) {
+        debug_assert!(
+            opcode == libc::IORING_OP_SENDMSG as u8 || opcode == libc::IORING_OP_SENDMSG_ZC as u8
+        );
+        self.inner.opcode = opcode;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: msg as u64 };
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: flags as _,
+        };
+        self.inner.len = 1;
+    }
+
     pub(crate) unsafe fn recv(&mut self, fd: RawFd, ptr: *mut u8, len: u32, flags: libc::c_int) {
         self.inner.opcode = libc::IORING_OP_RECV as u8;
         self.inner.fd = fd;
