@@ -208,14 +208,13 @@ impl AsyncFd {
         &'fd self,
         mut bufs: B,
         flags: libc::c_int,
-    ) -> RecvVectored<'fd, B, NoAddress, N>
+    ) -> RecvVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
         // SAFETY: zeroed `msghdr` is valid.
-        let msg = unsafe { mem::zeroed() };
+        let msg = unsafe { Box::new_zeroed().assume_init() };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let msg = Box::new((msg, MaybeUninit::uninit()));
         RecvVectored::new(self, bufs, msg, iovecs, flags)
     }
 
@@ -504,13 +503,13 @@ op_async_iter! {
 // RecvVectored.
 op_future! {
     fn AsyncFd::recv_vectored -> (B, libc::c_int),
-    struct RecvVectored<'fd, B: BufMutSlice<N>, A: SocketAddress; const N: usize> {
+    struct RecvVectored<'fd, B: BufMutSlice<N>; const N: usize> {
         /// Buffers to read from, needs to stay in memory so the kernel can
         /// access it safely.
         bufs: B,
-        /// The kernel will write to `msghdr` and the address, so both need to
-        /// stay in memory so the kernel can access it safely.
-        msg: Box<(libc::msghdr, MaybeUninit<A>)>,
+        /// The kernel will write to `msghdr`, so it needs to stay in memory so
+        /// the kernel can access it safely.
+        msg: Box<libc::msghdr>,
         /// NOTE: we only need `iovec` in the submission, we don't have to keep
         /// around during the operation. Because of this we don't heap allocate
         /// it like we for other operations. This leaves a small duration
@@ -525,21 +524,16 @@ op_future! {
     impl !Upin,
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
-        let address = &mut msg.1;
-        let msg = &mut msg.0;
         msg.msg_iov = iovecs.as_mut_ptr();
         msg.msg_iovlen = N;
-        let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
-        msg.msg_name = addr.cast();
-        msg.msg_namelen = addr_len;
-        submission.recvmsg(fd.fd, &*msg, flags);
+        submission.recvmsg(fd.fd, &**msg, flags);
     },
     map_result: |this, (mut bufs, msg, _), n| {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { bufs.set_init(n as usize) };
-        Ok((bufs, msg.0.msg_flags))
+        Ok((bufs, msg.msg_flags))
     },
 }
 
