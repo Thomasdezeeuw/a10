@@ -13,11 +13,12 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, Send, SendTo, Socket,
+    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendTo,
+    Socket,
 };
 use a10::{Extract, Ring};
 
-use crate::async_fd::io::BadReadBuf;
+use crate::async_fd::io::{BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
     is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
@@ -832,6 +833,51 @@ fn recv_vectored_truncated() {
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");
     assert_eq!(flags, libc::MSG_TRUNC);
+}
+
+#[test]
+fn recv_n_vectored() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<RecvNVectored<Vec<u8>, 1>>();
+    is_sync::<RecvNVectored<Vec<u8>, 1>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Receive some data.
+    const DATA: &[u8] = b"Hello marsBooo!! Hi. How are you?";
+    client.write_all(DATA).expect("failed to send data");
+    let bufs = BadReadBufSlice {
+        data: [Vec::with_capacity(15), Vec::with_capacity(20)],
+    };
+    let mut bufs = waker
+        .block_on(stream.recv_n_vectored(bufs, DATA.len()))
+        .unwrap();
+    assert_eq!(&bufs.data[0], b"Hello mars! Hi.");
+    assert_eq!(&bufs.data[1], b"Booo! How are you?");
+
+    // We should detect the peer closing the stream.
+    drop(client);
+    for buf in bufs.data.iter_mut() {
+        buf.clear();
+    }
+    let res = waker.block_on(stream.recv_n_vectored(bufs, 5));
+    expect_io_error_kind(res, io::ErrorKind::UnexpectedEof);
 }
 
 #[test]
