@@ -377,7 +377,7 @@ fn write_all() {
     let buf = waker
         .block_on(r.read(Vec::with_capacity(BadBuf::DATA.len() + 1)))
         .unwrap();
-    debug_assert_eq!(buf, BadBuf::DATA);
+    assert_eq!(buf, BadBuf::DATA);
 }
 
 #[test]
@@ -453,9 +453,9 @@ fn write_all_vectored() {
     waker.block_on(w.write_all_vectored(buf)).unwrap();
 
     let buf = waker.block_on(r.read(Vec::with_capacity(31))).unwrap();
-    debug_assert_eq!(buf[..10], BadBufSlice::DATA1);
-    debug_assert_eq!(buf[10..20], BadBufSlice::DATA2);
-    debug_assert_eq!(buf[20..], BadBufSlice::DATA3);
+    assert_eq!(buf[..10], BadBufSlice::DATA1);
+    assert_eq!(buf[10..20], BadBufSlice::DATA2);
+    assert_eq!(buf[20..], BadBufSlice::DATA3);
 }
 
 #[test]
@@ -542,7 +542,7 @@ fn read_n() {
         data: Vec::with_capacity(30),
     };
     let buf = waker.block_on(r.read_n(buf, DATA.len())).unwrap();
-    debug_assert_eq!(&buf.data, DATA);
+    assert_eq!(&buf.data, DATA);
 }
 
 #[test]
@@ -567,8 +567,9 @@ fn read_n_at() {
 
 // NOTE: this implementation is BROKEN! It's only used to test the write_all
 // method.
-struct BadReadBuf {
-    data: Vec<u8>,
+#[derive(Debug)]
+pub(crate) struct BadReadBuf {
+    pub(crate) data: Vec<u8>,
 }
 
 unsafe impl BufMut for BadReadBuf {
@@ -600,16 +601,13 @@ fn read_n_vectored() {
         data: [Vec::with_capacity(15), Vec::with_capacity(20)],
     };
     let buf = waker.block_on(r.read_n_vectored(buf, DATA.len())).unwrap();
-    //debug_assert_eq!(&buf.data[0], b"Hello mars! Hi.");
-    debug_assert_eq!(
-        std::str::from_utf8(&buf.data[0]).unwrap(),
-        "Hello mars! Hi."
-    );
-    debug_assert_eq!(&buf.data[1], b"Booo! How are you?");
+    assert_eq!(&buf.data[0], b"Hello mars! Hi.");
+    assert_eq!(&buf.data[1], b"Booo! How are you?");
 }
 
 // NOTE: this implementation is BROKEN! It's only used to test the write_all
 // method.
+#[derive(Debug)]
 struct BadReadBufSlice {
     data: [Vec<u8>; 2],
 }
