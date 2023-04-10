@@ -608,8 +608,8 @@ fn read_n_vectored() {
 // NOTE: this implementation is BROKEN! It's only used to test the write_all
 // method.
 #[derive(Debug)]
-struct BadReadBufSlice {
-    data: [Vec<u8>; 2],
+pub(crate) struct BadReadBufSlice {
+    pub(crate) data: [Vec<u8>; 2],
 }
 
 unsafe impl BufMutSlice<2> for BadReadBufSlice {
@@ -623,6 +623,10 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
     }
 
     unsafe fn set_init(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+
         if self.as_iovecs_mut()[0].iov_len == 10 {
             self.data[0].set_init(10);
             self.data[1].set_init(n - 10);

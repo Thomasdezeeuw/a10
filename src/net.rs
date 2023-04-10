@@ -213,7 +213,7 @@ impl AsyncFd {
     }
 
     /// Receives data on the socket from the remote address to which it is
-    /// connected using vectored I/O.
+    /// connected, using vectored I/O.
     pub fn recv_vectored<'fd, B, const N: usize>(
         &'fd self,
         mut bufs: B,
@@ -226,6 +226,19 @@ impl AsyncFd {
         let msg = unsafe { Box::new_zeroed().assume_init() };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         RecvVectored::new(self, bufs, msg, iovecs, flags)
+    }
+
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected, using vectored I/O.
+    pub fn recv_n_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        n: usize,
+    ) -> RecvNVectored<'fd, B, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        RecvNVectored::new(self, bufs, n)
     }
 
     /// Receives data on the socket and returns the source address.
@@ -602,6 +615,63 @@ op_future! {
         unsafe { bufs.set_init(n as usize) };
         Ok((bufs, msg.msg_flags))
     },
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n_vectored`].
+#[derive(Debug)]
+pub struct RecvNVectored<'fd, B, const N: usize> {
+    recv: RecvVectored<'fd, ReadNBuf<B>, N>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> RecvNVectored<'fd, B, N> {
+    fn new(fd: &'fd AsyncFd, buf: B, n: usize) -> RecvNVectored<'fd, B, N> {
+        let bufs = ReadNBuf { buf, last_read: 0 };
+        RecvNVectored {
+            recv: fd.recv_vectored(bufs, 0),
+            left: n,
+        }
+    }
+}
+
+impl<'fd, B, const N: usize> Cancel for RecvNVectored<'fd, B, N> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.recv.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.recv.cancel()
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok((bufs, _))) => {
+                if bufs.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if bufs.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(bufs.buf));
+                }
+
+                this.left -= bufs.last_read;
+
+                recv.set(recv.fd.recv_vectored(bufs, 0));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 // RecvFrom.
