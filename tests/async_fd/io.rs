@@ -412,12 +412,13 @@ fn write_all_at_extract() {
 
 // NOTE: this implementation is BROKEN! It's only used to test the write_all
 // method.
-struct BadBuf {
-    calls: Cell<usize>,
+#[derive(Debug)]
+pub(crate) struct BadBuf {
+    pub(crate) calls: Cell<usize>,
 }
 
 impl BadBuf {
-    const DATA: [u8; 30] = [
+    pub(crate) const DATA: [u8; 30] = [
         123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
         200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
     ];

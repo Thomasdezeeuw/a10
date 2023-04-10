@@ -1,5 +1,6 @@
 //! Tests for the networking operations.
 
+use std::cell::Cell;
 use std::io::{self, Read, Write};
 use std::mem::{self, size_of};
 use std::net::{
@@ -13,12 +14,12 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendTo,
-    Socket,
+    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
+    SendTo, Socket,
 };
 use a10::{Extract, Ring};
 
-use crate::async_fd::io::{BadReadBuf, BadReadBufSlice};
+use crate::async_fd::io::{BadBuf, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
     is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
@@ -1115,6 +1116,78 @@ fn send_zc_extractor() {
     let mut buf = vec![0; DATA2.len() + 2];
     let n = client.read(&mut buf).expect("failed to send data");
     assert_eq!(&buf[0..n], DATA2);
+}
+
+#[test]
+fn send_all() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<SendAll<Vec<u8>>>();
+    is_sync::<SendAll<Vec<u8>>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send all data.
+    let buf = BadBuf {
+        calls: Cell::new(0),
+    };
+    waker
+        .block_on(stream.send_all(buf))
+        .expect("failed to send");
+    let mut buf = vec![0; BadBuf::DATA.len() + 1];
+    let n = client.read(&mut buf).unwrap();
+    assert_eq!(n, BadBuf::DATA.len());
+    buf.resize(n, 0);
+    assert_eq!(buf, BadBuf::DATA);
+}
+
+#[test]
+fn send_all_at_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Send all data.
+    let buf = BadBuf {
+        calls: Cell::new(0),
+    };
+    let buf = waker
+        .block_on(stream.send_all(buf).extract())
+        .expect("failed to send");
+    assert_eq!(buf.calls.get(), 6);
+    let mut buf = vec![0; BadBuf::DATA.len() + 1];
+    let n = client.read(&mut buf).unwrap();
+    assert_eq!(n, BadBuf::DATA.len());
+    buf.resize(n, 0);
+    assert_eq!(buf, BadBuf::DATA);
 }
 
 #[test]
