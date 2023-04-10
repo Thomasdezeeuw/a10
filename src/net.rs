@@ -111,6 +111,19 @@ impl AsyncFd {
         self.sendmsg(libc::IORING_OP_SENDMSG_ZC as u8, bufs, NoAddress, flags)
     }
 
+    /// Sends all data in `bufs` on the socket to a connected peer, using
+    /// vectored I/O.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> SendAllVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        SendAllVectored::new(self, bufs)
+    }
+
     /// Sends data on the socket to a connected peer.
     pub const fn sendto<'fd, B, A>(
         &'fd self,
@@ -556,6 +569,92 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
+}
+
+/// [`Future`] behind [`AsyncFd::send_all_vectored`].
+#[derive(Debug)]
+pub struct SendAllVectored<'fd, B, const N: usize> {
+    send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
+    skip: u64,
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
+    fn new(fd: &'fd AsyncFd, bufs: B) -> SendAllVectored<'fd, B, N> {
+        SendAllVectored {
+            send: fd.send_vectored(bufs, 0).extract(),
+            skip: 0,
+        }
+    }
+
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn inner_poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut send = unsafe { Pin::new_unchecked(&mut this.send) };
+        match send.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((bufs, n))) => {
+                this.skip += n as u64;
+
+                let mut iovecs = unsafe { bufs.as_iovecs() };
+                let mut skip = this.skip;
+                for iovec in iovecs.iter_mut() {
+                    if iovec.iov_len as u64 <= skip {
+                        // Skip entire buf.
+                        skip -= iovec.iov_len as u64;
+                        iovec.iov_len = 0;
+                    } else {
+                        iovec.iov_len -= skip as usize;
+                        break;
+                    }
+                }
+
+                if iovecs[N - 1].iov_len == 0 {
+                    // Written everything.
+                    return Poll::Ready(Ok(bufs));
+                }
+
+                // SAFETY: zeroed `msghdr` is valid.
+                let msg = unsafe { mem::zeroed() };
+                let op = libc::IORING_OP_SENDMSG as u8;
+                send.set(
+                    SendMsg::new(send.fut.fd, bufs, NoAddress, msg, iovecs, (op, 0)).extract(),
+                );
+                unsafe { Pin::new_unchecked(this) }.inner_poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B, const N: usize> Cancel for SendAllVectored<'fd, B, N> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.send.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.send.cancel()
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for SendAllVectored<'fd, B, N> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.inner_poll(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Extract for SendAllVectored<'fd, B, N> {}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'fd, B, N>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.inner_poll(ctx)
+    }
 }
 
 // Recv.
@@ -1070,6 +1169,7 @@ impl SocketAddress for (libc::sockaddr_un, libc::socklen_t) {
 ///
 /// [`accept`]: AsyncFd::accept
 /// [`connect`]: AsyncFd::connect
+#[derive(Debug)]
 pub struct NoAddress;
 
 impl SocketAddress for NoAddress {
