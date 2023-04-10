@@ -16,7 +16,10 @@ use std::task::{self, Poll};
 use std::{io, ptr};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::io::{Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool, ReadNBuf};
+use crate::extract::{Extract, Extractor};
+use crate::io::{
+    Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
+};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -72,6 +75,15 @@ impl AsyncFd {
         B: Buf,
     {
         Send::new(self, buf, (libc::IORING_OP_SEND_ZC as u8, flags))
+    }
+
+    /// Sends all data in `buf` on the socket to a connected peer.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub const fn send_all<'fd, B>(&'fd self, buf: B) -> SendAll<'fd, B>
+    where
+        B: Buf,
+    {
+        SendAll::new(self, buf)
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
@@ -406,6 +418,77 @@ op_future! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         Ok((buf, n as usize))
     },
+}
+
+/// [`Future`] behind [`AsyncFd::send_all`].
+#[derive(Debug)]
+pub struct SendAll<'fd, B> {
+    send: Extractor<Send<'fd, SkipBuf<B>>>,
+}
+
+impl<'fd, B: Buf> SendAll<'fd, B> {
+    const fn new(fd: &'fd AsyncFd, buf: B) -> SendAll<'fd, B> {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            // TODO: once `Extract` is a constant trait use that.
+            send: Extractor {
+                fut: fd.send(buf, 0),
+            },
+        }
+    }
+
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn inner_poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut send = unsafe { Pin::new_unchecked(&mut this.send) };
+        match send.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((mut buf, n))) => {
+                buf.skip += n as u32;
+
+                if let (_, 0) = unsafe { buf.parts() } {
+                    // Written everything.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                send.set(send.fut.fd.send(buf, 0).extract());
+                unsafe { Pin::new_unchecked(this) }.inner_poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B> Cancel for SendAll<'fd, B> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.send.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.send.cancel()
+    }
+}
+
+impl<'fd, B: Buf> Future for SendAll<'fd, B> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.inner_poll(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: Buf> Extract for SendAll<'fd, B> {}
+
+impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `fut`.
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.inner_poll(ctx)
+    }
 }
 
 // SendTo.
