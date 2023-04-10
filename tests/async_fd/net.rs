@@ -12,12 +12,15 @@ use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
-use a10::net::{Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, Send, SendTo, Socket};
+use a10::net::{
+    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, Send, SendTo, Socket,
+};
 use a10::{Extract, Ring};
 
+use crate::async_fd::io::BadReadBuf;
 use crate::util::{
-    bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, init, is_send, is_sync, next,
-    poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
+    bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
+    is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -706,6 +709,45 @@ fn multishot_recv_all_buffers_used() {
             }
         }
     }
+}
+
+#[test]
+fn recv_n() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<RecvN<Vec<u8>>>();
+    is_sync::<RecvN<Vec<u8>>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = match listener.local_addr().unwrap() {
+        SocketAddr::V4(addr) => addr,
+        _ => unreachable!(),
+    };
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    let addr = addr_storage(&local_addr);
+    let mut connect_future = stream.connect(addr);
+    // Poll the future to schedule the operation.
+    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+    waker.block_on(connect_future).expect("failed to connect");
+
+    // Receive some data.
+    client.write_all(DATA1).expect("failed to send data");
+    let buf = BadReadBuf {
+        data: Vec::with_capacity(30),
+    };
+    let mut buf = waker.block_on(stream.recv_n(buf, DATA1.len())).unwrap();
+    assert_eq!(&buf.data, DATA1);
+
+    // We should detect the peer closing the stream.
+    drop(client);
+    buf.data.clear();
+    let res = waker.block_on(stream.recv_n(buf, 5));
+    expect_io_error_kind(res, io::ErrorKind::UnexpectedEof);
 }
 
 #[test]

@@ -15,7 +15,8 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::io::{Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io::{Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool, ReadNBuf};
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::{libc, AsyncFd, SubmissionQueue};
 
@@ -200,6 +201,15 @@ impl AsyncFd {
         flags: libc::c_int,
     ) -> MultishotRecv<'fd> {
         MultishotRecv::new(self, pool, flags)
+    }
+
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected.
+    pub const fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
+    where
+        B: BufMut,
+    {
+        RecvN::new(self, buf, n)
     }
 
     /// Receives data on the socket from the remote address to which it is
@@ -498,6 +508,63 @@ op_async_iter! {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         unsafe { this.buf_pool.new_buffer(BufIdx(buf_idx), n as u32) }
     },
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n`].
+#[derive(Debug)]
+pub struct RecvN<'fd, B> {
+    recv: Recv<'fd, ReadNBuf<B>>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMut> RecvN<'fd, B> {
+    const fn new(fd: &'fd AsyncFd, buf: B, n: usize) -> RecvN<'fd, B> {
+        let buf = ReadNBuf { buf, last_read: 0 };
+        RecvN {
+            recv: fd.recv(buf, 0),
+            left: n,
+        }
+    }
+}
+
+impl<'fd, B> Cancel for RecvN<'fd, B> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.recv.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.recv.cancel()
+    }
+}
+
+impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving the `Recv` future.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok(buf)) => {
+                if buf.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if buf.last_read >= this.left {
+                    // Received the required amount of bytes.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                this.left -= buf.last_read;
+
+                recv.set(recv.fd.recv(buf, 0));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 // RecvVectored.
