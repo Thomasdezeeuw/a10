@@ -493,14 +493,15 @@ fn write_all_vectored_at_extract() {
 
 // NOTE: this implementation is BROKEN! It's only used to test the
 // write_all_vectored method.
-struct BadBufSlice {
-    calls: Cell<usize>,
+#[derive(Debug)]
+pub(crate) struct BadBufSlice {
+    pub(crate) calls: Cell<usize>,
 }
 
 impl BadBufSlice {
-    const DATA1: [u8; 10] = [123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
-    const DATA2: [u8; 10] = [200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
-    const DATA3: [u8; 10] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+    pub(crate) const DATA1: [u8; 10] = [123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
+    pub(crate) const DATA2: [u8; 10] = [200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
+    pub(crate) const DATA3: [u8; 10] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
 }
 
 unsafe impl BufSlice<3> for BadBufSlice {
