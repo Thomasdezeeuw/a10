@@ -5,7 +5,8 @@ use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::{libc, Completion, OpIndex};
+use crate::cancel::{CancelOp, CancelResult};
+use crate::{libc, Completion, OpIndex, QueueFull, SubmissionQueue};
 
 /// State of a queued operation.
 #[derive(Debug)]
@@ -794,25 +795,11 @@ macro_rules! op_future {
 
         impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
-                match self.state {
-                    $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
-                    $crate::op::OpState::Running(op_index) => {
-                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                            std::result::Result::Ok(()) => $crate::cancel::CancelResult::Canceled,
-                            std::result::Result::Err($crate::QueueFull(())) => $crate::cancel::CancelResult::QueueFull,
-                        }
-                    },
-                    $crate::op::OpState::Done => $crate::cancel::CancelResult::Canceled,
-                }
+                self.state.try_cancel(&self.fd.sq)
             }
 
             fn cancel(&mut self) -> $crate::cancel::CancelOp {
-                let op_index = match self.state {
-                    $crate::op::OpState::NotStarted(_) => None,
-                    $crate::op::OpState::Running(op_index) => Some(op_index),
-                    $crate::op::OpState::Done => None,
-                };
-                $crate::cancel::CancelOp::new(&self.fd.sq, op_index)
+                self.state.cancel(&self.fd.sq)
             }
         }
 
@@ -960,6 +947,29 @@ pub(crate) enum OpState<S> {
     Done,
 }
 
+impl<S> OpState<S> {
+    pub(crate) fn try_cancel(&mut self, sq: &SubmissionQueue) -> CancelResult {
+        match self {
+            OpState::NotStarted(_) => CancelResult::NotStarted,
+            OpState::Running(op_index) => {
+                match sq.add_no_result(|submission| unsafe { submission.cancel_op(*op_index) }) {
+                    Ok(()) => CancelResult::Canceled,
+                    Err(QueueFull(())) => CancelResult::QueueFull,
+                }
+            }
+            OpState::Done => CancelResult::Canceled,
+        }
+    }
+
+    pub(crate) fn cancel<'a>(&mut self, sq: &'a SubmissionQueue) -> CancelOp<'a> {
+        let op_index = match self {
+            OpState::Running(op_index) => Some(*op_index),
+            OpState::NotStarted(_) | OpState::Done => None,
+        };
+        CancelOp::new(sq, op_index)
+    }
+}
+
 /// Poll an [`OpState`].
 macro_rules! poll_state {
     // Variant used by `op_future!`.
@@ -1096,25 +1106,11 @@ macro_rules! op_async_iter {
 
         impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
-                match self.state {
-                    $crate::op::OpState::NotStarted(_) => $crate::cancel::CancelResult::NotStarted,
-                    $crate::op::OpState::Running(op_index) => {
-                        match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                            std::result::Result::Ok(()) => $crate::cancel::CancelResult::Canceled,
-                            std::result::Result::Err($crate::QueueFull(())) => $crate::cancel::CancelResult::QueueFull,
-                        }
-                    },
-                    $crate::op::OpState::Done => $crate::cancel::CancelResult::Canceled,
-                }
+                self.state.try_cancel(&self.fd.sq)
             }
 
             fn cancel(&mut self) -> $crate::cancel::CancelOp {
-                let op_index = match self.state {
-                    $crate::op::OpState::NotStarted(_) => None,
-                    $crate::op::OpState::Running(op_index) => Some(op_index),
-                    $crate::op::OpState::Done => None,
-                };
-                $crate::cancel::CancelOp::new(&self.fd.sq, op_index)
+                self.state.cancel(&self.fd.sq)
             }
         }
 
