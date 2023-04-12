@@ -1,5 +1,12 @@
 //! Poll for file descriptor events.
+//!
+//! To wait for events on a file descriptor use:
+//!  * [`SubmissionQueue::oneshot_poll`] a [`Future`] returning a single
+//!    [`PollEvent`].
+//!  * [`SubmissionQueue::multishot_poll`] an [`AsyncIterator`] returning
+//!    multiple [`PollEvent`]s.
 
+use std::async_iter::AsyncIterator;
 use std::future::Future;
 use std::os::fd::RawFd;
 use std::pin::Pin;
@@ -8,7 +15,7 @@ use std::{fmt, io};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::op::{poll_state, OpState};
-use crate::SubmissionQueue;
+use crate::{QueueFull, SubmissionQueue};
 
 /// [`Future`] behind [`SubmissionQueue::oneshot_poll`].
 #[derive(Debug)]
@@ -56,6 +63,85 @@ impl<'a> Future for OneshotPoll<'a> {
 }
 
 impl<'a> Cancel for OneshotPoll<'a> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.state.try_cancel(self.sq)
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.state.cancel(self.sq)
+    }
+}
+
+/// [`Future`] behind [`SubmissionQueue::multishot_poll`].
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+pub struct MultishotPoll<'a> {
+    sq: &'a SubmissionQueue,
+    state: OpState<(RawFd, u32)>,
+}
+
+impl<'a> MultishotPoll<'a> {
+    /// Create a new `MultishotPoll`.
+    pub(crate) const fn new(sq: &'a SubmissionQueue, fd: RawFd, mask: u32) -> MultishotPoll {
+        MultishotPoll {
+            sq,
+            state: OpState::NotStarted((fd, mask)),
+        }
+    }
+}
+
+impl<'a> AsyncIterator for MultishotPoll<'a> {
+    type Item = io::Result<PollEvent>;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        ctx: &mut task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        let op_index = match self.state {
+            OpState::Running(op_index) => op_index,
+            OpState::NotStarted((fd, mask)) => {
+                let result = self.sq.add_multishot(|submission| unsafe {
+                    submission.multishot_poll(fd, mask);
+                });
+                match result {
+                    Ok(op_index) => {
+                        self.state = OpState::Running(op_index);
+                        op_index
+                    }
+                    Err(QueueFull(())) => {
+                        self.sq.wait_for_submission(ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            OpState::Done => return Poll::Ready(None),
+        };
+
+        match self.sq.poll_multishot_op(ctx, op_index) {
+            Poll::Ready(Some(Result::Ok((_, events)))) => {
+                Poll::Ready(Some(Result::Ok(PollEvent { events })))
+            }
+            Poll::Ready(Some(Result::Err(err))) => {
+                // After an error we also don't expect any more results.
+                self.state = OpState::Done;
+                if let Some(libc::ECANCELED) = err.raw_os_error() {
+                    // Operation was canceled, so we expect no more
+                    // results.
+                    Poll::Ready(None)
+                } else {
+                    Poll::Ready(Some(Result::Err(err)))
+                }
+            }
+            Poll::Ready(None) => {
+                self.state = OpState::Done;
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'a> Cancel for MultishotPoll<'a> {
     fn try_cancel(&mut self) -> CancelResult {
         self.state.try_cancel(self.sq)
     }

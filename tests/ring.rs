@@ -19,7 +19,7 @@ use a10::poll::OneshotPoll;
 use a10::{AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
-use util::{expect_io_errno, init, is_send, is_sync, poll_nop, test_queue, Waker};
+use util::{expect_io_errno, init, is_send, is_sync, next, poll_nop, test_queue, Waker};
 
 const DATA: &[u8] = b"Hello, World!";
 
@@ -229,6 +229,55 @@ fn cancel_oneshot_poll() {
 
     waker.block_on(receiver_read.cancel()).unwrap();
     expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
+    drop(sender);
+}
+
+#[test]
+fn multishot_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<OneshotPoll>();
+    is_sync::<OneshotPoll>();
+
+    let (mut receiver, mut sender) = pipe2().unwrap();
+
+    let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
+    // Poll once to start the operations.
+    assert!(poll_nop(Pin::new(&mut next(receiver_read.as_mut()))).is_pending());
+
+    let mut buf = vec![0; DATA.len() + 1];
+    for _ in 0..3 {
+        // Writing should trigger a readable event for the other side.
+        sender.write_all(DATA).unwrap();
+        let event = waker
+            .block_on(next(receiver_read.as_mut()))
+            .unwrap()
+            .unwrap();
+        assert!(event.is_readable());
+
+        let n = receiver.read(&mut buf).unwrap();
+        assert_eq!(n, DATA.len());
+        assert_eq!(&buf[0..n], DATA);
+    }
+}
+
+#[test]
+fn cancel_multishot_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<OneshotPoll>();
+    is_sync::<OneshotPoll>();
+
+    let (receiver, sender) = pipe2().unwrap();
+
+    let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
+    // Poll once to start the operations.
+    assert!(poll_nop(Pin::new(&mut next(receiver_read.as_mut()))).is_pending());
+
+    waker.block_on(receiver_read.cancel()).unwrap();
+    assert!(waker.block_on(next(receiver_read)).is_none());
     drop(sender);
 }
 
