@@ -2,19 +2,26 @@
 
 #![feature(async_iterator)]
 
+use std::fs::File;
 use std::future::Future;
+use std::io::{self, Read, Write};
 use std::mem::take;
-use std::pin::Pin;
+use std::os::fd::{AsFd, FromRawFd, RawFd};
+use std::pin::{pin, Pin};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{io, thread};
 
+use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
+use a10::poll::OneshotPoll;
 use a10::{AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
-use util::{init, is_send, is_sync, poll_nop};
+use util::{expect_io_errno, init, is_send, is_sync, poll_nop, test_queue, Waker};
+
+const DATA: &[u8] = b"Hello, World!";
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
@@ -175,4 +182,64 @@ fn wake_ring_after_ring_dropped() {
 
     drop(ring);
     sq.wake();
+}
+
+#[test]
+fn oneshot_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<OneshotPoll>();
+    is_sync::<OneshotPoll>();
+
+    let (mut receiver, mut sender) = pipe2().unwrap();
+
+    let mut sender_write = pin!(sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _));
+    let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
+
+    // Poll once to start the operations.
+    assert!(poll_nop(sender_write.as_mut()).is_pending());
+    assert!(poll_nop(receiver_read.as_mut()).is_pending());
+
+    let event = waker.block_on(sender_write).unwrap();
+    assert!(event.is_writable());
+    sender.write_all(DATA).unwrap();
+
+    let event = waker.block_on(receiver_read).unwrap();
+    assert!(event.is_readable());
+    let mut buf = vec![0; DATA.len() + 1];
+    let n = receiver.read(&mut buf).unwrap();
+    assert_eq!(n, DATA.len());
+    assert_eq!(&buf[0..n], DATA);
+}
+
+#[test]
+fn cancel_oneshot_poll() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<OneshotPoll>();
+    is_sync::<OneshotPoll>();
+
+    let (receiver, sender) = pipe2().unwrap();
+
+    let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
+    // Poll once to start the operations.
+    assert!(poll_nop(receiver_read.as_mut()).is_pending());
+
+    waker.block_on(receiver_read.cancel()).unwrap();
+    expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
+    drop(sender);
+}
+
+fn pipe2() -> io::Result<(File, File)> {
+    let mut fds: [RawFd; 2] = [-1, -1];
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+
+    // SAFETY: we just initialised the `fds` above.
+    let r = unsafe { File::from_raw_fd(fds[0]) };
+    let w = unsafe { File::from_raw_fd(fds[1]) };
+    Ok((r, w))
 }

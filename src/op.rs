@@ -506,6 +506,14 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn poll(&mut self, fd: RawFd, mask: u32) {
+        self.inner.opcode = libc::IORING_OP_POLL_ADD as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            poll32_events: mask,
+        };
+    }
+
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, u32::MAX, 0);
     }
