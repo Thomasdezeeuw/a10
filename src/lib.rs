@@ -150,6 +150,7 @@ pub mod fs;
 pub mod io;
 pub mod net;
 mod op;
+pub mod poll;
 pub mod signals;
 
 // TODO: replace this with definitions from the `libc` crate once available.
@@ -162,6 +163,7 @@ pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
 use op::{QueuedOperation, Submission};
+use poll::OneshotPoll;
 
 /// This type represents the user space side of an io_uring.
 ///
@@ -444,6 +446,17 @@ impl SubmissionQueue {
         let _: Result<(), QueueFull> = self.add_no_result(|submission| unsafe {
             submission.wake(self.shared.ring_fd.as_raw_fd());
         });
+    }
+
+    /// Wait for an event specified in `mask` on the file descriptor `fd`.
+    ///
+    /// Ths is similar to calling `poll(2)` the file descriptor.
+    #[doc(alias = "poll")]
+    #[doc(alias = "epoll")]
+    #[doc(alias = "select")]
+    #[allow(clippy::cast_sign_loss)]
+    pub fn oneshot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll<'a> {
+        OneshotPoll::new(self, fd.as_raw_fd(), mask as u32)
     }
 
     /// Add a submission to the queue.
