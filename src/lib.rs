@@ -163,7 +163,7 @@ pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
 use op::{QueuedOperation, Submission};
-use poll::OneshotPoll;
+use poll::{MultishotPoll, OneshotPoll};
 
 /// This type represents the user space side of an io_uring.
 ///
@@ -457,6 +457,19 @@ impl SubmissionQueue {
     #[allow(clippy::cast_sign_loss)]
     pub fn oneshot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll<'a> {
         OneshotPoll::new(self, fd.as_raw_fd(), mask as u32)
+    }
+
+    /// Returns an [`AsyncIterator`] that returns multiple events as specified
+    /// in `mask` on the file descriptor `fd`.
+    ///
+    /// This is not the same as calling [`SubmissionQueue::oneshot_poll`] in a
+    /// loop as this uses a multishot operation, which means only a single
+    /// operation is created kernel side, making this more efficient.
+    ///
+    /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+    #[allow(clippy::cast_sign_loss)]
+    pub fn multishot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll<'a> {
+        MultishotPoll::new(self, fd.as_raw_fd(), mask as u32)
     }
 
     /// Add a submission to the queue.

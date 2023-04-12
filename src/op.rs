@@ -514,6 +514,11 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn multishot_poll(&mut self, fd: RawFd, mask: u32) {
+        self.poll(fd, mask);
+        self.inner.len = libc::IORING_POLL_ADD_MULTI;
+    }
+
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, u32::MAX, 0);
     }
