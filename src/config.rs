@@ -1,6 +1,5 @@
 //! Configuration of a [`Ring`].
 
-use std::cmp::min;
 use std::mem::{self, size_of};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -92,7 +91,14 @@ impl<'r> Config<'r> {
     /// will be discarded.
     #[doc(alias = "sq_thread_idle")]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
-        self.idle_timeout = Some(min(timeout.as_millis(), u32::MAX as u128) as u32);
+        let ms = timeout.as_millis();
+        let ms = if ms <= u32::MAX as u128 {
+            // SAFETY: just check above that `millis` is less then `u32::MAX`
+            ms as u32
+        } else {
+            u32::MAX
+        };
+        self.idle_timeout = Some(ms);
         self
     }
 

@@ -60,8 +60,8 @@ impl AtomicBitMap {
     }
 }
 
-/// Returns true if bit `n` is set in `value`. `n` is zero indexed, i.e. must be
-/// in the range 0..usize::BITS (64).
+/// Returns true if bit `n` is not set in `value`. `n` is zero indexed, i.e.
+/// must be in the range 0..usize::BITS (64).
 const fn is_unset(value: usize, n: usize) -> bool {
     ((value >> n) & 1) == 0
 }
