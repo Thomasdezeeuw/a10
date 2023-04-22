@@ -288,6 +288,21 @@ impl AsyncFd {
         });
         Stat::new(self, metadata, ())
     }
+
+    /// Predeclare an access pattern for file data.
+    ///
+    /// Announce an intention to access file data in a specific pattern in the
+    /// future, thus allowing the kernel to perform appropriate optimizations.
+    ///
+    /// The advice applies to a (not necessarily existent) region starting at
+    /// offset and extending for len bytes (or until the end of the file if len
+    /// is 0). The advice is not binding; it merely constitutes an expectation
+    /// on behalf of the application.
+    #[doc(alias = "fadvise")]
+    #[doc(alias = "posix_fadvise")]
+    pub fn advise<'fd>(&'fd self, offset: u64, length: u32, advice: libc::c_int) -> Advise<'fd> {
+        Advise::new(self, (offset, length, advice))
+    }
 }
 
 // SyncData.
@@ -318,6 +333,22 @@ op_future! {
         debug_assert!(n == 0);
         debug_assert!(metadata.inner.stx_mask & METADATA_FLAGS == METADATA_FLAGS);
         Ok(metadata)
+    },
+}
+
+// Advise.
+op_future! {
+    fn AsyncFd::advise -> (),
+    struct Advise<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: (u64, u32, libc::c_int),
+    setup: |submission, fd, (), (offset, length, advise)| unsafe {
+        submission.fadvise(fd.fd, offset, length, advise);
+    },
+    map_result: |this, (), res| {
+        debug_assert!(res == 0);
+        Ok(())
     },
 }
 

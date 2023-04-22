@@ -506,6 +506,16 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn fadvise(&mut self, fd: RawFd, offset: u64, len: u32, advise: libc::c_int) {
+        self.inner.opcode = libc::IORING_OP_FADVISE as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
+        self.inner.len = len;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            fadvise_advice: advise as _,
+        };
+    }
+
     pub(crate) unsafe fn poll(&mut self, fd: RawFd, mask: u32) {
         self.inner.opcode = libc::IORING_OP_POLL_ADD as u8;
         self.inner.fd = fd;
@@ -649,6 +659,15 @@ impl fmt::Debug for Submission {
                     .field("flags", unsafe { &self.inner.__bindgen_anon_3.statx_flags })
                     .field("mask", &self.inner.len)
                     .field("statx", unsafe { &self.inner.__bindgen_anon_1.off });
+            }
+            libc::IORING_OP_FADVISE => {
+                f.field("opcode", &"IORING_OP_FADVISE")
+                    .field("fd", &self.inner.fd)
+                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("len", &self.inner.len)
+                    .field("advise", unsafe {
+                        &self.inner.__bindgen_anon_3.fadvise_advice
+                    });
             }
             libc::IORING_OP_MSG_RING => {
                 f.field("opcode", &"IORING_OP_MSG_RING")
