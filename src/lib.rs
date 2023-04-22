@@ -147,6 +147,7 @@ mod config;
 pub mod extract;
 pub mod fs;
 pub mod io;
+pub mod mem;
 pub mod net;
 mod op;
 pub mod poll;

@@ -2,6 +2,7 @@
 
 #![feature(async_iterator)]
 
+use std::alloc::{alloc, dealloc, Layout};
 use std::fs::File;
 use std::future::Future;
 use std::io::{self, Read, Write};
@@ -15,11 +16,12 @@ use std::time::{Duration, Instant};
 
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
+use a10::mem::{self, Madvise};
 use a10::poll::OneshotPoll;
 use a10::{AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
-use util::{expect_io_errno, init, is_send, is_sync, next, poll_nop, test_queue, Waker};
+use util::{defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, test_queue, Waker};
 
 const DATA: &[u8] = b"Hello, World!";
 
@@ -291,4 +293,29 @@ fn pipe2() -> io::Result<(File, File)> {
     let r = unsafe { File::from_raw_fd(fds[0]) };
     let w = unsafe { File::from_raw_fd(fds[1]) };
     Ok((r, w))
+}
+
+#[test]
+fn madvise() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // The address in `madvise(2)` needs to be page aligned.
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let layout =
+        Layout::from_size_align(2 * page_size, page_size).expect("failed to create alloc layout");
+    let ptr = unsafe { alloc(layout) };
+    let _d = defer(|| unsafe { dealloc(ptr, layout) });
+
+    is_send::<Madvise>();
+    is_sync::<Madvise>();
+
+    waker
+        .block_on(mem::madvise(
+            sq,
+            ptr.cast(),
+            page_size as u32,
+            libc::MADV_WILLNEED,
+        ))
+        .expect("failed madvise");
 }

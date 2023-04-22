@@ -529,6 +529,16 @@ impl Submission {
         self.inner.len = libc::IORING_POLL_ADD_MULTI;
     }
 
+    pub(crate) unsafe fn madvise(&mut self, address: *mut (), len: u32, advice: libc::c_int) {
+        self.inner.opcode = libc::IORING_OP_MADVISE as u8;
+        self.inner.fd = -1;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: address as _ };
+        self.inner.len = len;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            fadvise_advice: advice as _,
+        };
+    }
+
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, u32::MAX, 0);
     }
@@ -664,6 +674,14 @@ impl fmt::Debug for Submission {
                 f.field("opcode", &"IORING_OP_FADVISE")
                     .field("fd", &self.inner.fd)
                     .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("len", &self.inner.len)
+                    .field("advise", unsafe {
+                        &self.inner.__bindgen_anon_3.fadvise_advice
+                    });
+            }
+            libc::IORING_OP_MADVISE => {
+                f.field("opcode", &"IORING_OP_MADVISE")
+                    .field("address", unsafe { &self.inner.__bindgen_anon_2.addr })
                     .field("len", &self.inner.len)
                     .field("advise", unsafe {
                         &self.inner.__bindgen_anon_3.fadvise_advice
