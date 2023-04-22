@@ -300,7 +300,12 @@ impl AsyncFd {
     /// on behalf of the application.
     #[doc(alias = "fadvise")]
     #[doc(alias = "posix_fadvise")]
-    pub fn advise<'fd>(&'fd self, offset: u64, length: u32, advice: libc::c_int) -> Advise<'fd> {
+    pub const fn advise<'fd>(
+        &'fd self,
+        offset: u64,
+        length: u32,
+        advice: libc::c_int,
+    ) -> Advise<'fd> {
         Advise::new(self, (offset, length, advice))
     }
 
@@ -310,7 +315,12 @@ impl AsyncFd {
     /// range starting at `offset` and continuing for `length` bytes.
     #[doc(alias = "fallocate")]
     #[doc(alias = "posix_fallocate")]
-    pub fn allocate<'fd>(&'fd self, offset: u64, length: u32, mode: libc::c_int) -> Allocate<'fd> {
+    pub const fn allocate<'fd>(
+        &'fd self,
+        offset: u64,
+        length: u32,
+        mode: libc::c_int,
+    ) -> Allocate<'fd> {
         Allocate::new(self, (offset, length, mode))
     }
 }
