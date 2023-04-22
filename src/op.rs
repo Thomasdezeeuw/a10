@@ -716,11 +716,24 @@ impl fmt::Debug for Submission {
             libc::IORING_OP_OPENAT => {
                 f.field("opcode", &"IORING_OP_OPENAT")
                     .field("dirfd", &self.inner.fd)
-                    .field("pathname", unsafe {
-                        &self.inner.__bindgen_anon_3.cancel_flags
-                    })
+                    .field("pathname", unsafe { &self.inner.__bindgen_anon_2.addr })
                     .field("mode", &self.inner.len)
                     .field("flags", unsafe { &self.inner.__bindgen_anon_3.open_flags });
+            }
+            libc::IORING_OP_SPLICE => {
+                f.field("opcode", &"IORING_OP_SPLICE")
+                    .field("fd_in", unsafe {
+                        &self.inner.__bindgen_anon_5.splice_fd_in
+                    })
+                    .field("off_in", unsafe {
+                        &self.inner.__bindgen_anon_2.splice_off_in
+                    })
+                    .field("fd_out", &self.inner.fd)
+                    .field("off_out", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("len", &self.inner.len)
+                    .field("splice_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.splice_flags
+                    });
             }
             libc::IORING_OP_CLOSE => {
                 f.field("opcode", &"IORING_OP_CLOSE")
@@ -742,6 +755,13 @@ impl fmt::Debug for Submission {
                     .field("advise", unsafe {
                         &self.inner.__bindgen_anon_3.fadvise_advice
                     });
+            }
+            libc::IORING_OP_FALLOCATE => {
+                f.field("opcode", &"IORING_OP_FALLOCATE")
+                    .field("fd", &self.inner.fd)
+                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("len", unsafe { &self.inner.__bindgen_anon_2.addr })
+                    .field("mode", &self.inner.len);
             }
             libc::IORING_OP_POLL_ADD => {
                 f.field("opcode", &"IORING_OP_POLL_ADD")
