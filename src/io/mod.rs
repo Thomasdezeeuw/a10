@@ -244,6 +244,87 @@ impl AsyncFd {
         WriteAllVectored::new(self, bufs, offset)
     }
 
+    /// Splice `length` bytes to `target` fd.
+    ///
+    /// See the `splice(2)` manual for correct usage.
+    #[doc(alias = "splice")]
+    pub const fn splice_to<'fd>(
+        &'fd self,
+        target: RawFd,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd> {
+        self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
+    }
+
+    /// Same as [`AsyncFd::splice_to`], but starts reading data at `offset` from
+    /// the file (instead of the current position of the read cursor) and starts
+    /// writing at `target_offset` to `target`.
+    pub const fn splice_to_at<'fd>(
+        &'fd self,
+        offset: u64,
+        target: RawFd,
+        target_offset: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd> {
+        self.splice(
+            target,
+            SpliceDirection::To,
+            offset,
+            target_offset,
+            length,
+            flags,
+        )
+    }
+
+    /// Splice `length` bytes from `target` fd.
+    ///
+    /// See the `splice(2)` manual for correct usage.
+    #[doc(alias = "splice")]
+    pub const fn splice_from<'fd>(
+        &'fd self,
+        target: RawFd,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd> {
+        self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
+    }
+
+    /// Same as [`AsyncFd::splice_from`], but starts reading writing at `offset`
+    /// to the file (instead of the current position of the write cursor) and
+    /// starts reading at `target_offset` from `target`.
+    #[doc(alias = "splice")]
+    pub const fn splice_from_at<'fd>(
+        &'fd self,
+        offset: u64,
+        target: RawFd,
+        target_offset: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd> {
+        self.splice(
+            target,
+            SpliceDirection::From,
+            target_offset,
+            offset,
+            length,
+            flags,
+        )
+    }
+
+    const fn splice<'fd>(
+        &'fd self,
+        target: RawFd,
+        direction: SpliceDirection,
+        off_in: u64,
+        off_out: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd> {
+        Splice::new(self, (target, direction, off_in, off_out, length, flags))
+    }
+
     /// Explicitly close the file descriptor.
     ///
     /// # Notes
@@ -716,6 +797,34 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<WriteAllVectored<
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.inner_poll(ctx)
     }
+}
+
+// Splice.
+op_future! {
+    fn AsyncFd::splice_to -> usize,
+    struct Splice<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: (RawFd, SpliceDirection, u64, u64, u32, libc::c_int),
+    setup: |submission, fd, (), (target, direction, off_in, off_out, len, flags)| unsafe {
+        let (fd_in, fd_out) = match direction {
+            SpliceDirection::To => (fd.fd, target),
+            SpliceDirection::From => (target, fd.fd),
+        };
+        dbg!(fd_in, fd_out);
+        dbg!(off_in, off_out);
+        submission.splice(fd_in, off_in, fd_out, off_out, len, flags);
+    },
+    map_result: |n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        Ok(n as usize)
+    },
+}
+
+#[derive(Copy, Clone, Debug)]
+enum SpliceDirection {
+    To,
+    From,
 }
 
 /// [`Future`] behind [`AsyncFd::close`].

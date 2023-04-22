@@ -4,13 +4,14 @@ use std::cell::Cell;
 use std::env::temp_dir;
 use std::io;
 use std::ops::Bound;
-use std::os::fd::RawFd;
+use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
 use a10::fs::OpenOptions;
 use a10::io::{
-    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Stderr, Stdout,
+    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Splice,
+    Stderr, Stdout,
 };
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
@@ -20,6 +21,7 @@ use crate::util::{
 };
 
 const BUF_SIZE: usize = 4096;
+const NO_OFFSET: u64 = u64::MAX;
 
 #[test]
 fn read_read_buf_pool() {
@@ -734,6 +736,79 @@ fn cancel_all_no_operation_in_progress() {
         .block_on(socket.cancel_all())
         .expect("failed to cancel");
     assert_eq!(n, 0);
+}
+
+#[test]
+fn splice_to() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Splice>();
+    is_sync::<Splice>();
+
+    let (r, w) = pipe2(sq.clone()).expect("failed to create pipe");
+
+    let path = LOREM_IPSUM_50.path;
+    let expected = LOREM_IPSUM_50.content;
+
+    let open_file = OpenOptions::new().open(sq, path.into());
+    let file = waker.block_on(open_file).unwrap();
+
+    let n = waker
+        .block_on(file.splice_to_at(
+            10,
+            w.as_fd().as_raw_fd(),
+            NO_OFFSET,
+            expected.len() as u32,
+            0,
+        ))
+        .expect("failed to splice");
+    assert_eq!(n, expected.len() - 10);
+
+    let buf = Vec::with_capacity(expected.len() + 1);
+    let buf = waker.block_on(r.read_n(buf, expected.len() - 10)).unwrap();
+    assert!(buf == expected[10..], "read content is different");
+}
+
+#[test]
+fn splice_from() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let expected = LOREM_IPSUM_50.content;
+
+    let mut path = temp_dir();
+    path.push("splice_from");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq.clone(), path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    waker
+        .block_on(w.write_all(expected))
+        .expect("failed to write all");
+
+    let n = waker
+        .block_on(file.splice_from_at(
+            10,
+            r.as_fd().as_raw_fd(),
+            NO_OFFSET,
+            expected.len() as u32,
+            0,
+        ))
+        .expect("failed to splice");
+    assert_eq!(n, expected.len());
+
+    let buf = Vec::with_capacity(expected.len() + 11);
+    //let buf = waker.block_on(file.read_n(buf, expected.len())).unwrap();
+    let buf = waker.block_on(file.read(buf)).unwrap();
+    assert!(&buf[10..] == expected, "read content is different");
 }
 
 #[test]

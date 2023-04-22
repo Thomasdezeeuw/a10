@@ -475,7 +475,6 @@ fn fadvise() {
     let buf = waker
         .block_on(file.read_n(buf, test_file.content.len()))
         .unwrap();
-
     assert!(buf == test_file.content, "read content is different");
 }
 
