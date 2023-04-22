@@ -20,6 +20,7 @@ use crate::{QueueFull, SubmissionQueue};
 /// [`Future`] behind [`SubmissionQueue::oneshot_poll`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
+#[allow(clippy::module_name_repetitions)]
 pub struct OneshotPoll<'a> {
     sq: &'a SubmissionQueue,
     state: OpState<(RawFd, u32)>,
@@ -75,6 +76,7 @@ impl<'a> Cancel for OneshotPoll<'a> {
 /// [`Future`] behind [`SubmissionQueue::multishot_poll`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
+#[allow(clippy::module_name_repetitions)]
 pub struct MultishotPoll<'a> {
     sq: &'a SubmissionQueue,
     state: OpState<(RawFd, u32)>,
@@ -153,6 +155,7 @@ impl<'a> Cancel for MultishotPoll<'a> {
 
 /// Event returned by [`OneshotPoll`].
 #[derive(Copy, Clone)]
+#[allow(clippy::module_name_repetitions)]
 pub struct PollEvent {
     events: libc::c_int,
 }

@@ -520,7 +520,9 @@ impl Submission {
         self.inner.opcode = libc::IORING_OP_FALLOCATE as u8;
         self.inner.fd = fd;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
-        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: len as u64 };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: u64::from(len),
+        };
         self.inner.len = mode as u32;
     }
 
