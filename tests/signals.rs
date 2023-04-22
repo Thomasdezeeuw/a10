@@ -106,7 +106,7 @@ fn main() {
     drop(harness);
     test_cleanup(quiet, &mut passed, &mut failed);
 
-    println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:?}\n", start.elapsed());
+    println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n", start.elapsed().as_secs_f64());
 }
 
 struct TestHarness {
