@@ -162,10 +162,8 @@ impl OpenOptions {
     /// Open `path`.
     #[doc(alias = "openat")]
     pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open {
-        let path = path.into_os_string().into_vec();
-        let path = unsafe { CString::from_vec_unchecked(path) };
         Open {
-            path: Some(path),
+            path: Some(path_to_cstring(path)),
             sq: Some(sq),
             state: OpState::NotStarted((self.flags, self.mode)),
         }
@@ -226,8 +224,7 @@ impl Future for Extractor<Open> {
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match Pin::new(&mut self.fut).poll(ctx) {
             Poll::Ready(Ok(file)) => {
-                let path_bytes = self.fut.path.take().unwrap().into_bytes();
-                let path = OsString::from_vec(path_bytes).into();
+                let path = path_from_cstring(self.fut.path.take().unwrap());
                 Poll::Ready(Ok((file, path)))
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -668,4 +665,92 @@ impl fmt::Debug for Permissions {
         let permissions = str::from_utf8(&buf).unwrap();
         f.debug_tuple("Permissions").field(&permissions).finish()
     }
+}
+
+/// Rename a file or directory to a new name.
+pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
+    Rename {
+        sq,
+        from: Some(path_to_cstring(from)),
+        to: Some(path_to_cstring(to)),
+        state: OpState::NotStarted(()),
+    }
+}
+
+/// [`Future`] to [`rename`] a file.
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+pub struct Rename {
+    sq: SubmissionQueue,
+    /// Paths used to rename the file, need to stay in memory so the kernel can
+    /// access it safely.
+    from: Option<CString>,
+    to: Option<CString>,
+    state: OpState<()>,
+}
+
+impl Future for Rename {
+    type Output = io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let op_index = poll_state!(Rename, self.state, self.sq, ctx, |submission, ()| unsafe {
+            // SAFETY: `from` and `to` are only removed after the state is set to `Done`.
+            let from = self.from.as_ref().unwrap();
+            let to = self.to.as_ref().unwrap();
+            submission.rename(
+                libc::AT_FDCWD,
+                from.as_ptr(),
+                libc::AT_FDCWD,
+                to.as_ptr(),
+                0,
+            );
+        });
+
+        match self.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok((_, res)) => Poll::Ready(Ok(debug_assert!(res == 0))),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Extract for Rename {}
+
+impl Future for Extractor<Rename> {
+    type Output = io::Result<(PathBuf, PathBuf)>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let from = path_from_cstring(self.fut.from.take().unwrap());
+                let to = path_from_cstring(self.fut.to.take().unwrap());
+                Poll::Ready(Ok((from, to)))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for Rename {
+    fn drop(&mut self) {
+        if let OpState::Running(op_index) = self.state {
+            let from = self.from.take().unwrap();
+            let to = self.from.take().unwrap();
+            self.sq.drop_op(op_index, (from, to));
+        }
+    }
+}
+
+fn path_to_cstring(path: PathBuf) -> CString {
+    unsafe { CString::from_vec_unchecked(path.into_os_string().into_vec()) }
+}
+
+fn path_from_cstring(path: CString) -> PathBuf {
+    OsString::from_vec(path.into_bytes()).into()
 }

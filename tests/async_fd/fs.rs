@@ -4,7 +4,7 @@ use std::env::temp_dir;
 use std::path::Path;
 use std::{panic, str};
 
-use a10::fs::{self, Advise, Allocate, OpenOptions};
+use a10::fs::{self, Advise, Allocate, OpenOptions, Rename};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
@@ -12,6 +12,8 @@ use crate::util::{
     defer, is_send, is_sync, page_size, remove_test_file, test_queue, TestFile, Waker,
     LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
+
+const DATA: &[u8] = b"Hello, World";
 
 #[test]
 fn open_extractor() {
@@ -511,4 +513,58 @@ fn fallocate() {
 
     let got = std::fs::read(&path).unwrap();
     assert!(got == buf, "file can't be read back");
+}
+
+#[test]
+fn rename() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Rename>();
+    is_sync::<Rename>();
+
+    let path = temp_dir();
+    let mut from = path.clone();
+    from.push("rename.1");
+    let mut to = path.clone();
+    to.push("rename.2");
+    let _d = defer(|| remove_test_file(&from));
+    let _d = defer(|| remove_test_file(&to));
+
+    std::fs::write(&from, DATA).expect("failed to write file");
+
+    waker
+        .block_on(fs::rename(sq, from.clone(), to.clone()))
+        .expect("failed to rename file");
+
+    let got = std::fs::read(&to).expect("failed to read file");
+    assert!(got == DATA, "file can't be read back");
+}
+
+#[test]
+fn rename_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Rename>();
+    is_sync::<Rename>();
+
+    let path = temp_dir();
+    let mut from = path.clone();
+    from.push("rename.1");
+    let mut to = path.clone();
+    to.push("rename.2");
+    let _d = defer(|| remove_test_file(&from));
+    let _d = defer(|| remove_test_file(&to));
+
+    std::fs::write(&from, DATA).expect("failed to write file");
+
+    let (got_from, got_to) = waker
+        .block_on(fs::rename(sq, from.clone(), to.clone()).extract())
+        .expect("failed to rename file");
+    assert_eq!(got_from, from);
+    assert_eq!(got_to, to);
+
+    let got = std::fs::read(&to).expect("failed to read file");
+    assert!(got == DATA, "file can't be read back");
 }
