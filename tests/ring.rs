@@ -16,9 +16,8 @@ use std::time::{Duration, Instant};
 
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
-use a10::mem::{self, Madvise};
 use a10::poll::OneshotPoll;
-use a10::{AsyncFd, Config, Ring, SubmissionQueue};
+use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, test_queue, Waker};
@@ -307,11 +306,11 @@ fn madvise() {
     let ptr = unsafe { alloc(layout) };
     let _d = defer(|| unsafe { dealloc(ptr, layout) });
 
-    is_send::<Madvise>();
-    is_sync::<Madvise>();
+    is_send::<mem::Advise>();
+    is_sync::<mem::Advise>();
 
     waker
-        .block_on(mem::madvise(
+        .block_on(mem::advise(
             sq,
             ptr.cast(),
             page_size as u32,
