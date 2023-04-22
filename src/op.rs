@@ -679,6 +679,17 @@ impl fmt::Debug for Submission {
                         &self.inner.__bindgen_anon_3.fadvise_advice
                     });
             }
+            libc::IORING_OP_POLL_ADD => {
+                f.field("opcode", &"IORING_OP_POLL_ADD")
+                    .field("fd", &self.inner.fd)
+                    .field("poll_events", unsafe {
+                        &self.inner.__bindgen_anon_3.poll32_events
+                    })
+                    .field(
+                        "multishot",
+                        &(self.inner.len == libc::IORING_POLL_ADD_MULTI),
+                    );
+            }
             libc::IORING_OP_MADVISE => {
                 f.field("opcode", &"IORING_OP_MADVISE")
                     .field("address", unsafe { &self.inner.__bindgen_anon_2.addr })
