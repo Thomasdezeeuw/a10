@@ -4,7 +4,7 @@ use std::env::temp_dir;
 use std::path::Path;
 use std::{panic, str};
 
-use a10::fs::{self, OpenOptions};
+use a10::fs::{self, Advise, OpenOptions};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
@@ -451,4 +451,30 @@ fn test_metadata(test_file: &TestFile) {
     assert!(!permissions.others_can_execute());
     // NOTE: we don't check the access, modification or creation timestamp are
     // those re to different between test runs.
+}
+
+#[test]
+fn fadvise() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Advise>();
+    is_sync::<Advise>();
+
+    let test_file = &LOREM_IPSUM_50;
+
+    let open_file = OpenOptions::new().open(sq, test_file.path.into());
+    let file = waker.block_on(open_file).unwrap();
+
+    let advice = libc::POSIX_FADV_WILLNEED | libc::POSIX_FADV_SEQUENTIAL;
+    waker
+        .block_on(file.advise(0, 0, advice))
+        .expect("failed fadvise");
+
+    let buf = Vec::with_capacity(test_file.content.len() + 1);
+    let buf = waker
+        .block_on(file.read_n(buf, test_file.content.len()))
+        .unwrap();
+
+    assert!(buf == test_file.content, "read content is different");
 }
