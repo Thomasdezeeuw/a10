@@ -482,6 +482,30 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn splice(
+        &mut self,
+        fd_in: RawFd,
+        off_in: u64,
+        fd_out: RawFd,
+        off_out: u64,
+        len: u32,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = libc::IORING_OP_SPLICE as u8;
+        self.inner.fd = fd_out;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: off_out };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            splice_off_in: off_in,
+        };
+        self.inner.len = len;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            splice_flags: flags as u32,
+        };
+        self.inner.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            splice_fd_in: fd_in,
+        };
+    }
+
     /// Close the `fd`.
     pub(crate) unsafe fn close(&mut self, fd: RawFd) {
         self.inner.opcode = libc::IORING_OP_CLOSE as u8;
