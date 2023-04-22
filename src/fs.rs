@@ -303,6 +303,16 @@ impl AsyncFd {
     pub fn advise<'fd>(&'fd self, offset: u64, length: u32, advice: libc::c_int) -> Advise<'fd> {
         Advise::new(self, (offset, length, advice))
     }
+
+    /// Manipulate file space.
+    ///
+    /// Manipulate the allocated disk space for the file referred for the byte
+    /// range starting at `offset` and continuing for `length` bytes.
+    #[doc(alias = "fallocate")]
+    #[doc(alias = "posix_fallocate")]
+    pub fn allocate<'fd>(&'fd self, offset: u64, length: u32, mode: libc::c_int) -> Allocate<'fd> {
+        Allocate::new(self, (offset, length, mode))
+    }
 }
 
 // SyncData.
@@ -345,6 +355,22 @@ op_future! {
     setup_state: flags: (u64, u32, libc::c_int),
     setup: |submission, fd, (), (offset, length, advise)| unsafe {
         submission.fadvise(fd.fd, offset, length, advise);
+    },
+    map_result: |this, (), res| {
+        debug_assert!(res == 0);
+        Ok(())
+    },
+}
+
+// Allocate.
+op_future! {
+    fn AsyncFd::allocate -> (),
+    struct Allocate<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: (u64, u32, libc::c_int),
+    setup: |submission, fd, (), (offset, length, mode)| unsafe {
+        submission.fallocate(fd.fd, offset, length, mode);
     },
     map_result: |this, (), res| {
         debug_assert!(res == 0);

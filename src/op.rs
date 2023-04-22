@@ -516,6 +516,14 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn fallocate(&mut self, fd: RawFd, offset: u64, len: u32, mode: libc::c_int) {
+        self.inner.opcode = libc::IORING_OP_FALLOCATE as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: len as u64 };
+        self.inner.len = mode as u32;
+    }
+
     pub(crate) unsafe fn poll(&mut self, fd: RawFd, mask: u32) {
         self.inner.opcode = libc::IORING_OP_POLL_ADD as u8;
         self.inner.fd = fd;

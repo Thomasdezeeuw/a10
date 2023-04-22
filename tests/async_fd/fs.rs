@@ -4,7 +4,7 @@ use std::env::temp_dir;
 use std::path::Path;
 use std::{panic, str};
 
-use a10::fs::{self, Advise, OpenOptions};
+use a10::fs::{self, Advise, Allocate, OpenOptions};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
@@ -477,4 +477,39 @@ fn fadvise() {
         .unwrap();
 
     assert!(buf == test_file.content, "read content is different");
+}
+
+#[test]
+fn fallocate() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Allocate>();
+    is_sync::<Allocate>();
+
+    let mut path = temp_dir();
+    path.push("fallocate");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    let mode = libc::FALLOC_FL_KEEP_SIZE;
+    waker
+        .block_on(file.allocate(0, 4096, mode))
+        .expect("failed fallocate");
+
+    let write = file.write(b"Hello world".to_vec()).extract();
+    let (buf, n) = waker.block_on(write).unwrap();
+    assert_eq!(n, 11);
+
+    waker.block_on(file.sync_data()).unwrap();
+    drop(file);
+
+    let got = std::fs::read(&path).unwrap();
+    assert!(got == buf, "file can't be read back");
 }
