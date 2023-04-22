@@ -286,6 +286,26 @@ impl Submission {
         self.inner.len = bufs.len() as _;
     }
 
+    pub(crate) unsafe fn rename(
+        &mut self,
+        old_fd: RawFd,
+        old_path: *const libc::c_char,
+        new_fd: RawFd,
+        new_path: *const libc::c_char,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = libc::IORING_OP_RENAMEAT as u8;
+        self.inner.fd = old_fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: new_path as _ };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: old_path as _,
+        };
+        self.inner.len = new_fd as _;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            rename_flags: flags as _,
+        };
+    }
+
     pub(crate) unsafe fn socket(
         &mut self,
         domain: libc::c_int,
@@ -642,6 +662,16 @@ impl fmt::Debug for Submission {
             libc::IORING_OP_READV => io_op(&mut f, &self.inner, "IORING_OP_READV"),
             libc::IORING_OP_WRITE => io_op(&mut f, &self.inner, "IORING_OP_WRITE"),
             libc::IORING_OP_WRITEV => io_op(&mut f, &self.inner, "IORING_OP_WRITEV"),
+            libc::IORING_OP_RENAMEAT => {
+                f.field("opcode", &"IORING_OP_RENAMEAT")
+                    .field("old_fd", &self.inner.fd)
+                    .field("old_path", unsafe { &self.inner.__bindgen_anon_2.addr })
+                    .field("new_fd", &self.inner.len)
+                    .field("new_path", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("rename_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.rename_flags
+                    });
+            }
             libc::IORING_OP_SOCKET => {
                 f.field("opcode", &"IORING_OP_SOCKET")
                     .field("domain", &self.inner.fd)
