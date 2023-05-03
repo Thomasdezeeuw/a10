@@ -286,6 +286,18 @@ impl Submission {
         self.inner.len = bufs.len() as _;
     }
 
+    pub(crate) unsafe fn mkdirat(
+        &mut self,
+        dirfd: RawFd,
+        path: *const libc::c_char,
+        mode: libc::mode_t,
+    ) {
+        self.inner.opcode = libc::IORING_OP_MKDIRAT as u8;
+        self.inner.fd = dirfd;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: path as _ };
+        self.inner.len = mode;
+    }
+
     pub(crate) unsafe fn rename(
         &mut self,
         old_fd: RawFd,

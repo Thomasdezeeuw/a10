@@ -4,7 +4,7 @@ use std::env::temp_dir;
 use std::path::Path;
 use std::{panic, str};
 
-use a10::fs::{self, Advise, Allocate, Delete, OpenOptions, Rename};
+use a10::fs::{self, Advise, Allocate, CreateDir, Delete, OpenOptions, Rename};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
@@ -567,6 +567,48 @@ fn rename_extract() {
 
     let got = std::fs::read(&to).expect("failed to read file");
     assert!(got == DATA, "file can't be read back");
+}
+
+#[test]
+fn create_dir() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<CreateDir>();
+    is_sync::<CreateDir>();
+
+    let mut path = temp_dir();
+    path.push("create_dir");
+    let _d = defer(|| remove_test_dir(&path));
+
+    waker
+        .block_on(fs::create_dir(sq, path.clone()))
+        .expect("failed to create dir");
+
+    let entries = std::fs::read_dir(&path).expect("failed to read created dir");
+    for entry in entries {
+        entry.expect("failed to read directory entry");
+    }
+}
+
+#[test]
+fn create_dir_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("create_dir_extract");
+    let _d = defer(|| remove_test_dir(&path));
+
+    let got = waker
+        .block_on(fs::create_dir(sq, path.clone()).extract())
+        .expect("failed to create dir");
+    assert_eq!(got, path);
+
+    let entries = std::fs::read_dir(&path).expect("failed to read created dir");
+    for entry in entries {
+        entry.expect("failed to read directory entry");
+    }
 }
 
 #[test]
