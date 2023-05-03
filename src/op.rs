@@ -207,12 +207,12 @@ impl Submission {
     }
 
     /// Set the user data to `user_data`.
-    pub(crate) const fn set_user_data(&mut self, user_data: u64) {
+    pub(crate) fn set_user_data(&mut self, user_data: u64) {
         self.inner.user_data = user_data;
     }
 
     /// Mark the submission as using `IOSQE_BUFFER_SELECT`.
-    pub(crate) const fn set_buffer_select(&mut self, buf_group: u16) {
+    pub(crate) fn set_buffer_select(&mut self, buf_group: u16) {
         self.inner.__bindgen_anon_4.buf_group = buf_group;
         self.inner.flags |= libc::IOSQE_BUFFER_SELECT;
     }
