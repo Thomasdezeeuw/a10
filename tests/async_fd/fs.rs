@@ -551,9 +551,9 @@ fn rename_extract() {
 
     let path = temp_dir();
     let mut from = path.clone();
-    from.push("rename.1");
+    from.push("rename_extract.1");
     let mut to = path.clone();
-    to.push("rename.2");
+    to.push("rename_extract.2");
     let _d = defer(|| remove_test_file(&from));
     let _d = defer(|| remove_test_file(&to));
 
