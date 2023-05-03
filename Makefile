@@ -12,13 +12,8 @@ test:
 test_sanitizers:
 	$(MAKE) test_sanitizer sanitizer=address
 	$(MAKE) test_sanitizer sanitizer=thread
-
-# NOTE: Fails with:
-# LeakSanitizer: CHECK failed: lsan_interceptors.cpp:82 "((!lsan_init_is_running)) != (0)" (0x0, 0x0)
-#$(MAKE) test_sanitizer sanitizer=leak
-# NOTE: Fails because it doesn't understand the kernel is writing into a e.g. a
-# read buffer, without an actual system call.
-#$(MAKE) test_sanitizer sanitizer=memory
+	$(MAKE) test_sanitizer sanitizer=memory
+	$(MAKE) test_sanitizer sanitizer=leak
 
 # Run with `make test_sanitizer sanitizer=$sanitizer`, or use `test_sanitizers`.
 test_sanitizer:
