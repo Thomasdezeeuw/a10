@@ -527,7 +527,7 @@ impl ReadBuf {
                 resv: 0,
             });
             ring_tail.store(tail + 1, Ordering::SeqCst);
-            Mutex::unlock(guard);
+            drop(guard);
         }
     }
 }
