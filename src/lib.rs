@@ -121,7 +121,6 @@
 
 #![feature(
     async_iterator,
-    io_error_more,
     maybe_uninit_array_assume_init,
     maybe_uninit_uninit_array,
     new_uninit
@@ -927,7 +926,9 @@ struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
     fn from(_: QueueFull) -> io::Error {
-        io::Error::new(io::ErrorKind::ResourceBusy, "submission queue is full")
+        // TODO: use `io::ErrorKind::ResourceBusy` once stable:
+        // `io_error_more` <https://github.com/rust-lang/rust/issues/86442>.
+        io::Error::new(io::ErrorKind::Other, "submission queue is full")
     }
 }
 
