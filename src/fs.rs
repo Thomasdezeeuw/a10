@@ -667,6 +667,79 @@ impl fmt::Debug for Permissions {
     }
 }
 
+/// Creates a new, empty directory.
+pub fn create_dir(sq: SubmissionQueue, path: PathBuf) -> CreateDir {
+    CreateDir {
+        sq,
+        path: Some(path_to_cstring(path)),
+        state: OpState::NotStarted(()),
+    }
+}
+
+/// [`Future`] to [create a directory].
+///
+/// [create a directory]: create_dir
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+pub struct CreateDir {
+    sq: SubmissionQueue,
+    /// Path used to create the directory, need to stay in memory so the kernel
+    /// can access it safely.
+    path: Option<CString>,
+    state: OpState<()>,
+}
+
+impl Future for CreateDir {
+    type Output = io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        #[rustfmt::skip]
+        let op_index = poll_state!(CreateDir, self.state, self.sq, ctx, |submission, ()| unsafe {
+            // SAFETY: `path` is only removed after the state is set to `Done`.
+            let path = self.path.as_ref().unwrap();
+            let mode = 0o777; // Same as used by the standard library.
+            submission.mkdirat(libc::AT_FDCWD, path.as_ptr(), mode);
+        });
+
+        match self.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok((_, res)) => Poll::Ready(Ok(debug_assert!(res == 0))),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Extract for CreateDir {}
+
+impl Future for Extractor<CreateDir> {
+    type Output = io::Result<PathBuf>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let path = path_from_cstring(self.fut.path.take().unwrap());
+                Poll::Ready(Ok(path))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for CreateDir {
+    fn drop(&mut self) {
+        if let OpState::Running(op_index) = self.state {
+            let path = self.path.take().unwrap();
+            self.sq.drop_op(op_index, path);
+        }
+    }
+}
+
 /// Rename a file or directory to a new name.
 pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
     Rename {
