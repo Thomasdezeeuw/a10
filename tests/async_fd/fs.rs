@@ -4,13 +4,13 @@ use std::env::temp_dir;
 use std::path::Path;
 use std::{panic, str};
 
-use a10::fs::{self, Advise, Allocate, OpenOptions, Rename};
+use a10::fs::{self, Advise, Allocate, Delete, OpenOptions, Rename};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
-    defer, is_send, is_sync, page_size, remove_test_file, test_queue, TestFile, Waker,
-    LOREM_IPSUM_5, LOREM_IPSUM_50,
+    defer, is_send, is_sync, page_size, remove_test_dir, remove_test_file, test_queue, TestFile,
+    Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
 const DATA: &[u8] = b"Hello, World";
@@ -567,4 +567,76 @@ fn rename_extract() {
 
     let got = std::fs::read(&to).expect("failed to read file");
     assert!(got == DATA, "file can't be read back");
+}
+
+#[test]
+fn remove_file() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Delete>();
+    is_sync::<Delete>();
+
+    let mut path = temp_dir();
+    path.push("remove_file");
+    let _d = defer(|| remove_test_file(&path));
+
+    std::fs::write(&path, DATA).expect("failed to create test file");
+
+    waker
+        .block_on(fs::remove_file(sq, path.clone()))
+        .expect("failed to remove file");
+}
+
+#[test]
+fn remove_file_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("remove_file_extract");
+    let _d = defer(|| remove_test_file(&path));
+
+    std::fs::write(&path, DATA).expect("failed to create test file");
+
+    let got = waker
+        .block_on(fs::remove_file(sq, path.clone()).extract())
+        .expect("failed to remove file");
+    assert_eq!(got, path);
+}
+
+#[test]
+fn remove_dir() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Delete>();
+    is_sync::<Delete>();
+
+    let mut path = temp_dir();
+    path.push("remove_dir");
+    let _d = defer(|| remove_test_dir(&path));
+
+    std::fs::create_dir(&path).expect("failed to create test dir");
+
+    waker
+        .block_on(fs::remove_dir(sq, path.clone()))
+        .expect("failed to remove dir");
+}
+
+#[test]
+fn remove_dir_extract() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut path = temp_dir();
+    path.push("remove_dir_extract");
+    let _d = defer(|| remove_test_dir(&path));
+
+    std::fs::create_dir(&path).expect("failed to create test dir");
+
+    let got = waker
+        .block_on(fs::remove_dir(sq, path.clone()).extract())
+        .expect("failed to remove dir");
+    assert_eq!(got, path);
 }

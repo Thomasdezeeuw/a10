@@ -4,7 +4,7 @@
 
 use std::any::Any;
 use std::async_iter::AsyncIterator;
-use std::fs::remove_file;
+use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
@@ -238,6 +238,14 @@ pub(crate) fn remove_test_file(path: &Path) {
         Ok(()) => {}
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => panic!("unexpected error removing test file: {err}"),
+    }
+}
+
+pub(crate) fn remove_test_dir(path: &Path) {
+    match remove_dir(path) {
+        Ok(()) => {}
+        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
+        Err(err) => panic!("unexpected error removing test directory: {err}"),
     }
 }
 
