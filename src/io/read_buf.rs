@@ -359,7 +359,7 @@ impl ReadBuf {
             if len > ptr.len() {
                 return;
             }
-            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), len));
+            self.owned = Some(change_size(ptr, len));
         }
     }
 
@@ -371,7 +371,7 @@ impl ReadBuf {
     /// that use [`ReadBuf::release`].
     pub fn clear(&mut self) {
         if let Some(ptr) = self.owned {
-            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), 0));
+            self.owned = Some(change_size(ptr, 0));
         }
     }
 
@@ -405,10 +405,7 @@ impl ReadBuf {
 
             let remove_len = end - start;
             let new_len = original_len - remove_len;
-            self.owned = Some(NonNull::slice_from_raw_parts(
-                ptr.as_non_null_ptr(),
-                new_len,
-            ));
+            self.owned = Some(change_size(ptr, new_len));
 
             if new_len == 0 || start >= new_len {
                 // No need to copy data round.
@@ -416,9 +413,14 @@ impl ReadBuf {
             }
 
             // We start copy where the remove range ends.
-            let start_ptr = unsafe { ptr.as_mut_ptr().add(end) };
+            let start_ptr = unsafe { ptr.as_ptr().cast::<u8>().add(end) };
             let to_copy = new_len - start;
-            unsafe { ptr.as_mut_ptr().add(start).copy_from(start_ptr, to_copy) };
+            unsafe {
+                ptr.as_ptr()
+                    .cast::<u8>()
+                    .add(start)
+                    .copy_from(start_ptr, to_copy)
+            };
         } else if start != 0 && end != 0 {
             panic!("attempting to remove range from empty buffer");
         }
@@ -433,10 +435,7 @@ impl ReadBuf {
     pub unsafe fn set_len(&mut self, new_len: usize) {
         debug_assert!(new_len <= self.shared.buf_size as usize);
         if let Some(ptr) = self.owned {
-            self.owned = Some(NonNull::slice_from_raw_parts(
-                ptr.as_non_null_ptr(),
-                new_len,
-            ));
+            self.owned = Some(change_size(ptr, new_len));
         }
     }
 
@@ -456,14 +455,12 @@ impl ReadBuf {
             // NOTE: we can't use `copy_from_nonoverlapping` as we can't
             // guarantee that `self` and `other` are not overlapping.
             unsafe {
-                ptr.as_mut_ptr()
+                ptr.as_ptr()
+                    .cast::<u8>()
                     .add(ptr.len())
                     .copy_from(other.as_ptr(), other.len());
             }
-            self.owned = Some(NonNull::slice_from_raw_parts(
-                ptr.as_non_null_ptr(),
-                new_len,
-            ));
+            self.owned = Some(change_size(ptr, new_len));
             Ok(())
         } else {
             Err(())
@@ -475,7 +472,7 @@ impl ReadBuf {
         if let Some(ptr) = self.owned {
             let unused_len = self.shared.buf_size as usize - ptr.len();
             // SAFETY: this won't overflow `isize`.
-            let data = unsafe { ptr.as_mut_ptr().add(ptr.len()) };
+            let data = unsafe { ptr.as_ptr().cast::<u8>().add(ptr.len()) };
             // SAFETY: the pointer and length are correct.
             unsafe { slice::from_raw_parts_mut(data.cast(), unused_len) }
         } else {
@@ -502,7 +499,8 @@ impl ReadBuf {
             // start of the pool, by calculating the difference and dividing it
             // by the buffer size.
             let buf_idx = unsafe {
-                (ptr.as_mut_ptr().sub_ptr(self.shared.bufs_addr)) / self.shared.buf_size as usize
+                (ptr.as_ptr().cast::<u8>().sub_ptr(self.shared.bufs_addr))
+                    / self.shared.buf_size as usize
             } as u16;
 
             // Because we need to fill the `ring_buf` and then atomatically
@@ -520,7 +518,7 @@ impl ReadBuf {
             };
             log::trace!(bid = buf_idx, addr = log::as_debug!(ptr), len = self.shared.buf_size; "reregistering buffer");
             ring_buf.write(libc::io_uring_buf {
-                addr: ptr.as_mut_ptr() as u64,
+                addr: ptr.as_ptr().cast::<u8>() as u64,
                 len: self.shared.buf_size,
                 bid: buf_idx,
                 resv: 0,
@@ -552,7 +550,7 @@ unsafe impl BufMut for ReadBuf {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         if let Some(ptr) = self.owned {
             let len = self.shared.buf_size - ptr.len() as u32;
-            (ptr.as_mut_ptr().add(ptr.len()), len)
+            (ptr.as_ptr().cast::<u8>().add(ptr.len()), len)
         } else {
             (ptr::null_mut(), self.shared.buf_size)
         }
@@ -576,8 +574,7 @@ unsafe impl BufMut for ReadBuf {
             // We shouldn't be assigned another buffer, we should be resizing
             // the current one.
             debug_assert!(idx.0 == 0);
-            let len = ptr.len() + n as usize;
-            self.owned = Some(NonNull::slice_from_raw_parts(ptr.as_non_null_ptr(), len));
+            self.owned = Some(change_size(ptr, ptr.len() + n as usize));
         } else {
             let data = self
                 .shared
@@ -589,6 +586,13 @@ unsafe impl BufMut for ReadBuf {
             self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));
         }
     }
+}
+
+/// Changes the size of `slice` to `new_len`.
+fn change_size<T>(slice: NonNull<[T]>, new_len: usize) -> NonNull<[T]> {
+    // SAFETY: `ptr` is `NonNull`, thus not NULL.
+    let ptr = unsafe { NonNull::new_unchecked(slice.as_ptr().cast()) };
+    NonNull::slice_from_raw_parts(ptr, new_len)
 }
 
 // SAFETY: `ReadBuf` manages the allocation of the bytes once it's assigned a

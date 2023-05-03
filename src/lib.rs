@@ -127,8 +127,7 @@
     maybe_uninit_uninit_array,
     mutex_unlock,
     new_uninit,
-    ptr_sub_ptr,
-    slice_ptr_get
+    ptr_sub_ptr
 )]
 
 use std::cmp::min;
