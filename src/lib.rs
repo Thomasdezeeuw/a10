@@ -125,7 +125,6 @@
     io_error_more,
     maybe_uninit_array_assume_init,
     maybe_uninit_uninit_array,
-    mutex_unlock,
     new_uninit
 )]
 
@@ -626,7 +625,6 @@ impl SubmissionQueue {
             let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
             debug_assert!(old_tail == *array_index);
             *array_index += 1;
-            Mutex::unlock(array_index);
         }
 
         // If the kernel thread is not awake we'll need to wake it for it to
