@@ -306,6 +306,20 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn unlinkat(
+        &mut self,
+        dirfd: RawFd,
+        path: *const libc::c_char,
+        flags: libc::c_int,
+    ) {
+        self.inner.opcode = libc::IORING_OP_UNLINKAT as u8;
+        self.inner.fd = dirfd;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: path as _ };
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            unlink_flags: flags as _,
+        };
+    }
+
     pub(crate) unsafe fn socket(
         &mut self,
         domain: libc::c_int,

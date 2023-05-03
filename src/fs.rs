@@ -747,6 +747,92 @@ impl Drop for Rename {
     }
 }
 
+/// Remove a file.
+#[doc(alias = "unlink")]
+#[doc(alias = "unlinkat")]
+pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
+    Delete {
+        sq,
+        path: Some(path_to_cstring(path)),
+        state: OpState::NotStarted(0),
+    }
+}
+
+/// Remove a directory.
+#[doc(alias = "rmdir")]
+#[doc(alias = "unlinkat")]
+pub fn remove_dir(sq: SubmissionQueue, path: PathBuf) -> Delete {
+    Delete {
+        sq,
+        path: Some(path_to_cstring(path)),
+        state: OpState::NotStarted(libc::AT_REMOVEDIR),
+    }
+}
+
+/// [`Future`] to remove a [file] or [directory].
+///
+/// [file]: remove_file
+/// [directory]: remove_dir
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+pub struct Delete {
+    sq: SubmissionQueue,
+    /// Paths used to rename the file, need to stay in memory so the kernel can
+    /// access it safely.
+    path: Option<CString>,
+    state: OpState<libc::c_int>,
+}
+
+impl Future for Delete {
+    type Output = io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        #[rustfmt::skip]
+        let op_index = poll_state!(Delete, self.state, self.sq, ctx, |submission, flags| unsafe {
+            // SAFETY: `path` is only removed after the state is set to `Done`.
+            let path = self.path.as_ref().unwrap();
+            submission.unlinkat(libc::AT_FDCWD, path.as_ptr(), flags);
+        });
+
+        match self.sq.poll_op(ctx, op_index) {
+            Poll::Ready(result) => {
+                self.state = OpState::Done;
+                match result {
+                    Ok((_, res)) => Poll::Ready(Ok(debug_assert!(res == 0))),
+                    Err(err) => Poll::Ready(Err(err)),
+                }
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Extract for Delete {}
+
+impl Future for Extractor<Delete> {
+    type Output = io::Result<PathBuf>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let path = path_from_cstring(self.fut.path.take().unwrap());
+                Poll::Ready(Ok(path))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for Delete {
+    fn drop(&mut self) {
+        if let OpState::Running(op_index) = self.state {
+            let path = self.path.take().unwrap();
+            self.sq.drop_op(op_index, path);
+        }
+    }
+}
+
 fn path_to_cstring(path: PathBuf) -> CString {
     unsafe { CString::from_vec_unchecked(path.into_os_string().into_vec()) }
 }
