@@ -1,6 +1,6 @@
 //! Asynchronous filesystem manipulation operations.
 //!
-//! To open a file ([`AsyncFd`]) use [`open`] or [`OpenOptions`].
+//! To open a file ([`AsyncFd`]) use [`open_file`] or [`OpenOptions`].
 
 use std::ffi::{CString, OsString};
 use std::future::Future;
@@ -170,7 +170,7 @@ impl OpenOptions {
 }
 
 /// Open a file in read-only mode.
-pub fn open(sq: SubmissionQueue, path: PathBuf) -> Open {
+pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open {
     OpenOptions::new().read().open(sq, path)
 }
 
