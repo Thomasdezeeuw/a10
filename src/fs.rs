@@ -139,6 +139,20 @@ impl OpenOptions {
         self
     }
 
+    /// Try to minimize cache effects of the I/O to and from this file.
+    ///
+    /// File I/O is done directly to/from user-space buffers. This uses the
+    /// `O_DIRECT` flag which on its own makes an effort to transfer data
+    /// synchronously, but does not give the guarantees of the `O_SYNC` flag
+    /// ([`OpenOptions::sync`]) that data and necessary metadata are
+    /// transferred. To guarantee synchronous I/O, `O_SYNC` must be used in
+    /// addition to `O_DIRECT`.
+    #[doc(alias = "O_DIRECT")]
+    pub const fn direct(mut self) -> Self {
+        self.flags |= libc::O_DIRECT;
+        self
+    }
+
     /// Sets the mode bits that a new file will be created with.
     pub const fn mode(mut self, mode: libc::mode_t) -> Self {
         self.mode = mode;

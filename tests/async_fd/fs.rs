@@ -1,7 +1,7 @@
 //! Tests for the filesystem operations.
 
 use std::env::temp_dir;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::{panic, str};
 
 use a10::fs::{self, Advise, Allocate, CreateDir, Delete, OpenOptions, Rename};
@@ -31,6 +31,45 @@ fn open_extractor() {
     let got: &Path = path.as_ref();
     let expected: &Path = LOREM_IPSUM_5.path.as_ref();
     assert_eq!(got, expected);
+}
+
+#[test]
+fn open_direct() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // NOTE: we can't use the temp directory as tmpfs (as of v6.1) doesn't
+    // support O_DIRECT.
+    let path = PathBuf::from("target/tmp/test.open_direct.txt");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file = OpenOptions::new()
+        .read()
+        .write()
+        .create_new()
+        .data_sync()
+        .direct()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).expect("failed to open file");
+
+    // Using O_DIRECT has various alignment requirements for writing.
+    // For the purpose of this test we'll assume that the page size is
+    // sufficient, but in practice this might not be the case.
+    let page_size = page_size();
+
+    // Determine the amount of bytes we need to skip for we get a page aligned
+    // buffer.
+    let offset = LOREM_IPSUM_50.content.as_ptr().align_offset(page_size);
+    assert!(offset < page_size);
+    let content = &LOREM_IPSUM_50.content[offset..offset + (2 * page_size)];
+
+    waker
+        .block_on(file.write_all(content))
+        .expect("failed to write file");
+    waker.block_on(file.close()).expect("failed to close file");
+
+    let got = std::fs::read(&path).expect("failed to read file");
+    assert_eq!(got, content);
 }
 
 #[test]
