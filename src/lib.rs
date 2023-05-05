@@ -133,8 +133,8 @@
 
 use std::cmp::min;
 use std::marker::PhantomData;
-use std::mem::{needs_drop, replace, size_of, take};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
+use std::mem::{needs_drop, replace, size_of, take, ManuallyDrop};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{self, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
@@ -1105,7 +1105,11 @@ impl fmt::Debug for Completion {
 ///
 /// [`Future`]: std::future::Future
 pub struct AsyncFd {
-    fd: RawFd,
+    /// # Notes
+    ///
+    /// We use `ManuallyDrop` because we drop the fd using io_uring, not a
+    /// blocking `close(2)` system call.
+    fd: ManuallyDrop<OwnedFd>,
     sq: SubmissionQueue,
 }
 
@@ -1114,19 +1118,32 @@ pub struct AsyncFd {
 
 impl AsyncFd {
     /// Create a new `AsyncFd`.
+    pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
+        AsyncFd {
+            fd: ManuallyDrop::new(fd),
+            sq,
+        }
+    }
+
+    /// Create a new `AsyncFd` from a `RawFd`.
     ///
     /// # Safety
     ///
     /// The caller must ensure that `fd` is valid and that it's no longer used
     /// by anything other than the returned `AsyncFd`.
-    pub const unsafe fn new(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd { fd, sq }
+    pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
+        AsyncFd::new(OwnedFd::from_raw_fd(fd), sq)
+    }
+
+    /// Returns the `RawFd` of this `AsyncFd`.
+    fn fd(&self) -> RawFd {
+        self.fd.as_raw_fd()
     }
 }
 
 impl AsFd for AsyncFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) }
+        self.fd.as_fd()
     }
 }
 
@@ -1143,7 +1160,7 @@ impl Drop for AsyncFd {
     fn drop(&mut self) {
         let result = self
             .sq
-            .add_no_result(|submission| unsafe { submission.close(self.fd) });
+            .add_no_result(|submission| unsafe { submission.close(self.fd()) });
         if let Err(err) = result {
             log::error!("error submitting close operation for a10::AsyncFd: {err}");
         }

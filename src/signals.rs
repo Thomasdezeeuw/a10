@@ -78,7 +78,8 @@ impl Signals {
         let signals = SignalSet(signals);
         trace!(signals = log::as_debug!(signals); "setting up signal handling");
         let fd = libc::syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
-        let fd = AsyncFd { fd, sq };
+        // SAFETY: `signalfd(2)` ensures that `fd` is valid.
+        let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
         // Block all `signals` as we're going to read them from the signalfd.
         sigprocmask(libc::SIG_BLOCK, &signals.0)?;
         Ok(Signals { fd, signals })
@@ -132,7 +133,7 @@ op_future! {
     setup_state: _unused: (),
     setup: |submission, fd, (info,), _unused| unsafe {
         let ptr = (**info).as_mut_ptr().cast();
-        submission.read_at(fd.fd, ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
+        submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
     },
     map_result: |this, (info,), n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
