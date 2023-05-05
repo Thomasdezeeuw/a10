@@ -221,10 +221,10 @@ impl Future for Open {
             Poll::Ready(result) => {
                 self.state = OpState::Done;
                 match result {
-                    Ok((_, fd)) => Poll::Ready(Ok(AsyncFd {
-                        fd,
+                    Ok((_, fd)) => Poll::Ready(Ok(unsafe {
+                        // SAFETY: the open operation ensures that `fd` is valid.
                         // SAFETY: unwrapped `sq` above already.
-                        sq: self.sq.take().unwrap(),
+                        AsyncFd::from_raw_fd(fd, self.sq.take().unwrap())
                     })),
                     Err(err) => Poll::Ready(Err(err)),
                 }
@@ -348,7 +348,7 @@ op_future! {
     },
     setup_state: flags: u32,
     setup: |submission, fd, (), flags| unsafe {
-        submission.fsync(fd.fd, flags);
+        submission.fsync(fd.fd(), flags);
     },
     map_result: |n| Ok(debug_assert!(n == 0)),
 }
@@ -362,7 +362,7 @@ op_future! {
     },
     setup_state: _unused: (),
     setup: |submission, fd, (metadata,), ()| unsafe {
-        submission.statx_file(fd.fd, &mut metadata.inner, METADATA_FLAGS);
+        submission.statx_file(fd.fd(), &mut metadata.inner, METADATA_FLAGS);
     },
     map_result: |this, (metadata,), n| {
         debug_assert!(n == 0);
@@ -379,7 +379,7 @@ op_future! {
     },
     setup_state: flags: (u64, u32, libc::c_int),
     setup: |submission, fd, (), (offset, length, advise)| unsafe {
-        submission.fadvise(fd.fd, offset, length, advise);
+        submission.fadvise(fd.fd(), offset, length, advise);
     },
     map_result: |this, (), res| {
         debug_assert!(res == 0);
@@ -395,7 +395,7 @@ op_future! {
     },
     setup_state: flags: (u64, u32, libc::c_int),
     setup: |submission, fd, (), (offset, length, mode)| unsafe {
-        submission.fallocate(fd.fd, offset, length, mode);
+        submission.fallocate(fd.fd(), offset, length, mode);
     },
     map_result: |this, (), res| {
         debug_assert!(res == 0);

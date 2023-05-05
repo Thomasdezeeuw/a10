@@ -880,7 +880,7 @@ fn pipe2(sq: SubmissionQueue) -> io::Result<(AsyncFd, AsyncFd)> {
     }
 
     // SAFETY: we just initialised the `fds` above.
-    let r = unsafe { AsyncFd::new(fds[0], sq.clone()) };
-    let w = unsafe { AsyncFd::new(fds[1], sq) };
+    let r = unsafe { AsyncFd::from_raw_fd(fds[0], sq.clone()) };
+    let w = unsafe { AsyncFd::from_raw_fd(fds[1], sq) };
     Ok((r, w))
 }

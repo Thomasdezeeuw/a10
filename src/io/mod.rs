@@ -41,11 +41,13 @@ macro_rules! stdio {
         $fn: ident () -> $name: ident, $fd: expr
     ) => {
         #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
-        pub const fn $fn(sq: $crate::SubmissionQueue) -> $name {
-            $name(std::mem::ManuallyDrop::new($crate::AsyncFd {
-                fd: $fd as std::os::fd::RawFd,
-                sq,
-            }))
+        pub fn $fn(sq: $crate::SubmissionQueue) -> $name {
+            unsafe {
+                $name(std::mem::ManuallyDrop::new($crate::AsyncFd::from_raw_fd(
+                    $fd as std::os::fd::RawFd,
+                    sq,
+                )))
+            }
         }
 
         #[doc = concat!(
@@ -337,7 +339,7 @@ impl AsyncFd {
         let this = ManuallyDrop::new(self);
         // SAFETY: this is safe because we're ensure the pointers are valid and
         // not touching `this` after reading the fields.
-        let fd = unsafe { ptr::read(&this.fd) };
+        let fd = this.fd();
         let sq = unsafe { ptr::read(&this.sq) };
 
         Close {
@@ -358,7 +360,7 @@ op_future! {
     setup_state: offset: u64,
     setup: |submission, fd, (buf,), offset| unsafe {
         let (ptr, len) = buf.parts_mut();
-        submission.read_at(fd.fd, ptr, len, offset);
+        submission.read_at(fd.fd(), ptr, len, offset);
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
         }
@@ -457,7 +459,7 @@ op_future! {
     impl !Upin,
     setup_state: offset: u64,
     setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
-        submission.read_vectored_at(fd.fd, iovecs, offset);
+        submission.read_vectored_at(fd.fd(), iovecs, offset);
     },
     map_result: |this, (mut bufs, _iovecs), _flags, n| {
         // SAFETY: the kernel initialised the bytes for us as part of the read
@@ -573,7 +575,7 @@ op_future! {
     setup_state: offset: u64,
     setup: |submission, fd, (buf,), offset| unsafe {
         let (ptr, len) = buf.parts();
-        submission.write_at(fd.fd, ptr, len, offset);
+        submission.write_at(fd.fd(), ptr, len, offset);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -701,7 +703,7 @@ op_future! {
     impl !Upin,
     setup_state: offset: u64,
     setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
-        submission.write_vectored_at(fd.fd, iovecs, offset);
+        submission.write_vectored_at(fd.fd(), iovecs, offset);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -808,8 +810,8 @@ op_future! {
     setup_state: flags: (RawFd, SpliceDirection, u64, u64, u32, libc::c_int),
     setup: |submission, fd, (), (target, direction, off_in, off_out, len, flags)| unsafe {
         let (fd_in, fd_out) = match direction {
-            SpliceDirection::To => (fd.fd, target),
-            SpliceDirection::From => (target, fd.fd),
+            SpliceDirection::To => (fd.fd(), target),
+            SpliceDirection::From => (target, fd.fd()),
         };
         dbg!(fd_in, fd_out);
         dbg!(off_in, off_out);

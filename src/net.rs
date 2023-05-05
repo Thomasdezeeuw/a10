@@ -378,10 +378,10 @@ impl Future for Socket {
             Poll::Ready(result) => {
                 self.state = OpState::Done;
                 match result {
-                    Ok((_, fd)) => Poll::Ready(Ok(AsyncFd {
-                        fd,
-                        // SAFETY: used it above.
-                        sq: self.sq.take().unwrap(),
+                    Ok((_, fd)) => Poll::Ready(Ok(unsafe {
+                        // SAFETY: the socket operation ensures that `fd` is valid.
+                        // SAFETY: unwrapping `sq` is safe as used it above.
+                        AsyncFd::from_raw_fd(fd, self.sq.take().unwrap())
                     })),
                     Err(err) => Poll::Ready(Err(err)),
                 }
@@ -401,7 +401,7 @@ op_future! {
     setup_state: _unused: (),
     setup: |submission, fd, (address,), ()| unsafe {
         let (ptr, len) = SocketAddress::as_ptr(&**address);
-        submission.connect(fd.fd, ptr, len);
+        submission.connect(fd.fd(), ptr, len);
     },
     map_result: |result| Ok(debug_assert!(result == 0)),
     extract: |this, (address,), res| -> Box<A> {
@@ -421,7 +421,7 @@ op_future! {
     setup_state: flags: (u8, libc::c_int),
     setup: |submission, fd, (buf,), (op, flags)| unsafe {
         let (ptr, len) = buf.parts();
-        submission.send(op, fd.fd, ptr, len, flags);
+        submission.send(op, fd.fd(), ptr, len, flags);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -518,7 +518,7 @@ op_future! {
     setup: |submission, fd, (buf, address), (op, flags)| unsafe {
         let (buf, buf_len) = buf.parts();
         let (addr, addr_len) = SocketAddress::as_ptr(address);
-        submission.sendto(op, fd.fd, buf, buf_len, addr, addr_len, flags);
+        submission.sendto(op, fd.fd(), buf, buf_len, addr, addr_len, flags);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -559,7 +559,7 @@ op_future! {
         let (addr, addr_len) = SocketAddress::as_ptr(address);
         msg.msg_name = addr.cast_mut().cast();
         msg.msg_namelen = addr_len;
-        submission.sendmsg(op, fd.fd, &*msg, flags);
+        submission.sendmsg(op, fd.fd(), &*msg, flags);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -668,7 +668,7 @@ op_future! {
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (buf,), flags| unsafe {
         let (ptr, len) = buf.parts_mut();
-        submission.recv(fd.fd, ptr, len, flags);
+        submission.recv(fd.fd(), ptr, len, flags);
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
         }
@@ -691,7 +691,7 @@ op_async_iter! {
     },
     setup_state: flags: libc::c_int,
     setup: |submission, this, flags| unsafe {
-        submission.multishot_recv(this.fd.fd, flags, this.buf_pool.group_id().0);
+        submission.multishot_recv(this.fd.fd(), flags, this.buf_pool.group_id().0);
     },
     map_result: |this, buf_idx, n| {
         if n == 0 {
@@ -788,7 +788,7 @@ op_future! {
     setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
         msg.msg_iov = iovecs.as_mut_ptr();
         msg.msg_iovlen = N;
-        submission.recvmsg(fd.fd, &**msg, flags);
+        submission.recvmsg(fd.fd(), &**msg, flags);
     },
     map_result: |this, (mut bufs, msg, _), n| {
         // SAFETY: the kernel initialised the bytes for us as part of the
@@ -887,7 +887,7 @@ op_future! {
         let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
         msg.msg_name = addr.cast();
         msg.msg_namelen = addr_len;
-        submission.recvmsg(fd.fd, &*msg, flags);
+        submission.recvmsg(fd.fd(), &*msg, flags);
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
         }
@@ -934,7 +934,7 @@ op_future! {
         let (addr, addr_len) = SocketAddress::as_mut_ptr(address);
         msg.msg_name = addr.cast();
         msg.msg_namelen = addr_len;
-        submission.recvmsg(fd.fd, &*msg, flags);
+        submission.recvmsg(fd.fd(), &*msg, flags);
     },
     map_result: |this, (mut bufs, msg, _), n| {
         // SAFETY: the kernel initialised the buffers for us as part of the
@@ -955,7 +955,7 @@ op_future! {
     },
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (), how| unsafe {
-        submission.shutdown(fd.fd, how);
+        submission.shutdown(fd.fd(), how);
     },
     map_result: |n| Ok(debug_assert!(n == 0)),
 }
@@ -972,11 +972,12 @@ op_future! {
     setup: |submission, fd, (address,), flags| unsafe {
         let (ptr, len) = SocketAddress::as_mut_ptr(&mut address.0);
         address.1 = len;
-        submission.accept(fd.fd, ptr, &mut address.1, flags);
+        submission.accept(fd.fd(), ptr, &mut address.1, flags);
     },
     map_result: |this, (address,), fd| {
         let sq = this.fd.sq.clone();
-        let stream = AsyncFd { fd, sq };
+        // SAFETY: the accept operation ensures that `fd` is valid.
+        let stream = unsafe { AsyncFd::from_raw_fd(fd, sq) };
         let len = address.1;
         // SAFETY: kernel initialised the memory for us.
         let address = unsafe { SocketAddress::init(address.0, len) };
@@ -992,11 +993,12 @@ op_async_iter! {
     },
     setup_state: flags: libc::c_int,
     setup: |submission, this, flags| unsafe {
-        submission.multishot_accept(this.fd.fd, flags);
+        submission.multishot_accept(this.fd.fd(), flags);
     },
     map_result: |this, _flags, fd| {
         let sq = this.fd.sq.clone();
-        AsyncFd { fd, sq }
+        // SAFETY: the accept operation ensures that `fd` is valid.
+        unsafe { AsyncFd::from_raw_fd(fd, sq) }
     },
 }
 
