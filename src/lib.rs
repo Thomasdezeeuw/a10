@@ -202,8 +202,8 @@ impl Ring {
     /// # Notes
     ///
     /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
-    /// to work correctly. Furthermore the user needs the `CAP_SYS_NICE`
-    /// capability.
+    /// to work correctly. Furthermore before Linux 5.13 the user needs the
+    /// `CAP_SYS_NICE` capability if run as non-root.
     pub const fn config<'r>(entries: u32) -> Config<'r> {
         Config::new(entries)
     }
@@ -231,7 +231,7 @@ impl Ring {
     /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
     /// function will only wake all already completed operations. It then
     /// guarantees to not make a system call, but it also means it doesn't
-    /// gurantee at least one completion was processed.
+    /// guarantee at least one completion was processed.
     ///
     /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]
@@ -394,7 +394,7 @@ struct SharedSubmissionQueue {
     /// ready, this is determined by `tail`.
     pending_tail: AtomicU32,
 
-    // NOTE: the following two fields are constant. we read them once from the
+    // NOTE: the following two fields are constant. We read them once from the
     // mmap area and then copied them here to avoid the need for the atomics.
     /// Number of entries in the queue.
     len: u32,
@@ -418,7 +418,7 @@ struct SharedSubmissionQueue {
     /// Flags set by the kernel to communicate state information.
     flags: *const AtomicU32,
     /// Array of `len` submission entries shared with the kernel. We're the only
-    /// one modifiying the structures, but the kernel can read from it.
+    /// one modifiying the structures, but the kernel can read from them.
     ///
     /// This pointer is also used in the `unmmap` call.
     entries: *mut Submission,
@@ -812,69 +812,6 @@ impl SubmissionQueue {
     }
 }
 
-/// Create a [`task::Waker`] that will drop itself when the waker is dropped.
-///
-/// # Safety
-///
-/// The returned `task::Waker` cannot be cloned, it will panic.
-unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
-    unsafe fn drop_by_ptr<T: DropWaker>(data: *const ()) {
-        T::drop_from_waker_data(data);
-    }
-
-    // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
-    unsafe {
-        task::Waker::from_raw(task::RawWaker::new(
-            to_drop.into_waker_data(),
-            &task::RawWakerVTable::new(
-                |_| panic!("attempted to clone `a10::drop_task_waker`"),
-                // SAFETY: `wake` takes ownership, so dropping is safe.
-                drop_by_ptr::<T>,
-                |_| { /* `wake_by_ref` is a no-op. */ },
-                drop_by_ptr::<T>,
-            ),
-        ))
-    }
-}
-
-/// Trait used by [`drop_task_waker`].
-trait DropWaker {
-    /// Return itself as waker data.
-    fn into_waker_data(self) -> *const ();
-
-    /// Drop the waker `data` created by `into_waker_data`.
-    unsafe fn drop_from_waker_data(data: *const ());
-}
-
-/* TODO: enable this once the specialization feature is closer to stabalisation,
- * see <https://github.com/rust-lang/rust/issues/31844>.
-default impl<T> IntoDropWaker for T {
-    unsafe fn into_waker(self) -> task::Waker {
-        Box::from(self).into_waker()
-    }
-}
-*/
-
-impl<T> DropWaker for Box<T> {
-    fn into_waker_data(self) -> *const () {
-        Box::into_raw(self).cast()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Box::<T>::from_raw(data.cast_mut().cast()));
-    }
-}
-
-impl<T> DropWaker for Arc<T> {
-    fn into_waker_data(self) -> *const () {
-        Arc::into_raw(self).cast()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Arc::<T>::from_raw(data.cast_mut().cast()));
-    }
-}
-
 #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
 impl fmt::Debug for SubmissionQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -966,6 +903,60 @@ impl fmt::Display for QueueFull {
     }
 }
 
+/// Create a [`task::Waker`] that will drop itself when the waker is dropped.
+///
+/// # Safety
+///
+/// The returned `task::Waker` cannot be cloned, it will panic.
+unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
+    unsafe fn drop_by_ptr<T: DropWaker>(data: *const ()) {
+        T::drop_from_waker_data(data);
+    }
+
+    // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
+    unsafe {
+        task::Waker::from_raw(task::RawWaker::new(
+            to_drop.into_waker_data(),
+            &task::RawWakerVTable::new(
+                |_| panic!("attempted to clone `a10::drop_task_waker`"),
+                // SAFETY: `wake` takes ownership, so dropping is safe.
+                drop_by_ptr::<T>,
+                |_| { /* `wake_by_ref` is a no-op. */ },
+                drop_by_ptr::<T>,
+            ),
+        ))
+    }
+}
+
+/// Trait used by [`drop_task_waker`].
+trait DropWaker {
+    /// Return itself as waker data.
+    fn into_waker_data(self) -> *const ();
+
+    /// Drop the waker `data` created by `into_waker_data`.
+    unsafe fn drop_from_waker_data(data: *const ());
+}
+
+impl<T> DropWaker for Box<T> {
+    fn into_waker_data(self) -> *const () {
+        Box::into_raw(self).cast()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(Box::<T>::from_raw(data.cast_mut().cast()));
+    }
+}
+
+impl<T> DropWaker for Arc<T> {
+    fn into_waker_data(self) -> *const () {
+        Arc::into_raw(self).cast()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(Arc::<T>::from_raw(data.cast_mut().cast()));
+    }
+}
+
 /// Queue of completion events.
 #[derive(Debug)]
 struct CompletionQueue {
@@ -974,12 +965,8 @@ struct CompletionQueue {
     /// Mmap-ed size in bytes.
     size: libc::c_uint,
 
-    // NOTE: the following two fields are constant. we read them once from the
-    // mmap area and then copied them here to avoid the need for the atomics.
-    /* NOTE: usunused.
-    /// Number of entries in the queue.
-    len: u32,
-    */
+    // NOTE: the following field is constant. we read them once from the mmap
+    // area and then copied them here to avoid the need for the atomics.
     /// Mask used to index into the `sqes` queue.
     ring_mask: u32,
 
@@ -1008,7 +995,6 @@ impl Drop for CompletionQueue {
 
 /// Iterator of completed operations.
 struct Completions<'ring> {
-    // TODO: replace these fields with a reference to `CompletionQueue`?
     /// Same as [`CompletionQueue.entries`].
     entries: *const Completion,
     /// Local version of `head`. Used to updated `head` once `Completions` is
@@ -1119,11 +1105,11 @@ impl fmt::Debug for Completion {
 ///
 /// [`Future`]: std::future::Future
 pub struct AsyncFd {
-    pub(crate) fd: RawFd,
-    pub(crate) sq: SubmissionQueue,
+    fd: RawFd,
+    sq: SubmissionQueue,
 }
 
-// NOTE: the implementation are split over the modules to give the `Future`
+// NOTE: the implementations are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
 impl AsyncFd {
