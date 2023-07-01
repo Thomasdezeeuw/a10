@@ -667,8 +667,8 @@ impl SubmissionQueue {
     fn unsubmitted(&self) -> u32 {
         // SAFETY: the `kernel_read` pointer itself is valid as long as
         // `Ring.fd` is alive.
-        // We use Relaxed here because the caller knows the value will be
-        // outdated.
+        // We use Relaxed here because it can already be outdated the moment we
+        // return it, the caller has to deal with that.
         let kernel_read = unsafe { (*self.shared.kernel_read).load(Ordering::Relaxed) };
         let pending_tail = self.shared.pending_tail.load(Ordering::Relaxed);
         pending_tail - kernel_read
@@ -701,7 +701,7 @@ impl SubmissionQueue {
             let ring_fd = self.shared.ring_fd.as_raw_fd();
             let res = libc::syscall!(io_uring_enter2(ring_fd, 1, 0, 0, ptr::null(), 0));
             if let Err(err) = res {
-                log::warn!("failed to wake submission queue polling kernel thread: {err}");
+                log::warn!("failed to submit event: {err}");
             }
         }
     }
