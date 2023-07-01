@@ -289,13 +289,22 @@ impl Ring {
             args.ts = ptr::addr_of!(timespec) as u64;
         }
 
+        let submissions = if self.sq.shared.kernel_thread {
+            0 // Kernel thread handles the submissions.
+        } else {
+            let kernel_read = self.sq.kernel_read();
+            let pending_tail = self.sq.shared.pending_tail.load(Ordering::Acquire);
+            pending_tail - kernel_read
+        };
+
         // If there are no completions we'll wait for at least one.
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
-        log::debug!("waiting for completion events");
+
+        log::debug!(submissions = submissions; "waiting for completion events");
         let result = libc::syscall!(io_uring_enter2(
             self.sq.shared.ring_fd.as_raw_fd(),
-            0, // We've already queued and submitted our submissions.
+            submissions,
             1, // Wait for at least one completion.
             enter_flags,
             ptr::addr_of!(args).cast(),
@@ -400,6 +409,9 @@ struct SharedSubmissionQueue {
     len: u32,
     /// Mask used to index into the `sqes` queue.
     ring_mask: u32,
+    /// True if we're using a kernel thread to do submission polling, i.e. if
+    /// `IORING_SETUP_SQPOLL` is enabled.
+    kernel_thread: bool,
 
     /// Bitmap which can be used to create an index into `op_queue`.
     op_indices: Box<AtomicBitMap>,

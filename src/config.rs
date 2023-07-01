@@ -18,6 +18,7 @@ pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
     clamp: bool,
+    kernel_thread: bool,
     cpu_affinity: Option<u32>,
     idle_timeout: Option<u32>,
     attach: Option<&'r SubmissionQueue>,
@@ -43,6 +44,7 @@ impl<'r> Config<'r> {
             submission_entries: entries,
             completion_entries: None,
             clamp: false,
+            kernel_thread: true,
             cpu_affinity: None,
             idle_timeout: None,
             attach: None,
@@ -73,7 +75,36 @@ impl<'r> Config<'r> {
         self
     }
 
+    /// Start a kernel thread polling the [`Ring`].
+    ///
+    /// When this option is enabled a kernel thread is created to perform
+    /// submission queue polling. This allows issuing I/O without ever context
+    /// switching into the kernel.
+    ///
+    /// # Notes
+    ///
+    /// When setting this to false it significantly changes the way A10 works.
+    /// With this disabled you need to call [`Ring::poll`] to *submit* I/O work,
+    /// with this enables this is done by the kernel. That means that if
+    /// multiple threads use the same [`SubmissionQueue`] their submissions
+    /// might not actually be submitted until `Ring::poll` is called.
+    ///
+    /// Furthermore herein hides a potential stall. Consider the following
+    /// thread A calls `Ring::poll` with no pending submissions, i.e. the
+    /// `SubmissionQueue` is empty. Then thread B adds a submission to the
+    /// `SubmissionQueue`. You might expect that the submission made by thread B
+    /// impacts thread A, **but it doesn't**! In fact neither thread A or the
+    /// kernel is informed that thread B added a submission, likely causing a
+    /// stall in thread A.
+    #[doc(alias = "IORING_SETUP_SQPOLL")]
+    pub const fn with_kernel_thread(mut self, enabled: bool) -> Self {
+        self.kernel_thread = enabled;
+        self
+    }
+
     /// Set the CPU affinity of kernel thread polling the [`Ring`].
+    ///
+    /// Only works in combination with [`Config::with_kernel_thread`].
     #[doc(alias = "IORING_SETUP_SQ_AFF")]
     #[doc(alias = "sq_thread_cpu")]
     pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
@@ -125,10 +156,15 @@ impl<'r> Config<'r> {
     pub fn build(self) -> io::Result<Ring> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
-        parameters.flags = libc::IORING_SETUP_SQPOLL // Kernel thread for polling.
-            | libc::IORING_SETUP_SUBMIT_ALL // Submit all submissions on error.
+        parameters.flags = libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
+        if self.kernel_thread {
+            parameters.flags |= libc::IORING_SETUP_SQPOLL // Kernel thread for polling.
             // Using `IORING_SETUP_SQPOLL` we always have one issuer.
             | libc::IORING_SETUP_SINGLE_ISSUER;
+        } else {
+            // Don't interrupt userspace, the user must call `Ring::poll` any way.
+            parameters.flags |= libc::IORING_SETUP_COOP_TASKRUN;
+        }
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -213,6 +249,7 @@ fn mmap_submission_queue(
                 ring_mask: load_atomic_u32(
                     submission_queue.add(parameters.sq_off.ring_mask as usize),
                 ),
+                kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
                 op_indices,
                 queued_ops,
                 blocked_futures: Mutex::new(Vec::new()),
