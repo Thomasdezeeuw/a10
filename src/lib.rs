@@ -639,7 +639,7 @@ impl SubmissionQueue {
         // outdated.
         let kernel_read = unsafe { (*self.shared.kernel_read).load(Ordering::Relaxed) };
         let pending_tail = self.shared.pending_tail.load(Ordering::Relaxed);
-        (pending_tail - kernel_read) as usize
+        (self.shared.len - (pending_tail - kernel_read)) as usize
     }
 
     /// Wake up the kernel thread polling for submission events, if the kernel
