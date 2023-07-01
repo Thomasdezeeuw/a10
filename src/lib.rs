@@ -135,7 +135,7 @@ use std::cmp::min;
 use std::marker::PhantomData;
 use std::mem::{needs_drop, replace, size_of, take, ManuallyDrop};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
-use std::sync::atomic::{self, AtomicU32, Ordering};
+use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
 use std::time::Duration;
@@ -292,9 +292,8 @@ impl Ring {
         let submissions = if self.sq.shared.kernel_thread {
             0 // Kernel thread handles the submissions.
         } else {
-            let kernel_read = self.sq.kernel_read();
-            let pending_tail = self.sq.shared.pending_tail.load(Ordering::Acquire);
-            pending_tail - kernel_read
+            self.sq.shared.is_polling.store(true, Ordering::Release);
+            self.sq.unsubmitted()
         };
 
         // If there are no completions we'll wait for at least one.
@@ -310,6 +309,9 @@ impl Ring {
             ptr::addr_of!(args).cast(),
             size_of::<libc::io_uring_getevents_arg>(),
         ));
+        if !self.sq.shared.kernel_thread {
+            self.sq.shared.is_polling.store(false, Ordering::Release);
+        }
         match result {
             Ok(_) => Ok(()),
             // Hit timeout, we can ignore it.
@@ -412,6 +414,9 @@ struct SharedSubmissionQueue {
     /// True if we're using a kernel thread to do submission polling, i.e. if
     /// `IORING_SETUP_SQPOLL` is enabled.
     kernel_thread: bool,
+    /// Boolean indicating a thread is [`Ring::poll`]ing. Only used when
+    /// `kernel_thread` is false.
+    is_polling: AtomicBool,
 
     /// Bitmap which can be used to create an index into `op_queue`.
     op_indices: Box<AtomicBitMap>,
@@ -629,6 +634,10 @@ impl SubmissionQueue {
         // If the kernel thread is not awake we'll need to wake it for it to
         // process our submission.
         self.maybe_wake_kernel_thread();
+        // When we're not using the kernel polling thread we might have to
+        // submit the event ourselves to ensure we can make progress while the
+        // (user space) polling thread is calling `Ring::poll`.
+        self.maybe_submit_event();
         Ok(())
     }
 
@@ -654,10 +663,21 @@ impl SubmissionQueue {
         (self.shared.len - (pending_tail - kernel_read)) as usize
     }
 
+    /// Returns the number of unsumitted submission queue entries.
+    fn unsubmitted(&self) -> u32 {
+        // SAFETY: the `kernel_read` pointer itself is valid as long as
+        // `Ring.fd` is alive.
+        // We use Relaxed here because the caller knows the value will be
+        // outdated.
+        let kernel_read = unsafe { (*self.shared.kernel_read).load(Ordering::Relaxed) };
+        let pending_tail = self.shared.pending_tail.load(Ordering::Relaxed);
+        pending_tail - kernel_read
+    }
+
     /// Wake up the kernel thread polling for submission events, if the kernel
     /// thread needs a wakeup.
     fn maybe_wake_kernel_thread(&self) {
-        if self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0 {
+        if self.shared.kernel_thread && (self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0) {
             log::debug!("waking submission queue polling kernel thread");
             let res = libc::syscall!(io_uring_enter2(
                 self.shared.ring_fd.as_raw_fd(),
@@ -667,6 +687,19 @@ impl SubmissionQueue {
                 ptr::null(),                  // We don't pass any additional arguments.
                 0,
             ));
+            if let Err(err) = res {
+                log::warn!("failed to wake submission queue polling kernel thread: {err}");
+            }
+        }
+    }
+
+    /// Submit the event to the kernel when not using a kernel polling thread
+    /// and another thread is currently [`Ring::poll`]ing.
+    fn maybe_submit_event(&self) {
+        if !self.shared.kernel_thread && self.shared.is_polling.load(Ordering::Relaxed) {
+            log::debug!("submitting submission event while another thread is `Ring::poll`ing");
+            let ring_fd = self.shared.ring_fd.as_raw_fd();
+            let res = libc::syscall!(io_uring_enter2(ring_fd, 1, 0, 0, ptr::null(), 0));
             if let Err(err) = res {
                 log::warn!("failed to wake submission queue polling kernel thread: {err}");
             }
