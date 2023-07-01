@@ -6,6 +6,7 @@ use std::any::Any;
 use std::async_iter::AsyncIterator;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
+use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
 use std::path::Path;
@@ -13,7 +14,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, io, mem, panic, process, ptr, str};
+use std::{fmt, mem, panic, process, ptr, str};
 
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
@@ -57,13 +58,14 @@ pub(crate) fn test_queue() -> SubmissionQueue {
                 match res {
                     Ok(()) => (),
                     Err(err) => {
-                        let msg = panic_message(&err);
+                        let msg = panic_message(&*err);
                         let msg = format!("Polling thread panicked: {msg}\n");
 
                         // Bypass the buffered output and write directly to standard
                         // error.
                         let stderr = io::stderr();
-                        let guard = stderr.lock();
+                        let mut guard = stderr.lock();
+                        let _ = guard.flush();
                         let _ = unsafe {
                             libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len())
                         };
@@ -224,7 +226,7 @@ impl<F: FnOnce()> Drop for Defer<F> {
         let f = self.f.take().unwrap();
         if thread::panicking() {
             if let Err(err) = panic::catch_unwind(panic::AssertUnwindSafe(f)) {
-                let msg = panic_message(&err);
+                let msg = panic_message(&*err);
                 eprintln!("panic while already panicking: {msg}");
             }
         } else {
@@ -250,7 +252,7 @@ pub(crate) fn remove_test_dir(path: &Path) {
 }
 
 fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
-    match err.downcast_ref::<&'static str>() {
+    match err.downcast_ref::<&str>() {
         Some(s) => *s,
         None => match err.downcast_ref::<String>() {
             Some(s) => &**s,
