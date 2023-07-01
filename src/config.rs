@@ -2,7 +2,7 @@
 
 use std::mem::{self, size_of};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, ptr};
@@ -85,17 +85,9 @@ impl<'r> Config<'r> {
     ///
     /// When setting this to false it significantly changes the way A10 works.
     /// With this disabled you need to call [`Ring::poll`] to *submit* I/O work,
-    /// with this enables this is done by the kernel. That means that if
+    /// with this enables this is done by the kernel thread. That means that if
     /// multiple threads use the same [`SubmissionQueue`] their submissions
     /// might not actually be submitted until `Ring::poll` is called.
-    ///
-    /// Furthermore herein hides a potential stall. Consider the following
-    /// thread A calls `Ring::poll` with no pending submissions, i.e. the
-    /// `SubmissionQueue` is empty. Then thread B adds a submission to the
-    /// `SubmissionQueue`. You might expect that the submission made by thread B
-    /// impacts thread A, **but it doesn't**! In fact neither thread A or the
-    /// kernel is informed that thread B added a submission, likely causing a
-    /// stall in thread A.
     #[doc(alias = "IORING_SETUP_SQPOLL")]
     pub const fn with_kernel_thread(mut self, enabled: bool) -> Self {
         self.kernel_thread = enabled;
@@ -250,6 +242,7 @@ fn mmap_submission_queue(
                     submission_queue.add(parameters.sq_off.ring_mask as usize),
                 ),
                 kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
+                is_polling: AtomicBool::new(false),
                 op_indices,
                 queued_ops,
                 blocked_futures: Mutex::new(Vec::new()),
