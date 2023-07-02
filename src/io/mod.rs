@@ -1000,7 +1000,10 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
                 iov_len: len as _,
             });
         }
-        MaybeUninit::array_assume_init(iovecs)
+        // TODO: replace with `MaybeUninit::array_assume_init` once stable.
+        // SAFETY: `MaybeUninit<libc::iovec>` and `iovec` have the same layout
+        // as guaranteed by `MaybeUninit`.
+        unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
     }
 
     unsafe fn set_init(&mut self, n: usize) {
@@ -1138,7 +1141,10 @@ unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
                 iov_len: len as _,
             });
         }
-        MaybeUninit::array_assume_init(iovecs)
+        // TODO: replace with `MaybeUninit::array_assume_init` once stable.
+        // SAFETY: `MaybeUninit<libc::iovec>` and `iovec` have the same layout
+        // as guaranteed by `MaybeUninit`.
+        unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
     }
 }
 
