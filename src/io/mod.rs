@@ -985,7 +985,10 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
 // `B`.
 unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N] {
-        let mut iovecs = MaybeUninit::uninit_array();
+        // TODO: replace with `MaybeUninit::uninit_array` once stable.
+        // SAFETY: an uninitialised `MaybeUninit` is valid.
+        let mut iovecs =
+            unsafe { MaybeUninit::<[MaybeUninit<libc::iovec>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter_mut().zip(iovecs.iter_mut()) {
             debug_assert!(
                 buf.buffer_group().is_none(),
@@ -1124,7 +1127,10 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
 // implements `Buf` it's safe to implement `BufSlice` for an array of `B`.
 unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     unsafe fn as_iovecs(&self) -> [libc::iovec; N] {
-        let mut iovecs = MaybeUninit::uninit_array();
+        // TODO: replace with `MaybeUninit::uninit_array` once stable.
+        // SAFETY: an uninitialised `MaybeUninit` is valid.
+        let mut iovecs =
+            unsafe { MaybeUninit::<[MaybeUninit<libc::iovec>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
             let (ptr, len) = buf.parts();
             iovec.write(libc::iovec {
