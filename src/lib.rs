@@ -122,8 +122,7 @@
 #![feature(
     async_iterator,
     maybe_uninit_array_assume_init,
-    maybe_uninit_uninit_array,
-    new_uninit
+    maybe_uninit_uninit_array
 )]
 
 use std::cmp::min;

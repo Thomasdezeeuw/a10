@@ -247,8 +247,9 @@ impl AsyncFd {
     where
         B: BufMutSlice<N>,
     {
+        // TODO: replace with `Box::new_zeroed` once `new_uninit` is stable.
         // SAFETY: zeroed `msghdr` is valid.
-        let msg = unsafe { Box::new_zeroed().assume_init() };
+        let msg = unsafe { Box::new(mem::zeroed()) };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         RecvVectored::new(self, bufs, msg, iovecs, flags)
     }

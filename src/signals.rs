@@ -105,7 +105,8 @@ impl Signals {
 
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> Receive<'fd> {
-        let info = Box::new_uninit();
+        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
+        let info = Box::new(MaybeUninit::uninit());
         Receive::new(&self.fd, info, ())
     }
 }
@@ -138,9 +139,10 @@ op_future! {
     map_result: |this, (info,), n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
         { debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>()) };
+        // TODO: replace with `Box::assume_init` once `new_uninit` is stable.
         // SAFETY: the kernel initialised the info allocation for us as part of
         // the read call.
-        Ok(unsafe { Box::<MaybeUninit<libc::signalfd_siginfo>>::assume_init(info) })
+        Ok(unsafe { Box::from_raw(Box::into_raw(info).cast()) })
     },
 }
 
