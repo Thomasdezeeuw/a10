@@ -47,7 +47,17 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .get_or_init(|| {
             init();
 
-            let mut ring = Ring::new(128).expect("failed to create test ring");
+            let config = Ring::config(128).with_kernel_thread(true);
+            let mut ring = match config.clone().build() {
+                Ok(ring) => ring,
+                Err(err) => {
+                    if let Ok(ring) = config.with_kernel_thread(false).build() {
+                        ring
+                    } else {
+                        panic!("failed to create test ring: {err}");
+                    }
+                }
+            };
             let sq = ring.submission_queue().clone();
             thread::spawn(move || {
                 let res = panic::catch_unwind(move || loop {
