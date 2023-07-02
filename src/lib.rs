@@ -119,7 +119,7 @@
 //! }
 //! ```
 
-#![feature(async_iterator, maybe_uninit_array_assume_init)]
+#![feature(async_iterator)]
 
 use std::cmp::min;
 use std::marker::PhantomData;
