@@ -3,9 +3,9 @@
 #![allow(dead_code)] // Not all tests use all code here.
 
 use std::any::Any;
-
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
+use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
@@ -36,6 +36,34 @@ pub(crate) fn init() {
 pub(crate) fn page_size() -> usize {
     static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
     *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
+}
+
+/// Return the major.minor version of the kernel.
+pub(crate) fn kernel_version() -> (u32, u32) {
+    static KERNEL_VERSION: OnceLock<(u32, u32)> = OnceLock::new();
+    *KERNEL_VERSION.get_or_init(|| {
+        // SAFETY: all zeros for `utsname` is valid.
+        let mut uname: libc::utsname = unsafe { mem::zeroed() };
+        syscall!(uname(&mut uname)).expect("failed to get kernel info");
+        // SAFETY: kernel initialed `uname.release` for us with a NULL
+        // terminating string.
+        let release = unsafe { CStr::from_ptr(&uname.release as *const _) };
+        let release = str::from_utf8(release.to_bytes()).expect("version not valid UTF-8");
+        let mut parts = release.split('.');
+        let major = parts.next().expect("missing major verison");
+        let minor = parts.next().expect("missing minor verison");
+        (
+            major.parse().expect("invalid major version"),
+            minor.parse().expect("invalid major version"),
+        )
+    })
+}
+
+/// Returns true if the kernel version is greater than major.minor, false
+/// otherwise.
+pub(crate) fn has_kernel_version(major: u32, minor: u32) -> bool {
+    let got = kernel_version();
+    got.0 > major || (got.0 == major && got.1 >= minor)
 }
 
 /// Start a single background thread for polling and return the submission
