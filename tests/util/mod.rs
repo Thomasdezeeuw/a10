@@ -51,6 +51,7 @@ pub(crate) fn test_queue() -> SubmissionQueue {
             let mut ring = match config.clone().build() {
                 Ok(ring) => ring,
                 Err(err) => {
+                    log::warn!("creating test ring without a kernel thread");
                     if let Ok(ring) = config.with_kernel_thread(false).build() {
                         ring
                     } else {
