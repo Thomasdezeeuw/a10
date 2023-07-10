@@ -419,8 +419,8 @@ impl ReadBuf {
                 ptr.as_ptr()
                     .cast::<u8>()
                     .add(start)
-                    .copy_from(start_ptr, to_copy)
-            };
+                    .copy_from(start_ptr, to_copy);
+            }
         } else if start != 0 && end != 0 {
             panic!("attempting to remove range from empty buffer");
         }

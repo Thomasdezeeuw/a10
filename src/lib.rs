@@ -533,6 +533,7 @@ impl SubmissionQueue {
             Err(err) => {
                 // Make the index available, we're not going to use it.
                 *op = None;
+                drop(op);
                 shared.op_indices.make_available(op_index);
                 Err(err)
             }
