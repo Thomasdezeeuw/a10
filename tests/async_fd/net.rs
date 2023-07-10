@@ -571,6 +571,8 @@ fn recv_read_buf_pool_send_read_buf() {
 fn multishot_recv() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
+
+    require_kernel!(6, 0);
     init();
 
     is_send::<MultishotRecv>();
@@ -621,6 +623,8 @@ fn multishot_recv_large_send() {
     const BUFS: usize = 2;
     const N: usize = 4;
     const DATA: &[u8] = &[123; N * 4];
+
+    require_kernel!(6, 0);
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
@@ -671,6 +675,8 @@ fn multishot_recv_all_buffers_used() {
     const BUFS: usize = 2;
     const N: usize = 2 + 10;
     const DATA: &[u8] = &[255; BUF_SIZE];
+
+    require_kernel!(6, 0);
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
