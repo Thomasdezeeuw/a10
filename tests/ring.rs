@@ -1,6 +1,6 @@
 //! Tests for [`a10::Ring`].
 
-#![feature(async_iterator)]
+#![cfg_attr(feature = "nightly", feature(async_iterator))]
 
 use std::alloc::{alloc, dealloc, Layout};
 use std::fs::File;

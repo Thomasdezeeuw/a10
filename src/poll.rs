@@ -5,8 +5,9 @@
 //!    [`PollEvent`].
 //!  * [`SubmissionQueue::multishot_poll`] an [`AsyncIterator`] returning
 //!    multiple [`PollEvent`]s.
+//!
+//! [`AsyncIterator`]: std::async_iter::AsyncIterator
 
-use std::async_iter::AsyncIterator;
 use std::future::Future;
 use std::os::fd::RawFd;
 use std::pin::Pin;
@@ -73,7 +74,9 @@ impl<'a> Cancel for OneshotPoll<'a> {
     }
 }
 
-/// [`Future`] behind [`SubmissionQueue::multishot_poll`].
+/// [`AsyncIterator`] behind [`SubmissionQueue::multishot_poll`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
@@ -90,15 +93,13 @@ impl<'a> MultishotPoll<'a> {
             state: OpState::NotStarted((fd, mask)),
         }
     }
-}
 
-impl<'a> AsyncIterator for MultishotPoll<'a> {
-    type Item = io::Result<PollEvent>;
-
-    fn poll_next(
+    /// This is the same as the `AsyncIterator::poll_next` function, but then
+    /// available on stable Rust.
+    pub fn poll_next(
         mut self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
-    ) -> Poll<Option<Self::Item>> {
+    ) -> Poll<Option<io::Result<PollEvent>>> {
         let op_index = match self.state {
             OpState::Running(op_index) => op_index,
             OpState::NotStarted((fd, mask)) => {
@@ -140,6 +141,15 @@ impl<'a> AsyncIterator for MultishotPoll<'a> {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<'a> std::async_iter::AsyncIterator for MultishotPoll<'a> {
+    type Item = io::Result<PollEvent>;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_next(ctx)
     }
 }
 

@@ -3,6 +3,8 @@
 #![allow(dead_code)] // Not all tests use all code here.
 
 use std::any::Any;
+
+#[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
@@ -194,6 +196,60 @@ fn nop_waker() -> task::Waker {
         task::Waker::from_raw(raw_waker)
     }
 }
+
+/// Fake definition of `std::async_iter::AsyncIterator` for rustc stable.
+#[cfg(not(feature = "nightly"))]
+pub(crate) trait AsyncIterator {
+    type Item;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>>;
+}
+
+#[cfg(not(feature = "nightly"))]
+impl<I: ?Sized + AsyncIterator + Unpin> AsyncIterator for &mut I {
+    type Item = I::Item;
+
+    fn poll_next(
+        mut self: Pin<&mut Self>,
+        ctx: &mut task::Context<'_>,
+    ) -> Poll<Option<Self::Item>> {
+        I::poll_next(Pin::new(&mut **self), ctx)
+    }
+}
+
+#[cfg(not(feature = "nightly"))]
+impl<P> AsyncIterator for Pin<P>
+where
+    P: std::ops::DerefMut,
+    P::Target: AsyncIterator,
+{
+    type Item = <P::Target as AsyncIterator>::Item;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        // SAFETY: this is the same as the unstable `Pin::as_deref_mut` impl.
+        <P::Target as AsyncIterator>::poll_next(unsafe { self.get_unchecked_mut() }.as_mut(), ctx)
+    }
+}
+
+macro_rules! op_async_iter {
+    ($name: ty => $item: ty) => {
+        #[cfg(not(feature = "nightly"))]
+        impl AsyncIterator for $name {
+            type Item = io::Result<$item>;
+
+            fn poll_next(
+                self: Pin<&mut Self>,
+                ctx: &mut task::Context<'_>,
+            ) -> Poll<Option<Self::Item>> {
+                self.poll_next(ctx)
+            }
+        }
+    };
+}
+
+op_async_iter!(a10::net::MultishotAccept<'_> => AsyncFd);
+op_async_iter!(a10::net::MultishotRecv<'_> => a10::io::ReadBuf);
+op_async_iter!(a10::poll::MultishotPoll<'_> => a10::poll::PollEvent);
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {

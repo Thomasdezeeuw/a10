@@ -1273,22 +1273,10 @@ macro_rules! op_async_iter {
                     state: $crate::op::OpState::NotStarted($state),
                 }
             }
-        }
 
-        impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
-            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
-                self.state.try_cancel(&self.fd.sq)
-            }
-
-            fn cancel(&mut self) -> $crate::cancel::CancelOp {
-                self.state.cancel(&self.fd.sq)
-            }
-        }
-
-        impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
-            type Item = std::io::Result<$result>;
-
-            fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+            /// This is the same as the `AsyncIterator::poll_next` function, but
+            /// available on stable Rust.
+            pub fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<std::io::Result<$result>>> {
                 // SAFETY: we're not moving anything out of `self.
                 let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
                 let op_index = match $self.state {
@@ -1335,6 +1323,25 @@ macro_rules! op_async_iter {
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
                 }
+            }
+        }
+
+        impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
+            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+                self.state.try_cancel(&self.fd.sq)
+            }
+
+            fn cancel(&mut self) -> $crate::cancel::CancelOp {
+                self.state.cancel(&self.fd.sq)
+            }
+        }
+
+        #[cfg(feature = "nightly")]
+        impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
+            type Item = std::io::Result<$result>;
+
+            fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+                self.poll_next(ctx)
             }
         }
 

@@ -12,6 +12,11 @@ categories    = ["asynchronous"]
 include       = ["/Cargo.toml", "/src/**/*.rs", "/README.md", "/LICENSE"]
 edition       = "2021"
 
+[features]
+default = []
+# Enables nightly only features, currently usage of the `AsyncIterator` trait.
+nightly = []
+
 [dependencies]
 libc         = { version = "0.2.132", default-features = false }
 log          = { version = "0.4.17",  default-features = false, features = ["kv_unstable_std"] }

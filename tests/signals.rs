@@ -1,4 +1,4 @@
-#![feature(async_iterator)]
+#![cfg_attr(feature = "nightly", feature(async_iterator))]
 
 use std::mem::MaybeUninit;
 use std::pin::Pin;

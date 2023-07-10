@@ -1,6 +1,6 @@
 //! Tests for [`a10::AsyncFd`].
 
-#![feature(async_iterator)]
+#![cfg_attr(feature = "nightly", feature(async_iterator))]
 
 mod util;
 
