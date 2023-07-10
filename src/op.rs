@@ -1368,10 +1368,12 @@ pub(crate) use op_async_iter;
 #[test]
 fn size_assertion() {
     assert_eq!(std::mem::size_of::<CompletionResult>(), 8);
-    assert_eq!(std::mem::size_of::<QueuedOperationKind>(), 24);
+    // On nightly this is 24 bytes, on stable 32.
+    assert!(std::mem::size_of::<QueuedOperationKind>() <= 32);
     assert_eq!(std::mem::size_of::<Option<task::Waker>>(), 16);
-    assert_eq!(std::mem::size_of::<QueuedOperation>(), 48);
-    assert_eq!(std::mem::size_of::<Option<QueuedOperation>>(), 48);
+    // On nightly the following two are 48 bytes, on stable 56.
+    assert!(std::mem::size_of::<QueuedOperation>() <= 56);
+    assert!(std::mem::size_of::<Option<QueuedOperation>>() <= 56);
     assert_eq!(std::mem::size_of::<OpState<()>>(), 16);
     assert_eq!(std::mem::size_of::<OpState<u8>>(), 16);
     assert_eq!(std::mem::size_of::<OpState<u16>>(), 16);
