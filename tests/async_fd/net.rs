@@ -485,7 +485,9 @@ fn recv() {
 fn recv_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
@@ -524,7 +526,9 @@ fn recv_read_buf_pool() {
 fn recv_read_buf_pool_send_read_buf() {
     const BUF_SIZE: usize = 4096;
 
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
@@ -928,7 +932,9 @@ fn recvfrom() {
 fn recvfrom_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
