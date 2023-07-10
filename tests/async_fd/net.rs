@@ -22,7 +22,8 @@ use a10::{Extract, Ring};
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, next, poll_nop, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
+    is_send, is_sync, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket, test_queue,
+    udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -300,6 +301,8 @@ fn cancel_multishot_accept() {
 
 #[test]
 fn try_cancel_multishot_accept_before_poll() {
+    require_kernel!(5, 19);
+
     let sq = test_queue();
     let waker = Waker::new();
 

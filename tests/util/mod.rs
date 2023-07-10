@@ -1,6 +1,6 @@
 //! Test utilities.
 
-#![allow(dead_code)] // Not all tests use all code here.
+#![allow(dead_code, unused_imports, unused_macros)] // Not all tests use all code here.
 
 use std::any::Any;
 #[cfg(feature = "nightly")]
@@ -65,6 +65,21 @@ pub(crate) fn has_kernel_version(major: u32, minor: u32) -> bool {
     let got = kernel_version();
     got.0 > major || (got.0 == major && got.1 >= minor)
 }
+
+/// This `return`s from the function if the kernel version is smaller than
+/// major.minor, continues if the kernel version is larger.
+macro_rules! require_kernel {
+    ($major: expr, $minor: expr) => {{
+        let major = $major;
+        let minor = $minor;
+        if !crate::util::has_kernel_version(major, minor) {
+            println!("skipping test, kernel doesn't have required version {major}.{minor}");
+            return;
+        }
+    }};
+}
+
+pub(crate) use require_kernel;
 
 /// Start a single background thread for polling and return the submission
 /// queue.

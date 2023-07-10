@@ -17,7 +17,8 @@ use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     bind_and_listen_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
-    remove_test_file, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
+    remove_test_file, require_kernel, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5,
+    LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -683,6 +684,8 @@ unsafe impl BufMutSlice<2> for GrowingBufSlice {
 
 #[test]
 fn cancel_all_accept() {
+    require_kernel!(5, 19);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -703,6 +706,8 @@ fn cancel_all_accept() {
 
 #[test]
 fn cancel_all_twice_accept() {
+    require_kernel!(5, 19);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -727,6 +732,8 @@ fn cancel_all_twice_accept() {
 
 #[test]
 fn cancel_all_no_operation_in_progress() {
+    require_kernel!(5, 19);
+
     let sq = test_queue();
     let waker = Waker::new();
 
