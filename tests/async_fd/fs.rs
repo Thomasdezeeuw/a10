@@ -40,7 +40,7 @@ fn open_direct() {
 
     // NOTE: we can't use the temp directory as tmpfs (as of v6.1) doesn't
     // support O_DIRECT.
-    let path = PathBuf::from("target/tmp/test.open_direct.txt");
+    let path = PathBuf::from("target/tmp_test.open_direct.txt");
     let _d = defer(|| remove_test_file(&path));
 
     let open_file = OpenOptions::new()
