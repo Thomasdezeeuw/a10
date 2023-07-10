@@ -17,11 +17,25 @@ jobs:
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v3
-    - uses: dtolnay/rust-toolchain@nightly
+    - uses: dtolnay/rust-toolchain@stable
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)
       run: cargo test --release
+  Nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Run Tests
+      run: cargo test
+    - name: Run Tests (nightly feature)
+      run: cargo test --features nightly
+    - name: Run Tests (release build)
+      run: cargo test --release
+    - name: Run Tests (nightly feature, release build)
+      run: cargo test --features nightly --release
   Clippy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
