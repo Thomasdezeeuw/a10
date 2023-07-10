@@ -384,10 +384,7 @@ pub(crate) async fn tcp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
     let domain = libc::AF_INET;
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
     let protocol = 0;
-    let flags = 0;
-    socket(sq, domain, r#type, protocol, flags)
-        .await
-        .expect("failed to create socket")
+    new_socket(sq, domain, r#type, protocol).await
 }
 
 /// Create an IPv4, UPD socket.
@@ -395,10 +392,24 @@ pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
     let domain = libc::AF_INET;
     let r#type = libc::SOCK_DGRAM | libc::SOCK_CLOEXEC;
     let protocol = libc::IPPROTO_UDP;
-    let flags = 0;
-    socket(sq, domain, r#type, protocol, flags)
-        .await
-        .expect("failed to create socket")
+    new_socket(sq, domain, r#type, protocol).await
+}
+
+async fn new_socket(
+    sq: SubmissionQueue,
+    domain: libc::c_int,
+    r#type: libc::c_int,
+    protocol: libc::c_int,
+) -> AsyncFd {
+    if !has_kernel_version(5, 19) {
+        // IORING_OP_SOCKET is only available since 5.19, fall back to a
+        // blocking system call.
+        // SAFETY: kernel initialises the socket for us.
+        syscall!(socket(domain, r#type, protocol)).map(|fd| unsafe { AsyncFd::from_raw_fd(fd, sq) })
+    } else {
+        socket(sq, domain, r#type, protocol, 0).await
+    }
+    .expect("failed to create socket")
 }
 
 /// Bind `socket` to a local IPv4 addres with a random port and starts listening
