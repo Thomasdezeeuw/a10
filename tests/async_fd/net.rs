@@ -1022,6 +1022,8 @@ fn send() {
 
 #[test]
 fn send_zc() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1089,6 +1091,8 @@ fn send_extractor() {
 
 #[test]
 fn send_zc_extractor() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1232,6 +1236,8 @@ fn send_vectored() {
 
 #[test]
 fn send_vectored_zc() {
+    require_kernel!(6, 1);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1304,6 +1310,8 @@ fn send_vectored_extractor() {
 
 #[test]
 fn send_vectored_zc_extractor() {
+    require_kernel!(6, 1);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1415,6 +1423,8 @@ fn send_all_vectored_extract() {
 
 #[test]
 fn sendto() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1445,6 +1455,8 @@ fn sendto() {
 
 #[test]
 fn sendto_zc() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1472,6 +1484,8 @@ fn sendto_zc() {
 
 #[test]
 fn sendto_extractor() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1500,6 +1514,8 @@ fn sendto_extractor() {
 
 #[test]
 fn sendto_zc_extractor() {
+    require_kernel!(6, 0);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1559,6 +1575,8 @@ fn sendto_vectored() {
 
 #[test]
 fn sendto_vectored_zc() {
+    require_kernel!(6, 1);
+
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1616,6 +1634,8 @@ fn sendto_vectored_extractor() {
 
 #[test]
 fn sendto_vectored_zc_extractor() {
+    require_kernel!(6, 1);
+
     let sq = test_queue();
     let waker = Waker::new();
 
