@@ -26,7 +26,9 @@ const NO_OFFSET: u64 = u64::MAX;
 
 #[test]
 fn read_read_buf_pool() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -52,7 +54,9 @@ fn read_read_buf_pool() {
 
 #[test]
 fn read_buf() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -119,7 +123,9 @@ fn read_buf() {
 
 #[test]
 fn read_read_buf_pool_multiple_buffers() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -149,7 +155,9 @@ fn read_read_buf_pool_multiple_buffers() {
 
 #[test]
 fn read_read_buf_pool_reuse_buffers() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -171,7 +179,9 @@ fn read_read_buf_pool_reuse_buffers() {
 
 #[test]
 fn read_read_buf_pool_reuse_same_buffer() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -202,7 +212,9 @@ fn read_read_buf_pool_reuse_same_buffer() {
 
 #[test]
 fn read_read_buf_pool_out_of_buffers() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -240,7 +252,9 @@ fn read_read_buf_pool_out_of_buffers() {
 
 #[test]
 fn two_read_buf_pools() {
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
     let test_file = &LOREM_IPSUM_50;
@@ -264,7 +278,10 @@ fn two_read_buf_pools() {
 #[test]
 fn read_buf_remove() {
     const BUF_SIZE: usize = 64;
+
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
@@ -337,7 +354,10 @@ fn read_buf_remove() {
 #[test]
 fn read_buf_remove_invalid_range() {
     const BUF_SIZE: usize = 64;
+
+    require_kernel!(5, 19);
     init();
+
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
 
