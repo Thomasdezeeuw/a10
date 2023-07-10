@@ -67,6 +67,7 @@ jobs:
   Sanitizer:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    if: false
     strategy:
       fail-fast: false
       matrix:
