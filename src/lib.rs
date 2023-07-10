@@ -119,7 +119,7 @@
 //! }
 //! ```
 
-#![feature(async_iterator)]
+#![cfg_attr(feature = "nightly", feature(async_iterator))]
 
 use std::cmp::min;
 use std::marker::PhantomData;
