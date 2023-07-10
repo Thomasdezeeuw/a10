@@ -748,7 +748,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
 
                 let mut iovecs = unsafe { bufs.as_iovecs() };
                 let mut skip = this.skip;
-                for iovec in iovecs.iter_mut() {
+                for iovec in &mut iovecs {
                     if iovec.iov_len as u64 <= skip {
                         // Skip entire buf.
                         skip -= iovec.iov_len as u64;
@@ -1008,7 +1008,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
 
     unsafe fn set_init(&mut self, n: usize) {
         let mut left = n;
-        for buf in self.iter_mut() {
+        for buf in self {
             let (_, len) = buf.parts_mut();
             let len = len as usize;
             if len < left {

@@ -600,7 +600,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
 
                 let mut iovecs = unsafe { bufs.as_iovecs() };
                 let mut skip = this.skip;
-                for iovec in iovecs.iter_mut() {
+                for iovec in &mut iovecs {
                     if iovec.iov_len as u64 <= skip {
                         // Skip entire buf.
                         skip -= iovec.iov_len as u64;
