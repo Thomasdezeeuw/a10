@@ -37,6 +37,19 @@ macro_rules! check_feature {
     }};
 }
 
+macro_rules! remove_flag {
+    ($parameters: ident, $first_err: ident, $err: ident, $( $flag: ident, )+ ) => {
+        $(
+        if $parameters.flags & libc::$flag != 0 {
+            log::warn!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
+            $parameters.flags &= !libc::$flag;
+            $first_err.get_or_insert($err);
+            continue;
+        }
+        )+
+    };
+}
+
 impl<'r> Config<'r> {
     /// Create a new `Config`.
     pub(crate) const fn new(entries: u32) -> Config<'r> {
@@ -177,14 +190,32 @@ impl<'r> Config<'r> {
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let fd = match libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
-            // SAFETY: just created the fd (and checked the error).
-            Ok(fd) => unsafe { OwnedFd::from_raw_fd(fd) },
-            Err(ref err) if io::ErrorKind::PermissionDenied == err.kind() => return Err(io::Error::new(
-                err.kind(),
-                "failed to create `a10::Ring`. Do have you a Linux kernel version 5.11 or higher?",
-            )),
-            Err(err) => return Err(err),
+        let mut first_err = None;
+        let fd = loop {
+            match libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
+                // SAFETY: just created the fd (and checked the error).
+                Ok(fd) => break unsafe { OwnedFd::from_raw_fd(fd) },
+                Err(err) => {
+                    if let io::ErrorKind::InvalidInput = err.kind() {
+                        // We set some flags which are not strictly required by
+                        // A10, but provide various benefits. However in doing
+                        // so we also increases our minimal supported Kernel
+                        // version.
+                        // Here we remove the flags one by one and try again.
+                        // NOTE: this is mainly done to support the CI, which
+                        // currently uses Linux 5.15.
+                        remove_flag!(
+                            parameters,
+                            first_err,
+                            err,
+                            IORING_SETUP_SUBMIT_ALL,    // 5.18.
+                            IORING_SETUP_COOP_TASKRUN,  // 5.19.
+                            IORING_SETUP_SINGLE_ISSUER, // 6.0.
+                        );
+                    }
+                    return Err(first_err.unwrap_or(err));
+                }
+            };
         };
         check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.
         check_feature!(parameters.features, IORING_FEAT_SUBMIT_STABLE); // All data for async offload must be consumed.
