@@ -155,6 +155,8 @@ fn try_cancel_accept_before_poll() {
 
 #[test]
 fn multishot_accept() {
+    require_kernel!(5, 19);
+
     test_multishot_accept(0);
     test_multishot_accept(1);
     test_multishot_accept(5);
@@ -231,6 +233,8 @@ fn multishot_accept() {
 
 #[test]
 fn cancel_multishot_accept() {
+    require_kernel!(5, 19);
+
     let sq = test_queue();
     let waker = Waker::new();
 
