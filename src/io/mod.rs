@@ -65,6 +65,17 @@ macro_rules! stdio {
                 &self.0
             }
         }
+
+        impl std::ops::Drop for $name {
+            fn drop(&mut self) {
+                // We don't want to close the file descriptor, but we do need to
+                // drop our reference to the submission queue.
+                // SAFETY: with `ManuallyDrop` we don't drop the `AsyncFd` so
+                // it's not dropped twice. Otherwise we get access to it using
+                // safe methods.
+                unsafe { std::ptr::drop_in_place(&mut self.0.sq) };
+            }
+        }
     };
 }
 
