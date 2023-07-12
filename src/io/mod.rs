@@ -66,6 +66,14 @@ macro_rules! stdio {
             }
         }
 
+        impl std::fmt::Debug for $name {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.debug_struct(stringify!($name))
+                    .field("fd", &*self.0)
+                    .finish()
+            }
+        }
+
         impl std::ops::Drop for $name {
             fn drop(&mut self) {
                 // We don't want to close the file descriptor, but we do need to
