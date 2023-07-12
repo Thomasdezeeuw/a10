@@ -859,13 +859,16 @@ impl fmt::Debug for SubmissionQueue {
         let all = f.alternate();
         let mut f = f.debug_struct("SubmissionQueue");
 
-        f.field("ring_fd", &shared.ring_fd)
+        f.field("ring_fd", &shared.ring_fd.as_raw_fd())
             .field("len", &shared.len)
             .field("ring_mask", &shared.ring_mask)
             .field("flags", &load_atomic_u32(shared.flags))
             .field("pending_tail", &shared.pending_tail)
             .field("kernel_read", &load_atomic_u32(shared.kernel_read))
-            .field("array_index", &shared.array_index)
+            .field(
+                "array_index",
+                &shared.array_index.lock().map(|i| *i).unwrap_or(u32::MAX),
+            )
             .field("array_tail", &load_atomic_u32(shared.array_tail));
 
         if all {
