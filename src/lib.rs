@@ -1186,9 +1186,19 @@ impl AsFd for AsyncFd {
 
 impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        struct AsyncFdSubmissionQueue<'a>(&'a SubmissionQueue);
+
+        impl fmt::Debug for AsyncFdSubmissionQueue<'_> {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.debug_struct("SubmissionQueue")
+                    .field("ring_fd", &self.0.shared.ring_fd.as_raw_fd())
+                    .finish()
+            }
+        }
+
         f.debug_struct("AsyncFd")
-            .field("fd", &self.fd)
-            .field("sq", &"SubmissionQueue")
+            .field("fd", &self.fd.as_raw_fd())
+            .field("sq", &AsyncFdSubmissionQueue(&self.sq))
             .finish()
     }
 }
