@@ -120,6 +120,16 @@
 //! ```
 
 #![cfg_attr(feature = "nightly", feature(async_iterator))]
+#![warn(
+    anonymous_parameters,
+    bare_trait_objects,
+    missing_debug_implementations,
+    missing_docs,
+    trivial_numeric_casts,
+    unused_extern_crates,
+    unused_import_braces,
+    variant_size_differences
+)]
 
 use std::cmp::min;
 use std::marker::PhantomData;
