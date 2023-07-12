@@ -343,9 +343,7 @@ impl Submission {
         self.inner.fd = domain;
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: r#type as _ };
         self.inner.len = protocol as _;
-        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            rw_flags: flags as _,
-        };
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: flags };
     }
 
     pub(crate) unsafe fn connect(

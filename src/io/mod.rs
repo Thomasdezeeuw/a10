@@ -42,12 +42,7 @@ macro_rules! stdio {
     ) => {
         #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
         pub fn $fn(sq: $crate::SubmissionQueue) -> $name {
-            unsafe {
-                $name(std::mem::ManuallyDrop::new($crate::AsyncFd::from_raw_fd(
-                    $fd as std::os::fd::RawFd,
-                    sq,
-                )))
-            }
+            unsafe { $name(std::mem::ManuallyDrop::new($crate::AsyncFd::from_raw_fd($fd, sq))) }
         }
 
         #[doc = concat!(
