@@ -119,7 +119,7 @@
 //! }
 //! ```
 
-#![cfg_attr(feature = "nightly", feature(async_iterator))]
+#![cfg_attr(feature = "nightly", feature(async_iterator, io_error_more))]
 #![warn(
     anonymous_parameters,
     bare_trait_objects,
@@ -935,9 +935,11 @@ struct QueueFull(());
 
 impl From<QueueFull> for io::Error {
     fn from(_: QueueFull) -> io::Error {
-        // TODO: use `io::ErrorKind::ResourceBusy` once stable:
-        // `io_error_more` <https://github.com/rust-lang/rust/issues/86442>.
-        io::Error::new(io::ErrorKind::Other, "submission queue is full")
+        #[cfg(not(feature = "nightly"))]
+        let kind = io::ErrorKind::Other;
+        #[cfg(feature = "nightly")]
+        let kind = io::ErrorKind::ResourceBusy;
+        io::Error::new(kind, "submission queue is full")
     }
 }
 
