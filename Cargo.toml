@@ -14,7 +14,9 @@ edition       = "2021"
 
 [features]
 default = []
-# Enables nightly only features, currently usage of the `AsyncIterator` trait.
+# Enables nightly only features.
+# * Enables usage of the `AsyncIterator` trait (`async_iterator`).
+# * Returns more accurate `io::ErrorKind`s for certain errors (`io_error_more`).
 nightly = []
 
 [dependencies]
