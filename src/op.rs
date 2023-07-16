@@ -124,6 +124,31 @@ impl QueuedOperation {
         Poll::Pending
     }
 
+    /// Poll the operation for a message.
+    ///
+    /// Returns the `flags` and the `result` (always positive).
+    pub(crate) fn poll_msg(&mut self, ctx: &mut task::Context<'_>) -> Poll<(u16, u32)> {
+        match &mut self.kind {
+            QueuedOperationKind::Multishot { results } => {
+                if !results.is_empty() {
+                    let completion = results.remove(0);
+                    let data = u32::from_ne_bytes(completion.result.to_ne_bytes());
+                    return Poll::Ready((completion.flags, data));
+                }
+            }
+            QueuedOperationKind::Single { .. } => {
+                panic!("QueuedOperation::poll_msg called incorrectly")
+            }
+        }
+
+        // Still in progress.
+        let waker = ctx.waker();
+        if !matches!(&self.waker, Some(w) if w.will_wake(waker)) {
+            self.waker = Some(waker.clone());
+        }
+        Poll::Pending
+    }
+
     /// Returns true if the operation is done.
     pub(crate) const fn is_done(&self) -> bool {
         self.done

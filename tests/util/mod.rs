@@ -289,7 +289,7 @@ macro_rules! op_async_iter {
     ($name: ty => $item: ty) => {
         #[cfg(not(feature = "nightly"))]
         impl AsyncIterator for $name {
-            type Item = io::Result<$item>;
+            type Item = $item;
 
             fn poll_next(
                 self: Pin<&mut Self>,
@@ -301,9 +301,10 @@ macro_rules! op_async_iter {
     };
 }
 
-op_async_iter!(a10::net::MultishotAccept<'_> => AsyncFd);
-op_async_iter!(a10::net::MultishotRecv<'_> => a10::io::ReadBuf);
-op_async_iter!(a10::poll::MultishotPoll<'_> => a10::poll::PollEvent);
+op_async_iter!(a10::msg::MsgListener => u32);
+op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
+op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
+op_async_iter!(a10::poll::MultishotPoll<'_> => io::Result<a10::poll::PollEvent>);
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {
