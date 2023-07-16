@@ -148,6 +148,7 @@ pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod mem;
+pub mod msg;
 pub mod net;
 mod op;
 pub mod poll;
@@ -162,6 +163,7 @@ use config::munmap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
+use msg::{MsgListener, MsgToken, SendMsg};
 use op::{QueuedOperation, Submission};
 use poll::{MultishotPoll, OneshotPoll};
 
@@ -465,6 +467,56 @@ impl SubmissionQueue {
         });
     }
 
+    /// Setup a listener for user space messages.
+    ///
+    /// The returned [`MsgListener`] iterator will return all messages send
+    /// using [`SubmissionQueue::try_send_msg`] and
+    /// [`SubmissionQueue::send_msg`] using the returned `MsgToken`.
+    ///
+    /// # Notes
+    ///
+    /// This will return an error if too many operations are already queued,
+    /// this is usually resolved by calling [`Ring::poll`].
+    ///
+    /// The returned `MsgToken` has an implicitly lifetime linked to
+    /// `MsgListener`. If `MsgListener` is dropped the `MsgToken` will
+    /// become invalid.
+    ///
+    /// Due to the limitations mentioned above it's advised to consider the
+    /// usefulness of the type severly limited. The returned `MsgListener`
+    /// iterator should live for the entire lifetime of the `Ring`, to ensure we
+    /// don't use `MsgToken` after it became invalid. Furthermore to ensure
+    /// the creation of it succeeds it should be done early in the lifetime of
+    /// `Ring`.
+    pub fn msg_listener(self) -> io::Result<(MsgListener, MsgToken)> {
+        MsgListener::new(self)
+    }
+
+    /// Try to send a message to iterator listening for message using `MsgToken`.
+    ///
+    /// This will use the io_uring submission queue to share `data` with the
+    /// receiving end. This means that it will wake up the thread if it's
+    /// currently [polling].
+    ///
+    /// This will fail if the submission queue is currently full. See
+    /// [`SubmissionQueue::send_msg`] for a version that tries again when the
+    /// submission queue is full.
+    ///
+    /// See [`SubmissionQueue::msg_listener`] for examples.
+    ///
+    /// [polling]: Ring::poll
+    pub fn try_send_msg(&self, token: MsgToken, data: u32) -> io::Result<()> {
+        self.add_no_result(|submission| unsafe {
+            submission.msg(self.shared.ring_fd.as_raw_fd(), (token.0).0 as u64, data, 0);
+        })?;
+        Ok(())
+    }
+
+    /// Send a message to iterator listening for message using `MsgToken`.
+    pub const fn send_msg<'a>(&'a self, token: MsgToken, data: u32) -> SendMsg<'a> {
+        SendMsg::new(self, token, data)
+    }
+
     /// Wait for an event specified in `mask` on the file descriptor `fd`.
     ///
     /// Ths is similar to calling `poll(2)` the file descriptor.
@@ -548,6 +600,34 @@ impl SubmissionQueue {
                 Err(err)
             }
         }
+    }
+
+    /// Queue a new operation without making a submission.
+    fn queue_multishot(&self) -> Result<OpIndex, QueueFull> {
+        self._queue(QueuedOperation::new_multishot)
+    }
+
+    /// See [`queue_multishot`].
+    fn _queue<O>(&self, new_op: O) -> Result<OpIndex, QueueFull>
+    where
+        O: FnOnce() -> QueuedOperation,
+    {
+        // Get an index to the queued operation queue.
+        let shared = &*self.shared;
+        let Some(op_index) = shared.op_indices.next_available() else {
+            return Err(QueueFull(()));
+        };
+
+        let queued_op = new_op();
+        // SAFETY: the `AtomicBitMap` always returns valid indices for
+        // `op_queue` (it's the whole point of it).
+        let old_queued_op = replace(
+            &mut *shared.queued_ops[op_index].lock().unwrap(),
+            Some(queued_op),
+        );
+        debug_assert!(old_queued_op.is_none());
+
+        Ok(OpIndex(op_index))
     }
 
     /// Same as [`SubmissionQueue::add`], but ignores the result.

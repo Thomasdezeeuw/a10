@@ -16,11 +16,15 @@ use std::time::{Duration, Instant};
 
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
+use a10::msg::{MsgListener, MsgToken, SendMsg};
 use a10::poll::OneshotPoll;
 use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
-use util::{defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, test_queue, Waker};
+use util::{
+    defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel, test_queue,
+    Waker,
+};
 
 const DATA: &[u8] = b"Hello, World!";
 
@@ -183,6 +187,38 @@ fn wake_ring_after_ring_dropped() {
 
     drop(ring);
     sq.wake();
+}
+
+#[test]
+fn message_sending() {
+    require_kernel!(5, 18);
+
+    const DATA1: u32 = 123;
+    const DATA2: u32 = u32::MAX;
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<MsgListener>();
+    is_sync::<MsgListener>();
+    is_send::<SendMsg>();
+    is_sync::<SendMsg>();
+    is_send::<MsgToken>();
+    is_sync::<MsgToken>();
+
+    let (msg_listener, msg_token) = sq.clone().msg_listener().unwrap();
+    let mut msg_listener = pin!(msg_listener);
+
+    assert!(poll_nop(Pin::new(&mut next(msg_listener.as_mut()))).is_pending());
+
+    // Send some messages.
+    sq.try_send_msg(msg_token, DATA1).unwrap();
+    waker.block_on(pin!(sq.send_msg(msg_token, DATA2))).unwrap();
+
+    assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA1));
+    assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA2));
+
+    assert!(poll_nop(Pin::new(&mut next(msg_listener.as_mut()))).is_pending());
 }
 
 #[test]
