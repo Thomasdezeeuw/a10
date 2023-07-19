@@ -5,13 +5,13 @@ use std::pin::Pin;
 use std::sync::{Arc, Barrier};
 use std::task::Poll;
 use std::time::Instant;
-use std::{env, fmt, io, panic, process, ptr, thread};
+use std::{env, fmt, io, panic, process, ptr, task, thread};
 
 use a10::signals::{self, Signals};
 use a10::Ring;
 
 mod util;
-use util::{is_send, is_sync, poll_nop, syscall};
+use util::{is_send, is_sync, poll_nop, syscall, NOP_WAKER};
 
 const SIGNALS: [libc::c_int; 31] = [
     libc::SIGHUP,
@@ -87,17 +87,20 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
 
 fn main() {
     let start = Instant::now();
-    println!("\nrunning {} tests", (2 * SIGNALS.len()) + 1);
+    println!("\nrunning {} tests", (3 * SIGNALS.len()) + 1);
 
     is_send::<Signals>();
     is_sync::<Signals>();
     is_send::<signals::Receive>();
     is_sync::<signals::Receive>();
+    is_send::<signals::ReceiveSignals>();
+    is_sync::<signals::ReceiveSignals>();
 
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
     harness.test_single_threaded();
     harness.test_multi_threaded();
+    harness.test_receive_signals(); // MUST be last as it takes `Signals`.
 
     let mut passed = harness.passed;
     let mut failed = harness.failed;
@@ -111,7 +114,7 @@ fn main() {
 
 struct TestHarness {
     ring: Ring,
-    signals: Signals,
+    signals: Option<Signals>,
     passed: usize,
     failed: usize,
     quiet: bool,
@@ -121,10 +124,9 @@ impl TestHarness {
     fn setup(quiet: bool) -> TestHarness {
         let ring = Ring::new(2).unwrap();
         let sq = ring.submission_queue().clone();
-        let signals = Signals::from_signals(sq, SIGNALS).unwrap();
         TestHarness {
             ring,
-            signals,
+            signals: Some(Signals::from_signals(sq, SIGNALS).unwrap()),
             passed: 0,
             failed: 0,
             quiet,
@@ -133,11 +135,12 @@ impl TestHarness {
 
     fn test_single_threaded(&mut self) {
         let pid = process::id();
+        let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(self.quiet, format_args!("single_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, signal).unwrap();
-                receive_signal(&mut self.ring, &self.signals, signal);
+                receive_signal(&mut self.ring, &signals, signal);
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -167,10 +170,11 @@ impl TestHarness {
             }
         });
 
+        let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(self.quiet, format_args!("multi_threaded ({name})"));
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                receive_signal(&mut self.ring, &self.signals, signal);
+                receive_signal(&mut self.ring, signals, signal);
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -183,6 +187,35 @@ impl TestHarness {
         }
 
         handle.join().unwrap();
+    }
+
+    fn test_receive_signals(&mut self) {
+        let pid = process::id();
+        let mut receive_signal = self.signals.take().unwrap().receive_signals();
+        let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
+        let mut task_ctx = task::Context::from_waker(&task_waker);
+        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
+            print_test_start(self.quiet, format_args!("single_threaded ({name})"));
+            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                send_signal(pid, signal).unwrap();
+
+                // Check if the signals can be received.
+                let signal_info = loop {
+                    match receive_signal.poll_signal(&mut task_ctx) {
+                        Poll::Ready(result) => break result.unwrap().unwrap(),
+                        Poll::Pending => self.ring.poll(None).unwrap(),
+                    }
+                };
+                assert_eq!(signal_info.ssi_signo as libc::c_int, signal);
+            }));
+            if res.is_ok() {
+                print_test_ok(self.quiet);
+                self.passed += 1
+            } else {
+                print_test_failed(self.quiet);
+                self.failed += 1
+            };
+        }
     }
 }
 
