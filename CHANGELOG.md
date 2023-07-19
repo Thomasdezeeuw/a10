@@ -1,3 +1,9 @@
+# v0.1.3
+
+* Added `ReceiveSignals`, a type that combines Signals and signals::Receive to
+  not have to deal with lifetime of the fd
+  <https://github.com/Thomasdezeeuw/a10/pull/79>.
+
 # v0.1.2
 
 * Added support for user space messaging, see `SubmissionQueue::msg_listener`
