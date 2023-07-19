@@ -92,6 +92,7 @@ impl QueuedOperation {
     /// For multishot operations: if this returns `Poll::Pending` the caller
     /// should check `is_done` to determine if the previous result was the last
     /// one.
+    #[allow(clippy::needless_pass_by_ref_mut)] // Match `Future` API.
     pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<io::Result<(u16, i32)>> {
         match &mut self.kind {
             QueuedOperationKind::Single { result } => {
@@ -127,6 +128,7 @@ impl QueuedOperation {
     /// Poll the operation for a message.
     ///
     /// Returns the `flags` and the `result` (always positive).
+    #[allow(clippy::needless_pass_by_ref_mut)] // Match `Future` API.
     pub(crate) fn poll_msg(&mut self, ctx: &mut task::Context<'_>) -> Poll<(u16, u32)> {
         match &mut self.kind {
             QueuedOperationKind::Multishot { results } => {
@@ -269,6 +271,7 @@ impl Submission {
     }
 
     /// Create a read vectored submission starting at `offset`.
+    #[allow(clippy::needless_pass_by_ref_mut)] // Needed for `bufs`.
     pub(crate) unsafe fn read_vectored_at(
         &mut self,
         fd: RawFd,
