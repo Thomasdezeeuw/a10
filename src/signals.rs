@@ -3,13 +3,14 @@
 //! See the [`Signals`] documentation.
 
 use std::mem::{size_of, MaybeUninit};
+use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
 use log::{error, trace};
 
 use crate::libc::{self, syscall};
-use crate::op::{op_future, NO_OFFSET};
-use crate::{AsyncFd, SubmissionQueue};
+use crate::op::{op_future, OpState, NO_OFFSET};
+use crate::{AsyncFd, QueueFull, SubmissionQueue};
 
 /// Notification of process signals.
 ///
@@ -109,6 +110,20 @@ impl Signals {
         let info = Box::new(MaybeUninit::uninit());
         Receive::new(&self.fd, info, ())
     }
+
+    /// Receive multiple signals.
+    ///
+    /// This is an combined, owned version of `Signals` and `Receive` (the
+    /// future behind `Signals::receive`). This is useful if you don't want to
+    /// deal with the `'fd` lifetime.
+    pub fn receive_signals(self) -> ReceiveSignals {
+        ReceiveSignals {
+            signals: self,
+            // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
+            info: Box::new(MaybeUninit::uninit()),
+            state: OpState::NotStarted(()),
+        }
+    }
 }
 
 /// Create a `sigset_t` from `signals`.
@@ -206,4 +221,72 @@ impl Drop for Signals {
 fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
     libc::syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
     Ok(())
+}
+
+/// Receive multiple signals.
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+#[allow(clippy::module_name_repetitions)]
+pub struct ReceiveSignals {
+    signals: Signals,
+    info: Box<MaybeUninit<libc::signalfd_siginfo>>,
+    state: OpState<()>,
+}
+
+impl ReceiveSignals {
+    /// Poll the next signal.
+    pub fn poll_signal<'a>(
+        &'a mut self,
+        ctx: &mut task::Context<'_>,
+    ) -> Poll<Option<io::Result<&'a libc::signalfd_siginfo>>> {
+        let ReceiveSignals {
+            signals,
+            info,
+            state,
+        } = self;
+        let op_index = match state {
+            OpState::Running(op_index) => *op_index,
+            OpState::NotStarted(()) => {
+                let result = signals.fd.sq.add(|submission| unsafe {
+                    submission.read_at(
+                        signals.fd.fd(),
+                        (**info).as_mut_ptr().cast(),
+                        size_of::<libc::signalfd_siginfo>() as u32,
+                        NO_OFFSET,
+                    );
+                });
+                match result {
+                    Ok(op_index) => {
+                        *state = OpState::Running(op_index);
+                        op_index
+                    }
+                    Err(QueueFull(())) => {
+                        signals.fd.sq.wait_for_submission(ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            OpState::Done => return Poll::Ready(None),
+        };
+
+        match signals.fd.sq.poll_op(ctx, op_index) {
+            Poll::Ready(Ok((_, n))) => {
+                // Reset the state so that we start reading another signal in
+                // the next call.
+                *state = OpState::NotStarted(());
+                #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+                {
+                    debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>());
+                }
+                // SAFETY: the kernel initialised the info allocation for us as
+                // part of the read call.
+                Poll::Ready(Some(Ok(unsafe { MaybeUninit::assume_init_ref(&*info) })))
+            }
+            Poll::Ready(Err(err)) => {
+                *state = OpState::Done; // Consider the error as fatal.
+                Poll::Ready(Some(Err(err)))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }

@@ -201,18 +201,22 @@ impl Waker {
     }
 }
 
+const NOP_WAKER_VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
+    |_| task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE), // clone.
+    |_| {},                                                  // wake.
+    |_| {},                                                  // wake_by_ref.
+    |_| {},                                                  // drop.
+);
+
+/// No-op waker used by [`poll_nop`].
+pub(crate) const NOP_WAKER: task::RawWaker = task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE);
+
 /// Poll the `future` once with a no-op waker.
 pub(crate) fn poll_nop<Fut>(future: Pin<&mut Fut>) -> Poll<Fut::Output>
 where
     Fut: Future,
 {
-    const NOP_WAKER: task::RawWakerVTable = task::RawWakerVTable::new(
-        |_| task::RawWaker::new(ptr::null(), &NOP_WAKER), // clone.
-        |_| {},                                           // wake.
-        |_| {},                                           // wake_by_ref.
-        |_| {},                                           // drop.
-    );
-    let task_waker = unsafe { task::Waker::from_raw(task::RawWaker::new(ptr::null(), &NOP_WAKER)) };
+    let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
     let mut task_ctx = task::Context::from_waker(&task_waker);
     Future::poll(future, &mut task_ctx)
 }
