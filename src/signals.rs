@@ -2,7 +2,7 @@
 //!
 //! See the [`Signals`] documentation.
 
-use std::mem::{size_of, MaybeUninit};
+use std::mem::{self, size_of, MaybeUninit};
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
@@ -119,8 +119,9 @@ impl Signals {
     pub fn receive_signals(self) -> ReceiveSignals {
         ReceiveSignals {
             signals: self,
-            // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
-            info: Box::new(MaybeUninit::uninit()),
+            // TODO: replace with `Box::new_zeroed` once stable.
+            // SAFETY: all zero is valid for `signalfd_siginfo`.
+            info: Box::new(unsafe { mem::zeroed() }),
             state: OpState::NotStarted(()),
         }
     }
@@ -228,7 +229,7 @@ fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
 #[allow(clippy::module_name_repetitions)]
 pub struct ReceiveSignals {
     signals: Signals,
-    info: Box<MaybeUninit<libc::signalfd_siginfo>>,
+    info: Box<libc::signalfd_siginfo>,
     state: OpState<()>,
 }
 
@@ -249,7 +250,7 @@ impl ReceiveSignals {
                 let result = signals.fd.sq.add(|submission| unsafe {
                     submission.read_at(
                         signals.fd.fd(),
-                        (**info).as_mut_ptr().cast(),
+                        ptr::addr_of_mut!(**info).cast(),
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
@@ -279,7 +280,7 @@ impl ReceiveSignals {
                 }
                 // SAFETY: the kernel initialised the info allocation for us as
                 // part of the read call.
-                Poll::Ready(Some(Ok(unsafe { MaybeUninit::assume_init_ref(&*info) })))
+                Poll::Ready(Some(Ok(info)))
             }
             Poll::Ready(Err(err)) => {
                 *state = OpState::Done; // Consider the error as fatal.
