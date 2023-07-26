@@ -2,7 +2,7 @@
 //!
 //! See the [`Signals`] documentation.
 
-use std::mem::{self, size_of, MaybeUninit};
+use std::mem::{self, size_of, ManuallyDrop, MaybeUninit};
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
@@ -121,7 +121,7 @@ impl Signals {
             signals: self,
             // TODO: replace with `Box::new_zeroed` once stable.
             // SAFETY: all zero is valid for `signalfd_siginfo`.
-            info: Box::new(unsafe { mem::zeroed() }),
+            info: ManuallyDrop::new(Box::new(unsafe { mem::zeroed() })),
             state: OpState::NotStarted(()),
         }
     }
@@ -229,7 +229,7 @@ fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
 #[allow(clippy::module_name_repetitions)]
 pub struct ReceiveSignals {
     signals: Signals,
-    info: Box<libc::signalfd_siginfo>,
+    info: ManuallyDrop<Box<libc::signalfd_siginfo>>,
     state: OpState<()>,
 }
 
@@ -250,7 +250,7 @@ impl ReceiveSignals {
                 let result = signals.fd.sq.add(|submission| unsafe {
                     submission.read_at(
                         signals.fd.fd(),
-                        ptr::addr_of_mut!(**info).cast(),
+                        ptr::addr_of_mut!(***info).cast(),
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
@@ -280,7 +280,7 @@ impl ReceiveSignals {
                 }
                 // SAFETY: the kernel initialised the info allocation for us as
                 // part of the read call.
-                Poll::Ready(Some(Ok(info)))
+                Poll::Ready(Some(Ok(&**info)))
             }
             Poll::Ready(Err(err)) => {
                 *state = OpState::Done; // Consider the error as fatal.
@@ -299,5 +299,34 @@ impl fmt::Debug for ReceiveSignals {
             // NOTE: `info` can't be read as the kernel might be writing to it.
             .field("state", &self.state)
             .finish()
+    }
+}
+
+impl Drop for ReceiveSignals {
+    fn drop(&mut self) {
+        if let OpState::Running(op_index) = self.state {
+            match self
+                .signals
+                .fd
+                .sq
+                .add_no_result(|submission| unsafe { submission.cancel_op(op_index) })
+            {
+                // Canceled the operation.
+                Ok(()) => {}
+                // Failed to cancel, this will lead to fd leaks.
+                Err(err) => {
+                    error!("dropped ReceiveSignals before canceling it, attempt to cancel failed, will leak file descriptors: {err}");
+                }
+            }
+            // Only drop the signal `info` field once we know the operation has
+            // finished, otherwise the kernel might write into memory we have
+            // deallocated.
+            // SAFETY: we in the `Drop` implementation, so `self.info` be used
+            // anymore making it same to take ownership.
+            self.signals
+                .fd
+                .sq
+                .drop_op(op_index, unsafe { ManuallyDrop::take(&mut self.info) });
+        }
     }
 }
