@@ -1,3 +1,9 @@
+# v0.1.4
+
+* Fixed dropping of `ReceiveSignals`, it now properly cancels the receiving of
+  process signals and ensure the kernel doesn't write into deallocated memory
+  <https://github.com/Thomasdezeeuw/a10/pull/81>.
+
 # v0.1.3
 
 * Added `ReceiveSignals`, a type that combines Signals and signals::Receive to
