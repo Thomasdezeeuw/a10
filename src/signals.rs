@@ -224,7 +224,6 @@ fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
 }
 
 /// Receive multiple signals.
-#[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
 pub struct ReceiveSignals {
@@ -288,5 +287,16 @@ impl ReceiveSignals {
             }
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+#[allow(clippy::missing_fields_in_debug)]
+impl fmt::Debug for ReceiveSignals {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReceiveSignals")
+            .field("signals", &self.signals)
+            // NOTE: `info` can't be read as the kernel might be writing to it.
+            .field("state", &self.state)
+            .finish()
     }
 }
