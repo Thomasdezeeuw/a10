@@ -41,7 +41,7 @@ macro_rules! remove_flag {
     ($parameters: ident, $first_err: ident, $err: ident, $( $flag: ident, )+ ) => {
         $(
         if $parameters.flags & libc::$flag != 0 {
-            log::warn!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
+            log::debug!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
             $parameters.flags &= !libc::$flag;
             $first_err.get_or_insert($err);
             continue;
