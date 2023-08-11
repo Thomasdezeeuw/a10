@@ -1,3 +1,8 @@
+# v0.1.5
+
+* Reduce flag unsupported logs to debug
+  <https://github.com/Thomasdezeeuw/a10/commit/061236a9023486b0b02302fc4163acec29b98ac4>.
+
 # v0.1.4
 
 * Fixed dropping of `ReceiveSignals`, it now properly cancels the receiving of
