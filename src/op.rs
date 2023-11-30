@@ -976,6 +976,10 @@ macro_rules! op_future {
         impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
             const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+                // This is needed because of the usage of `$phantom_doc`, which
+                // is needed for the macro to work, even though it doesn't
+                // create any documentation.
+                #[allow(unused_doc_comments)]
                 $name {
                     resources: std::option::Option::Some(std::cell::UnsafeCell::new((
                         $( $field, )*
