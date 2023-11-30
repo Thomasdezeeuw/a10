@@ -107,8 +107,8 @@ impl ReadBufPool {
             ring_addr: ring_addr as u64,
             ring_entries: u32::from(pool_size),
             bgid: id,
-            // Padding and reserved for future use.
-            pad: 0,
+            flags: 0,
+            // Reserved for future use.
             resv: [0; 3],
         };
         log::trace!(ring_fd = ring_fd, bgid = id, size = pool_size; "registering buffer pool");
@@ -244,8 +244,8 @@ impl Drop for Shared {
             // Unused in this call.
             ring_addr: 0,
             ring_entries: 0,
-            // Padding and reserved for future use.
-            pad: 0,
+            flags: 0,
+            // Reserved for future use.
             resv: [0; 3],
         };
         let result = libc::syscall!(io_uring_register(

@@ -86,7 +86,7 @@ pub type io_uring_op = ::std::os::raw::c_uint;
 pub type _bindgen_ty_19 = ::std::os::raw::c_uint;
 pub type _bindgen_ty_20 = ::std::os::raw::c_uint;
 pub type _bindgen_ty_21 = ::std::os::raw::c_uint;
-pub type _bindgen_ty_23 = ::std::os::raw::c_uint;
+pub type _bindgen_ty_24 = ::std::os::raw::c_uint;
 #[repr(C)]
 #[derive(Default)]
 pub struct __IncompleteArrayField<T>(::std::marker::PhantomData<T>, [T; 0]);
@@ -120,6 +120,12 @@ pub struct io_uring_sqe__bindgen_ty_1__bindgen_ty_1 {
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
+pub struct io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
+    pub level: __u32,
+    pub optname: __u32,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
 pub struct io_uring_sqe__bindgen_ty_5__bindgen_ty_1 {
     pub addr_len: __u16,
     pub __pad3: [__u16; 1usize],
@@ -148,7 +154,7 @@ pub struct io_sqring_offsets {
     pub dropped: __u32,
     pub array: __u32,
     pub resv1: __u32,
-    pub resv2: __u64,
+    pub user_addr: __u64,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -161,7 +167,7 @@ pub struct io_cqring_offsets {
     pub cqes: __u32,
     pub flags: __u32,
     pub resv1: __u32,
-    pub resv2: __u64,
+    pub user_addr: __u64,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -209,21 +215,6 @@ pub struct io_uring_rsrc_update2 {
     pub tags: __u64,
     pub nr: __u32,
     pub resv2: __u32,
-}
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct io_uring_notification_slot {
-    pub tag: __u64,
-    pub resv: [__u64; 3usize],
-}
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct io_uring_notification_register {
-    pub nr_slots: __u32,
-    pub resv: __u32,
-    pub resv2: __u64,
-    pub data: __u64,
-    pub resv3: __u64,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -275,7 +266,7 @@ pub struct io_uring_buf_reg {
     pub ring_addr: __u64,
     pub ring_entries: __u32,
     pub bgid: __u16,
-    pub pad: __u16,
+    pub flags: __u16,
     pub resv: [__u64; 3usize],
 }
 #[repr(C)]
@@ -373,6 +364,9 @@ pub const IORING_SETUP_SQE128: u32 = 1024;
 pub const IORING_SETUP_CQE32: u32 = 2048;
 pub const IORING_SETUP_SINGLE_ISSUER: u32 = 4096;
 pub const IORING_SETUP_DEFER_TASKRUN: u32 = 8192;
+pub const IORING_SETUP_NO_MMAP: u32 = 16384;
+pub const IORING_SETUP_REGISTERED_FD_ONLY: u32 = 32768;
+pub const IORING_SETUP_NO_SQARRAY: u32 = 65536;
 pub const IORING_URING_CMD_FIXED: u32 = 1;
 pub const IORING_FSYNC_DATASYNC: u32 = 1;
 pub const IORING_TIMEOUT_ABS: u32 = 1;
@@ -381,6 +375,7 @@ pub const IORING_TIMEOUT_BOOTTIME: u32 = 4;
 pub const IORING_TIMEOUT_REALTIME: u32 = 8;
 pub const IORING_LINK_TIMEOUT_UPDATE: u32 = 16;
 pub const IORING_TIMEOUT_ETIME_SUCCESS: u32 = 32;
+pub const IORING_TIMEOUT_MULTISHOT: u32 = 64;
 pub const IORING_TIMEOUT_CLOCK_MASK: u32 = 12;
 pub const IORING_TIMEOUT_UPDATE_MASK: u32 = 18;
 pub const IORING_POLL_ADD_MULTI: u32 = 1;
@@ -398,6 +393,7 @@ pub const IORING_SEND_ZC_REPORT_USAGE: u32 = 8;
 pub const IORING_NOTIF_USAGE_ZC_COPIED: u32 = 2147483648;
 pub const IORING_ACCEPT_MULTISHOT: u32 = 1;
 pub const IORING_MSG_RING_CQE_SKIP: u32 = 1;
+pub const IORING_MSG_RING_FLAGS_PASS: u32 = 2;
 pub const IORING_CQE_F_BUFFER: u32 = 1;
 pub const IORING_CQE_F_MORE: u32 = 2;
 pub const IORING_CQE_F_SOCK_NONEMPTY: u32 = 4;
@@ -405,6 +401,9 @@ pub const IORING_CQE_F_NOTIF: u32 = 8;
 pub const IORING_OFF_SQ_RING: u32 = 0;
 pub const IORING_OFF_CQ_RING: u32 = 134217728;
 pub const IORING_OFF_SQES: u32 = 268435456;
+pub const IORING_OFF_PBUF_RING: u32 = 2147483648;
+pub const IORING_OFF_PBUF_SHIFT: u32 = 16;
+pub const IORING_OFF_MMAP_MASK: u32 = 4160749568;
 pub const IORING_SQ_NEED_WAKEUP: u32 = 1;
 pub const IORING_SQ_CQ_OVERFLOW: u32 = 2;
 pub const IORING_SQ_TASKRUN: u32 = 4;
@@ -427,6 +426,7 @@ pub const IORING_FEAT_NATIVE_WORKERS: u32 = 512;
 pub const IORING_FEAT_RSRC_TAGS: u32 = 1024;
 pub const IORING_FEAT_CQE_SKIP: u32 = 2048;
 pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
+pub const IORING_FEAT_REG_REG_RING: u32 = 8192;
 pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
 pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
 pub const IOSQE_FIXED_FILE_BIT: _bindgen_ty_18 = 0;
@@ -485,7 +485,12 @@ pub const IORING_OP_SOCKET: io_uring_op = 45;
 pub const IORING_OP_URING_CMD: io_uring_op = 46;
 pub const IORING_OP_SEND_ZC: io_uring_op = 47;
 pub const IORING_OP_SENDMSG_ZC: io_uring_op = 48;
-pub const IORING_OP_LAST: io_uring_op = 49;
+pub const IORING_OP_READ_MULTISHOT: io_uring_op = 49;
+pub const IORING_OP_WAITID: io_uring_op = 50;
+pub const IORING_OP_FUTEX_WAIT: io_uring_op = 51;
+pub const IORING_OP_FUTEX_WAKE: io_uring_op = 52;
+pub const IORING_OP_FUTEX_WAITV: io_uring_op = 53;
+pub const IORING_OP_LAST: io_uring_op = 54;
 pub const IORING_MSG_DATA: _bindgen_ty_19 = 0;
 pub const IORING_MSG_SEND_FD: _bindgen_ty_19 = 1;
 pub const IORING_CQE_BUFFER_SHIFT: _bindgen_ty_20 = 16;
@@ -516,11 +521,12 @@ pub const IORING_UNREGISTER_PBUF_RING: _bindgen_ty_21 = 23;
 pub const IORING_REGISTER_SYNC_CANCEL: _bindgen_ty_21 = 24;
 pub const IORING_REGISTER_FILE_ALLOC_RANGE: _bindgen_ty_21 = 25;
 pub const IORING_REGISTER_LAST: _bindgen_ty_21 = 26;
-pub const IORING_RESTRICTION_REGISTER_OP: _bindgen_ty_23 = 0;
-pub const IORING_RESTRICTION_SQE_OP: _bindgen_ty_23 = 1;
-pub const IORING_RESTRICTION_SQE_FLAGS_ALLOWED: _bindgen_ty_23 = 2;
-pub const IORING_RESTRICTION_SQE_FLAGS_REQUIRED: _bindgen_ty_23 = 3;
-pub const IORING_RESTRICTION_LAST: _bindgen_ty_23 = 4;
+pub const IORING_REGISTER_USE_REGISTERED_RING: _bindgen_ty_21 = 2147483648;
+pub const IORING_RESTRICTION_REGISTER_OP: _bindgen_ty_24 = 0;
+pub const IORING_RESTRICTION_SQE_OP: _bindgen_ty_24 = 1;
+pub const IORING_RESTRICTION_SQE_FLAGS_ALLOWED: _bindgen_ty_24 = 2;
+pub const IORING_RESTRICTION_SQE_FLAGS_REQUIRED: _bindgen_ty_24 = 3;
+pub const IORING_RESTRICTION_LAST: _bindgen_ty_24 = 4;
 #[test]
 fn bindgen_test_layout___kernel_timespec() {
     const UNINIT: ::std::mem::MaybeUninit<__kernel_timespec> = ::std::mem::MaybeUninit::uninit();
@@ -631,6 +637,48 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_1() {
             stringify!(io_uring_sqe__bindgen_ty_1),
             "::",
             stringify!(addr2)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout_io_uring_sqe__bindgen_ty_2__bindgen_ty_1() {
+    const UNINIT: ::std::mem::MaybeUninit<io_uring_sqe__bindgen_ty_2__bindgen_ty_1> =
+        ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<io_uring_sqe__bindgen_ty_2__bindgen_ty_1>(),
+        8usize,
+        concat!(
+            "Size of: ",
+            stringify!(io_uring_sqe__bindgen_ty_2__bindgen_ty_1)
+        )
+    );
+    assert_eq!(
+        ::std::mem::align_of::<io_uring_sqe__bindgen_ty_2__bindgen_ty_1>(),
+        4usize,
+        concat!(
+            "Alignment of ",
+            stringify!(io_uring_sqe__bindgen_ty_2__bindgen_ty_1)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).level) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_2__bindgen_ty_1),
+            "::",
+            stringify!(level)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).optname) as usize - ptr as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_2__bindgen_ty_1),
+            "::",
+            stringify!(optname)
         )
     );
 }
@@ -875,6 +923,26 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_3() {
             stringify!(uring_cmd_flags)
         )
     );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).waitid_flags) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_3),
+            "::",
+            stringify!(waitid_flags)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).futex_flags) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_3),
+            "::",
+            stringify!(futex_flags)
+        )
+    );
 }
 #[test]
 fn bindgen_test_layout_io_uring_sqe__bindgen_ty_4() {
@@ -989,6 +1057,16 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_5() {
             stringify!(file_index)
         )
     );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).optlen) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_5),
+            "::",
+            stringify!(optlen)
+        )
+    );
 }
 #[test]
 fn bindgen_test_layout_io_uring_sqe__bindgen_ty_6__bindgen_ty_1() {
@@ -1046,6 +1124,16 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_6() {
         ::std::mem::align_of::<io_uring_sqe__bindgen_ty_6>(),
         8usize,
         concat!("Alignment of ", stringify!(io_uring_sqe__bindgen_ty_6))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).optval) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_6),
+            "::",
+            stringify!(optval)
+        )
     );
     assert_eq!(
         unsafe { ::std::ptr::addr_of!((*ptr).cmd) as usize - ptr as usize },
@@ -1293,13 +1381,13 @@ fn bindgen_test_layout_io_sqring_offsets() {
         )
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv2) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).user_addr) as usize - ptr as usize },
         32usize,
         concat!(
             "Offset of field: ",
             stringify!(io_sqring_offsets),
             "::",
-            stringify!(resv2)
+            stringify!(user_addr)
         )
     );
 }
@@ -1398,13 +1486,13 @@ fn bindgen_test_layout_io_cqring_offsets() {
         )
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv2) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).user_addr) as usize - ptr as usize },
         32usize,
         concat!(
             "Offset of field: ",
             stringify!(io_cqring_offsets),
             "::",
-            stringify!(resv2)
+            stringify!(user_addr)
         )
     );
 }
@@ -1753,108 +1841,6 @@ fn bindgen_test_layout_io_uring_rsrc_update2() {
             stringify!(io_uring_rsrc_update2),
             "::",
             stringify!(resv2)
-        )
-    );
-}
-#[test]
-fn bindgen_test_layout_io_uring_notification_slot() {
-    const UNINIT: ::std::mem::MaybeUninit<io_uring_notification_slot> =
-        ::std::mem::MaybeUninit::uninit();
-    let ptr = UNINIT.as_ptr();
-    assert_eq!(
-        ::std::mem::size_of::<io_uring_notification_slot>(),
-        32usize,
-        concat!("Size of: ", stringify!(io_uring_notification_slot))
-    );
-    assert_eq!(
-        ::std::mem::align_of::<io_uring_notification_slot>(),
-        8usize,
-        concat!("Alignment of ", stringify!(io_uring_notification_slot))
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).tag) as usize - ptr as usize },
-        0usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_slot),
-            "::",
-            stringify!(tag)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv) as usize - ptr as usize },
-        8usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_slot),
-            "::",
-            stringify!(resv)
-        )
-    );
-}
-#[test]
-fn bindgen_test_layout_io_uring_notification_register() {
-    const UNINIT: ::std::mem::MaybeUninit<io_uring_notification_register> =
-        ::std::mem::MaybeUninit::uninit();
-    let ptr = UNINIT.as_ptr();
-    assert_eq!(
-        ::std::mem::size_of::<io_uring_notification_register>(),
-        32usize,
-        concat!("Size of: ", stringify!(io_uring_notification_register))
-    );
-    assert_eq!(
-        ::std::mem::align_of::<io_uring_notification_register>(),
-        8usize,
-        concat!("Alignment of ", stringify!(io_uring_notification_register))
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).nr_slots) as usize - ptr as usize },
-        0usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_register),
-            "::",
-            stringify!(nr_slots)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv) as usize - ptr as usize },
-        4usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_register),
-            "::",
-            stringify!(resv)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv2) as usize - ptr as usize },
-        8usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_register),
-            "::",
-            stringify!(resv2)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).data) as usize - ptr as usize },
-        16usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_register),
-            "::",
-            stringify!(data)
-        )
-    );
-    assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).resv3) as usize - ptr as usize },
-        24usize,
-        concat!(
-            "Offset of field: ",
-            stringify!(io_uring_notification_register),
-            "::",
-            stringify!(resv3)
         )
     );
 }
@@ -2273,13 +2259,13 @@ fn bindgen_test_layout_io_uring_buf_reg() {
         )
     );
     assert_eq!(
-        unsafe { ::std::ptr::addr_of!((*ptr).pad) as usize - ptr as usize },
+        unsafe { ::std::ptr::addr_of!((*ptr).flags) as usize - ptr as usize },
         14usize,
         concat!(
             "Offset of field: ",
             stringify!(io_uring_buf_reg),
             "::",
-            stringify!(pad)
+            stringify!(flags)
         )
     );
     assert_eq!(
@@ -2933,6 +2919,7 @@ pub union io_uring_sqe__bindgen_ty_1 {
 pub union io_uring_sqe__bindgen_ty_2 {
     pub addr: __u64,
     pub splice_off_in: __u64,
+    pub __bindgen_anon_1: io_uring_sqe__bindgen_ty_2__bindgen_ty_1,
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -2956,6 +2943,8 @@ pub union io_uring_sqe__bindgen_ty_3 {
     pub xattr_flags: __u32,
     pub msg_ring_flags: __u32,
     pub uring_cmd_flags: __u32,
+    pub waitid_flags: __u32,
+    pub futex_flags: __u32,
 }
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
@@ -2968,11 +2957,13 @@ pub union io_uring_sqe__bindgen_ty_4 {
 pub union io_uring_sqe__bindgen_ty_5 {
     pub splice_fd_in: __s32,
     pub file_index: __u32,
+    pub optlen: __u32,
     pub __bindgen_anon_1: io_uring_sqe__bindgen_ty_5__bindgen_ty_1,
 }
 #[repr(C)]
 pub union io_uring_sqe__bindgen_ty_6 {
     pub __bindgen_anon_1: ::std::mem::ManuallyDrop<io_uring_sqe__bindgen_ty_6__bindgen_ty_1>,
+    pub optval: ::std::mem::ManuallyDrop<__u64>,
     pub cmd: ::std::mem::ManuallyDrop<[__u8; 0usize]>,
 }
 #[repr(C)]
