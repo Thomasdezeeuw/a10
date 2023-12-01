@@ -15,7 +15,7 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 /// write-after-free bugs.
 ///
 /// To ensure the input stays alive A10 needs ownership of the input arguments
-/// and delays the allocation of the inputs when a [`Future`] operation is
+/// and delays the deallocation of the inputs when a [`Future`] operation is
 /// dropped before completion. However to give the `Future`s a nice API we don't
 /// return the input arguments and try to match the APIs that don't take
 /// ownership of arguments, e.g [`fs::OpenOptions::open`] just returns a
