@@ -1069,7 +1069,7 @@ impl SocketAddress for (libc::sockaddr, libc::socklen_t) {
     unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
         (
             ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
-            size_of::<Self>() as _,
+            size_of::<libc::sockaddr>() as _,
         )
     }
 
@@ -1091,7 +1091,7 @@ impl SocketAddress for (libc::sockaddr_storage, libc::socklen_t) {
     unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
         (
             ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
-            size_of::<Self>() as _,
+            size_of::<libc::sockaddr_storage>() as _,
         )
     }
 
@@ -1153,7 +1153,7 @@ impl SocketAddress for (libc::sockaddr_un, libc::socklen_t) {
     unsafe fn as_mut_ptr(this: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
         (
             ptr::addr_of_mut!((*this.as_mut_ptr()).0).cast(),
-            size_of::<Self>() as _,
+            size_of::<libc::sockaddr_un>() as _,
         )
     }
 
