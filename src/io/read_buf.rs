@@ -310,7 +310,7 @@ fn alloc_layout_ring(pool_size: u16, page_size: usize) -> io::Result<alloc::Layo
 
 /// Buffer reference from a [`ReadBufPool`].
 ///
-/// Before a read system call, this will be empty and can't be resize. This is
+/// Before a read system call, this will be empty and can't be resized. This is
 /// really only useful in a call to a `read(2)` like system call.
 ///
 /// # Notes
