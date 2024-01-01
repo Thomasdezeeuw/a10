@@ -394,6 +394,7 @@ pub const IORING_NOTIF_USAGE_ZC_COPIED: u32 = 2147483648;
 pub const IORING_ACCEPT_MULTISHOT: u32 = 1;
 pub const IORING_MSG_RING_CQE_SKIP: u32 = 1;
 pub const IORING_MSG_RING_FLAGS_PASS: u32 = 2;
+pub const IORING_FIXED_FD_NO_CLOEXEC: u32 = 1;
 pub const IORING_CQE_F_BUFFER: u32 = 1;
 pub const IORING_CQE_F_MORE: u32 = 2;
 pub const IORING_CQE_F_SOCK_NONEMPTY: u32 = 4;
@@ -490,7 +491,8 @@ pub const IORING_OP_WAITID: io_uring_op = 50;
 pub const IORING_OP_FUTEX_WAIT: io_uring_op = 51;
 pub const IORING_OP_FUTEX_WAKE: io_uring_op = 52;
 pub const IORING_OP_FUTEX_WAITV: io_uring_op = 53;
-pub const IORING_OP_LAST: io_uring_op = 54;
+pub const IORING_OP_FIXED_FD_INSTALL: io_uring_op = 54;
+pub const IORING_OP_LAST: io_uring_op = 55;
 pub const IORING_MSG_DATA: _bindgen_ty_19 = 0;
 pub const IORING_MSG_SEND_FD: _bindgen_ty_19 = 1;
 pub const IORING_CQE_BUFFER_SHIFT: _bindgen_ty_20 = 16;
@@ -941,6 +943,16 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_3() {
             stringify!(io_uring_sqe__bindgen_ty_3),
             "::",
             stringify!(futex_flags)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).install_fd_flags) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_3),
+            "::",
+            stringify!(install_fd_flags)
         )
     );
 }
@@ -2945,6 +2957,7 @@ pub union io_uring_sqe__bindgen_ty_3 {
     pub uring_cmd_flags: __u32,
     pub waitid_flags: __u32,
     pub futex_flags: __u32,
+    pub install_fd_flags: __u32,
 }
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
