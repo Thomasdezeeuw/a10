@@ -1,3 +1,13 @@
+# v0.1.6
+
+* Added `AsyncFd::try_clone`
+  <https://github.com/Thomasdezeeuw/a10/commit/2fc6e63dbdaf8556ca9565ee14e5ab8bf20884a3>.
+* Fixs size of tuple SocketAddress implementations
+  <https://github.com/Thomasdezeeuw/a10/commit/11781458e176e093852ee7241dde2e2aba033f18>.
+* Updates io\_uring definitions, syncing to liburing commit [`7524a6a`](https://github.com/axboe/liburing/commit/7524a6adf4d6720a47bfa617b5cb2fd8d57f16d2)
+  <https://github.com/Thomasdezeeuw/a10/commit/2660ccc6ab0dc538a561fcba255d53b0d553ce87>,
+  <https://github.com/Thomasdezeeuw/a10/commit/32967b974b859c8bca84feb24950d3dfc0215c46>.
+
 # v0.1.5
 
 * Reduce flag unsupported logs to debug
