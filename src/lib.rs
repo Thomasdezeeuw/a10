@@ -1267,6 +1267,17 @@ impl AsyncFd {
         AsyncFd::new(OwnedFd::from_raw_fd(fd), sq)
     }
 
+    /// Creates a new independently owned `AsyncFd` that shares the same
+    /// underlying file descriptor as the existing `AsyncFd`.
+    #[doc(alias = "dup")]
+    #[doc(alias = "dup2")]
+    #[doc(alias = "F_DUPFD")]
+    #[doc(alias = "F_DUPFD_CLOEXEC")]
+    pub fn try_clone(&self) -> io::Result<AsyncFd> {
+        let fd = self.fd.try_clone()?;
+        Ok(AsyncFd::new(fd, self.sq.clone()))
+    }
+
     /// Returns the `RawFd` of this `AsyncFd`.
     fn fd(&self) -> RawFd {
         self.fd.as_raw_fd()

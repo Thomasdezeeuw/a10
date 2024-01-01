@@ -25,6 +25,25 @@ const BUF_SIZE: usize = 4096;
 const NO_OFFSET: u64 = u64::MAX;
 
 #[test]
+fn try_clone() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let w2 = w.try_clone().expect("failed to clone fd");
+
+    const DATA: &[u8] = b"hello world";
+    waker.block_on(w.write(&DATA[..5])).unwrap();
+    waker.block_on(w2.write(&DATA[5..])).unwrap();
+
+    let buf = BadReadBuf {
+        data: Vec::with_capacity(30),
+    };
+    let buf = waker.block_on(r.read_n(buf, DATA.len())).unwrap();
+    assert_eq!(&buf.data, DATA);
+}
+
+#[test]
 fn read_read_buf_pool() {
     require_kernel!(5, 19);
     init();
