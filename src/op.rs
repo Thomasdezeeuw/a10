@@ -826,6 +826,12 @@ impl fmt::Debug for Submission {
                         &self.inner.__bindgen_anon_3.unlink_flags
                     });
             }
+            libc::IORING_OP_MKDIRAT => {
+                f.field("opcode", &"IORING_OP_MKDIRAT")
+                    .field("dirfd", &self.inner.fd)
+                    .field("path", unsafe { &self.inner.__bindgen_anon_2.addr })
+                    .field("mode", &self.inner.len);
+            }
             libc::IORING_OP_POLL_ADD => {
                 f.field("opcode", &"IORING_OP_POLL_ADD")
                     .field("fd", &self.inner.fd)
