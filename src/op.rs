@@ -739,6 +739,8 @@ impl fmt::Debug for Submission {
             }
             libc::IORING_OP_SEND => net_op(&mut f, &self.inner, "IORING_OP_SEND"),
             libc::IORING_OP_SEND_ZC => net_op(&mut f, &self.inner, "IORING_OP_SEND_ZC"),
+            libc::IORING_OP_SENDMSG => net_op(&mut f, &self.inner, "IORING_OP_SENDMSG"),
+            libc::IORING_OP_SENDMSG_ZC => net_op(&mut f, &self.inner, "IORING_OP_SENDMSG_ZC"),
             libc::IORING_OP_RECV => net_op(&mut f, &self.inner, "IORING_OP_RECV"),
             libc::IORING_OP_SHUTDOWN => {
                 f.field("opcode", &"IORING_OP_SHUTDOWN")
