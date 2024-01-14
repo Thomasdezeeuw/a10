@@ -8,7 +8,6 @@ use std::net::{
     UdpSocket,
 };
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
-use std::pin::Pin;
 use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
@@ -22,8 +21,8 @@ use a10::{Extract, Ring};
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, next, poll_nop, require_kernel, start_op, syscall, tcp_ipv4_socket,
-    test_queue, udp_ipv4_socket, Waker,
+    is_send, is_sync, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket, test_queue,
+    udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -372,12 +371,11 @@ fn connect() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Write some data.
     waker
@@ -415,14 +413,11 @@ fn connect_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr).extract();
-    // Poll the future to schedule the operation, can't use `start_op` as the
-    // address doesn't implement `fmt::Debug`.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    let _addr = waker
+        .block_on(stream.connect(addr).extract())
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    let _addr = waker.block_on(connect_future).expect("failed to connect");
 
     // Write some data.
     waker
@@ -458,12 +453,11 @@ fn recv() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
     let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1), 0);
@@ -501,12 +495,9 @@ fn recv_read_buf_pool() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    block_on(&mut ring, connect_future).expect("failed to connect");
 
     // Receive some data.
     let recv_future = stream.recv(buf_pool.get(), 0);
@@ -541,12 +532,9 @@ fn recv_read_buf_pool_send_read_buf() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    block_on(&mut ring, connect_future).expect("failed to connect");
 
     // Receive some data.
     let recv_future = stream.recv(buf_pool.get(), 0);
@@ -593,10 +581,9 @@ fn multishot_recv() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    block_on(&mut ring, connect_future).expect("failed to connect");
 
     let mut stream_recv = stream.multishot_recv(buf_pool, 0);
 
@@ -641,10 +628,9 @@ fn multishot_recv_large_send() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    block_on(&mut ring, connect_future).expect("failed to connect");
 
     let mut stream_recv = stream.multishot_recv(buf_pool, 0);
 
@@ -692,10 +678,9 @@ fn multishot_recv_all_buffers_used() {
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    block_on(&mut ring, connect_future).expect("failed to connect");
 
     let mut stream_recv = stream.multishot_recv(buf_pool, 0);
 
@@ -742,10 +727,11 @@ fn recv_n() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
     client.write_all(DATA1).expect("failed to send data");
@@ -777,12 +763,11 @@ fn recv_vectored() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
     let bufs = [
@@ -863,10 +848,11 @@ fn recv_n_vectored() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Receive some data.
     const DATA: &[u8] = b"Hello marsBooo!! Hi. How are you?";
@@ -1009,12 +995,11 @@ fn send() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let n = waker
@@ -1043,12 +1028,11 @@ fn send_zc() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let n = waker
@@ -1075,12 +1059,11 @@ fn send_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let (buf, n) = waker
@@ -1110,12 +1093,11 @@ fn send_zc_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let (buf, n) = waker
@@ -1146,10 +1128,11 @@ fn send_all() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send all data.
     let buf = BadBuf {
@@ -1180,10 +1163,11 @@ fn send_all_extract() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send all data.
     let buf = BadBuf {
@@ -1218,12 +1202,11 @@ fn send_vectored() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
@@ -1256,12 +1239,11 @@ fn send_vectored_zc() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
@@ -1289,12 +1271,11 @@ fn send_vectored_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
@@ -1325,12 +1306,11 @@ fn send_vectored_zc_extractor() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
@@ -1362,10 +1342,11 @@ fn send_all_vectored() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send all data.
     let bufs = BadBufSlice {
@@ -1397,10 +1378,11 @@ fn send_all_vectored_extract() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
+
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-    waker.block_on(connect_future).expect("failed to connect");
 
     // Send all data.
     let bufs = BadBufSlice {
@@ -1680,12 +1662,11 @@ fn shutdown() {
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
-    let mut connect_future = stream.connect(addr);
-    start_op(&mut connect_future);
+    waker
+        .block_on(stream.connect(addr))
+        .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    waker.block_on(connect_future).expect("failed to connect");
 
     waker
         .block_on(stream.shutdown(Shutdown::Write))
