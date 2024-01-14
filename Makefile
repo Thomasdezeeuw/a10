@@ -19,7 +19,7 @@ test_sanitizers:
 # Run with `make test_sanitizer sanitizer=$sanitizer`, or use `test_sanitizers`.
 test_sanitizer:
 	RUSTDOCFLAGS=-Zsanitizer=$(sanitizer) RUSTFLAGS=-Zsanitizer=$(sanitizer) \
-	cargo test -Zbuild-std --target x86_64-unknown-linux-gnu
+	cargo test --features nightly -Zbuild-std --target x86_64-unknown-linux-gnu
 
 check:
 	cargo check --all-targets
