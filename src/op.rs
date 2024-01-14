@@ -652,6 +652,7 @@ impl Submission {
 
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, 0, 0);
+        self.no_completion_event();
     }
 
     /// Note that the argument `user_data` and `res` names are the same as the
