@@ -1196,7 +1196,11 @@ impl<S> OpState<S> {
         match self {
             OpState::NotStarted(_) => CancelResult::NotStarted,
             OpState::Running(op_index) => {
-                match sq.add_no_result(|submission| unsafe { submission.cancel_op(*op_index) }) {
+                let result = sq.add_no_result(|submission| unsafe {
+                    submission.cancel_op(*op_index);
+                    submission.no_completion_event();
+                });
+                match result {
                     Ok(()) => CancelResult::Canceled,
                     Err(QueueFull(())) => CancelResult::QueueFull,
                 }
