@@ -85,7 +85,7 @@ impl<'a> Drop for OneshotPoll<'a> {
             });
             if let Err(err) = result {
                 log::error!(
-                    "dropped a10::OneshotPoll before canceling it, attempt to cancel failed: {err}"
+                    "dropped a10::OneshotPoll before completion, attempt to cancel failed: {err}"
                 );
             }
         }
