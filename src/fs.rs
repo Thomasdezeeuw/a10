@@ -855,10 +855,30 @@ impl Future for Extractor<Rename> {
 
 impl Drop for Rename {
     fn drop(&mut self) {
-        if let OpState::Running(op_index) = self.state {
-            let from = self.from.take().unwrap();
-            let to = self.from.take().unwrap();
-            self.sq.drop_op(op_index, (from, to));
+        if let Some(from) = self.from.take() {
+            // SAFETY: if `from` is `Some`, so is `to` as we extract both or
+            // neither.
+            let to = self.to.take().unwrap();
+
+            match self.state {
+                OpState::Running(op_index) => {
+                    let result = self
+                        .sq
+                        .cancel_op(op_index, (from, to), |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        });
+                    if let Err(err) = result {
+                        log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
+                    }
+                }
+                OpState::NotStarted(_) | OpState::Done => {
+                    drop(from);
+                    drop(to);
+                }
+            }
         }
     }
 }
