@@ -59,10 +59,13 @@ clippy:
 		\
 		--allow clippy::cast-possible-truncation \
 
+doc:
+	cargo doc
+
 doc_private:
 	cargo doc --document-private-items
 
 clean:
 	cargo clean
 
-.PHONY: dev test test_sanitizers test_sanitizer check lint clippy doc_private clean
+.PHONY: dev test test_sanitizers test_sanitizer check lint clippy doc doc_private clean
