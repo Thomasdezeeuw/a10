@@ -1311,9 +1311,10 @@ impl fmt::Debug for AsyncFd {
 
 impl Drop for AsyncFd {
     fn drop(&mut self) {
-        let result = self
-            .sq
-            .add_no_result(|submission| unsafe { submission.close(self.fd()) });
+        let result = self.sq.add_no_result(|submission| unsafe {
+            submission.close(self.fd());
+            submission.no_completion_event();
+        });
         if let Err(err) = result {
             log::error!("error submitting close operation for a10::AsyncFd: {err}");
         }
