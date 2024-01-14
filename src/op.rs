@@ -699,8 +699,7 @@ impl fmt::Debug for Submission {
                     &submission.__bindgen_anon_3.msg_flags
                 })
                 .field("ioprio", &submission.ioprio)
-                .field("buf_group", &buf_group)
-                .field("flags", &submission.flags);
+                .field("buf_group", &buf_group);
         }
 
         let mut f = f.debug_struct("Submission");
@@ -734,7 +733,7 @@ impl fmt::Debug for Submission {
                     .field("domain", &self.inner.fd)
                     .field("type", unsafe { &self.inner.__bindgen_anon_1.off })
                     .field("protocol", &self.inner.len)
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.rw_flags });
+                    .field("rw_flags", unsafe { &self.inner.__bindgen_anon_3.rw_flags });
             }
             libc::IORING_OP_CONNECT => {
                 f.field("opcode", &"IORING_OP_CONNECT")
@@ -758,7 +757,7 @@ impl fmt::Debug for Submission {
                     .field("fd", &self.inner.fd)
                     .field("addr", unsafe { &self.inner.__bindgen_anon_2.addr })
                     .field("addr_size", unsafe { &self.inner.__bindgen_anon_1.off })
-                    .field("flags", unsafe {
+                    .field("accept_flags", unsafe {
                         &self.inner.__bindgen_anon_3.accept_flags
                     })
                     .field("ioprio", &self.inner.ioprio);
@@ -768,7 +767,8 @@ impl fmt::Debug for Submission {
                 let cancel_flags = unsafe { self.inner.__bindgen_anon_3.cancel_flags };
                 #[allow(clippy::if_not_else)]
                 if (cancel_flags & libc::IORING_ASYNC_CANCEL_FD) != 0 {
-                    f.field("fd", &self.inner.fd).field("flags", &cancel_flags);
+                    f.field("fd", &self.inner.fd)
+                        .field("cancel_flags", &cancel_flags);
                 } else {
                     f.field("addr", unsafe { &self.inner.__bindgen_anon_2.addr });
                 }
@@ -778,7 +778,9 @@ impl fmt::Debug for Submission {
                     .field("dirfd", &self.inner.fd)
                     .field("pathname", unsafe { &self.inner.__bindgen_anon_2.addr })
                     .field("mode", &self.inner.len)
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.open_flags });
+                    .field("open_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.open_flags
+                    });
             }
             libc::IORING_OP_SPLICE => {
                 f.field("opcode", &"IORING_OP_SPLICE")
@@ -803,7 +805,9 @@ impl fmt::Debug for Submission {
                 f.field("opcode", &"IORING_OP_STATX")
                     .field("fd", &self.inner.fd)
                     .field("pathname", unsafe { &self.inner.__bindgen_anon_2.addr })
-                    .field("flags", unsafe { &self.inner.__bindgen_anon_3.statx_flags })
+                    .field("statx_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.statx_flags
+                    })
                     .field("mask", &self.inner.len)
                     .field("statx", unsafe { &self.inner.__bindgen_anon_1.off });
             }
@@ -872,7 +876,9 @@ impl fmt::Debug for Submission {
                     .field("personality", &self.inner.personality);
             }
         }
-        f.field("user_data", &self.inner.user_data).finish()
+        f.field("flags", &self.inner.flags)
+            .field("user_data", &self.inner.user_data)
+            .finish()
     }
 }
 
