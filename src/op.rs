@@ -1425,15 +1425,15 @@ macro_rules! op_async_iter {
         impl<$lifetime> std::ops::Drop for $name<$lifetime> {
             fn drop(&mut self) {
                 if let $crate::op::OpState::Running(op_index) = self.state {
-                    match self.fd.sq.add_no_result(|submission| unsafe { submission.cancel_op(op_index) }) {
-                        // Canceled the operation.
-                        std::result::Result::Ok(()) => {},
-                        // Failed to cancel, this will lead to fd leaks.
-                        std::result::Result::Err(err) => {
-                            log::error!(concat!("dropped a10::", stringify!($name), " before canceling it, attempt to cancel failed: {}"), err);
-                        }
+                    let result = self.fd.sq.cancel_op(op_index, (), |submission| unsafe {
+                        submission.cancel_op(op_index);
+                        // We'll get a canceled completion event if we succeeded, which
+                        // is sufficient to cleanup the operation.
+                        submission.no_completion_event();
+                    });
+                    if let std::result::Result::Err(err) = result {
+                        log::error!(concat!("dropped a10::", stringify!($name), " before canceling it, attempt to cancel failed: {}"), err);
                     }
-                    self.fd.sq.drop_op(op_index, ());
                 }
             }
         }
