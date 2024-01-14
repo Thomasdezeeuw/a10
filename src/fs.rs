@@ -777,7 +777,7 @@ impl Drop for CreateDir {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }
                 }
-                OpState::NotStarted(_) | OpState::Done => drop(path),
+                OpState::NotStarted(()) | OpState::Done => drop(path),
             }
         }
     }
@@ -874,7 +874,7 @@ impl Drop for Rename {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }
                 }
-                OpState::NotStarted(_) | OpState::Done => {
+                OpState::NotStarted(()) | OpState::Done => {
                     drop(from);
                     drop(to);
                 }
