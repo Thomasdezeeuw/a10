@@ -870,7 +870,7 @@ impl SubmissionQueue {
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                if op.is_done() {
+                if op.no_more_events() {
                     // Easy path, the operation has already been completed.
                     *operation = None;
                     // Unlock defore dropping `resources`, which might take a
@@ -928,7 +928,7 @@ impl SubmissionQueue {
             if let Some(op) = &mut *operation {
                 log::trace!(op_index = op_index, completion = log::as_debug!(completion); "updating operation");
                 let is_dropped = op.update(completion);
-                if is_dropped && op.is_done() {
+                if is_dropped && op.no_more_events() {
                     // The Future was previously dropped so no one is waiting on
                     // the result. We can make the slot avaiable again.
                     *operation = None;

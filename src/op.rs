@@ -151,9 +151,17 @@ impl QueuedOperation {
         Poll::Pending
     }
 
-    /// Returns true if the operation is done.
+    /// Returns true if the operation is done and processed.
     pub(crate) const fn is_done(&self) -> bool {
         self.done
+    }
+
+    /// Returns true if no more completion events are expected, but may still
+    /// contain results.
+    pub(crate) fn no_more_events(&self) -> bool {
+        self.done ||
+            // If a multishot operation returns an error it's stopped.
+            matches!(&self.kind, QueuedOperationKind::Multishot { results } if results.iter().any(|c|c.result.is_negative()))
     }
 
     /// Set the state of the operation as dropped, but still in progress kernel
