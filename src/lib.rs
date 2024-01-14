@@ -844,66 +844,15 @@ impl SubmissionQueue {
         panic!("a10::SubmissionQueue::poll_multishot called incorrectly");
     }
 
-    /// Mark the operation with `op_index` as dropped.
+    /// Mark the operation with `op_index` as dropped, attempting to cancel it.
     ///
     /// Because the kernel still has access to the `resources`, we might have to
     /// do some trickery to delay the deallocation of `resources` and making the
     /// queued operation slot available again.
-    pub(crate) fn drop_op<T>(&self, op_index: OpIndex, resources: T) {
-        log::trace!(op_index = op_index.0; "dropping operation receiver (Future) before completion");
-        if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
-            let mut operation = operation.lock().unwrap();
-            if let Some(op) = &mut *operation {
-                if op.is_done() {
-                    // Easy path, the operation has already been completed.
-                    *operation = None;
-                    // Unlock defore dropping `resources`, which might take a
-                    // while.
-                    drop(operation);
-                    self.shared.op_indices.make_available(op_index.0);
-
-                    // We can safely drop the resources.
-                    drop(resources);
-                    return;
-                }
-
-                // Hard path, the operation is not done, but the Future holding
-                // the resource is about to be dropped, so we need to apply some
-                // trickery here.
-                //
-                // We need to do two things:
-                // 1. Delay the dropping of `resources` until the kernel is done
-                //    with the operation.
-                // 2. Delay the available making of the queued operation slot
-                //    until the kernel is done with the operation.
-                //
-                // We achieve 1 by creating a special waker that just drops the
-                // resources in `resources`.
-                let waker = if needs_drop::<T>() {
-                    // SAFETY: we're not going to clone the `waker`.
-                    Some(unsafe { drop_task_waker(Box::from(resources)) })
-                } else {
-                    // Of course if we don't need to drop `T`, then we don't
-                    // have to use a special waker. But we still don't want to
-                    // wake up the `Future` as that not longer used.
-                    None
-                };
-                // We achive 2 by setting the operation state to dropped, so
-                // that `QueuedOperation::set_result` returns true, which makes
-                // `complete` below make the queued operation slot available
-                // again.
-                op.set_dropped(waker);
-                return;
-            }
-        }
-        panic!("a10::SubmissionQueue::drop_op called incorrectly");
-    }
-
-    /// Mark the operation with `op_index` as dropped.
     ///
-    /// Similar to [`SubmissionQueue::drop_op`], but starts another operation
-    /// using `cancel` to cancel the in-progress operation (if it's still in
-    /// progress).
+    /// When the operation is still in progress we attempt to cancel it using
+    /// submission created by `cancel`. If the operation has completed it will
+    /// just drop `resources` and make the slot available again.
     ///
     /// # Notes
     ///
