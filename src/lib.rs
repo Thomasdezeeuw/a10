@@ -508,6 +508,7 @@ impl SubmissionQueue {
     pub fn try_send_msg(&self, token: MsgToken, data: u32) -> io::Result<()> {
         self.add_no_result(|submission| unsafe {
             submission.msg(self.shared.ring_fd.as_raw_fd(), (token.0).0 as u64, data, 0);
+            submission.no_completion_event();
         })?;
         Ok(())
     }
