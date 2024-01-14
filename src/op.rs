@@ -1426,7 +1426,7 @@ macro_rules! op_async_iter {
                         std::result::Result::Ok(()) => {},
                         // Failed to cancel, this will lead to fd leaks.
                         std::result::Result::Err(err) => {
-                            log::error!(concat!("dropped ", stringify!($name), " before canceling it, attempt to cancel failed, will leak file descriptors: {}"), err);
+                            log::error!(concat!("dropped a10::", stringify!($name), " before canceling it, attempt to cancel failed: {}"), err);
                         }
                     }
                     self.fd.sq.drop_op(op_index, ());

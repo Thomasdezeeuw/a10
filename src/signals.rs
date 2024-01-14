@@ -322,7 +322,9 @@ impl Drop for ReceiveSignals {
                     submission.no_completion_event();
                 });
             if let Err(err) = result {
-                log::error!("error submitting cancel operation for a10::ReceiveSignals: {err}");
+                log::error!(
+                    "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
+                );
             }
         }
     }

@@ -84,7 +84,9 @@ impl<'a> Drop for OneshotPoll<'a> {
                 submission.no_completion_event();
             });
             if let Err(err) = result {
-                log::error!("error submitting poll removal operation for a10::OneshotPoll: {err}");
+                log::error!(
+                    "dropped a10::OneshotPoll before canceling it, attempt to cancel failed: {err}"
+                );
             }
         }
     }
@@ -190,7 +192,7 @@ impl<'a> Drop for MultishotPoll<'a> {
             });
             if let Err(err) = result {
                 log::error!(
-                    "error submitting poll removal operation for a10::MultishotPoll: {err}"
+                    "dropped a10::MultishotPoll before canceling it, attempt to cancel failed: {err}"
                 );
             }
         }
