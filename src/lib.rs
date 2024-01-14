@@ -1224,6 +1224,8 @@ impl fmt::Debug for Completion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Completion")
             .field("user_data", &self.inner.user_data)
+            // NOTE this this isn't always an errno, so we can't use
+            // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.inner.res)
             .field("flags", &self.flags())
             .field("operation_flags", &self.operation_flags())
