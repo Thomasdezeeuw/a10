@@ -22,8 +22,8 @@ use a10::{Extract, Ring};
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket, test_queue,
-    udp_ipv4_socket, Waker,
+    is_send, is_sync, next, poll_nop, require_kernel, start_op, syscall, tcp_ipv4_socket,
+    test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -124,8 +124,8 @@ fn cancel_accept() {
 
     let accept = listener.accept::<(libc::sockaddr_storage, libc::socklen_t)>();
     let mut accept = std::pin::pin!(accept);
-
-    // Poll once to start the operation.
+    // Poll the future to schedule the operation, can't use `start_op` as the
+    // address doesn't implement `fmt::Debug`.
     assert!(poll_nop(accept.as_mut()).is_pending());
 
     // Then cancel the accept multishot call.
@@ -373,8 +373,7 @@ fn connect() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -417,7 +416,8 @@ fn connect_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr).extract();
-    // Poll the future to schedule the operation.
+    // Poll the future to schedule the operation, can't use `start_op` as the
+    // address doesn't implement `fmt::Debug`.
     assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -459,8 +459,7 @@ fn recv() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -503,8 +502,7 @@ fn recv_read_buf_pool() {
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -544,8 +542,7 @@ fn recv_read_buf_pool_send_read_buf() {
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -597,8 +594,7 @@ fn multishot_recv() {
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     block_on(&mut ring, connect_future).expect("failed to connect");
 
@@ -646,8 +642,7 @@ fn multishot_recv_large_send() {
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     block_on(&mut ring, connect_future).expect("failed to connect");
 
@@ -698,8 +693,7 @@ fn multishot_recv_all_buffers_used() {
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     block_on(&mut ring, connect_future).expect("failed to connect");
 
@@ -749,8 +743,7 @@ fn recv_n() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -785,8 +778,7 @@ fn recv_vectored() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -872,8 +864,7 @@ fn recv_n_vectored() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -1019,8 +1010,7 @@ fn send() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1054,8 +1044,7 @@ fn send_zc() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1087,8 +1076,7 @@ fn send_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1123,8 +1111,7 @@ fn send_zc_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1160,7 +1147,7 @@ fn send_all() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -1194,7 +1181,7 @@ fn send_all_extract() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -1232,8 +1219,7 @@ fn send_vectored() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1271,8 +1257,7 @@ fn send_vectored_zc() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1305,8 +1290,7 @@ fn send_vectored_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1342,8 +1326,7 @@ fn send_vectored_zc_extractor() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -1380,7 +1363,7 @@ fn send_all_vectored() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -1415,7 +1398,7 @@ fn send_all_vectored_extract() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
     let (mut client, _) = listener.accept().expect("failed to accept connection");
     waker.block_on(connect_future).expect("failed to connect");
 
@@ -1698,8 +1681,7 @@ fn shutdown() {
     let stream = waker.block_on(tcp_ipv4_socket(sq));
     let addr = addr_storage(&local_addr);
     let mut connect_future = stream.connect(addr);
-    // Poll the future to schedule the operation.
-    assert!(poll_nop(Pin::new(&mut connect_future)).is_pending());
+    start_op(&mut connect_future);
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
