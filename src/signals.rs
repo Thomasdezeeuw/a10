@@ -304,28 +304,31 @@ impl fmt::Debug for ReceiveSignals {
 
 impl Drop for ReceiveSignals {
     fn drop(&mut self) {
-        if let OpState::Running(op_index) = self.state {
-            // Only drop the signal `info` field once we know the operation has
-            // finished, otherwise the kernel might write into memory we have
-            // deallocated.
-            // SAFETY: we're in the `Drop` implementation, so `self.info` can't
-            // be used anymore making it safe to take ownership.
-            let resource = unsafe { ManuallyDrop::take(&mut self.info) };
-            let result = self
-                .signals
-                .fd
-                .sq
-                .cancel_op(op_index, resource, |submission| unsafe {
-                    submission.cancel_op(op_index);
-                    // We'll get a canceled completion event if we succeeded, which
-                    // is sufficient to cleanup the operation.
-                    submission.no_completion_event();
-                });
-            if let Err(err) = result {
-                log::error!(
+        let signal_info = unsafe { ManuallyDrop::take(&mut self.info) };
+        match self.state {
+            OpState::Running(op_index) => {
+                // Only drop the signal `info` field once we know the operation has
+                // finished, otherwise the kernel might write into memory we have
+                // deallocated.
+                // SAFETY: we're in the `Drop` implementation, so `self.info` can't
+                // be used anymore making it safe to take ownership.
+                let result =
+                    self.signals
+                        .fd
+                        .sq
+                        .cancel_op(op_index, signal_info, |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        });
+                if let Err(err) = result {
+                    log::error!(
                     "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
                 );
+                }
             }
+            OpState::NotStarted(()) | OpState::Done => drop(signal_info),
         }
     }
 }
