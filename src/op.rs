@@ -244,6 +244,11 @@ impl Submission {
         self.inner.flags |= libc::IOSQE_BUFFER_SELECT;
     }
 
+    /// Don't return a completion event for this submission.
+    pub(crate) fn no_completion_event(&mut self) {
+        self.inner.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
+    }
+
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
