@@ -1090,7 +1090,17 @@ macro_rules! op_future {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
-                        $crate::op::OpState::Running(op_index) => self.fd.sq.drop_op(op_index, resources),
+                        $crate::op::OpState::Running(op_index) => {
+                            let result = self.fd.sq.cancel_op(op_index, resources, |submission| unsafe {
+                                submission.cancel_op(op_index);
+                                // We'll get a canceled completion event if we succeeded, which
+                                // is sufficient to cleanup the operation.
+                                submission.no_completion_event();
+                            });
+                            if let std::result::Result::Err(err) = result {
+                                log::error!(concat!("dropped a10::", stringify!($name), " before completion, attempt to cancel failed: {}"), err);
+                            }
+                        },
                         // NOTE: `Done` should not be reachable, but no point in
                         // creating another branch.
                         #[allow(clippy::drop_non_drop)]
