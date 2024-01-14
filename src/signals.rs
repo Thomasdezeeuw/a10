@@ -305,28 +305,25 @@ impl fmt::Debug for ReceiveSignals {
 impl Drop for ReceiveSignals {
     fn drop(&mut self) {
         if let OpState::Running(op_index) = self.state {
-            match self
-                .signals
-                .fd
-                .sq
-                .add_no_result(|submission| unsafe { submission.cancel_op(op_index) })
-            {
-                // Canceled the operation.
-                Ok(()) => {}
-                // Failed to cancel, this will lead to fd leaks.
-                Err(err) => {
-                    error!("dropped ReceiveSignals before canceling it, attempt to cancel failed, will leak file descriptors: {err}");
-                }
-            }
             // Only drop the signal `info` field once we know the operation has
             // finished, otherwise the kernel might write into memory we have
             // deallocated.
-            // SAFETY: we in the `Drop` implementation, so `self.info` be used
-            // anymore making it same to take ownership.
-            self.signals
+            // SAFETY: we're in the `Drop` implementation, so `self.info` can't
+            // be used anymore making it safe to take ownership.
+            let resource = unsafe { ManuallyDrop::take(&mut self.info) };
+            let result = self
+                .signals
                 .fd
                 .sq
-                .drop_op(op_index, unsafe { ManuallyDrop::take(&mut self.info) });
+                .cancel_op(op_index, resource, |submission| unsafe {
+                    submission.cancel_op(op_index);
+                    // We'll get a canceled completion event if we succeeded, which
+                    // is sufficient to cleanup the operation.
+                    submission.no_completion_event();
+                });
+            if let Err(err) = result {
+                log::error!("error submitting cancel operation for a10::ReceiveSignals: {err}");
+            }
         }
     }
 }
