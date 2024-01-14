@@ -635,6 +635,14 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn remove_poll(&mut self, user_data: OpIndex) {
+        self.inner.opcode = libc::IORING_OP_POLL_REMOVE as u8;
+        self.inner.fd = -1;
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: user_data.0 as _,
+        };
+    }
+
     pub(crate) unsafe fn multishot_poll(&mut self, fd: RawFd, mask: u32) {
         self.poll(fd, mask);
         self.inner.len = libc::IORING_POLL_ADD_MULTI;
@@ -852,6 +860,12 @@ impl fmt::Debug for Submission {
                         "multishot",
                         &(self.inner.len == libc::IORING_POLL_ADD_MULTI),
                     );
+            }
+            libc::IORING_OP_POLL_REMOVE => {
+                f.field("opcode", &"IORING_OP_POLL_REMOVE")
+                    .field("target_user_data", unsafe {
+                        &self.inner.__bindgen_anon_2.addr
+                    });
             }
             libc::IORING_OP_MADVISE => {
                 f.field("opcode", &"IORING_OP_MADVISE")

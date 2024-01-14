@@ -74,6 +74,22 @@ impl<'a> Cancel for OneshotPoll<'a> {
     }
 }
 
+impl<'a> Drop for OneshotPoll<'a> {
+    fn drop(&mut self) {
+        if let OpState::Running(op_index) = self.state {
+            let result = self.sq.cancel_op(op_index, (), |submission| unsafe {
+                submission.remove_poll(op_index);
+                // We'll get a canceled completion event if we succeeded, which
+                // is sufficient to cleanup the operation.
+                submission.no_completion_event();
+            });
+            if let Err(err) = result {
+                log::error!("error submitting poll removal operation for a10::OneshotPoll: {err}");
+            }
+        }
+    }
+}
+
 /// [`AsyncIterator`] behind [`SubmissionQueue::multishot_poll`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator

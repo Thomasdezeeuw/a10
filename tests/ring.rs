@@ -251,6 +251,26 @@ fn oneshot_poll() {
 }
 
 #[test]
+fn drop_oneshot_poll() {
+    let sq = test_queue();
+
+    is_send::<OneshotPoll>();
+    is_sync::<OneshotPoll>();
+
+    let (receiver, sender) = pipe2().unwrap();
+
+    let mut sender_write = sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _);
+    let mut receiver_read = sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _);
+
+    // Poll once to start the operations.
+    assert!(poll_nop(Pin::new(&mut sender_write)).is_pending());
+    assert!(poll_nop(Pin::new(&mut receiver_read)).is_pending());
+
+    drop(sender_write);
+    drop(receiver_read);
+}
+
+#[test]
 fn cancel_oneshot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
