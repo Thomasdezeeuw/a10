@@ -880,6 +880,25 @@ fn close_fs_fd() {
 }
 
 #[test]
+fn dropping_should_close_socket_fd() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let socket = waker.block_on(tcp_ipv4_socket(sq));
+    drop(socket);
+}
+
+#[test]
+fn dropping_should_close_fs_fd() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let file = waker.block_on(open_file).unwrap();
+    drop(file);
+}
+
+#[test]
 fn dropped_futures_do_not_leak_buffers() {
     // NOTE: run this test with the `leak` or `address` sanitizer, see the
     // test_sanitizer Make target, and it shouldn't cause any errors.
