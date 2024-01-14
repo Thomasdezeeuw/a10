@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::msg::{MsgListener, MsgToken, SendMsg};
-use a10::poll::OneshotPoll;
+use a10::poll::{MultishotPoll, OneshotPoll};
 use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
@@ -254,9 +254,6 @@ fn oneshot_poll() {
 fn drop_oneshot_poll() {
     let sq = test_queue();
 
-    is_send::<OneshotPoll>();
-    is_sync::<OneshotPoll>();
-
     let (receiver, sender) = pipe2().unwrap();
 
     let mut sender_write = sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _);
@@ -275,9 +272,6 @@ fn cancel_oneshot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<OneshotPoll>();
-    is_sync::<OneshotPoll>();
-
     let (receiver, sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
@@ -294,8 +288,8 @@ fn multishot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<OneshotPoll>();
-    is_sync::<OneshotPoll>();
+    is_send::<MultishotPoll>();
+    is_sync::<MultishotPoll>();
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
@@ -324,9 +318,6 @@ fn cancel_multishot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<OneshotPoll>();
-    is_sync::<OneshotPoll>();
-
     let (receiver, sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
@@ -336,6 +327,24 @@ fn cancel_multishot_poll() {
     waker.block_on(receiver_read.cancel()).unwrap();
     assert!(waker.block_on(next(receiver_read)).is_none());
     drop(sender);
+}
+
+#[test]
+fn drop_multishot_poll() {
+    let sq = test_queue();
+
+    let (receiver, sender) = pipe2().unwrap();
+
+    let mut sender_write = sq.multishot_poll(sender.as_fd(), libc::POLLOUT as _);
+    let mut receiver_read = sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _);
+
+    // Poll once to start the operations.
+    // Poll once to start the operations.
+    assert!(poll_nop(Pin::new(&mut next(&mut sender_write))).is_pending());
+    assert!(poll_nop(Pin::new(&mut next(&mut receiver_read))).is_pending());
+
+    drop(sender_write);
+    drop(receiver_read);
 }
 
 fn pipe2() -> io::Result<(File, File)> {
