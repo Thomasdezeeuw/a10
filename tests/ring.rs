@@ -230,11 +230,8 @@ fn oneshot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let mut sender_write = pin!(sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _));
-    let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
-
-    start_op(&mut *sender_write);
-    start_op(&mut *receiver_read);
+    let sender_write = pin!(sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _));
+    let receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
 
     let event = waker.block_on(sender_write).unwrap();
     assert!(event.is_writable());
@@ -254,14 +251,13 @@ fn drop_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut sender_write = sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _);
     let mut receiver_read = sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _);
 
-    start_op(&mut sender_write);
     start_op(&mut receiver_read);
 
-    drop(sender_write);
     drop(receiver_read);
+    drop(receiver);
+    drop(sender);
 }
 
 #[test]
@@ -329,14 +325,13 @@ fn drop_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut sender_write = sq.multishot_poll(sender.as_fd(), libc::POLLOUT as _);
     let mut receiver_read = sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _);
 
-    start_mulitshot_op(Pin::new(&mut sender_write));
     start_mulitshot_op(Pin::new(&mut receiver_read));
 
-    drop(sender_write);
     drop(receiver_read);
+    drop(receiver);
+    drop(sender);
 }
 
 fn pipe2() -> io::Result<(File, File)> {
