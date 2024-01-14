@@ -962,9 +962,21 @@ impl Future for Extractor<Delete> {
 
 impl Drop for Delete {
     fn drop(&mut self) {
-        if let OpState::Running(op_index) = self.state {
-            let path = self.path.take().unwrap();
-            self.sq.drop_op(op_index, path);
+        if let Some(path) = self.path.take() {
+            match self.state {
+                OpState::Running(op_index) => {
+                    let result = self.sq.cancel_op(op_index, path, |submission| unsafe {
+                        submission.cancel_op(op_index);
+                        // We'll get a canceled completion event if we succeeded, which
+                        // is sufficient to cleanup the operation.
+                        submission.no_completion_event();
+                    });
+                    if let Err(err) = result {
+                        log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
+                    }
+                }
+                OpState::NotStarted(_) | OpState::Done => drop(path),
+            }
         }
     }
 }
