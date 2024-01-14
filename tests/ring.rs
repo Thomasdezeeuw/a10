@@ -22,8 +22,8 @@ use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
-    defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel, test_queue,
-    Waker,
+    defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel,
+    start_mulitshot_op, start_op, test_queue, Waker,
 };
 
 const DATA: &[u8] = b"Hello, World!";
@@ -208,8 +208,7 @@ fn message_sending() {
 
     let (msg_listener, msg_token) = sq.clone().msg_listener().unwrap();
     let mut msg_listener = pin!(msg_listener);
-
-    assert!(poll_nop(Pin::new(&mut next(msg_listener.as_mut()))).is_pending());
+    start_mulitshot_op(msg_listener.as_mut());
 
     // Send some messages.
     sq.try_send_msg(msg_token, DATA1).unwrap();
@@ -234,9 +233,8 @@ fn oneshot_poll() {
     let mut sender_write = pin!(sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _));
     let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
 
-    // Poll once to start the operations.
-    assert!(poll_nop(sender_write.as_mut()).is_pending());
-    assert!(poll_nop(receiver_read.as_mut()).is_pending());
+    start_op(&mut *sender_write);
+    start_op(&mut *receiver_read);
 
     let event = waker.block_on(sender_write).unwrap();
     assert!(event.is_writable());
@@ -259,9 +257,8 @@ fn drop_oneshot_poll() {
     let mut sender_write = sq.oneshot_poll(sender.as_fd(), libc::POLLOUT as _);
     let mut receiver_read = sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _);
 
-    // Poll once to start the operations.
-    assert!(poll_nop(Pin::new(&mut sender_write)).is_pending());
-    assert!(poll_nop(Pin::new(&mut receiver_read)).is_pending());
+    start_op(&mut sender_write);
+    start_op(&mut receiver_read);
 
     drop(sender_write);
     drop(receiver_read);
@@ -275,8 +272,7 @@ fn cancel_oneshot_poll() {
     let (receiver, sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(sq.oneshot_poll(receiver.as_fd(), libc::POLLIN as _));
-    // Poll once to start the operations.
-    assert!(poll_nop(receiver_read.as_mut()).is_pending());
+    start_op(&mut receiver_read);
 
     waker.block_on(receiver_read.cancel()).unwrap();
     expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
@@ -294,8 +290,7 @@ fn multishot_poll() {
     let (mut receiver, mut sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
-    // Poll once to start the operations.
-    assert!(poll_nop(Pin::new(&mut next(receiver_read.as_mut()))).is_pending());
+    start_mulitshot_op(Pin::new(&mut receiver_read));
 
     let mut buf = vec![0; DATA.len() + 1];
     for _ in 0..3 {
@@ -321,8 +316,7 @@ fn cancel_multishot_poll() {
     let (receiver, sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
-    // Poll once to start the operations.
-    assert!(poll_nop(Pin::new(&mut next(receiver_read.as_mut()))).is_pending());
+    start_mulitshot_op(receiver_read.as_mut());
 
     waker.block_on(receiver_read.cancel()).unwrap();
     assert!(waker.block_on(next(receiver_read)).is_none());
@@ -338,10 +332,8 @@ fn drop_multishot_poll() {
     let mut sender_write = sq.multishot_poll(sender.as_fd(), libc::POLLOUT as _);
     let mut receiver_read = sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _);
 
-    // Poll once to start the operations.
-    // Poll once to start the operations.
-    assert!(poll_nop(Pin::new(&mut next(&mut sender_write))).is_pending());
-    assert!(poll_nop(Pin::new(&mut next(&mut receiver_read))).is_pending());
+    start_mulitshot_op(Pin::new(&mut sender_write));
+    start_mulitshot_op(Pin::new(&mut receiver_read));
 
     drop(sender_write);
     drop(receiver_read);

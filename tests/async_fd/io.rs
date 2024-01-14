@@ -17,7 +17,7 @@ use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     bind_and_listen_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
-    remove_test_file, require_kernel, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5,
+    remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5,
     LOREM_IPSUM_50,
 };
 
@@ -155,11 +155,11 @@ fn read_read_buf_pool_multiple_buffers() {
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut read1 = file.read_at(buf_pool.get(), 0);
-    let _ = poll_nop(Pin::new(&mut read1));
     let mut read2 = file.read_at(buf_pool.get(), 0);
-    let _ = poll_nop(Pin::new(&mut read2));
     let mut read3 = file.read_at(buf_pool.get(), 0);
-    let _ = poll_nop(Pin::new(&mut read3));
+    start_op(&mut read1);
+    start_op(&mut read2);
+    start_op(&mut read3);
     let buf1 = block_on(&mut ring, read1).unwrap();
     let buf2 = block_on(&mut ring, read2).unwrap();
 
@@ -246,7 +246,7 @@ fn read_read_buf_pool_out_of_buffers() {
     let futures = (0..8)
         .map(|_| {
             let mut read = file.read_at(buf_pool.get(), 0);
-            let _ = poll_nop(Pin::new(&mut read));
+            start_op(&mut read);
             read
         })
         .collect::<Vec<_>>();
@@ -732,7 +732,8 @@ fn cancel_all_accept() {
     bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<libc::sockaddr_in>();
-    // Poll the future to schedule the operation.
+    // Poll the future to schedule the operation, can't use `start_op` as the
+    // address doesn't implement `fmt::Debug`.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 
     let n = waker
@@ -754,7 +755,8 @@ fn cancel_all_twice_accept() {
     bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<libc::sockaddr_in>();
-    // Poll the future to schedule the operation.
+    // Poll the future to schedule the operation, can't use `start_op` as the
+    // address doesn't implement `fmt::Debug`.
     assert!(poll_nop(Pin::new(&mut accept)).is_pending());
 
     let n = waker

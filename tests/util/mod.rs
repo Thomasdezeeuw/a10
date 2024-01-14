@@ -201,6 +201,32 @@ impl Waker {
     }
 }
 
+/// Start an A10 operation, assumes `future` is a A10 `Future`.
+#[track_caller]
+pub(crate) fn start_op<Fut>(future: &mut Fut)
+where
+    Fut: Future + Unpin,
+    Fut::Output: fmt::Debug,
+{
+    let result = poll_nop(Pin::new(future));
+    if !result.is_pending() {
+        panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
+    }
+}
+
+/// Start an A10 multishot operation, assumes `iter` is a A10 `AsyncIterator`.
+#[track_caller]
+pub(crate) fn start_mulitshot_op<I>(iter: I)
+where
+    I: AsyncIterator + Unpin,
+    I::Item: fmt::Debug,
+{
+    let result = poll_nop(Pin::new(&mut next(iter)));
+    if !result.is_pending() {
+        panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
+    }
+}
+
 const NOP_WAKER_VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
     |_| task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE), // clone.
     |_| {},                                                  // wake.
