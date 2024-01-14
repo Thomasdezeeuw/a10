@@ -67,11 +67,10 @@ jobs:
   Sanitizer:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: false
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [address, thread, memory, leak]
+        sanitizer: [address] # TODO: enable thread, memory, leak.
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@nightly
