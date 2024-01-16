@@ -138,7 +138,7 @@ impl TestHarness {
         let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #![cfg(feature = "nightly")]
+            #[cfg(feature = "nightly")]
             if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(self.quiet, format_args!("single_threaded ({name})"));
                 print_test_ignored(self.quiet);
@@ -170,7 +170,7 @@ impl TestHarness {
             let pid = process::id();
             for signal in SIGNALS {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
-                #![cfg(feature = "nightly")]
+                #[cfg(feature = "nightly")]
                 if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
                     continue;
                 }
@@ -187,7 +187,7 @@ impl TestHarness {
         let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #![cfg(feature = "nightly")]
+            #[cfg(feature = "nightly")]
             if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(self.quiet, format_args!("multi_threaded ({name})"));
                 print_test_ignored(self.quiet);
@@ -218,7 +218,7 @@ impl TestHarness {
         let mut task_ctx = task::Context::from_waker(&task_waker);
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #![cfg(feature = "nightly")]
+            #[cfg(feature = "nightly")]
             if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(self.quiet, format_args!("single_threaded ({name})"));
                 print_test_ignored(self.quiet);
@@ -317,6 +317,7 @@ fn print_test_failed(quiet: bool) {
     }
 }
 
+#[cfg(feature = "nightly")]
 fn print_test_ignored(quiet: bool) {
     if quiet {
         print!("i")
