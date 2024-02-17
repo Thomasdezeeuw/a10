@@ -142,16 +142,18 @@ use std::time::Duration;
 use std::{fmt, ptr};
 
 mod bitmap;
-pub mod cancel;
 mod config;
-pub mod extract;
 mod fd;
+mod op;
+mod sys;
+
+pub mod cancel;
+pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod mem;
 pub mod msg;
 pub mod net;
-mod op;
 pub mod poll;
 pub mod process;
 
@@ -166,10 +168,6 @@ pub mod signals {
     pub use crate::process::{ReceiveSignal as Receive, ReceiveSignals, Signals};
 }
 
-// TODO: replace this with definitions from the `libc` crate once available.
-mod sys;
-use sys as libc;
-
 use bitmap::AtomicBitMap;
 use config::munmap;
 pub use config::Config;
@@ -179,6 +177,7 @@ pub use fd::AsyncFd;
 use msg::{MsgListener, MsgToken, SendMsg};
 use op::{QueuedOperation, Submission};
 use poll::{MultishotPoll, OneshotPoll};
+use sys as libc; // TODO: replace this with definitions from the `libc` crate once available.
 
 /// This type represents the user space side of an io_uring.
 ///
