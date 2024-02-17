@@ -447,8 +447,8 @@ impl Drop for ReceiveSignals {
                         });
                 if let Err(err) = result {
                     log::error!(
-                    "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
-                );
+                        "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
+                    );
                 }
             }
             OpState::NotStarted(()) | OpState::Done => drop(signal_info),
