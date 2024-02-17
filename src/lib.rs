@@ -143,12 +143,12 @@ use std::{fmt, ptr};
 
 mod bitmap;
 mod config;
-mod fd;
 mod op;
 mod sys;
 
 pub mod cancel;
 pub mod extract;
+pub mod fd;
 pub mod fs;
 pub mod io;
 pub mod mem;
@@ -173,6 +173,7 @@ use config::munmap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
+#[doc(no_inline)]
 pub use fd::AsyncFd;
 use msg::{MsgListener, MsgToken, SendMsg};
 use op::{QueuedOperation, Submission};

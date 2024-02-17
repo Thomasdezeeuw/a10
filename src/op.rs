@@ -257,6 +257,11 @@ impl Submission {
         self.inner.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 
+    /// Set the flag to use direct descriptors.
+    pub(crate) fn direct_fd(&mut self) {
+        self.inner.flags |= libc::IOSQE_FIXED_FILE;
+    }
+
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
