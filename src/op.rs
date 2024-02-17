@@ -1354,9 +1354,9 @@ macro_rules! op_async_iter {
         #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`AsyncIterator`s do nothing unless polled"]
-        pub struct $name<$lifetime> {
+        pub struct $name<$lifetime, D: $crate::fd::Descriptor = $crate::fd::File> {
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd,
+            fd: &$lifetime $crate::AsyncFd<D>,
             $(
             $(#[ $field_doc ])*
             $field: $value,
@@ -1365,9 +1365,9 @@ macro_rules! op_async_iter {
             state: $crate::op::OpState<$setup_ty>,
         }
 
-        impl<$lifetime> $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> $name<$lifetime, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime> {
+            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime, D> {
                 $name {
                     fd,
                     $( $field, )?
@@ -1427,7 +1427,7 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime, D> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
@@ -1438,7 +1438,7 @@ macro_rules! op_async_iter {
         }
 
         #[cfg(feature = "nightly")]
-        impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> std::async_iter::AsyncIterator for $name<$lifetime, D> {
             type Item = std::io::Result<$result>;
 
             fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
@@ -1446,7 +1446,7 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> std::ops::Drop for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime, D> {
             fn drop(&mut self) {
                 if let $crate::op::OpState::Running(op_index) = self.state {
                     let result = self.fd.sq.cancel_op(op_index, (), |submission| unsafe {
