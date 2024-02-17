@@ -1009,9 +1009,9 @@ macro_rules! op_future {
             map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*>> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*, D>> {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1059,7 +1059,7 @@ macro_rules! op_future {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`Future`s do nothing unless polled"]
-        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> {
+        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor = $crate::fd::File> {
             /// Resoures used in the operation.
             ///
             /// If this is `Some` when the future is dropped it will assume it
@@ -1069,7 +1069,7 @@ macro_rules! op_future {
                 $( $value, )*
             )>>,
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd,
+            fd: &$lifetime $crate::AsyncFd<D>,
             /// State of the operation.
             state: $crate::op::OpState<$setup_ty>,
             $(
@@ -1078,9 +1078,9 @@ macro_rules! op_future {
             )?
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
                 // This is needed because of the usage of `$phantom_doc`, which
                 // is needed for the macro to work, even though it doesn't
                 // create any documentation.
@@ -1099,7 +1099,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
@@ -1109,16 +1109,17 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
                     $setup_fn
+                    D::set_flags($setup_submission);
                 }))
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             type Output = std::io::Result<$result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1145,10 +1146,10 @@ macro_rules! op_future {
             }
         }
 
-        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
-        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Send> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Sync> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
