@@ -67,6 +67,25 @@ impl AsyncFd<File> {
         let fd = self.fd.try_clone()?;
         Ok(AsyncFd::new(fd, self.sq.clone()))
     }
+
+    /// Convert a regular file descriptor into a direct descriptor.
+    ///
+    /// The file descriptor can continued to be used and the lifetimes of the
+    /// file descriptor and the newly returned direct descriptor are not
+    /// connected.
+    ///
+    /// # Notes
+    ///
+    /// The [`Ring`] must be configured [`with_direct_descriptors`] enabled,
+    /// otherwise this will return `ENXIO`.
+    ///
+    /// [`Ring`]: crate::Ring
+    /// [`with_direct_descriptors`]: crate::Config::with_direct_descriptors
+    #[doc(alias = "IORING_OP_FILES_UPDATE")]
+    #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
+    pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
+        ToDirect::new(self, Box::new(self.fd()), ())
+    }
 }
 
 impl AsyncFd<Direct> {
@@ -209,6 +228,27 @@ op_future! {
         let sq = this.fd.sq.clone();
         // SAFETY: the fixed fd intall operation ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
+        Ok(fd)
+    },
+}
+
+// ToDirect.
+op_future! {
+    fn AsyncFd::to_direct_descriptor -> AsyncFd<Direct>,
+    struct ToDirect<'fd> {
+        /// The file descriptor we're changing into a direct descriptor, needs
+        /// to stay in memory so the kernel can access it safely.
+        direct_fd: Box<RawFd>,
+    },
+    setup_state: _unused: (),
+    setup: |submission, fd, (direct_fd,), ()| unsafe {
+        submission.create_direct_descriptor(&mut **direct_fd, 1);
+    },
+    map_result: |this, (direct_fd,), res| {
+        debug_assert!(res == 1);
+        let sq = this.fd.sq.clone();
+        // SAFETY: the files update operation ensures that `direct_fd` is valid.
+        let fd = unsafe { AsyncFd::from_direct_fd(*direct_fd, sq) };
         Ok(fd)
     },
 }
