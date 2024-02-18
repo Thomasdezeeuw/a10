@@ -18,6 +18,7 @@
 #![allow(clippy::non_send_fields_in_send_ty)]
 
 use std::future::Future;
+use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::pin::Pin;
@@ -26,8 +27,9 @@ use std::{io, ptr};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::extract::{Extract, Extractor};
+use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{libc, AsyncFd, SubmissionQueue};
+use crate::{libc, SubmissionQueue};
 
 mod read_buf;
 #[doc(hidden)]
@@ -88,9 +90,9 @@ stdio!(stdout() -> Stdout, libc::STDOUT_FILENO);
 stdio!(stderr() -> Stderr, libc::STDERR_FILENO);
 
 /// I/O system calls.
-impl AsyncFd {
+impl<D: Descriptor> AsyncFd<D> {
     /// Read from this fd into `buf`.
-    pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
+    pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B, D>
     where
         B: BufMut,
     {
@@ -102,7 +104,7 @@ impl AsyncFd {
     /// The current file cursor is not affected by this function. This means
     /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
     /// continue reading at 2kb in the next call to `read`.
-    pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
+    pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B, D>
     where
         B: BufMut,
     {
@@ -110,7 +112,7 @@ impl AsyncFd {
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
-    pub const fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
+    pub const fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B, D>
     where
         B: BufMut,
     {
@@ -120,7 +122,7 @@ impl AsyncFd {
     /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
+    pub const fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B, D>
     where
         B: BufMut,
     {
@@ -128,7 +130,7 @@ impl AsyncFd {
     }
 
     /// Read from this fd into `bufs`.
-    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N>
+    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N, D>
     where
         B: BufMutSlice<N>,
     {
@@ -142,7 +144,7 @@ impl AsyncFd {
         &'fd self,
         mut bufs: B,
         offset: u64,
-    ) -> ReadVectored<'fd, B, N>
+    ) -> ReadVectored<'fd, B, N, D>
     where
         B: BufMutSlice<N>,
     {
@@ -155,7 +157,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> ReadNVectored<'fd, B, N>
+    ) -> ReadNVectored<'fd, B, N, D>
     where
         B: BufMutSlice<N>,
     {
@@ -170,7 +172,7 @@ impl AsyncFd {
         bufs: B,
         offset: u64,
         n: usize,
-    ) -> ReadNVectored<'fd, B, N>
+    ) -> ReadNVectored<'fd, B, N, D>
     where
         B: BufMutSlice<N>,
     {
@@ -178,7 +180,7 @@ impl AsyncFd {
     }
 
     /// Write `buf` to this fd.
-    pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
+    pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B, D>
     where
         B: Buf,
     {
@@ -188,7 +190,7 @@ impl AsyncFd {
     /// Write `buf` to this fd at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
+    pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B, D>
     where
         B: Buf,
     {
@@ -196,7 +198,7 @@ impl AsyncFd {
     }
 
     /// Write all of `buf` to this fd.
-    pub const fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
+    pub const fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B, D>
     where
         B: Buf,
     {
@@ -206,7 +208,7 @@ impl AsyncFd {
     /// Write all of `buf` to this fd at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
+    pub const fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B, D>
     where
         B: Buf,
     {
@@ -214,7 +216,7 @@ impl AsyncFd {
     }
 
     /// Write `bufs` to this file.
-    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N>
+    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N, D>
     where
         B: BufSlice<N>,
     {
@@ -228,7 +230,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
         offset: u64,
-    ) -> WriteVectored<'fd, B, N>
+    ) -> WriteVectored<'fd, B, N, D>
     where
         B: BufSlice<N>,
     {
@@ -240,7 +242,7 @@ impl AsyncFd {
     pub fn write_all_vectored<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> WriteAllVectored<'fd, B, N>
+    ) -> WriteAllVectored<'fd, B, N, D>
     where
         B: BufSlice<N>,
     {
@@ -254,7 +256,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
         offset: u64,
-    ) -> WriteAllVectored<'fd, B, N>
+    ) -> WriteAllVectored<'fd, B, N, D>
     where
         B: BufSlice<N>,
     {
@@ -270,7 +272,7 @@ impl AsyncFd {
         target: RawFd,
         length: u32,
         flags: libc::c_int,
-    ) -> Splice<'fd> {
+    ) -> Splice<'fd, D> {
         self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
     }
 
@@ -284,7 +286,7 @@ impl AsyncFd {
         target_offset: u64,
         length: u32,
         flags: libc::c_int,
-    ) -> Splice<'fd> {
+    ) -> Splice<'fd, D> {
         self.splice(
             target,
             SpliceDirection::To,
@@ -304,7 +306,7 @@ impl AsyncFd {
         target: RawFd,
         length: u32,
         flags: libc::c_int,
-    ) -> Splice<'fd> {
+    ) -> Splice<'fd, D> {
         self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
     }
 
@@ -319,7 +321,7 @@ impl AsyncFd {
         target_offset: u64,
         length: u32,
         flags: libc::c_int,
-    ) -> Splice<'fd> {
+    ) -> Splice<'fd, D> {
         self.splice(
             target,
             SpliceDirection::From,
@@ -338,7 +340,7 @@ impl AsyncFd {
         off_out: u64,
         length: u32,
         flags: libc::c_int,
-    ) -> Splice<'fd> {
+    ) -> Splice<'fd, D> {
         Splice::new(self, (target, direction, off_in, off_out, length, flags))
     }
 
@@ -348,7 +350,7 @@ impl AsyncFd {
     ///
     /// This happens automatically on drop, this can be used to get a possible
     /// error.
-    pub fn close(self) -> Close {
+    pub fn close(self) -> Close<D> {
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.
         let this = ManuallyDrop::new(self);
@@ -360,6 +362,7 @@ impl AsyncFd {
         Close {
             sq,
             state: OpState::NotStarted(fd),
+            kind: PhantomData,
         }
     }
 }
@@ -391,15 +394,15 @@ op_future! {
 
 /// [`Future`] behind [`AsyncFd::read_n`].
 #[derive(Debug)]
-pub struct ReadN<'fd, B> {
-    read: Read<'fd, ReadNBuf<B>>,
+pub struct ReadN<'fd, B, D: Descriptor = File> {
+    read: Read<'fd, ReadNBuf<B>, D>,
     offset: u64,
     /// Number of bytes we still need to read to hit our target `N`.
     left: usize,
 }
 
-impl<'fd, B: BufMut> ReadN<'fd, B> {
-    const fn new(fd: &'fd AsyncFd, buf: B, offset: u64, n: usize) -> ReadN<'fd, B> {
+impl<'fd, B: BufMut, D: Descriptor> ReadN<'fd, B, D> {
+    const fn new(fd: &'fd AsyncFd<D>, buf: B, offset: u64, n: usize) -> ReadN<'fd, B, D> {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
             read: fd.read_at(buf, offset),
@@ -409,7 +412,7 @@ impl<'fd, B: BufMut> ReadN<'fd, B> {
     }
 }
 
-impl<'fd, B> Cancel for ReadN<'fd, B> {
+impl<'fd, B, D: Descriptor> Cancel for ReadN<'fd, B, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.read.try_cancel()
     }
@@ -419,7 +422,7 @@ impl<'fd, B> Cancel for ReadN<'fd, B> {
     }
 }
 
-impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
+impl<'fd, B: BufMut, D: Descriptor> Future for ReadN<'fd, B, D> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -487,15 +490,15 @@ op_future! {
 
 /// [`Future`] behind [`AsyncFd::read_n_vectored`].
 #[derive(Debug)]
-pub struct ReadNVectored<'fd, B, const N: usize> {
-    read: ReadVectored<'fd, ReadNBuf<B>, N>,
+pub struct ReadNVectored<'fd, B, const N: usize, D: Descriptor = File> {
+    read: ReadVectored<'fd, ReadNBuf<B>, N, D>,
     offset: u64,
     /// Number of bytes we still need to read to hit our target `N`.
     left: usize,
 }
 
-impl<'fd, B: BufMutSlice<N>, const N: usize> ReadNVectored<'fd, B, N> {
-    fn new(fd: &'fd AsyncFd, bufs: B, offset: u64, n: usize) -> ReadNVectored<'fd, B, N> {
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> ReadNVectored<'fd, B, N, D> {
+    fn new(fd: &'fd AsyncFd<D>, bufs: B, offset: u64, n: usize) -> ReadNVectored<'fd, B, N, D> {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
@@ -508,7 +511,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> ReadNVectored<'fd, B, N> {
     }
 }
 
-impl<'fd, B, const N: usize> Cancel for ReadNVectored<'fd, B, N> {
+impl<'fd, B, const N: usize, D: Descriptor> Cancel for ReadNVectored<'fd, B, N, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.read.try_cancel()
     }
@@ -518,7 +521,7 @@ impl<'fd, B, const N: usize> Cancel for ReadNVectored<'fd, B, N> {
     }
 }
 
-impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N> {
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for ReadNVectored<'fd, B, N, D> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -604,13 +607,13 @@ op_future! {
 
 /// [`Future`] behind [`AsyncFd::write_all`].
 #[derive(Debug)]
-pub struct WriteAll<'fd, B> {
-    write: Extractor<Write<'fd, SkipBuf<B>>>,
+pub struct WriteAll<'fd, B, D: Descriptor = File> {
+    write: Extractor<Write<'fd, SkipBuf<B>, D>>,
     offset: u64,
 }
 
-impl<'fd, B: Buf> WriteAll<'fd, B> {
-    const fn new(fd: &'fd AsyncFd, buf: B, offset: u64) -> WriteAll<'fd, B> {
+impl<'fd, B: Buf, D: Descriptor> WriteAll<'fd, B, D> {
+    const fn new(fd: &'fd AsyncFd<D>, buf: B, offset: u64) -> WriteAll<'fd, B, D> {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             // TODO: once `Extract` is a constant trait use that.
@@ -649,7 +652,7 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
     }
 }
 
-impl<'fd, B> Cancel for WriteAll<'fd, B> {
+impl<'fd, B, D: Descriptor> Cancel for WriteAll<'fd, B, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.write.try_cancel()
     }
@@ -659,7 +662,7 @@ impl<'fd, B> Cancel for WriteAll<'fd, B> {
     }
 }
 
-impl<'fd, B: Buf> Future for WriteAll<'fd, B> {
+impl<'fd, B: Buf, D: Descriptor> Future for WriteAll<'fd, B, D> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -667,9 +670,9 @@ impl<'fd, B: Buf> Future for WriteAll<'fd, B> {
     }
 }
 
-impl<'fd, B: Buf> Extract for WriteAll<'fd, B> {}
+impl<'fd, B: Buf, D: Descriptor> Extract for WriteAll<'fd, B, D> {}
 
-impl<'fd, B: Buf> Future for Extractor<WriteAll<'fd, B>> {
+impl<'fd, B: Buf, D: Descriptor> Future for Extractor<WriteAll<'fd, B, D>> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -732,14 +735,14 @@ op_future! {
 
 /// [`Future`] behind [`AsyncFd::write_all_vectored`].
 #[derive(Debug)]
-pub struct WriteAllVectored<'fd, B, const N: usize> {
-    write: Extractor<WriteVectored<'fd, B, N>>,
+pub struct WriteAllVectored<'fd, B, const N: usize, D: Descriptor = File> {
+    write: Extractor<WriteVectored<'fd, B, N, D>>,
     offset: u64,
     skip: u64,
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
-    fn new(fd: &'fd AsyncFd, buf: B, offset: u64) -> WriteAllVectored<'fd, B, N> {
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> WriteAllVectored<'fd, B, N, D> {
+    fn new(fd: &'fd AsyncFd<D>, buf: B, offset: u64) -> WriteAllVectored<'fd, B, N, D> {
         WriteAllVectored {
             write: fd.write_vectored_at(buf, offset).extract(),
             offset,
@@ -788,7 +791,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
     }
 }
 
-impl<'fd, B, const N: usize> Cancel for WriteAllVectored<'fd, B, N> {
+impl<'fd, B, const N: usize, D: Descriptor> Cancel for WriteAllVectored<'fd, B, N, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.write.try_cancel()
     }
@@ -798,7 +801,7 @@ impl<'fd, B, const N: usize> Cancel for WriteAllVectored<'fd, B, N> {
     }
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize> Future for WriteAllVectored<'fd, B, N> {
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future for WriteAllVectored<'fd, B, N, D> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -806,9 +809,14 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for WriteAllVectored<'fd, B, N>
     }
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize> Extract for WriteAllVectored<'fd, B, N> {}
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Extract
+    for WriteAllVectored<'fd, B, N, D>
+{
+}
 
-impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<WriteAllVectored<'fd, B, N>> {
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future
+    for Extractor<WriteAllVectored<'fd, B, N, D>>
+{
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -828,8 +836,6 @@ op_future! {
             SpliceDirection::To => (fd.fd(), target),
             SpliceDirection::From => (target, fd.fd()),
         };
-        dbg!(fd_in, fd_out);
-        dbg!(off_in, off_out);
         submission.splice(fd_in, off_in, fd_out, off_out, len, flags);
     },
     map_result: |n| {
@@ -847,17 +853,19 @@ enum SpliceDirection {
 /// [`Future`] behind [`AsyncFd::close`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
-pub struct Close {
+pub struct Close<D: Descriptor = File> {
     sq: SubmissionQueue,
     state: OpState<RawFd>,
+    kind: PhantomData<D>,
 }
 
-impl Future for Close {
+impl<D: Descriptor + Unpin> Future for Close<D> {
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let op_index = poll_state!(Close, self.state, self.sq, ctx, |submission, fd| unsafe {
             submission.close(fd);
+            D::set_flags(submission);
         });
 
         match self.sq.poll_op(ctx, op_index) {
