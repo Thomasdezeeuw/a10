@@ -281,6 +281,17 @@ impl Submission {
         self.direct_fd();
     }
 
+    /// Create a direct descriptor for `fd` (which must be a regular file descriptor).
+    pub(crate) unsafe fn create_direct_descriptor(&mut self, fds: *mut RawFd, len: u32) {
+        self.inner.opcode = libc::IORING_OP_FILES_UPDATE as u8;
+        self.inner.fd = -1;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: libc::IORING_FILE_INDEX_ALLOC as _,
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: fds as _ };
+        self.inner.len = len;
+    }
+
     /// Sync the `fd` with `fsync_flags`.
     pub(crate) unsafe fn fsync(&mut self, fd: RawFd, fsync_flags: libc::__u32) {
         self.inner.opcode = libc::IORING_OP_FSYNC as u8;
