@@ -13,9 +13,10 @@ use std::{fmt, io, ptr};
 use log::{error, trace};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
+use crate::fd::{AsyncFd, Descriptor, File};
 use crate::libc::{self, syscall};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{AsyncFd, QueueFull, SubmissionQueue};
+use crate::{QueueFull, SubmissionQueue};
 
 /// Wait on the child `process`.
 ///
@@ -182,10 +183,9 @@ impl Drop for WaitId {
 /// }
 /// # }
 /// ```
-#[derive(Debug)]
-pub struct Signals {
+pub struct Signals<D: Descriptor = File> {
     /// `signalfd(2)` file descriptor.
-    fd: AsyncFd,
+    fd: AsyncFd<D>,
     /// All signals this is listening for, used in resetting the signal handlers.
     signals: SignalSet,
 }
@@ -224,9 +224,11 @@ impl Signals {
         let set = unsafe { set.assume_init() };
         Signals::from_set(sq, set)
     }
+}
 
+impl<D: Descriptor> Signals<D> {
     /// Receive a signal.
-    pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
+    pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd, D> {
         // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
         let info = Box::new(MaybeUninit::uninit());
         ReceiveSignal::new(&self.fd, info, ())
@@ -237,7 +239,7 @@ impl Signals {
     /// This is an combined, owned version of `Signals` and `Receive` (the
     /// future behind `Signals::receive`). This is useful if you don't want to
     /// deal with the `'fd` lifetime.
-    pub fn receive_signals(self) -> ReceiveSignals {
+    pub fn receive_signals(self) -> ReceiveSignals<D> {
         ReceiveSignals {
             signals: self,
             // TODO: replace with `Box::new_zeroed` once stable.
@@ -272,6 +274,7 @@ op_future! {
     setup: |submission, fd, (info,), _unused| unsafe {
         let ptr = (**info).as_mut_ptr().cast();
         submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
+        D::set_flags(submission);
     },
     map_result: |this, (info,), n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
@@ -331,7 +334,7 @@ impl fmt::Debug for SignalSet {
     }
 }
 
-impl Drop for Signals {
+impl<D: Descriptor> Drop for Signals<D> {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
@@ -350,13 +353,13 @@ fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct ReceiveSignals {
-    signals: Signals,
+pub struct ReceiveSignals<D: Descriptor = File> {
+    signals: Signals<D>,
     info: ManuallyDrop<Box<libc::signalfd_siginfo>>,
     state: OpState<()>,
 }
 
-impl ReceiveSignals {
+impl<D: Descriptor> ReceiveSignals<D> {
     /// Poll the next signal.
     pub fn poll_signal<'a>(
         &'a mut self,
@@ -377,6 +380,7 @@ impl ReceiveSignals {
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
+                    D::set_flags(submission);
                 });
                 match result {
                     Ok(op_index) => {
@@ -415,7 +419,7 @@ impl ReceiveSignals {
 }
 
 #[allow(clippy::missing_fields_in_debug)]
-impl fmt::Debug for ReceiveSignals {
+impl<D: Descriptor> fmt::Debug for ReceiveSignals<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReceiveSignals")
             .field("signals", &self.signals)
@@ -425,7 +429,7 @@ impl fmt::Debug for ReceiveSignals {
     }
 }
 
-impl Drop for ReceiveSignals {
+impl<D: Descriptor> Drop for ReceiveSignals<D> {
     fn drop(&mut self) {
         let signal_info = unsafe { ManuallyDrop::take(&mut self.info) };
         match self.state {
