@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::op::Submission;
+use crate::op::{op_future, Submission};
 use crate::SubmissionQueue;
 
 /// An open file descriptor.
@@ -52,6 +52,16 @@ impl AsyncFd<Direct> {
             sq,
             kind: PhantomData,
         }
+    }
+
+    /// Convert a direct descriptor in a regular file descriptor.
+    ///
+    /// The direct descriptor can continued to be used and the lifetimes of the
+    /// direct descriptor and the newly returned file descriptor are not
+    /// connected.
+    #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
+    pub fn to_file_descriptor<'fd, A>(&'fd self) -> ToFd<'fd, Direct> {
+        ToFd::new(self, ())
     }
 }
 
@@ -183,4 +193,22 @@ impl private::Descriptor for Direct {
     fn fmt_dbg() -> &'static str {
         "direct descriptor"
     }
+}
+
+// ToFd.
+op_future! {
+    fn AsyncFd::to_file_descriptor -> AsyncFd<File>,
+    struct ToFd<'fd> {
+    },
+    setup_state: _unused: (),
+    setup: |submission, fd, (), ()| unsafe {
+        // NOTE: flags must currently be null.
+        submission.create_file_descriptor(fd.fd(), 0);
+    },
+    map_result: |this, (), fd| {
+        let sq = this.fd.sq.clone();
+        // SAFETY: the fixed fd intall operation ensures that `fd` is valid.
+        let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
+        Ok(fd)
+    },
 }
