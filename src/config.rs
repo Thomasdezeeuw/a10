@@ -25,6 +25,7 @@ pub struct Config<'r> {
     kernel_thread: bool,
     cpu_affinity: Option<u32>,
     idle_timeout: Option<u32>,
+    direct_descriptors: Option<u32>,
     attach: Option<&'r SubmissionQueue>,
 }
 
@@ -67,6 +68,7 @@ impl<'r> Config<'r> {
             kernel_thread: true,
             cpu_affinity: None,
             idle_timeout: None,
+            direct_descriptors: None,
             attach: None,
         }
     }
@@ -194,6 +196,21 @@ impl<'r> Config<'r> {
         self
     }
 
+    /// Enable direct descriptors.
+    ///
+    /// This registers a sparse array of `size` direct descriptor slots enabling
+    /// direct descriptors to be used. If this is not used attempt to create a
+    /// direct descriptor will result in `ENXIO`.
+    ///
+    /// By default direct descriptors are not enabled.
+    #[doc(alias = "IORING_REGISTER_FILES")]
+    #[doc(alias = "IORING_REGISTER_FILES2")]
+    #[doc(alias = "IORING_RSRC_REGISTER_SPARSE")]
+    pub const fn with_direct_descriptors(mut self, size: u32) -> Self {
+        self.direct_descriptors = Some(size);
+        self
+    }
+
     /// Attach the new (to be created) ring to `other_ring`.
     ///
     /// This will cause the `Ring` being created to share the asynchronous
@@ -290,6 +307,22 @@ impl<'r> Config<'r> {
 
         let cq = mmap_completion_queue(fd.as_fd(), &parameters)?;
         let sq = mmap_submission_queue(fd, &parameters)?;
+
+        if let Some(size) = self.direct_descriptors {
+            let register = libc::io_uring_rsrc_register {
+                flags: libc::IORING_RSRC_REGISTER_SPARSE,
+                nr: size,
+                resv2: 0,
+                data: 0,
+                tags: 0,
+            };
+            sq.register(
+                libc::IORING_REGISTER_FILES2,
+                (&register as *const libc::io_uring_rsrc_register).cast(),
+                size_of::<libc::io_uring_rsrc_register>() as _,
+            )?;
+        }
+
         Ok(Ring { cq, sq })
     }
 }
