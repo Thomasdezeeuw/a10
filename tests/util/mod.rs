@@ -90,7 +90,9 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .get_or_init(|| {
             init();
 
-            let config = Ring::config(128).with_kernel_thread(true);
+            let config = Ring::config(128)
+                .with_kernel_thread(true)
+                .with_direct_descriptors(1024);
             let mut ring = match config.clone().build() {
                 Ok(ring) => ring,
                 Err(err) => {
