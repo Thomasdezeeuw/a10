@@ -37,6 +37,24 @@ pub struct AsyncFd<D: Descriptor = File> {
 // NOTE: the implementations are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
+impl AsyncFd<Direct> {
+    /// Create a new `AsyncFd` from a `RawFd`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `direct_fd` is valid and that it's no longer
+    /// used by anything other than the returned `AsyncFd`. Furthermore the
+    /// caller must ensure the direct descriptor is actually a direct
+    /// descriptor.
+    pub(crate) unsafe fn new_direct(direct_fd: RawFd, sq: SubmissionQueue) -> AsyncFd<Direct> {
+        AsyncFd {
+            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(direct_fd)),
+            sq,
+            kind: PhantomData,
+        }
+    }
+}
+
 impl AsyncFd<File> {
     /// Create a new `AsyncFd`.
     pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
