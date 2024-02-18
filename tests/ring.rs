@@ -18,7 +18,7 @@ use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::msg::{MsgListener, MsgToken, SendMsg};
 use a10::poll::{MultishotPoll, OneshotPoll};
-use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
+use a10::{mem, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
@@ -42,8 +42,6 @@ fn polling_timeout() -> io::Result<()> {
     is_sync::<Config>();
     is_send::<SubmissionQueue>();
     is_sync::<SubmissionQueue>();
-    is_send::<AsyncFd>();
-    is_sync::<AsyncFd>();
 
     let start = Instant::now();
     ring.poll(Some(TIMEOUT)).unwrap();
