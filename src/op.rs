@@ -923,6 +923,13 @@ impl fmt::Debug for Submission {
                     .field("msg1", &self.inner.len)
                     .field("msg2", unsafe { &self.inner.__bindgen_anon_1.off });
             }
+            libc::IORING_OP_FIXED_FD_INSTALL => {
+                f.field("opcode", &"IORING_OP_FIXED_FD_INSTALL")
+                    .field("fd", &self.inner.fd)
+                    .field("install_fd_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.install_fd_flags
+                    });
+            }
             _ => {
                 // NOTE: we can't access the unions safely without know what
                 // fields to read.
