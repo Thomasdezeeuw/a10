@@ -270,6 +270,17 @@ impl Submission {
         self.inner.opcode == libc::IORING_OP_NOP as u8
     }
 
+    /// Create a regular file descriptor for `direct_fd` (which must be a direct
+    /// descriptor).
+    pub(crate) unsafe fn create_file_descriptor(&mut self, direct_fd: RawFd, flags: libc::__u32) {
+        self.inner.opcode = libc::IORING_OP_FIXED_FD_INSTALL as u8;
+        self.inner.fd = direct_fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            install_fd_flags: flags,
+        };
+        self.direct_fd();
+    }
+
     /// Sync the `fd` with `fsync_flags`.
     pub(crate) unsafe fn fsync(&mut self, fd: RawFd, fsync_flags: libc::__u32) {
         self.inner.opcode = libc::IORING_OP_FSYNC as u8;
