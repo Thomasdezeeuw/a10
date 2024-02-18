@@ -4,6 +4,7 @@
 
 use std::ffi::{CString, OsString};
 use std::future::Future;
+use std::marker::PhantomData;
 use std::mem::zeroed;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
@@ -13,8 +14,9 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
 use crate::extract::Extractor;
+use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{op_future, poll_state, OpState};
-use crate::{libc, AsyncFd, Extract, SubmissionQueue};
+use crate::{libc, Extract, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -167,24 +169,25 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
-    pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open {
+    pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open<File> {
         self.flags |= libc::O_TMPFILE;
         self.open(sq, dir)
     }
 
     /// Open `path`.
     #[doc(alias = "openat")]
-    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open {
+    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open<File> {
         Open {
             path: Some(path_to_cstring(path)),
             sq: Some(sq),
             state: OpState::NotStarted((self.flags, self.mode)),
+            kind: PhantomData,
         }
     }
 }
 
 /// Open a file in read-only mode.
-pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open {
+pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
     OpenOptions::new().read().open(sq, path)
 }
 
@@ -193,16 +196,17 @@ pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open {
 /// [`open`]: OpenOptions::open
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
-pub struct Open {
+pub struct Open<D: Descriptor = File> {
     /// Path used to open the file, need to stay in memory so the kernel can
     /// access it safely.
     path: Option<CString>,
     sq: Option<SubmissionQueue>,
     state: OpState<(libc::c_int, libc::mode_t)>,
+    kind: PhantomData<D>,
 }
 
-impl Future for Open {
-    type Output = io::Result<AsyncFd>;
+impl<D: Descriptor + Unpin> Future for Open<D> {
+    type Output = io::Result<AsyncFd<D>>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let op_index = poll_state!(
@@ -224,7 +228,7 @@ impl Future for Open {
                     Ok((_, fd)) => Poll::Ready(Ok(unsafe {
                         // SAFETY: the open operation ensures that `fd` is valid.
                         // SAFETY: unwrapped `sq` above already.
-                        AsyncFd::from_raw_fd(fd, self.sq.take().unwrap())
+                        AsyncFd::from_raw(fd, self.sq.take().unwrap())
                     })),
                     Err(err) => Poll::Ready(Err(err)),
                 }
@@ -234,10 +238,10 @@ impl Future for Open {
     }
 }
 
-impl Extract for Open {}
+impl<D: Descriptor> Extract for Open<D> {}
 
-impl Future for Extractor<Open> {
-    type Output = io::Result<(AsyncFd, PathBuf)>;
+impl<D: Descriptor + Unpin> Future for Extractor<Open<D>> {
+    type Output = io::Result<(AsyncFd<D>, PathBuf)>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         match Pin::new(&mut self.fut).poll(ctx) {
@@ -251,7 +255,7 @@ impl Future for Extractor<Open> {
     }
 }
 
-impl Drop for Open {
+impl<D: Descriptor> Drop for Open<D> {
     fn drop(&mut self) {
         if let Some(path) = self.path.take() {
             match self.state {
@@ -279,14 +283,14 @@ impl Drop for Open {
 }
 
 /// File(system) related system calls.
-impl AsyncFd {
+impl<D: Descriptor> AsyncFd<D> {
     /// Sync all OS-internal metadata to disk.
     ///
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fsync")]
-    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
+    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd, D> {
         SyncData::new(self, 0)
     }
 
@@ -303,13 +307,13 @@ impl AsyncFd {
     ///
     /// Any uncompleted writes may not be synced to disk.
     #[doc(alias = "fdatasync")]
-    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
+    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd, D> {
         SyncData::new(self, libc::IORING_FSYNC_DATASYNC)
     }
 
     /// Retrieve metadata about the file.
     #[doc(alias = "statx")]
-    pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
+    pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
         let metadata = Box::new(Metadata {
             // SAFETY: all zero values are valid representations.
             inner: unsafe { zeroed() },
@@ -333,7 +337,7 @@ impl AsyncFd {
         offset: u64,
         length: u32,
         advice: libc::c_int,
-    ) -> Advise<'fd> {
+    ) -> Advise<'fd, D> {
         Advise::new(self, (offset, length, advice))
     }
 
@@ -348,7 +352,7 @@ impl AsyncFd {
         offset: u64,
         length: u32,
         mode: libc::c_int,
-    ) -> Allocate<'fd> {
+    ) -> Allocate<'fd, D> {
         Allocate::new(self, (offset, length, mode))
     }
 }
