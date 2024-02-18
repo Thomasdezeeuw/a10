@@ -8,9 +8,10 @@ use std::{fmt, io, ptr};
 
 use log::{error, trace};
 
+use crate::fd::{AsyncFd, Descriptor, File};
 use crate::libc::{self, syscall};
 use crate::op::{op_future, OpState, NO_OFFSET};
-use crate::{AsyncFd, QueueFull, SubmissionQueue};
+use crate::{QueueFull, SubmissionQueue};
 
 /// Notification of process signals.
 ///
@@ -61,10 +62,9 @@ use crate::{AsyncFd, QueueFull, SubmissionQueue};
 /// }
 /// # }
 /// ```
-#[derive(Debug)]
-pub struct Signals {
+pub struct Signals<D: Descriptor = File> {
     /// `signalfd(2)` file descriptor.
-    fd: AsyncFd,
+    fd: AsyncFd<D>,
     /// All signals this is listening for, used in resetting the signal handlers.
     signals: SignalSet,
 }
@@ -103,9 +103,11 @@ impl Signals {
         let set = unsafe { set.assume_init() };
         Signals::from_set(sq, set)
     }
+}
 
+impl<D: Descriptor> Signals<D> {
     /// Receive a signal.
-    pub fn receive<'fd>(&'fd self) -> Receive<'fd> {
+    pub fn receive<'fd>(&'fd self) -> Receive<'fd, D> {
         // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
         let info = Box::new(MaybeUninit::uninit());
         Receive::new(&self.fd, info, ())
@@ -116,7 +118,7 @@ impl Signals {
     /// This is an combined, owned version of `Signals` and `Receive` (the
     /// future behind `Signals::receive`). This is useful if you don't want to
     /// deal with the `'fd` lifetime.
-    pub fn receive_signals(self) -> ReceiveSignals {
+    pub fn receive_signals(self) -> ReceiveSignals<D> {
         ReceiveSignals {
             signals: self,
             // TODO: replace with `Box::new_zeroed` once stable.
@@ -137,6 +139,15 @@ fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<
         syscall!(sigaddset(&mut set, signal))?;
     }
     Ok(set)
+}
+
+impl<D: Descriptor> fmt::Debug for Signals<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Signals")
+            .field("fd", &self.fd)
+            .field("signals", &self.signals)
+            .finish()
+    }
 }
 
 // Receive.
@@ -210,7 +221,7 @@ impl fmt::Debug for SignalSet {
     }
 }
 
-impl Drop for Signals {
+impl<D: Descriptor> Drop for Signals<D> {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
@@ -227,13 +238,13 @@ fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
 /// Receive multiple signals.
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct ReceiveSignals {
-    signals: Signals,
+pub struct ReceiveSignals<D: Descriptor = File> {
+    signals: Signals<D>,
     info: ManuallyDrop<Box<libc::signalfd_siginfo>>,
     state: OpState<()>,
 }
 
-impl ReceiveSignals {
+impl<D: Descriptor> ReceiveSignals<D> {
     /// Poll the next signal.
     pub fn poll_signal<'a>(
         &'a mut self,
@@ -254,6 +265,7 @@ impl ReceiveSignals {
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
+                    D::set_flags(submission);
                 });
                 match result {
                     Ok(op_index) => {
@@ -292,7 +304,7 @@ impl ReceiveSignals {
 }
 
 #[allow(clippy::missing_fields_in_debug)]
-impl fmt::Debug for ReceiveSignals {
+impl<D: Descriptor> fmt::Debug for ReceiveSignals<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ReceiveSignals")
             .field("signals", &self.signals)
@@ -302,7 +314,7 @@ impl fmt::Debug for ReceiveSignals {
     }
 }
 
-impl Drop for ReceiveSignals {
+impl<D: Descriptor> Drop for ReceiveSignals<D> {
     fn drop(&mut self) {
         let signal_info = unsafe { ManuallyDrop::take(&mut self.info) };
         match self.state {
@@ -324,8 +336,8 @@ impl Drop for ReceiveSignals {
                         });
                 if let Err(err) = result {
                     log::error!(
-                    "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
-                );
+                        "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"
+                    );
                 }
             }
             OpState::NotStarted(()) | OpState::Done => drop(signal_info),

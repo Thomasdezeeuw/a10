@@ -133,8 +133,8 @@
 
 use std::cmp::min;
 use std::marker::PhantomData;
-use std::mem::{needs_drop, replace, size_of, take, ManuallyDrop};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::mem::{needs_drop, replace, size_of, take};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll};
@@ -142,30 +142,33 @@ use std::time::Duration;
 use std::{fmt, ptr};
 
 mod bitmap;
-pub mod cancel;
 mod config;
+mod op;
+mod sys;
+
+#[rustfmt::skip] // This must come before the other modules for the documentation.
+pub mod fd;
+pub mod cancel;
 pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod mem;
 pub mod msg;
 pub mod net;
-mod op;
 pub mod poll;
 pub mod signals;
-
-// TODO: replace this with definitions from the `libc` crate once available.
-mod sys;
-use sys as libc;
 
 use bitmap::AtomicBitMap;
 use config::munmap;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
+#[doc(no_inline)]
+pub use fd::AsyncFd;
 use msg::{MsgListener, MsgToken, SendMsg};
 use op::{QueuedOperation, Submission};
 use poll::{MultishotPoll, OneshotPoll};
+use sys as libc; // TODO: replace this with definitions from the `libc` crate once available.
 
 /// This type represents the user space side of an io_uring.
 ///
@@ -540,6 +543,22 @@ impl SubmissionQueue {
     #[allow(clippy::cast_sign_loss)]
     pub fn multishot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll<'a> {
         MultishotPoll::new(self, fd.as_raw_fd(), mask as u32)
+    }
+
+    /// Make a `io_uring_register(2)` system call.
+    fn register(
+        &self,
+        op: libc::c_uint,
+        arg: *const libc::c_void,
+        nr_args: libc::c_uint,
+    ) -> io::Result<()> {
+        libc::syscall!(io_uring_register(
+            self.shared.ring_fd.as_raw_fd(),
+            op,
+            arg,
+            nr_args
+        ))?;
+        Ok(())
     }
 
     /// Add a submission to the queue.
@@ -1249,95 +1268,5 @@ impl fmt::Debug for Completion {
             .field("flags", &self.flags())
             .field("operation_flags", &self.operation_flags())
             .finish()
-    }
-}
-
-/// An open file descriptor.
-///
-/// All functions on `AsyncFd` are asynchronous and return a [`Future`].
-///
-/// [`Future`]: std::future::Future
-pub struct AsyncFd {
-    /// # Notes
-    ///
-    /// We use `ManuallyDrop` because we drop the fd using io_uring, not a
-    /// blocking `close(2)` system call.
-    fd: ManuallyDrop<OwnedFd>,
-    sq: SubmissionQueue,
-}
-
-// NOTE: the implementations are split over the modules to give the `Future`
-// implementation types a reasonable place in the docs.
-
-impl AsyncFd {
-    /// Create a new `AsyncFd`.
-    pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd {
-            fd: ManuallyDrop::new(fd),
-            sq,
-        }
-    }
-
-    /// Create a new `AsyncFd` from a `RawFd`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `fd` is valid and that it's no longer used
-    /// by anything other than the returned `AsyncFd`.
-    pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd::new(OwnedFd::from_raw_fd(fd), sq)
-    }
-
-    /// Creates a new independently owned `AsyncFd` that shares the same
-    /// underlying file descriptor as the existing `AsyncFd`.
-    #[doc(alias = "dup")]
-    #[doc(alias = "dup2")]
-    #[doc(alias = "F_DUPFD")]
-    #[doc(alias = "F_DUPFD_CLOEXEC")]
-    pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        let fd = self.fd.try_clone()?;
-        Ok(AsyncFd::new(fd, self.sq.clone()))
-    }
-
-    /// Returns the `RawFd` of this `AsyncFd`.
-    fn fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
-    }
-}
-
-impl AsFd for AsyncFd {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        self.fd.as_fd()
-    }
-}
-
-impl fmt::Debug for AsyncFd {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        struct AsyncFdSubmissionQueue<'a>(&'a SubmissionQueue);
-
-        impl fmt::Debug for AsyncFdSubmissionQueue<'_> {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.debug_struct("SubmissionQueue")
-                    .field("ring_fd", &self.0.shared.ring_fd.as_raw_fd())
-                    .finish()
-            }
-        }
-
-        f.debug_struct("AsyncFd")
-            .field("fd", &self.fd.as_raw_fd())
-            .field("sq", &AsyncFdSubmissionQueue(&self.sq))
-            .finish()
-    }
-}
-
-impl Drop for AsyncFd {
-    fn drop(&mut self) {
-        let result = self.sq.add_no_result(|submission| unsafe {
-            submission.close(self.fd());
-            submission.no_completion_event();
-        });
-        if let Err(err) = result {
-            log::error!("error submitting close operation for a10::AsyncFd: {err}");
-        }
     }
 }

@@ -257,12 +257,38 @@ impl Submission {
         self.inner.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 
+    /// Set the flag to use direct descriptors.
+    pub(crate) fn direct_fd(&mut self) {
+        self.inner.flags |= libc::IOSQE_FIXED_FILE;
+    }
+
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
     #[cfg(debug_assertions)]
     pub(crate) const fn is_unchanged(&self) -> bool {
         self.inner.opcode == libc::IORING_OP_NOP as u8
+    }
+
+    /// Create a regular file descriptor for `direct_fd` (which must be a direct
+    /// descriptor).
+    pub(crate) unsafe fn create_file_descriptor(&mut self, direct_fd: RawFd, flags: libc::__u32) {
+        self.inner.opcode = libc::IORING_OP_FIXED_FD_INSTALL as u8;
+        self.inner.fd = direct_fd;
+        self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            install_fd_flags: flags,
+        };
+    }
+
+    /// Create a direct descriptor for `fd` (which must be a regular file descriptor).
+    pub(crate) unsafe fn create_direct_descriptor(&mut self, fds: *mut RawFd, len: u32) {
+        self.inner.opcode = libc::IORING_OP_FILES_UPDATE as u8;
+        self.inner.fd = -1;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: libc::IORING_FILE_INDEX_ALLOC as _,
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: fds as _ };
+        self.inner.len = len;
     }
 
     /// Sync the `fd` with `fsync_flags`.
@@ -818,6 +844,13 @@ impl fmt::Debug for Submission {
                 f.field("opcode", &"IORING_OP_CLOSE")
                     .field("fd", &self.inner.fd);
             }
+            libc::IORING_OP_FILES_UPDATE => {
+                f.field("opcode", &"IORING_OP_FILES_UPDATE")
+                    .field("fd", &self.inner.fd)
+                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("fds", unsafe { &self.inner.__bindgen_anon_2.addr })
+                    .field("len", &self.inner.len);
+            }
             libc::IORING_OP_STATX => {
                 f.field("opcode", &"IORING_OP_STATX")
                     .field("fd", &self.inner.fd)
@@ -889,6 +922,13 @@ impl fmt::Debug for Submission {
                     .field("msg1", &self.inner.len)
                     .field("msg2", unsafe { &self.inner.__bindgen_anon_1.off });
             }
+            libc::IORING_OP_FIXED_FD_INSTALL => {
+                f.field("opcode", &"IORING_OP_FIXED_FD_INSTALL")
+                    .field("fd", &self.inner.fd)
+                    .field("install_fd_flags", unsafe {
+                        &self.inner.__bindgen_anon_3.install_fd_flags
+                    });
+            }
             _ => {
                 // NOTE: we can't access the unions safely without know what
                 // fields to read.
@@ -955,9 +995,9 @@ macro_rules! op_future {
             map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*>> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*, D>> {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1005,7 +1045,7 @@ macro_rules! op_future {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`Future`s do nothing unless polled"]
-        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> {
+        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor = $crate::fd::File> {
             /// Resoures used in the operation.
             ///
             /// If this is `Some` when the future is dropped it will assume it
@@ -1015,7 +1055,7 @@ macro_rules! op_future {
                 $( $value, )*
             )>>,
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd,
+            fd: &$lifetime $crate::AsyncFd<D>,
             /// State of the operation.
             state: $crate::op::OpState<$setup_ty>,
             $(
@@ -1024,9 +1064,9 @@ macro_rules! op_future {
             )?
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
                 // This is needed because of the usage of `$phantom_doc`, which
                 // is needed for the macro to work, even though it doesn't
                 // create any documentation.
@@ -1045,7 +1085,7 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
@@ -1055,16 +1095,17 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             /// Poll for the `OpIndex`.
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
                     $setup_fn
+                    D::set_flags($setup_submission);
                 }))
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             type Output = std::io::Result<$result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1091,10 +1132,10 @@ macro_rules! op_future {
             }
         }
 
-        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
-        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Send> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Sync> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*> {
+        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
@@ -1348,9 +1389,9 @@ macro_rules! op_async_iter {
         #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`AsyncIterator`s do nothing unless polled"]
-        pub struct $name<$lifetime> {
+        pub struct $name<$lifetime, D: $crate::fd::Descriptor = $crate::fd::File> {
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd,
+            fd: &$lifetime $crate::AsyncFd<D>,
             $(
             $(#[ $field_doc ])*
             $field: $value,
@@ -1359,9 +1400,9 @@ macro_rules! op_async_iter {
             state: $crate::op::OpState<$setup_ty>,
         }
 
-        impl<$lifetime> $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> $name<$lifetime, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime> {
+            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime, D> {
                 $name {
                     fd,
                     $( $field, )?
@@ -1421,7 +1462,7 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> $crate::cancel::Cancel for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime, D> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
@@ -1432,7 +1473,7 @@ macro_rules! op_async_iter {
         }
 
         #[cfg(feature = "nightly")]
-        impl<$lifetime> std::async_iter::AsyncIterator for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> std::async_iter::AsyncIterator for $name<$lifetime, D> {
             type Item = std::io::Result<$result>;
 
             fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
@@ -1440,7 +1481,7 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime> std::ops::Drop for $name<$lifetime> {
+        impl<$lifetime, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime, D> {
             fn drop(&mut self) {
                 if let $crate::op::OpState::Running(op_index) = self.state {
                     let result = self.fd.sq.cancel_op(op_index, (), |submission| unsafe {
