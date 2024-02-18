@@ -37,6 +37,7 @@ pub struct AsyncFd<D: Descriptor = File> {
 // NOTE: the implementations are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
+/// Operations only available on regular file descriptors.
 impl AsyncFd<File> {
     /// Create a new `AsyncFd`.
     pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
@@ -88,6 +89,7 @@ impl AsyncFd<File> {
     }
 }
 
+/// Operations only available on direct descriptors.
 impl AsyncFd<Direct> {
     /// Create a new `AsyncFd` from a direct descriptor.
     ///
