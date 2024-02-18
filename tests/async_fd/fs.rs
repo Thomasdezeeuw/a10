@@ -34,7 +34,7 @@ fn open_extractor() {
 }
 
 #[test]
-fn open_direct() {
+fn open_direct_io() {
     let sq = test_queue();
     let waker = Waker::new();
 
