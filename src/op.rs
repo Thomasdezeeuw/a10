@@ -278,7 +278,6 @@ impl Submission {
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             install_fd_flags: flags,
         };
-        self.direct_fd();
     }
 
     /// Create a direct descriptor for `fd` (which must be a regular file descriptor).

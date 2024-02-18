@@ -110,6 +110,10 @@ impl AsyncFd<Direct> {
     /// The direct descriptor can continued to be used and the lifetimes of the
     /// direct descriptor and the newly returned file descriptor are not
     /// connected.
+    ///
+    /// # Notes
+    ///
+    /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
     pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
         ToFd::new(self, ())
@@ -218,6 +222,7 @@ impl private::Descriptor for Direct {
 op_future! {
     fn AsyncFd::to_file_descriptor -> AsyncFd<File>,
     struct ToFd<'fd> {
+        // No state needed.
     },
     setup_state: _unused: (),
     setup: |submission, fd, (), ()| unsafe {
