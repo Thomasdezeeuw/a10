@@ -86,13 +86,13 @@ impl AsyncFd<Direct> {
         }
     }
 
-    /// Convert a direct descriptor in a regular file descriptor.
+    /// Convert a direct descriptor into a regular file descriptor.
     ///
     /// The direct descriptor can continued to be used and the lifetimes of the
     /// direct descriptor and the newly returned file descriptor are not
     /// connected.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub fn to_file_descriptor<'fd, A>(&'fd self) -> ToFd<'fd, Direct> {
+    pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
         ToFd::new(self, ())
     }
 }
