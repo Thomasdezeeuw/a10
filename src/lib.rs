@@ -579,6 +579,22 @@ impl SubmissionQueue {
         poll::multishot_poll(self, fd, mask)
     }
 
+    /// Make a `io_uring_register(2)` system call.
+    fn register(
+        &self,
+        op: libc::c_uint,
+        arg: *const libc::c_void,
+        nr_args: libc::c_uint,
+    ) -> io::Result<()> {
+        libc::syscall!(io_uring_register(
+            self.shared.ring_fd.as_raw_fd(),
+            op,
+            arg,
+            nr_args
+        ))?;
+        Ok(())
+    }
+
     /// Add a submission to the queue.
     ///
     /// Returns an index into the `op_queue` which can be used to check the
