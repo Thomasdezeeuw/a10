@@ -8,12 +8,13 @@ use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+use crate::fd::{AsyncFd, Descriptor};
 use crate::op::{op_future, poll_state, OpState};
-use crate::{libc, AsyncFd, OpIndex, QueueFull, SubmissionQueue};
+use crate::{libc, OpIndex, QueueFull, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
 /// operations.
-impl AsyncFd {
+impl<D: Descriptor> AsyncFd<D> {
     /// Attempt to cancel all in progress operations on this fd.
     ///
     /// If the I/O operations were succesfully canceled this returns `Ok(n)`,
@@ -32,7 +33,7 @@ impl AsyncFd {
     /// Due to the lazyness of [`Future`]s it is possible that this will return
     /// `Ok(0)` if operations were never polled only to start it after their
     /// first poll.
-    pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd> {
+    pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd, D> {
         CancelAll::new(self, libc::IORING_ASYNC_CANCEL_ALL)
     }
 }
