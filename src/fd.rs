@@ -37,34 +37,6 @@ pub struct AsyncFd<D: Descriptor = File> {
 // NOTE: the implementations are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
-impl AsyncFd<Direct> {
-    /// Create a new `AsyncFd` from a `RawFd`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `direct_fd` is valid and that it's no longer
-    /// used by anything other than the returned `AsyncFd`. Furthermore the
-    /// caller must ensure the direct descriptor is actually a direct
-    /// descriptor.
-    pub(crate) unsafe fn new_direct(direct_fd: RawFd, sq: SubmissionQueue) -> AsyncFd<Direct> {
-        AsyncFd {
-            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(direct_fd)),
-            sq,
-            kind: PhantomData,
-        }
-    }
-
-    /// Convert a direct descriptor in a regular file descriptor.
-    ///
-    /// The direct descriptor can continued to be used and the lifetimes of the
-    /// direct descriptor and the newly returned file descriptor are not
-    /// connected.
-    #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub fn to_file_descriptor<'fd, A>(&'fd self) -> ToFd<'fd, Direct> {
-        ToFd::new(self, ())
-    }
-}
-
 impl AsyncFd<File> {
     /// Create a new `AsyncFd`.
     pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
@@ -94,6 +66,34 @@ impl AsyncFd<File> {
     pub fn try_clone(&self) -> io::Result<AsyncFd> {
         let fd = self.fd.try_clone()?;
         Ok(AsyncFd::new(fd, self.sq.clone()))
+    }
+}
+
+impl AsyncFd<Direct> {
+    /// Create a new `AsyncFd` from a `RawFd`.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `direct_fd` is valid and that it's no longer
+    /// used by anything other than the returned `AsyncFd`. Furthermore the
+    /// caller must ensure the direct descriptor is actually a direct
+    /// descriptor.
+    pub(crate) unsafe fn new_direct(direct_fd: RawFd, sq: SubmissionQueue) -> AsyncFd<Direct> {
+        AsyncFd {
+            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(direct_fd)),
+            sq,
+            kind: PhantomData,
+        }
+    }
+
+    /// Convert a direct descriptor in a regular file descriptor.
+    ///
+    /// The direct descriptor can continued to be used and the lifetimes of the
+    /// direct descriptor and the newly returned file descriptor are not
+    /// connected.
+    #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
+    pub fn to_file_descriptor<'fd, A>(&'fd self) -> ToFd<'fd, Direct> {
+        ToFd::new(self, ())
     }
 }
 
