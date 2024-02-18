@@ -119,7 +119,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
 #[allow(private_bounds)] // That's the point of the private module.
 pub trait Descriptor: private::Descriptor {}
 
-mod private {
+pub(crate) mod private {
     use crate::op::Submission;
 
     pub(crate) trait Descriptor {
