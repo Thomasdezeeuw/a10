@@ -9,6 +9,7 @@ use util::{is_send, is_sync};
 
 #[path = "async_fd"] // rustfmt can't find the files.
 mod async_fd {
+    mod fixed;
     mod fs;
     mod io;
     mod net;
