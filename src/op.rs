@@ -885,6 +885,13 @@ impl fmt::Debug for Submission {
                 f.field("opcode", &"IORING_OP_CLOSE")
                     .field("fd", &self.inner.fd);
             }
+            libc::IORING_OP_FILES_UPDATE => {
+                f.field("opcode", &"IORING_OP_FILES_UPDATE")
+                    .field("fd", &self.inner.fd)
+                    .field("offset", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("fds", unsafe { &self.inner.__bindgen_anon_2.addr })
+                    .field("len", &self.inner.len);
+            }
             libc::IORING_OP_STATX => {
                 f.field("opcode", &"IORING_OP_STATX")
                     .field("fd", &self.inner.fd)
