@@ -100,11 +100,7 @@ impl AsyncFd<Direct> {
     /// caller must ensure the direct descriptor is actually a direct
     /// descriptor.
     pub(crate) unsafe fn from_direct_fd(direct_fd: RawFd, sq: SubmissionQueue) -> AsyncFd<Direct> {
-        AsyncFd {
-            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(direct_fd)),
-            sq,
-            kind: PhantomData,
-        }
+        AsyncFd::from_raw(direct_fd, sq)
     }
 
     /// Convert a direct descriptor into a regular file descriptor.
@@ -123,6 +119,22 @@ impl AsyncFd<Direct> {
 }
 
 impl<D: Descriptor> AsyncFd<D> {
+    /// Create a new `AsyncFd` from a direct descriptor.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `fd` is valid and that it's no longer
+    /// used by anything other than the returned `AsyncFd`. Furthermore the
+    /// caller must ensure the descriptor is file or direct descriptor depending
+    /// on `D`.
+    pub(crate) unsafe fn from_raw(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
+        AsyncFd {
+            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(fd)),
+            sq,
+            kind: PhantomData,
+        }
+    }
+
     /// Returns the `RawFd` of this `AsyncFd`.
     pub(crate) fn fd(&self) -> RawFd {
         self.fd.as_raw_fd()
