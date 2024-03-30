@@ -44,16 +44,7 @@ fn main() {
 const HEADER: &str = "
 //! Code that should be moved to libc once C libraries have a wrapper.
 
-#![allow(dead_code, non_camel_case_types, non_snake_case)]
-#![allow(
-    clippy::cast_lossless,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::missing_const_for_fn,
-    clippy::missing_safety_doc,
-    clippy::ptr_as_ptr,
-    clippy::unreadable_literal,
-)]
+#![allow(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
 
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
