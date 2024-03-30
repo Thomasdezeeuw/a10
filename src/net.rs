@@ -353,6 +353,7 @@ impl AsyncFd {
     ///
     /// The caller must ensure that `T` is the valid type for the option.
     #[doc(alias = "getsockopt")]
+    #[allow(clippy::cast_sign_loss)] // No valid negative level or optnames.
     pub fn socket_option<'fd, T>(
         &'fd self,
         level: libc::c_int,
@@ -371,6 +372,7 @@ impl AsyncFd {
     ///
     /// The caller must ensure that `T` is the valid type for the option.
     #[doc(alias = "setsockopt")]
+    #[allow(clippy::cast_sign_loss)] // No valid negative level or optnames.
     pub fn set_socket_option<'fd, T>(
         &'fd self,
         level: libc::c_int,
