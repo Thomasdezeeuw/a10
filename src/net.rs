@@ -362,6 +362,24 @@ impl AsyncFd {
         let value = Box::new(MaybeUninit::uninit());
         SocketOption::new(self, value, (level as libc::__u32, optname as libc::__u32))
     }
+
+    /// Set socket option.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option<'fd, T>(
+        &'fd self,
+        level: libc::c_int,
+        optname: libc::c_int,
+        optvalue: T,
+    ) -> SetSocketOption<'fd, T> {
+        let value = Box::new(optvalue);
+        SetSocketOption::new(self, value, (level as libc::__u32, optname as libc::__u32))
+    }
 }
 
 /// [`Future`] to create a new [`socket`] asynchronously.
@@ -1040,6 +1058,27 @@ op_future! {
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
         Ok(unsafe { MaybeUninit::assume_init(*value) })
+    },
+}
+
+// SetSocketOption.
+op_future! {
+    fn AsyncFd::set_socket_option -> (),
+    struct SetSocketOption<'fd, T> {
+        /// Value for the socket option, needs to stay in memory so the kernel
+        /// can access it safely.
+        value: Box<T>,
+    },
+    setup_state: flags: (libc::__u32, libc::__u32),
+    setup: |submission, fd, (value,), (level, optname)| unsafe {
+        let optvalue = ptr::addr_of_mut!(**value).cast();
+        let optlen = size_of::<T>() as u32;
+        submission.uring_command(libc::SOCKET_URING_OP_SETSOCKOPT, fd.fd(), level, optname, optvalue, optlen);
+    },
+    map_result: |result| Ok(debug_assert!(result == 0)),
+    extract: |this, (value,), res| -> Box<T> {
+        debug_assert!(res == 0);
+        Ok(value)
     },
 }
 

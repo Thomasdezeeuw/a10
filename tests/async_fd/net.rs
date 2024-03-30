@@ -14,7 +14,7 @@ use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
-    SendAllVectored, SendTo, Socket, SocketOption,
+    SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption,
 };
 use a10::{Extract, Ring};
 
@@ -1716,6 +1716,50 @@ fn socket_option() {
         .block_on(socket.socket_option::<libc::c_int>(libc::SOL_SOCKET, libc::SO_ERROR))
         .unwrap();
     assert_eq!(0, got_error);
+}
+
+#[test]
+fn set_socket_option() {
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<SetSocketOption<libc::c_int>>();
+    is_sync::<SetSocketOption<libc::c_int>>();
+
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+    let protocol = 0;
+    let socket = waker.block_on(new_socket(sq, domain, r#type, protocol));
+
+    waker
+        .block_on(socket.set_socket_option::<libc::c_int>(
+            libc::SOL_SOCKET,
+            libc::SO_INCOMING_CPU,
+            0,
+        ))
+        .unwrap();
+
+    let linger = libc::linger {
+        l_onoff: 1,
+        l_linger: 100,
+    };
+    let got_linger = waker
+        .block_on(
+            socket
+                .set_socket_option(libc::SOL_SOCKET, libc::SO_LINGER, linger)
+                .extract(),
+        )
+        .unwrap();
+    assert_eq!(linger.l_onoff, got_linger.l_onoff);
+    assert_eq!(linger.l_linger, got_linger.l_linger);
+
+    let got_linger = waker
+        .block_on(socket.socket_option::<libc::linger>(libc::SOL_SOCKET, libc::SO_LINGER))
+        .unwrap();
+    assert_eq!(linger.l_onoff, got_linger.l_onoff);
+    assert_eq!(linger.l_linger, got_linger.l_linger);
 }
 
 fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
