@@ -52,6 +52,7 @@ clippy:
 		--allow clippy::missing-panics-doc \
 		--allow clippy::must-use-candidate \
 		--allow clippy::needless-lifetimes \
+		--allow clippy::new-without-default \
 		--allow clippy::option-if-let-else \
 		--allow clippy::redundant-pub-crate \
 		--allow clippy::single-match-else \
