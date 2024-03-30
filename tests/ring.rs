@@ -374,6 +374,7 @@ fn madvise() {
 
 #[test]
 fn process_wait_on() {
+    require_kernel!(6, 7);
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -398,6 +399,7 @@ fn process_wait_on() {
 
 #[test]
 fn process_wait_on_cancel() {
+    require_kernel!(6, 7);
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -417,6 +419,7 @@ fn process_wait_on_cancel() {
 
 #[test]
 fn process_wait_on_drop_before_complete() {
+    require_kernel!(6, 7);
     let sq = test_queue();
 
     let process = Command::new("sleep").arg("1000").spawn().unwrap();
