@@ -867,7 +867,7 @@ impl SubmissionQueue {
     where
         F: FnOnce(&mut Submission),
     {
-        log::trace!(op_index = op_index.0; "canceling operation as receiver (Future) was dropped before completion");
+        log::trace!(op_index = op_index.0; "canceling operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
