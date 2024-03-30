@@ -35,6 +35,8 @@ check:
 # * `single-match-else`: prefer match statements over if statements.
 # * `use-self`: strongly disagree.
 # TODO: resolve `cast-possible-truncation` errors.
+# TODO: resolve `manual-c-str-listerals` and `ref-as-ptr` once the related
+# features are a little older (1.77 and 1.76).
 lint: clippy
 clippy:
 	cargo clippy --all-features --workspace -- \
@@ -48,6 +50,7 @@ clippy:
 		--deny clippy::cargo \
 		--allow clippy::doc-markdown \
 		--allow clippy::equatable-if-let \
+		--allow clippy::manual-c-str-literals \
 		--allow clippy::missing-errors-doc \
 		--allow clippy::missing-panics-doc \
 		--allow clippy::must-use-candidate \
@@ -55,6 +58,7 @@ clippy:
 		--allow clippy::new-without-default \
 		--allow clippy::option-if-let-else \
 		--allow clippy::redundant-pub-crate \
+		--allow clippy::ref-as-ptr \
 		--allow clippy::single-match-else \
 		--allow clippy::use-self \
 		\
