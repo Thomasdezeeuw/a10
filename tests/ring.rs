@@ -9,6 +9,7 @@ use std::io::{self, Read, Write};
 use std::mem::take;
 use std::os::fd::{AsFd, FromRawFd, RawFd};
 use std::pin::{pin, Pin};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
 use std::thread;
@@ -18,7 +19,7 @@ use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::msg::{MsgListener, MsgToken, SendMsg};
 use a10::poll::{MultishotPoll, OneshotPoll};
-use a10::{mem, AsyncFd, Config, Ring, SubmissionQueue};
+use a10::{mem, process, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
@@ -369,4 +370,61 @@ fn madvise() {
             libc::MADV_WILLNEED,
         ))
         .expect("failed madvise");
+}
+
+#[test]
+fn process_wait_on() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<process::WaitId>();
+    is_sync::<process::WaitId>();
+
+    let process = Command::new("true").spawn().unwrap();
+    let pid = process.id();
+
+    let info = waker
+        .block_on(process::wait_on(sq, &process, libc::WEXITED))
+        .expect("failed wait");
+
+    assert_eq!(info.si_signo, libc::SIGCHLD);
+    assert_eq!(info.si_code, libc::CLD_EXITED);
+    // SAFETY: these fields are set if `si_signo == SIGCHLD`.
+    assert_eq!(unsafe { info.si_pid() }, pid as i32);
+    assert_eq!(unsafe { info.si_status() }, libc::EXIT_SUCCESS);
+    assert!(unsafe { info.si_utime() } >= 1);
+    assert!(unsafe { info.si_stime() } >= 1);
+}
+
+#[test]
+fn process_wait_on_cancel() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let mut process = Command::new("sleep").arg("1000").spawn().unwrap();
+
+    let mut future = process::wait_on(sq, &process, libc::WEXITED);
+    let result = poll_nop(Pin::new(&mut future));
+    if !result.is_pending() {
+        panic!("unexpected result, expected it to return Poll::Pending");
+    }
+
+    waker.block_on(future.cancel()).unwrap();
+
+    process.kill().unwrap();
+    process.wait().unwrap();
+}
+
+#[test]
+fn process_wait_on_drop_before_complete() {
+    let sq = test_queue();
+
+    let process = Command::new("sleep").arg("1000").spawn().unwrap();
+
+    let mut future = process::wait_on(sq, &process, libc::WEXITED);
+    let result = poll_nop(Pin::new(&mut future));
+    if !result.is_pending() {
+        panic!("unexpected result, expected it to return Poll::Pending");
+    }
+    drop(future);
 }
