@@ -164,7 +164,7 @@ impl<'fd> Future for CancelOp<'fd> {
             Poll::Ready(result) => {
                 self.state = OpState::Done;
                 match result {
-                    Ok((_, res)) => Poll::Ready(Ok(debug_assert!(res == 0))),
+                    Ok((_, _)) => Poll::Ready(Ok(())),
                     Err(err) => Poll::Ready(Err(err)),
                 }
             }
