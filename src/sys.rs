@@ -81,12 +81,12 @@ pub type __s32 = ::std::os::raw::c_int;
 pub type __u32 = ::std::os::raw::c_uint;
 pub type __u64 = ::std::os::raw::c_ulonglong;
 pub type __kernel_rwf_t = ::std::os::raw::c_int;
-pub type _bindgen_ty_18 = ::std::os::raw::c_uint;
+pub type _bindgen_ty_13 = ::std::os::raw::c_uint;
 pub type io_uring_op = ::std::os::raw::c_uint;
+pub type _bindgen_ty_14 = ::std::os::raw::c_uint;
+pub type _bindgen_ty_15 = ::std::os::raw::c_uint;
+pub type _bindgen_ty_16 = ::std::os::raw::c_uint;
 pub type _bindgen_ty_19 = ::std::os::raw::c_uint;
-pub type _bindgen_ty_20 = ::std::os::raw::c_uint;
-pub type _bindgen_ty_21 = ::std::os::raw::c_uint;
-pub type _bindgen_ty_24 = ::std::os::raw::c_uint;
 #[repr(C)]
 #[derive(Default)]
 pub struct __IncompleteArrayField<T>(::std::marker::PhantomData<T>, [T; 0]);
@@ -271,6 +271,21 @@ pub struct io_uring_buf_reg {
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
+pub struct io_uring_buf_status {
+    pub buf_group: __u32,
+    pub head: __u32,
+    pub resv: [__u32; 8usize],
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct io_uring_napi {
+    pub busy_poll_to: __u32,
+    pub prefer_busy_poll: __u8,
+    pub pad: [__u8; 3usize],
+    pub resv: __u64,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
 pub struct io_uring_getevents_arg {
     pub sigmask: __u64,
     pub sigmask_sz: __u32,
@@ -430,13 +445,13 @@ pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
 pub const IORING_FEAT_REG_REG_RING: u32 = 8192;
 pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
 pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
-pub const IOSQE_FIXED_FILE_BIT: _bindgen_ty_18 = 0;
-pub const IOSQE_IO_DRAIN_BIT: _bindgen_ty_18 = 1;
-pub const IOSQE_IO_LINK_BIT: _bindgen_ty_18 = 2;
-pub const IOSQE_IO_HARDLINK_BIT: _bindgen_ty_18 = 3;
-pub const IOSQE_ASYNC_BIT: _bindgen_ty_18 = 4;
-pub const IOSQE_BUFFER_SELECT_BIT: _bindgen_ty_18 = 5;
-pub const IOSQE_CQE_SKIP_SUCCESS_BIT: _bindgen_ty_18 = 6;
+pub const IOSQE_FIXED_FILE_BIT: _bindgen_ty_13 = 0;
+pub const IOSQE_IO_DRAIN_BIT: _bindgen_ty_13 = 1;
+pub const IOSQE_IO_LINK_BIT: _bindgen_ty_13 = 2;
+pub const IOSQE_IO_HARDLINK_BIT: _bindgen_ty_13 = 3;
+pub const IOSQE_ASYNC_BIT: _bindgen_ty_13 = 4;
+pub const IOSQE_BUFFER_SELECT_BIT: _bindgen_ty_13 = 5;
+pub const IOSQE_CQE_SKIP_SUCCESS_BIT: _bindgen_ty_13 = 6;
 pub const IORING_OP_NOP: io_uring_op = 0;
 pub const IORING_OP_READV: io_uring_op = 1;
 pub const IORING_OP_WRITEV: io_uring_op = 2;
@@ -492,43 +507,47 @@ pub const IORING_OP_FUTEX_WAIT: io_uring_op = 51;
 pub const IORING_OP_FUTEX_WAKE: io_uring_op = 52;
 pub const IORING_OP_FUTEX_WAITV: io_uring_op = 53;
 pub const IORING_OP_FIXED_FD_INSTALL: io_uring_op = 54;
-pub const IORING_OP_LAST: io_uring_op = 55;
-pub const IORING_MSG_DATA: _bindgen_ty_19 = 0;
-pub const IORING_MSG_SEND_FD: _bindgen_ty_19 = 1;
-pub const IORING_CQE_BUFFER_SHIFT: _bindgen_ty_20 = 16;
-pub const IORING_REGISTER_BUFFERS: _bindgen_ty_21 = 0;
-pub const IORING_UNREGISTER_BUFFERS: _bindgen_ty_21 = 1;
-pub const IORING_REGISTER_FILES: _bindgen_ty_21 = 2;
-pub const IORING_UNREGISTER_FILES: _bindgen_ty_21 = 3;
-pub const IORING_REGISTER_EVENTFD: _bindgen_ty_21 = 4;
-pub const IORING_UNREGISTER_EVENTFD: _bindgen_ty_21 = 5;
-pub const IORING_REGISTER_FILES_UPDATE: _bindgen_ty_21 = 6;
-pub const IORING_REGISTER_EVENTFD_ASYNC: _bindgen_ty_21 = 7;
-pub const IORING_REGISTER_PROBE: _bindgen_ty_21 = 8;
-pub const IORING_REGISTER_PERSONALITY: _bindgen_ty_21 = 9;
-pub const IORING_UNREGISTER_PERSONALITY: _bindgen_ty_21 = 10;
-pub const IORING_REGISTER_RESTRICTIONS: _bindgen_ty_21 = 11;
-pub const IORING_REGISTER_ENABLE_RINGS: _bindgen_ty_21 = 12;
-pub const IORING_REGISTER_FILES2: _bindgen_ty_21 = 13;
-pub const IORING_REGISTER_FILES_UPDATE2: _bindgen_ty_21 = 14;
-pub const IORING_REGISTER_BUFFERS2: _bindgen_ty_21 = 15;
-pub const IORING_REGISTER_BUFFERS_UPDATE: _bindgen_ty_21 = 16;
-pub const IORING_REGISTER_IOWQ_AFF: _bindgen_ty_21 = 17;
-pub const IORING_UNREGISTER_IOWQ_AFF: _bindgen_ty_21 = 18;
-pub const IORING_REGISTER_IOWQ_MAX_WORKERS: _bindgen_ty_21 = 19;
-pub const IORING_REGISTER_RING_FDS: _bindgen_ty_21 = 20;
-pub const IORING_UNREGISTER_RING_FDS: _bindgen_ty_21 = 21;
-pub const IORING_REGISTER_PBUF_RING: _bindgen_ty_21 = 22;
-pub const IORING_UNREGISTER_PBUF_RING: _bindgen_ty_21 = 23;
-pub const IORING_REGISTER_SYNC_CANCEL: _bindgen_ty_21 = 24;
-pub const IORING_REGISTER_FILE_ALLOC_RANGE: _bindgen_ty_21 = 25;
-pub const IORING_REGISTER_LAST: _bindgen_ty_21 = 26;
-pub const IORING_REGISTER_USE_REGISTERED_RING: _bindgen_ty_21 = 2147483648;
-pub const IORING_RESTRICTION_REGISTER_OP: _bindgen_ty_24 = 0;
-pub const IORING_RESTRICTION_SQE_OP: _bindgen_ty_24 = 1;
-pub const IORING_RESTRICTION_SQE_FLAGS_ALLOWED: _bindgen_ty_24 = 2;
-pub const IORING_RESTRICTION_SQE_FLAGS_REQUIRED: _bindgen_ty_24 = 3;
-pub const IORING_RESTRICTION_LAST: _bindgen_ty_24 = 4;
+pub const IORING_OP_FTRUNCATE: io_uring_op = 55;
+pub const IORING_OP_LAST: io_uring_op = 56;
+pub const IORING_MSG_DATA: _bindgen_ty_14 = 0;
+pub const IORING_MSG_SEND_FD: _bindgen_ty_14 = 1;
+pub const IORING_CQE_BUFFER_SHIFT: _bindgen_ty_15 = 16;
+pub const IORING_REGISTER_BUFFERS: _bindgen_ty_16 = 0;
+pub const IORING_UNREGISTER_BUFFERS: _bindgen_ty_16 = 1;
+pub const IORING_REGISTER_FILES: _bindgen_ty_16 = 2;
+pub const IORING_UNREGISTER_FILES: _bindgen_ty_16 = 3;
+pub const IORING_REGISTER_EVENTFD: _bindgen_ty_16 = 4;
+pub const IORING_UNREGISTER_EVENTFD: _bindgen_ty_16 = 5;
+pub const IORING_REGISTER_FILES_UPDATE: _bindgen_ty_16 = 6;
+pub const IORING_REGISTER_EVENTFD_ASYNC: _bindgen_ty_16 = 7;
+pub const IORING_REGISTER_PROBE: _bindgen_ty_16 = 8;
+pub const IORING_REGISTER_PERSONALITY: _bindgen_ty_16 = 9;
+pub const IORING_UNREGISTER_PERSONALITY: _bindgen_ty_16 = 10;
+pub const IORING_REGISTER_RESTRICTIONS: _bindgen_ty_16 = 11;
+pub const IORING_REGISTER_ENABLE_RINGS: _bindgen_ty_16 = 12;
+pub const IORING_REGISTER_FILES2: _bindgen_ty_16 = 13;
+pub const IORING_REGISTER_FILES_UPDATE2: _bindgen_ty_16 = 14;
+pub const IORING_REGISTER_BUFFERS2: _bindgen_ty_16 = 15;
+pub const IORING_REGISTER_BUFFERS_UPDATE: _bindgen_ty_16 = 16;
+pub const IORING_REGISTER_IOWQ_AFF: _bindgen_ty_16 = 17;
+pub const IORING_UNREGISTER_IOWQ_AFF: _bindgen_ty_16 = 18;
+pub const IORING_REGISTER_IOWQ_MAX_WORKERS: _bindgen_ty_16 = 19;
+pub const IORING_REGISTER_RING_FDS: _bindgen_ty_16 = 20;
+pub const IORING_UNREGISTER_RING_FDS: _bindgen_ty_16 = 21;
+pub const IORING_REGISTER_PBUF_RING: _bindgen_ty_16 = 22;
+pub const IORING_UNREGISTER_PBUF_RING: _bindgen_ty_16 = 23;
+pub const IORING_REGISTER_SYNC_CANCEL: _bindgen_ty_16 = 24;
+pub const IORING_REGISTER_FILE_ALLOC_RANGE: _bindgen_ty_16 = 25;
+pub const IORING_REGISTER_PBUF_STATUS: _bindgen_ty_16 = 26;
+pub const IORING_REGISTER_NAPI: _bindgen_ty_16 = 27;
+pub const IORING_UNREGISTER_NAPI: _bindgen_ty_16 = 28;
+pub const IORING_REGISTER_LAST: _bindgen_ty_16 = 29;
+pub const IORING_REGISTER_USE_REGISTERED_RING: _bindgen_ty_16 = 2147483648;
+pub const IORING_RESTRICTION_REGISTER_OP: _bindgen_ty_19 = 0;
+pub const IORING_RESTRICTION_SQE_OP: _bindgen_ty_19 = 1;
+pub const IORING_RESTRICTION_SQE_FLAGS_ALLOWED: _bindgen_ty_19 = 2;
+pub const IORING_RESTRICTION_SQE_FLAGS_REQUIRED: _bindgen_ty_19 = 3;
+pub const IORING_RESTRICTION_LAST: _bindgen_ty_19 = 4;
 #[test]
 fn bindgen_test_layout___kernel_timespec() {
     const UNINIT: ::std::mem::MaybeUninit<__kernel_timespec> = ::std::mem::MaybeUninit::uninit();
@@ -2286,6 +2305,106 @@ fn bindgen_test_layout_io_uring_buf_reg() {
         concat!(
             "Offset of field: ",
             stringify!(io_uring_buf_reg),
+            "::",
+            stringify!(resv)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout_io_uring_buf_status() {
+    const UNINIT: ::std::mem::MaybeUninit<io_uring_buf_status> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<io_uring_buf_status>(),
+        40usize,
+        concat!("Size of: ", stringify!(io_uring_buf_status))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<io_uring_buf_status>(),
+        4usize,
+        concat!("Alignment of ", stringify!(io_uring_buf_status))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).buf_group) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_buf_status),
+            "::",
+            stringify!(buf_group)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).head) as usize - ptr as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_buf_status),
+            "::",
+            stringify!(head)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).resv) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_buf_status),
+            "::",
+            stringify!(resv)
+        )
+    );
+}
+#[test]
+fn bindgen_test_layout_io_uring_napi() {
+    const UNINIT: ::std::mem::MaybeUninit<io_uring_napi> = ::std::mem::MaybeUninit::uninit();
+    let ptr = UNINIT.as_ptr();
+    assert_eq!(
+        ::std::mem::size_of::<io_uring_napi>(),
+        16usize,
+        concat!("Size of: ", stringify!(io_uring_napi))
+    );
+    assert_eq!(
+        ::std::mem::align_of::<io_uring_napi>(),
+        8usize,
+        concat!("Alignment of ", stringify!(io_uring_napi))
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).busy_poll_to) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_napi),
+            "::",
+            stringify!(busy_poll_to)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).prefer_busy_poll) as usize - ptr as usize },
+        4usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_napi),
+            "::",
+            stringify!(prefer_busy_poll)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).pad) as usize - ptr as usize },
+        5usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_napi),
+            "::",
+            stringify!(pad)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).resv) as usize - ptr as usize },
+        8usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_napi),
             "::",
             stringify!(resv)
         )
