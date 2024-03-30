@@ -63,6 +63,7 @@ clippy:
 		--allow clippy::use-self \
 		\
 		--allow clippy::cast-possible-truncation \
+		--allow clippy::cast-possible-wrap \
 
 doc:
 	cargo doc
