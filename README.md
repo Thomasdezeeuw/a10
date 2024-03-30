@@ -12,8 +12,8 @@ For simplicity this only has two main types and a number of helper types:
 
 ## Linux Required
 
-Currently this requires a new Linux kernel version, everything should work on
-Linux v6.1 and up (currently the latest TLS).
+Currently this requires a fairly new Linux kernel version, everything should
+work on Linux v6.1 and up.
 
 ## Examples
 
