@@ -1,6 +1,6 @@
 //! Code related to executing an asynchronous operations.
 
-use std::mem::replace;
+use std::mem::{replace, ManuallyDrop};
 use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
@@ -385,6 +385,29 @@ impl Submission {
         self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: r#type as _ };
         self.inner.len = protocol as _;
         self.inner.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: flags };
+    }
+
+    pub(crate) unsafe fn uring_command(
+        &mut self,
+        cmd_op: libc::__u32,
+        fd: RawFd,
+        level: libc::__u32,
+        optname: libc::__u32,
+        optvalue: *mut libc::c_void,
+        optlen: libc::__u32,
+    ) {
+        self.inner.opcode = libc::IORING_OP_URING_CMD as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_1__bindgen_ty_1 { cmd_op, __pad1: 0 },
+        };
+        self.inner.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 { level, optname },
+        };
+        self.inner.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 { optlen };
+        self.inner.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
+            optval: ManuallyDrop::new(optvalue as libc::__u64),
+        };
     }
 
     pub(crate) unsafe fn connect(

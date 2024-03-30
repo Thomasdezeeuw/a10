@@ -344,6 +344,24 @@ impl AsyncFd {
     pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
         MultishotAccept::new(self, flags)
     }
+
+    /// Get socket option.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option<'fd, T>(
+        &'fd self,
+        level: libc::c_int,
+        optname: libc::c_int,
+    ) -> SocketOption<'fd, T> {
+        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
+        let value = Box::new(MaybeUninit::uninit());
+        SocketOption::new(self, value, (level as libc::__u32, optname as libc::__u32))
+    }
 }
 
 /// [`Future`] to create a new [`socket`] asynchronously.
@@ -1000,6 +1018,28 @@ op_async_iter! {
         let sq = this.fd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw_fd(fd, sq) }
+    },
+}
+
+// SocketOption.
+op_future! {
+    fn AsyncFd::socket_option -> T,
+    struct SocketOption<'fd, T> {
+        /// Value for the socket option, needs to stay in memory so the kernel
+        /// can access it safely.
+        value: Box<MaybeUninit<T>>,
+    },
+    setup_state: flags: (libc::__u32, libc::__u32),
+    setup: |submission, fd, (value,), (level, optname)| unsafe {
+        let optvalue = ptr::addr_of_mut!(**value).cast();
+        let optlen = size_of::<T>() as u32;
+        submission.uring_command(libc::SOCKET_URING_OP_GETSOCKOPT, fd.fd(), level, optname, optvalue, optlen);
+    },
+    map_result: |this, (value,), optlen| {
+        debug_assert!(optlen == (size_of::<T>() as i32));
+        // SAFETY: the kernel initialised the value for us as part of the
+        // getsockopt call.
+        Ok(unsafe { MaybeUninit::assume_init(*value) })
     },
 }
 
