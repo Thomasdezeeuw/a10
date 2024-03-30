@@ -77,7 +77,7 @@ impl Signals {
     /// Create a new signal notifier from a signal set.
     pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
         let signals = SignalSet(signals);
-        trace!(signals = log::as_debug!(signals); "setting up signal handling");
+        trace!(signals:? = signals; "setting up signal handling");
         let fd = libc::syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
@@ -214,7 +214,7 @@ impl Drop for Signals {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
-            error!(signals = log::as_debug!(self.signals); "error unblocking signals: {err}");
+            error!(signals:? = self.signals; "error unblocking signals: {err}");
         }
     }
 }

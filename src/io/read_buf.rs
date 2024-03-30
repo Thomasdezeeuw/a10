@@ -157,7 +157,7 @@ impl ReadBufPool {
         };
         for (i, ring_buf) in bufs.iter_mut().enumerate() {
             let addr = unsafe { shared.bufs_addr.add(i * buf_size as usize) };
-            log::trace!(bid = i, addr = log::as_debug!(addr), len = buf_size; "registering buffer");
+            log::trace!(bid = i, addr:? = addr, len = buf_size; "registering buffer");
             ring_buf.write(libc::io_uring_buf {
                 addr: addr as u64,
                 len: buf_size,
@@ -209,7 +209,7 @@ impl ReadBufPool {
                 .shared
                 .bufs_addr
                 .add(index.0 as usize * self.shared.buf_size as usize);
-            log::trace!(bid = index.0, addr = log::as_debug!(data), len = len; "kernel initialised buffer");
+            log::trace!(bid = index.0, addr:? = data, len = len; "kernel initialised buffer");
             // SAFETY: `bufs_addr` is not NULL.
             let data = unsafe { NonNull::new_unchecked(data) };
             Some(NonNull::slice_from_raw_parts(data, len as usize))
@@ -519,7 +519,7 @@ impl ReadBuf {
                     .cast::<MaybeUninit<libc::io_uring_buf>>()
                     .add(ring_idx as usize))
             };
-            log::trace!(bid = buf_idx, addr = log::as_debug!(ptr), len = self.shared.buf_size; "reregistering buffer");
+            log::trace!(bid = buf_idx, addr:? = ptr, len = self.shared.buf_size; "reregistering buffer");
             ring_buf.write(libc::io_uring_buf {
                 addr: ptr.as_ptr().cast::<u8>() as u64,
                 len: self.shared.buf_size,
@@ -583,7 +583,7 @@ unsafe impl BufMut for ReadBuf {
                 .shared
                 .bufs_addr
                 .add(idx.0 as usize * self.shared.buf_size as usize);
-            log::trace!(bid = idx.0, addr = log::as_debug!(data), len = n; "kernel initialised buffer");
+            log::trace!(bid = idx.0, addr:? = data, len = n; "kernel initialised buffer");
             // SAFETY: `bufs_addr` is not NULL.
             let data = unsafe { NonNull::new_unchecked(data) };
             self.owned = Some(NonNull::slice_from_raw_parts(data, n as usize));

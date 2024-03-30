@@ -240,7 +240,7 @@ impl Ring {
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         let sq = self.sq.clone(); // TODO: remove clone.
         for completion in self.completions(timeout)? {
-            log::trace!(completion = log::as_debug!(completion); "dequeued completion event");
+            log::trace!(completion:? = completion; "dequeued completion event");
             // SAFETY: we're calling this based on information from the kernel.
             unsafe { sq.update_op(completion) };
         }
@@ -681,7 +681,7 @@ impl SubmissionQueue {
 
         // Now that we've written our submission we need add it to the
         // `array` so that the kernel can process it.
-        log::trace!(submission = log::as_debug!(submission); "queueing submission");
+        log::trace!(submission:? = submission; "queueing submission");
         {
             // Now that the submission is filled we need to add it to the
             // `shared.array` so that the kernel can read from it.
@@ -724,7 +724,7 @@ impl SubmissionQueue {
 
     /// Wait for a submission slot, waking `waker` once one is available.
     fn wait_for_submission(&self, waker: task::Waker) {
-        log::trace!(waker = log::as_debug!(waker); "adding blocked future");
+        log::trace!(waker:? = waker; "adding blocked future");
         self.shared.blocked_futures.lock().unwrap().push(waker);
     }
 
@@ -926,7 +926,7 @@ impl SubmissionQueue {
         if let Some(operation) = self.shared.queued_ops.get(op_index) {
             let mut operation = operation.lock().unwrap();
             if let Some(op) = &mut *operation {
-                log::trace!(op_index = op_index, completion = log::as_debug!(completion); "updating operation");
+                log::trace!(op_index = op_index, completion:? = completion; "updating operation");
                 let is_dropped = op.update(completion);
                 if is_dropped && op.no_more_events() {
                     // The Future was previously dropped so no one is waiting on
@@ -936,7 +936,7 @@ impl SubmissionQueue {
                     self.shared.op_indices.make_available(op_index);
                 }
             } else {
-                log::trace!(op_index = op_index, completion = log::as_debug!(completion); "operation gone, but got completion event");
+                log::trace!(op_index = op_index, completion:? = completion; "operation gone, but got completion event");
             }
         }
     }
