@@ -666,6 +666,7 @@ impl Submission {
         };
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     pub(crate) unsafe fn waitid(
         &mut self,
         id: libc::id_t,
