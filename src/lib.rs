@@ -152,6 +152,7 @@ pub mod msg;
 pub mod net;
 mod op;
 pub mod poll;
+pub mod process;
 pub mod signals;
 
 // TODO: replace this with definitions from the `libc` crate once available.

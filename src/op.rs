@@ -666,6 +666,22 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn waitid(
+        &mut self,
+        id: libc::id_t,
+        id_type: libc::idtype_t,
+        options: libc::c_int,
+        info: *mut libc::signalfd_siginfo,
+    ) {
+        self.inner.opcode = libc::IORING_OP_WAITID as u8;
+        self.inner.fd = id as _;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { addr2: info as _ };
+        self.inner.len = id_type;
+        self.inner.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            file_index: options as _,
+        };
+    }
+
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, 0, 0);
         self.no_completion_event();
@@ -888,6 +904,15 @@ impl fmt::Debug for Submission {
                     .field("ringfd", &self.inner.fd)
                     .field("msg1", &self.inner.len)
                     .field("msg2", unsafe { &self.inner.__bindgen_anon_1.off });
+            }
+            libc::IORING_OP_WAITID => {
+                f.field("opcode", &"IORING_OP_WAITID")
+                    .field("id", &self.inner.fd)
+                    .field("id_type", &self.inner.len)
+                    .field("options", unsafe {
+                        &self.inner.__bindgen_anon_5.file_index
+                    })
+                    .field("info", unsafe { &self.inner.__bindgen_anon_1.addr2 });
             }
             _ => {
                 // NOTE: we can't access the unions safely without know what
