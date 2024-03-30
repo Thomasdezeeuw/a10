@@ -441,7 +441,7 @@ pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
     new_socket(sq, domain, r#type, protocol).await
 }
 
-async fn new_socket(
+pub(crate) async fn new_socket(
     sq: SubmissionQueue,
     domain: libc::c_int,
     r#type: libc::c_int,

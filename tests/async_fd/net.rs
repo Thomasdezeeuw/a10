@@ -14,15 +14,15 @@ use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
-    SendAllVectored, SendTo, Socket,
+    SendAllVectored, SendTo, Socket, SocketOption,
 };
 use a10::{Extract, Ring};
 
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket, test_queue,
-    udp_ipv4_socket, Waker,
+    is_send, is_sync, new_socket, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket,
+    test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -1674,6 +1674,48 @@ fn shutdown() {
     let mut buf = vec![0; 10];
     let n = client.read(&mut buf).expect("failed to send data");
     assert_eq!(n, 0);
+}
+
+#[test]
+fn socket_option() {
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<SocketOption<libc::c_int>>();
+    is_sync::<SocketOption<libc::c_int>>();
+
+    let domain = libc::AF_INET;
+    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
+    let protocol = 0;
+    let socket = waker.block_on(new_socket(sq, domain, r#type, protocol));
+
+    let got_domain = waker
+        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_DOMAIN))
+        .unwrap();
+    assert_eq!(libc::AF_INET, got_domain);
+
+    let got_type = waker
+        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_TYPE))
+        .unwrap();
+    assert_eq!(libc::SOCK_STREAM, got_type);
+
+    let got_protocol = waker
+        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_PROTOCOL))
+        .unwrap();
+    assert_eq!(libc::IPPROTO_TCP, got_protocol);
+
+    let got_linger = waker
+        .block_on(socket.socket_option::<libc::linger>(libc::SOL_SOCKET, libc::SO_LINGER))
+        .unwrap();
+    assert_eq!(0, got_linger.l_onoff);
+    assert_eq!(0, got_linger.l_linger);
+
+    let got_error = waker
+        .block_on(socket.socket_option::<libc::c_int>(libc::SOL_SOCKET, libc::SO_ERROR))
+        .unwrap();
+    assert_eq!(0, got_error);
 }
 
 fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
