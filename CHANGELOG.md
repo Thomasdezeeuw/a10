@@ -1,3 +1,8 @@
+# v0.1.8
+
+* Make BufGroupId and BufIdx public, but still hide them from the docs
+  <https://github.com/Thomasdezeeuw/a10/commit/c22a6913e37859358b2730d3a92e9e8d6801fa44>.
+
 # v0.1.7
 
 * Update the log crate to use the (now stable) `kv` feature.
