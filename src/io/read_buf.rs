@@ -174,7 +174,7 @@ impl ReadBufPool {
 
     /// Get a buffer reference to this pool.
     ///
-    /// This can only be used in read I/O operation, such as [`AsyncFd::read`],
+    /// This can only be used in read I/O operations, such as [`AsyncFd::read`],
     /// but it won't yet select a buffer to use. This is done by the kernel once
     /// it actually has data to write into the buffer. Before it's used in a
     /// read call the returned buffer will be empty and can't be resized, it's
