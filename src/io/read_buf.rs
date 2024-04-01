@@ -83,7 +83,7 @@ impl ReadBufPool {
     /// grow beyond this capacity.
     #[doc(alias = "IORING_REGISTER_PBUF_RING")]
     pub fn new(sq: SubmissionQueue, pool_size: u16, buf_size: u32) -> io::Result<ReadBufPool> {
-        debug_assert!(pool_size <= 2 ^ 15);
+        debug_assert!(pool_size <= 1 << 15);
         debug_assert!(pool_size.is_power_of_two());
 
         let ring_fd = sq.shared.ring_fd.as_raw_fd();
