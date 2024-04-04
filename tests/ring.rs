@@ -150,6 +150,20 @@ fn submission_queue_full_is_handle_internally() {
 }
 
 #[test]
+fn config_disabled() {
+    init();
+    let mut ring = Ring::config(1).disable().build().unwrap();
+
+    // In a disabled state, so we expect an error.
+    let err = ring.poll(None).unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EBADFD));
+
+    // Enabling it should allow us to poll.
+    ring.enable().unwrap();
+    ring.poll(Some(Duration::from_millis(1))).unwrap();
+}
+
+#[test]
 fn wake_ring() {
     init();
     let mut ring = Ring::config(2)

@@ -226,6 +226,20 @@ impl Ring {
         &self.sq
     }
 
+    /// Enable the ring.
+    ///
+    /// This only required when starting the ring in disabled mode, see
+    /// [`Config::disable`].
+    pub fn enable(&mut self) -> io::Result<()> {
+        libc::syscall!(io_uring_register(
+            self.sq.shared.ring_fd.as_raw_fd(),
+            libc::IORING_REGISTER_ENABLE_RINGS,
+            ptr::null(),
+            0,
+        ))?;
+        Ok(())
+    }
+
     /// Poll the ring for completions.
     ///
     /// This will wake all completed [`Future`]s with the result of their
