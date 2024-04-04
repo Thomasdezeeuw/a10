@@ -151,6 +151,7 @@ impl<'r> Config<'r> {
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
+    #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach_queue(mut self, other_ring: &'r SubmissionQueue) -> Self {
         self.attach = Some(other_ring);
         self
