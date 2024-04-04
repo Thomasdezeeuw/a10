@@ -17,6 +17,7 @@ use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, Su
 pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
+    disabled: bool,
     clamp: bool,
     kernel_thread: bool,
     cpu_affinity: Option<u32>,
@@ -56,12 +57,23 @@ impl<'r> Config<'r> {
         Config {
             submission_entries: entries,
             completion_entries: None,
+            disabled: false,
             clamp: false,
             kernel_thread: true,
             cpu_affinity: None,
             idle_timeout: None,
             attach: None,
         }
+    }
+
+    /// Start the ring in a disabled state.
+    ///
+    /// While the ring is disabled submissions are not allowed. To enable the
+    /// ring use [`Ring::enable`].
+    #[doc(alias = "IORING_SETUP_R_DISABLED")]
+    pub const fn disable(mut self) -> Config<'r> {
+        self.disabled = true;
+        self
     }
 
     /// Set the size of the completion queue.
@@ -170,6 +182,9 @@ impl<'r> Config<'r> {
         } else {
             // Don't interrupt userspace, the user must call `Ring::poll` any way.
             parameters.flags |= libc::IORING_SETUP_COOP_TASKRUN;
+        }
+        if self.disabled {
+            parameters.flags |= libc::IORING_SETUP_R_DISABLED;
         }
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
