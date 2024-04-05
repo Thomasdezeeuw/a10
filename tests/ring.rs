@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
+use a10::io::ReadBufPool;
 use a10::msg::{MsgListener, MsgToken, SendMsg};
 use a10::poll::{MultishotPoll, OneshotPoll};
 use a10::{mem, process, AsyncFd, Config, Ring, SubmissionQueue};
@@ -28,6 +29,7 @@ use util::{
 };
 
 const DATA: &[u8] = b"Hello, World!";
+const BUF_SIZE: usize = 4096;
 
 #[test]
 fn polling_timeout() -> io::Result<()> {
@@ -161,6 +163,46 @@ fn config_disabled() {
     // Enabling it should allow us to poll.
     ring.enable().unwrap();
     ring.poll(Some(Duration::from_millis(1))).unwrap();
+}
+
+#[test]
+fn config_single_issuer() {
+    require_kernel!(6, 0);
+    init();
+
+    let ring = Ring::config(1).single_issuer().build().unwrap();
+
+    // This is fine.
+    let buf_pool = ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap();
+    drop(buf_pool);
+
+    thread::spawn(move || {
+        // This is not (we're on a different thread).
+        let err =
+            ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap_err();
+        assert_eq!(err.raw_os_error(), Some(libc::EEXIST));
+    })
+    .join()
+    .unwrap();
+}
+
+#[test]
+fn config_single_issuer_disabled_ring() {
+    require_kernel!(6, 0);
+    init();
+
+    let mut ring = Ring::config(1).single_issuer().disable().build().unwrap();
+
+    thread::spawn(move || {
+        ring.enable().unwrap();
+
+        // Since this thread enabled the ring, this is now fine.
+        let buf_pool =
+            ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap();
+        drop(buf_pool);
+    })
+    .join()
+    .unwrap();
 }
 
 #[test]

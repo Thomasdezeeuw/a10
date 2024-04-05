@@ -14,10 +14,12 @@ use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, Su
 /// Created by calling [`Ring::config`].
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
+#[allow(clippy::struct_excessive_bools)] // This is just stupid.
 pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
     disabled: bool,
+    single_issuer: bool,
     clamp: bool,
     kernel_thread: bool,
     cpu_affinity: Option<u32>,
@@ -58,6 +60,7 @@ impl<'r> Config<'r> {
             submission_entries: entries,
             completion_entries: None,
             disabled: false,
+            single_issuer: false,
             clamp: false,
             kernel_thread: true,
             cpu_affinity: None,
@@ -73,6 +76,27 @@ impl<'r> Config<'r> {
     #[doc(alias = "IORING_SETUP_R_DISABLED")]
     pub const fn disable(mut self) -> Config<'r> {
         self.disabled = true;
+        self
+    }
+
+    /// Enable single issuer.
+    ///
+    /// This hints to the kernel that only a single thread will submit requests,
+    /// which is used for optimisations within the kernel. This means that only
+    /// the thread that [`build`] the ring or [`enabled`] it (after starting in
+    /// disable mode) may register resources with the ring, resources such as
+    /// the [`ReadBufPool`].
+    ///
+    /// This optimisation is enforces by the kernel, which will return `EEXIST`
+    /// or `AlreadyExists` if another thread attempt to register resource or
+    /// otherwise use the [`Ring`] in a way that is not allowed.
+    ///
+    /// [`build`]: Config::build
+    /// [`enabled`]: Ring::enable
+    /// [`ReadBufPool`]: crate::io::ReadBufPool
+    #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
+    pub const fn single_issuer(mut self) -> Config<'r> {
+        self.single_issuer = true;
         self
     }
 
@@ -176,15 +200,18 @@ impl<'r> Config<'r> {
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
         parameters.flags = libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
         if self.kernel_thread {
-            parameters.flags |= libc::IORING_SETUP_SQPOLL // Kernel thread for polling.
-            // Using `IORING_SETUP_SQPOLL` we always have one issuer.
-            | libc::IORING_SETUP_SINGLE_ISSUER;
+            parameters.flags |= libc::IORING_SETUP_SQPOLL; // Kernel thread for polling.
         } else {
             // Don't interrupt userspace, the user must call `Ring::poll` any way.
             parameters.flags |= libc::IORING_SETUP_COOP_TASKRUN;
         }
         if self.disabled {
+            // Start the ring in disabled mode.
             parameters.flags |= libc::IORING_SETUP_R_DISABLED;
+        }
+        if self.single_issuer {
+            // Only allow access from a single thread.
+            parameters.flags |= libc::IORING_SETUP_SINGLE_ISSUER;
         }
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;
