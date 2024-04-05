@@ -153,6 +153,7 @@ fn submission_queue_full_is_handle_internally() {
 
 #[test]
 fn config_disabled() {
+    require_kernel!(5, 10);
     init();
     let mut ring = Ring::config(1).disable().build().unwrap();
 
