@@ -20,6 +20,7 @@ pub struct Config<'r> {
     completion_entries: Option<u32>,
     disabled: bool,
     single_issuer: bool,
+    defer_taskrun: bool,
     clamp: bool,
     kernel_thread: bool,
     cpu_affinity: Option<u32>,
@@ -61,6 +62,7 @@ impl<'r> Config<'r> {
             completion_entries: None,
             disabled: false,
             single_issuer: false,
+            defer_taskrun: false,
             clamp: false,
             kernel_thread: true,
             cpu_affinity: None,
@@ -97,6 +99,24 @@ impl<'r> Config<'r> {
     #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
     pub const fn single_issuer(mut self) -> Config<'r> {
         self.single_issuer = true;
+        self
+    }
+
+    /// Defer task running.
+    ///
+    /// By default, kernel will process all outstanding work at the end of any
+    /// system call or thread interrupt. This can delay the application from
+    /// making other progress.
+    ///
+    /// Enabling this option will hint to kernel that it should defer work until
+    /// [`Ring::poll`] is called. This way the work is done in the
+    /// [`Ring::poll`].
+    ///
+    /// This options required [`Config::single_issuer`] to be set. This option
+    /// does not work with [`Config::with_kernel_thread`] set.
+    #[doc(alias = "IORING_SETUP_DEFER_TASKRUN")]
+    pub const fn defer_task_run(mut self) -> Config<'r> {
+        self.defer_taskrun = true;
         self
     }
 
@@ -212,6 +232,9 @@ impl<'r> Config<'r> {
         if self.single_issuer {
             // Only allow access from a single thread.
             parameters.flags |= libc::IORING_SETUP_SINGLE_ISSUER;
+        }
+        if self.defer_taskrun {
+            parameters.flags |= libc::IORING_SETUP_DEFER_TASKRUN;
         }
         if let Some(completion_entries) = self.completion_entries {
             parameters.cq_entries = completion_entries;

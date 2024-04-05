@@ -207,6 +207,21 @@ fn config_single_issuer_disabled_ring() {
 }
 
 #[test]
+fn config_defer_task_run() {
+    require_kernel!(6, 1);
+    init();
+
+    let mut ring = Ring::config(1)
+        .single_issuer()
+        .defer_task_run()
+        .with_kernel_thread(false)
+        .build()
+        .unwrap();
+
+    ring.poll(Some(Duration::ZERO)).unwrap();
+}
+
+#[test]
 fn wake_ring() {
     init();
     let mut ring = Ring::config(2)
