@@ -1,3 +1,15 @@
+# v0.1.9
+
+* Added `Config::disable` which enables `IORING_SETUP_R_DISABLED`
+  <https://github.com/Thomasdezeeuw/a10/commit/08078e34596e31f3a3a706b583d7a2f5f9f8ac8b>.
+* Added `Ring::enable` which enables a disable ring
+  <https://github.com/Thomasdezeeuw/a10/commit/3817e4f0aa6ac51e131be0b8076e87fa963c4be0>.
+* Added `Config::single_issuer` which enables `IORING_SETUP_SINGLE_ISSUER`,
+  which is no longer set by default
+  <https://github.com/Thomasdezeeuw/a10/commit/e18c618b31bc83564cc23388d8913ebb93e1b310>.
+* Added `Config::defer_task_run` which enables `IORING_SETUP_DEFER_TASKRUN`
+  <https://github.com/Thomasdezeeuw/a10/commit/0f4d4847392bdccda346b018d7572d41a2a49853>.
+
 # v0.1.8
 
 * Make BufGroupId and BufIdx public, but still hide them from the docs
