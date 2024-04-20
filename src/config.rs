@@ -199,7 +199,7 @@ impl<'r> Config<'r> {
     /// Enable direct descriptors.
     ///
     /// This registers a sparse array of `size` direct descriptor slots enabling
-    /// direct descriptors to be used. If this is not used attempt to create a
+    /// direct descriptors to be used. If this is not used attempts to create a
     /// direct descriptor will result in `ENXIO`.
     ///
     /// By default direct descriptors are not enabled.

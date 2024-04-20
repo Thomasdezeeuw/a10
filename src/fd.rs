@@ -136,6 +136,8 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Returns the `RawFd` of this `AsyncFd`.
+    ///
+    /// The file descriptor can be a regular or direct descriptor.
     pub(crate) fn fd(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
