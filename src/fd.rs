@@ -24,6 +24,7 @@ use crate::SubmissionQueue;
 /// limited to io_uring operations.
 ///
 /// [`Future`]: std::future::Future
+#[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd<D: Descriptor = File> {
     /// # Notes
     ///
@@ -113,7 +114,7 @@ impl AsyncFd<Direct> {
     ///
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
+    pub const fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
         ToFd::new(self, ())
     }
 }
