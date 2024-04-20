@@ -258,8 +258,15 @@ impl Submission {
     }
 
     /// Set the flag to use direct descriptors.
-    pub(crate) fn direct_fd(&mut self) {
+    pub(crate) fn use_direct_fd(&mut self) {
         self.inner.flags |= libc::IOSQE_FIXED_FILE;
+    }
+
+    /// Set the flag to create direct descriptors.
+    pub(crate) fn create_direct_fd(&mut self) {
+        self.inner.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            file_index: libc::IORING_FILE_INDEX_ALLOC as _,
+        };
     }
 
     /// Returns `true` if the submission is unchanged after a [`reset`].
@@ -1149,7 +1156,7 @@ macro_rules! op_future {
             fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
                 std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
                     $setup_fn
-                    D::set_flags($setup_submission);
+                    D::use_flags($setup_submission);
                 }))
             }
         }

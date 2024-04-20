@@ -388,7 +388,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
-                    D::set_flags(submission);
+                    D::use_flags(submission);
                 });
                 match result {
                     Ok(op_index) => {

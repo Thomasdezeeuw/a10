@@ -175,7 +175,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         let result = self.sq.add_no_result(|submission| unsafe {
             submission.close(self.fd());
             submission.no_completion_event();
-            D::set_flags(submission);
+            D::use_flags(submission);
         });
         if let Err(err) = result {
             log::error!("error submitting close operation for a10::AsyncFd: {err}");
@@ -191,8 +191,11 @@ pub(crate) mod private {
     use crate::op::Submission;
 
     pub(crate) trait Descriptor {
-        /// Set any additional flags in `submission`.
-        fn set_flags(submission: &mut Submission);
+        /// Set any additional flags in `submission` when using the descriptor.
+        fn use_flags(submission: &mut Submission);
+
+        /// Set any additional flags in `submission` when creating the descriptor.
+        fn create_flags(submission: &mut Submission);
 
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
@@ -206,7 +209,11 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    fn set_flags(_: &mut Submission) {
+    fn use_flags(_: &mut Submission) {
+        // No flags needed.
+    }
+
+    fn create_flags(_: &mut Submission) {
         // No flags needed.
     }
 
@@ -226,8 +233,12 @@ pub enum Direct {}
 impl Descriptor for Direct {}
 
 impl private::Descriptor for Direct {
-    fn set_flags(submission: &mut Submission) {
-        submission.direct_fd();
+    fn use_flags(submission: &mut Submission) {
+        submission.use_direct_fd();
+    }
+
+    fn create_flags(submission: &mut Submission) {
+        submission.create_direct_fd();
     }
 
     fn fmt_dbg() -> &'static str {
