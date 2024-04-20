@@ -411,7 +411,7 @@ impl<D: Descriptor + Unpin> Future for Socket<D> {
             ctx,
             |submission, (domain, r#type, protocol, flags)| unsafe {
                 submission.socket(domain, r#type, protocol, flags);
-                D::create_flags(submission)
+                D::create_flags(submission);
             },
         );
 
