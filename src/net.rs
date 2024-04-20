@@ -361,7 +361,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         level: libc::c_int,
         optname: libc::c_int,
-    ) -> SocketOption<'fd, T> {
+    ) -> SocketOption<'fd, T, D> {
         // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
         let value = Box::new(MaybeUninit::uninit());
         SocketOption::new(self, value, (level as libc::__u32, optname as libc::__u32))
@@ -381,7 +381,7 @@ impl<D: Descriptor> AsyncFd<D> {
         level: libc::c_int,
         optname: libc::c_int,
         optvalue: T,
-    ) -> SetSocketOption<'fd, T> {
+    ) -> SetSocketOption<'fd, T, D> {
         let value = Box::new(optvalue);
         SetSocketOption::new(self, value, (level as libc::__u32, optname as libc::__u32))
     }
