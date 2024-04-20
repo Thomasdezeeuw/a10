@@ -7,7 +7,7 @@ use std::io;
 
 use a10::fs::OpenOptions;
 use a10::io::ReadBufPool;
-use a10::{Extract, SubmissionQueue};
+use a10::{AsyncFd, Extract, SubmissionQueue};
 
 mod runtime;
 
@@ -43,8 +43,8 @@ fn main() -> io::Result<()> {
 }
 
 async fn cp(sq: SubmissionQueue, source: String, destination: String) -> io::Result<()> {
-    let input = OpenOptions::new().open(sq.clone(), source.into()).await?;
-    let output = OpenOptions::new()
+    let input: AsyncFd = OpenOptions::new().open(sq.clone(), source.into()).await?;
+    let output: AsyncFd = OpenOptions::new()
         .write()
         .create_new()
         .open(sq.clone(), destination.into())

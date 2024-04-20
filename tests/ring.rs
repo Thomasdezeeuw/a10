@@ -16,11 +16,11 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use a10::cancel::Cancel;
-use a10::fs::OpenOptions;
+use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
-use a10::{mem, process, Config, Ring, SubmissionQueue};
+use a10::{fd, mem, process, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
@@ -75,7 +75,7 @@ fn submission_queue_full_is_handle_internally() {
     let mut ring = Ring::new(2).unwrap();
     let sq = ring.submission_queue();
 
-    let mut future = OpenOptions::new().open(sq.clone(), PATH.into());
+    let mut future: Open<fd::File> = OpenOptions::new().open(sq.clone(), PATH.into());
     let file = loop {
         match poll_nop(Pin::new(&mut future)) {
             Poll::Ready(result) => break result.unwrap(),

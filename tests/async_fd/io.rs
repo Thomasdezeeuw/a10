@@ -8,12 +8,13 @@ use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 use std::pin::Pin;
 
-use a10::fs::OpenOptions;
+use a10::fd::{AsyncFd, File};
+use a10::fs::{Open, OpenOptions};
 use a10::io::{
     stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Splice,
     Stderr, Stdout,
 };
-use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
+use a10::{Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     bind_and_listen_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
@@ -60,7 +61,7 @@ fn read_read_buf_pool() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
@@ -83,7 +84,7 @@ fn read_buf() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
@@ -152,7 +153,7 @@ fn read_read_buf_pool_multiple_buffers() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut read1 = file.read_at(buf_pool.get(), 0);
     let mut read2 = file.read_at(buf_pool.get(), 0);
@@ -184,7 +185,7 @@ fn read_read_buf_pool_reuse_buffers() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     for _ in 0..4 {
         let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
@@ -208,7 +209,7 @@ fn read_read_buf_pool_reuse_same_buffer() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
@@ -241,7 +242,7 @@ fn read_read_buf_pool_out_of_buffers() {
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let futures = (0..8)
         .map(|_| {
@@ -282,7 +283,7 @@ fn two_read_buf_pools() {
     let buf_pool2 = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     for buf_pool in [buf_pool1, buf_pool2] {
         let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
@@ -307,7 +308,7 @@ fn read_buf_remove() {
     let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
 
     let path = LOREM_IPSUM_50.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
     assert!(!buf.is_empty());
@@ -383,7 +384,7 @@ fn read_buf_remove_invalid_range() {
     let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
 
     let path = LOREM_IPSUM_50.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
+    let file: AsyncFd<File> = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
     assert!(!buf.is_empty());
@@ -432,7 +433,7 @@ fn write_all_at_extract() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = OpenOptions::new()
+    let open_file: Open<File> = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -511,7 +512,7 @@ fn write_all_vectored_at_extract() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = OpenOptions::new()
+    let open_file: Open<File> = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -597,7 +598,7 @@ fn read_n_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file = OpenOptions::new().open(sq, path);
+    let open_file: Open<File> = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = BadReadBuf {
@@ -688,7 +689,7 @@ fn read_n_vectored_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file = OpenOptions::new().open(sq, path);
+    let open_file: Open<File> = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = GrowingBufSlice {
@@ -799,7 +800,7 @@ fn splice_to() {
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
 
-    let open_file = OpenOptions::new().open(sq, path.into());
+    let open_file: Open<File> = OpenOptions::new().open(sq, path.into());
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
@@ -829,7 +830,7 @@ fn splice_from() {
     path.push("splice_from");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file = OpenOptions::new()
+    let open_file: Open<File> = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -876,7 +877,7 @@ fn close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file: Open<File> = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     waker.block_on(file.close()).expect("failed to close fd");
 }
@@ -895,7 +896,7 @@ fn dropping_should_close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file: Open<File> = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     drop(file);
 }
@@ -908,7 +909,7 @@ fn dropped_futures_do_not_leak_buffers() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().write().open_temp_file(sq, temp_dir());
+    let open_file: Open<File> = OpenOptions::new().write().open_temp_file(sq, temp_dir());
     let file = waker.block_on(open_file).unwrap();
 
     let buf = vec![123; 64 * 1024];
