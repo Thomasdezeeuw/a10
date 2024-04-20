@@ -262,30 +262,6 @@ fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<
     Ok(set)
 }
 
-// ReceiveSignal.
-op_future! {
-    fn Signals::receive -> Box<libc::signalfd_siginfo>,
-    struct ReceiveSignal<'fd> {
-        /// Buffer to write into, needs to stay in memory so the kernel can
-        /// access it safely.
-        info: Box<MaybeUninit<libc::signalfd_siginfo>>,
-    },
-    setup_state: _unused: (),
-    setup: |submission, fd, (info,), _unused| unsafe {
-        let ptr = (**info).as_mut_ptr().cast();
-        submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
-        D::set_flags(submission);
-    },
-    map_result: |this, (info,), n| {
-        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
-        { debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>()) };
-        // TODO: replace with `Box::assume_init` once `new_uninit` is stable.
-        // SAFETY: the kernel initialised the info allocation for us as part of
-        // the read call.
-        Ok(unsafe { Box::from_raw(Box::into_raw(info).cast()) })
-    },
-}
-
 /// Known signals supported by Linux as of v6.3.
 const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
     (libc::SIGHUP, "SIGHUP"),
@@ -346,6 +322,30 @@ impl<D: Descriptor> Drop for Signals<D> {
 fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
     libc::syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
     Ok(())
+}
+
+// ReceiveSignal.
+op_future! {
+    fn Signals::receive -> Box<libc::signalfd_siginfo>,
+    struct ReceiveSignal<'fd> {
+        /// Buffer to write into, needs to stay in memory so the kernel can
+        /// access it safely.
+        info: Box<MaybeUninit<libc::signalfd_siginfo>>,
+    },
+    setup_state: _unused: (),
+    setup: |submission, fd, (info,), _unused| unsafe {
+        let ptr = (**info).as_mut_ptr().cast();
+        submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
+        D::set_flags(submission);
+    },
+    map_result: |this, (info,), n| {
+        #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
+        { debug_assert_eq!(n as usize, size_of::<libc::signalfd_siginfo>()) };
+        // TODO: replace with `Box::assume_init` once `new_uninit` is stable.
+        // SAFETY: the kernel initialised the info allocation for us as part of
+        // the read call.
+        Ok(unsafe { Box::from_raw(Box::into_raw(info).cast()) })
+    },
 }
 
 /// [`AsyncIterator`] behind [`Signals::receive_signals`].
