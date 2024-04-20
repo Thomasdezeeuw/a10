@@ -7,7 +7,7 @@ use std::task::Poll;
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, task, thread};
 
-use a10::signals::{self, Signals};
+use a10::process::{ReceiveSignal, ReceiveSignals, Signals};
 use a10::Ring;
 
 mod util;
@@ -91,10 +91,10 @@ fn main() {
 
     is_send::<Signals>();
     is_sync::<Signals>();
-    is_send::<signals::Receive>();
-    is_sync::<signals::Receive>();
-    is_send::<signals::ReceiveSignals>();
-    is_sync::<signals::ReceiveSignals>();
+    is_send::<ReceiveSignal>();
+    is_sync::<ReceiveSignal>();
+    is_send::<ReceiveSignals>();
+    is_sync::<ReceiveSignals>();
 
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
