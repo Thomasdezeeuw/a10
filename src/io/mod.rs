@@ -865,7 +865,7 @@ impl<D: Descriptor + Unpin> Future for Close<D> {
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let op_index = poll_state!(Close, self.state, self.sq, ctx, |submission, fd| unsafe {
             submission.close(fd);
-            D::set_flags(submission);
+            D::use_flags(submission);
         });
 
         match self.sq.poll_op(ctx, op_index) {
