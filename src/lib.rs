@@ -153,7 +153,17 @@ pub mod net;
 mod op;
 pub mod poll;
 pub mod process;
-pub mod signals;
+
+pub mod signals {
+    //! The signals module is deprecated, use the [`process`] module instead.
+    //!
+    //! [`process`]: crate::process
+
+    #![deprecated(note = "use a10::process module instead")]
+
+    #[allow(clippy::module_name_repetitions)]
+    pub use crate::process::{ReceiveSignal as Receive, ReceiveSignals, Signals};
+}
 
 // TODO: replace this with definitions from the `libc` crate once available.
 mod sys;
