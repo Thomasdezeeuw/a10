@@ -822,6 +822,9 @@ impl fmt::Debug for Submission {
                 f.field("opcode", &"IORING_OP_SOCKET")
                     .field("domain", &self.inner.fd)
                     .field("type", unsafe { &self.inner.__bindgen_anon_1.off })
+                    .field("file_index", unsafe {
+                        &self.inner.__bindgen_anon_5.file_index
+                    })
                     .field("protocol", &self.inner.len)
                     .field("rw_flags", unsafe { &self.inner.__bindgen_anon_3.rw_flags });
             }
@@ -850,6 +853,9 @@ impl fmt::Debug for Submission {
                     .field("accept_flags", unsafe {
                         &self.inner.__bindgen_anon_3.accept_flags
                     })
+                    .field("file_index", unsafe {
+                        &self.inner.__bindgen_anon_5.file_index
+                    })
                     .field("ioprio", &self.inner.ioprio);
             }
             libc::IORING_OP_ASYNC_CANCEL => {
@@ -870,6 +876,9 @@ impl fmt::Debug for Submission {
                     .field("mode", &self.inner.len)
                     .field("open_flags", unsafe {
                         &self.inner.__bindgen_anon_3.open_flags
+                    })
+                    .field("file_index", unsafe {
+                        &self.inner.__bindgen_anon_5.file_index
                     });
             }
             libc::IORING_OP_SPLICE => {
