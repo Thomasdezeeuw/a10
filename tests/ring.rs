@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::io::ReadBufPool;
-use a10::msg::{MsgListener, MsgToken, SendMsg};
+use a10::msg::{msg_listener, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
 use a10::{mem, process, AsyncFd, Config, Ring, SubmissionQueue};
 
@@ -279,7 +279,7 @@ fn message_sending() {
     is_send::<MsgToken>();
     is_sync::<MsgToken>();
 
-    let (msg_listener, msg_token) = sq.clone().msg_listener().unwrap();
+    let (msg_listener, msg_token) = msg_listener(sq.clone()).unwrap();
     let mut msg_listener = pin!(msg_listener);
     start_mulitshot_op(msg_listener.as_mut());
 
