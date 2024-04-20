@@ -250,6 +250,15 @@ impl<D: Descriptor> Signals<D> {
     }
 }
 
+impl<D: Descriptor> fmt::Debug for Signals<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Signals")
+            .field("fd", &self.fd)
+            .field("signals", &self.signals)
+            .finish()
+    }
+}
+
 /// Create a `sigset_t` from `signals`.
 fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<libc::sigset_t> {
     let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
