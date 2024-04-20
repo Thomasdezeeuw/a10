@@ -546,13 +546,15 @@ impl SubmissionQueue {
     /// Returns an [`AsyncIterator`] that returns multiple events as specified
     /// in `mask` on the file descriptor `fd`.
     ///
-    /// This is not the same as calling [`SubmissionQueue::oneshot_poll`] in a
+    /// This is not the same as calling [`oneshot_poll`] in a
     /// loop as this uses a multishot operation, which means only a single
     /// operation is created kernel side, making this more efficient.
     ///
     /// This is deprecated, use [`poll::multishot_poll`] instead.
     ///
     /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+    ///
+    /// [`oneshot_poll`]: poll::oneshot_poll
     #[deprecated(note = "use a10::poll::multishot_poll instead")]
     pub fn multishot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll<'a> {
         poll::multishot_poll(self, fd, mask)

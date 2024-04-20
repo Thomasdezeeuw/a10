@@ -1,10 +1,9 @@
 //! Poll for file descriptor events.
 //!
 //! To wait for events on a file descriptor use:
-//!  * [`SubmissionQueue::oneshot_poll`] a [`Future`] returning a single
-//!    [`PollEvent`].
-//!  * [`SubmissionQueue::multishot_poll`] an [`AsyncIterator`] returning
-//!    multiple [`PollEvent`]s.
+//!  * [`oneshot_poll`] a [`Future`] returning a single [`PollEvent`].
+//!  * [`multishot_poll`] an [`AsyncIterator`] returning multiple
+//!    [`PollEvent`]s.
 //!
 //! [`AsyncIterator`]: std::async_iter::AsyncIterator
 
@@ -36,7 +35,7 @@ pub fn oneshot_poll<'sq>(
     }
 }
 
-/// [`Future`] behind [`SubmissionQueue::oneshot_poll`].
+/// [`Future`] behind [`oneshot_poll`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
@@ -104,9 +103,9 @@ impl<'sq> Drop for OneshotPoll<'sq> {
 /// Returns an [`AsyncIterator`] that returns multiple events as specified
 /// in `mask` on the file descriptor `fd`.
 ///
-/// This is not the same as calling [`SubmissionQueue::oneshot_poll`] in a
-/// loop as this uses a multishot operation, which means only a single
-/// operation is created kernel side, making this more efficient.
+/// This is not the same as calling [`oneshot_poll`] in a loop as this uses a
+/// multishot operation, which means only a single operation is created kernel
+/// side, making this more efficient.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[allow(clippy::module_name_repetitions)]
@@ -121,7 +120,7 @@ pub fn multishot_poll<'sq>(
     }
 }
 
-/// [`AsyncIterator`] behind [`SubmissionQueue::multishot_poll`].
+/// [`AsyncIterator`] behind [`multishot_poll`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
