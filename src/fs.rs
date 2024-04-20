@@ -218,6 +218,7 @@ impl<D: Descriptor + Unpin> Future for Open<D> {
                 // SAFETY: `path` is only removed after the state is set to `Done`.
                 let path = self.path.as_ref().unwrap();
                 submission.open_at(libc::AT_FDCWD, path.as_ptr(), flags, mode);
+                D::create_flags(submission);
             }
         );
 
