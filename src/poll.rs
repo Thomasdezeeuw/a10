@@ -101,28 +101,41 @@ impl<'sq> Drop for OneshotPoll<'sq> {
     }
 }
 
+/// Returns an [`AsyncIterator`] that returns multiple events as specified
+/// in `mask` on the file descriptor `fd`.
+///
+/// This is not the same as calling [`SubmissionQueue::oneshot_poll`] in a
+/// loop as this uses a multishot operation, which means only a single
+/// operation is created kernel side, making this more efficient.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[allow(clippy::module_name_repetitions)]
+pub fn multishot_poll<'sq>(
+    sq: &'sq SubmissionQueue,
+    fd: BorrowedFd,
+    mask: libc::c_int,
+) -> MultishotPoll<'sq> {
+    MultishotPoll {
+        sq,
+        state: OpState::NotStarted((fd.as_raw_fd(), mask)),
+    }
+}
+
 /// [`AsyncIterator`] behind [`SubmissionQueue::multishot_poll`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct MultishotPoll<'a> {
-    sq: &'a SubmissionQueue,
-    state: OpState<(RawFd, u32)>,
+pub struct MultishotPoll<'sq> {
+    sq: &'sq SubmissionQueue,
+    state: OpState<(RawFd, libc::c_int)>,
 }
 
-impl<'a> MultishotPoll<'a> {
-    /// Create a new `MultishotPoll`.
-    pub(crate) const fn new(sq: &'a SubmissionQueue, fd: RawFd, mask: u32) -> MultishotPoll {
-        MultishotPoll {
-            sq,
-            state: OpState::NotStarted((fd, mask)),
-        }
-    }
-
+impl<'sq> MultishotPoll<'sq> {
     /// This is the same as the `AsyncIterator::poll_next` function, but then
     /// available on stable Rust.
+    #[allow(clippy::cast_sign_loss)]
     pub fn poll_next(
         mut self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
@@ -131,7 +144,7 @@ impl<'a> MultishotPoll<'a> {
             OpState::Running(op_index) => op_index,
             OpState::NotStarted((fd, mask)) => {
                 let result = self.sq.add_multishot(|submission| unsafe {
-                    submission.multishot_poll(fd, mask);
+                    submission.multishot_poll(fd, mask as u32);
                 });
                 match result {
                     Ok(op_index) => {
@@ -172,7 +185,7 @@ impl<'a> MultishotPoll<'a> {
 }
 
 #[cfg(feature = "nightly")]
-impl<'a> std::async_iter::AsyncIterator for MultishotPoll<'a> {
+impl<'sq> std::async_iter::AsyncIterator for MultishotPoll<'sq> {
     type Item = io::Result<PollEvent>;
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
@@ -180,7 +193,7 @@ impl<'a> std::async_iter::AsyncIterator for MultishotPoll<'a> {
     }
 }
 
-impl<'a> Cancel for MultishotPoll<'a> {
+impl<'sq> Cancel for MultishotPoll<'sq> {
     fn try_cancel(&mut self) -> CancelResult {
         self.state.try_cancel(self.sq)
     }
@@ -190,7 +203,7 @@ impl<'a> Cancel for MultishotPoll<'a> {
     }
 }
 
-impl<'a> Drop for MultishotPoll<'a> {
+impl<'sq> Drop for MultishotPoll<'sq> {
     fn drop(&mut self) {
         if let OpState::Running(op_index) = self.state {
             let result = self.sq.cancel_op(op_index, (), |submission| unsafe {

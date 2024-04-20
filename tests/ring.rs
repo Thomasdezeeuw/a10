@@ -19,7 +19,7 @@ use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::io::ReadBufPool;
 use a10::msg::{MsgListener, MsgToken, SendMsg};
-use a10::poll::{oneshot_poll, MultishotPoll, OneshotPoll};
+use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
 use a10::{mem, process, AsyncFd, Config, Ring, SubmissionQueue};
 
 mod util;
@@ -349,7 +349,7 @@ fn cancel_oneshot_poll() {
 }
 
 #[test]
-fn multishot_poll() {
+fn test_multishot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -358,7 +358,7 @@ fn multishot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
+    let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
     start_mulitshot_op(Pin::new(&mut receiver_read));
 
     let mut buf = vec![0; DATA.len() + 1];
@@ -384,7 +384,7 @@ fn cancel_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _));
+    let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
     start_mulitshot_op(receiver_read.as_mut());
 
     waker.block_on(receiver_read.cancel()).unwrap();
@@ -398,7 +398,7 @@ fn drop_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = sq.multishot_poll(receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
 
     start_mulitshot_op(Pin::new(&mut receiver_read));
 

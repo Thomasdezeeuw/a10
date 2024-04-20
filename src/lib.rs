@@ -550,10 +550,12 @@ impl SubmissionQueue {
     /// loop as this uses a multishot operation, which means only a single
     /// operation is created kernel side, making this more efficient.
     ///
+    /// This is deprecated, use [`poll::multishot_poll`] instead.
+    ///
     /// [`AsyncIterator`]: std::async_iter::AsyncIterator
-    #[allow(clippy::cast_sign_loss)]
+    #[deprecated(note = "use a10::poll::multishot_poll instead")]
     pub fn multishot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll<'a> {
-        MultishotPoll::new(self, fd.as_raw_fd(), mask as u32)
+        poll::multishot_poll(self, fd, mask)
     }
 
     /// Add a submission to the queue.
