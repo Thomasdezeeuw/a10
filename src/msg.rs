@@ -1,7 +1,7 @@
 //! User space messages.
 //!
-//! To setup a [`MsgListener`] use [`SubmissionQueue::msg_listener`]. It returns
-//! the listener as well as a [`MsgToken`], which can be used in
+//! To setup a [`MsgListener`] use [`msg_listener`]. It returns the listener as
+//! well as a [`MsgToken`], which can be used in
 //! [`SubmissionQueue::try_send_msg`] and [`SubmissionQueue::send_msg`] to send
 //! a message to the created `MsgListener`.
 
@@ -19,6 +19,35 @@ use crate::{OpIndex, SubmissionQueue};
 #[allow(clippy::module_name_repetitions)]
 pub struct MsgToken(pub(crate) OpIndex);
 
+/// Setup a listener for user space messages.
+///
+/// The returned [`MsgListener`] will return all messages send using
+/// [`SubmissionQueue::try_send_msg`] and [`SubmissionQueue::send_msg`] using
+/// the returned `MsgToken`.
+///
+/// # Notes
+///
+/// This will return an error if too many operations are already queued,
+/// this is usually resolved by calling [`Ring::poll`].
+///
+/// The returned `MsgToken` has an implicitly lifetime linked to
+/// `MsgListener`. If `MsgListener` is dropped the `MsgToken` will
+/// become invalid.
+///
+/// Due to the limitations mentioned above it's advised to consider the
+/// usefulness of the type severly limited. The returned `MsgListener`
+/// iterator should live for the entire lifetime of the `Ring`, to ensure we
+/// don't use `MsgToken` after it became invalid. Furthermore to ensure
+/// the creation of it succeeds it should be done early in the lifetime of
+/// `Ring`.
+///
+/// [`Ring::poll`]: crate::Ring::poll
+#[allow(clippy::module_name_repetitions)]
+pub fn msg_listener(sq: SubmissionQueue) -> io::Result<(MsgListener, MsgToken)> {
+    let op_index = sq.queue_multishot()?;
+    Ok((MsgListener { sq, op_index }, MsgToken(op_index)))
+}
+
 /// [`AsyncIterator`] behind [`SubmissionQueue::msg_listener`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
@@ -31,12 +60,6 @@ pub struct MsgListener {
 }
 
 impl MsgListener {
-    /// Create a new `MsgListener`.
-    pub(crate) fn new(sq: SubmissionQueue) -> io::Result<(MsgListener, MsgToken)> {
-        let op_index = sq.queue_multishot()?;
-        Ok((MsgListener { sq, op_index }, MsgToken(op_index)))
-    }
-
     /// This is the same as the `AsyncIterator::poll_next` function, but then
     /// available on stable Rust.
     pub fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<u32>> {

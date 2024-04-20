@@ -484,9 +484,9 @@ impl SubmissionQueue {
 
     /// Setup a listener for user space messages.
     ///
-    /// The returned [`MsgListener`] iterator will return all messages send
-    /// using [`SubmissionQueue::try_send_msg`] and
-    /// [`SubmissionQueue::send_msg`] using the returned `MsgToken`.
+    /// The returned [`MsgListener`] will return all messages send using
+    /// [`SubmissionQueue::try_send_msg`] and [`SubmissionQueue::send_msg`]
+    /// using the returned `MsgToken`.
     ///
     /// # Notes
     ///
@@ -503,8 +503,11 @@ impl SubmissionQueue {
     /// don't use `MsgToken` after it became invalid. Furthermore to ensure
     /// the creation of it succeeds it should be done early in the lifetime of
     /// `Ring`.
+    ///
+    /// This is deprecated, use [`msg::msg_listener`] instead.
+    #[deprecated(note = "use a10::msg::msg_listener instead")]
     pub fn msg_listener(self) -> io::Result<(MsgListener, MsgToken)> {
-        MsgListener::new(self)
+        msg::msg_listener(self)
     }
 
     /// Try to send a message to iterator listening for message using `MsgToken`.
@@ -517,9 +520,10 @@ impl SubmissionQueue {
     /// [`SubmissionQueue::send_msg`] for a version that tries again when the
     /// submission queue is full.
     ///
-    /// See [`SubmissionQueue::msg_listener`] for examples.
+    /// See [`msg_listener`] for examples.
     ///
     /// [polling]: Ring::poll
+    /// [`msg_listener`]: msg::msg_listener
     pub fn try_send_msg(&self, token: MsgToken, data: u32) -> io::Result<()> {
         self.add_no_result(|submission| unsafe {
             submission.msg(self.shared.ring_fd.as_raw_fd(), (token.0).0 as u64, data, 0);
