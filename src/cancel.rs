@@ -47,7 +47,6 @@ op_future! {
     setup_state: flags: u32,
     setup: |submission, fd, (), flags| unsafe {
         submission.cancel(fd.fd(), flags);
-        D::set_flags(submission);
     },
     map_result: |n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
