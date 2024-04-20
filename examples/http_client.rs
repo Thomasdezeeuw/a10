@@ -2,7 +2,7 @@ use std::net::{SocketAddr, SocketAddrV4};
 use std::{env, io, mem, str};
 
 use a10::net::socket;
-use a10::{Ring, SubmissionQueue};
+use a10::{AsyncFd, Ring, SubmissionQueue};
 
 mod runtime;
 
@@ -56,7 +56,7 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
     let protocol = 0;
     let flags = 0;
-    let socket = socket(sq, domain, r#type, protocol, flags).await?;
+    let socket: AsyncFd = socket(sq, domain, r#type, protocol, flags).await?;
 
     // Connect.
     let addr = to_sockaddr_storage(address);

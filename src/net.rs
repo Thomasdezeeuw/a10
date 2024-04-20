@@ -28,13 +28,13 @@ use crate::{libc, SubmissionQueue};
 /// Creates a new socket.
 ///
 /// See the `socket(2)` manual for more information.
-pub const fn socket(
+pub const fn socket<D: Descriptor>(
     sq: SubmissionQueue,
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
     flags: libc::c_int,
-) -> Socket<File> {
+) -> Socket<D> {
     Socket {
         sq: Some(sq),
         state: OpState::NotStarted((domain, r#type, protocol, flags)),
@@ -411,6 +411,7 @@ impl<D: Descriptor + Unpin> Future for Socket<D> {
             ctx,
             |submission, (domain, r#type, protocol, flags)| unsafe {
                 submission.socket(domain, r#type, protocol, flags);
+                D::create_flags(submission)
             },
         );
 
