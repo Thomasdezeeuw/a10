@@ -4,7 +4,6 @@ fn main() {
     let bindings = bindgen::Builder::default()
         // From `liburing/src/include/liburing.h`.
         .header("include/liburing.h")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
         .impl_debug(false)
         .impl_partialeq(false)
         .derive_copy(true)
@@ -18,7 +17,7 @@ fn main() {
         .merge_extern_blocks(true)
         .default_non_copy_union_style(bindgen::NonCopyUnionStyle::ManuallyDrop)
         .prepend_enum_name(false)
-        .rustfmt_bindings(true)
+        .formatter(bindgen::Formatter::None)
         .sort_semantically(true)
         // Limit to io_uring types and constants.
         .allowlist_type("io_uring.*")
