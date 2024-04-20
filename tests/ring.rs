@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use a10::cancel::Cancel;
 use a10::fs::OpenOptions;
 use a10::io::ReadBufPool;
-use a10::msg::{msg_listener, MsgListener, MsgToken, SendMsg};
+use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
 use a10::{mem, process, AsyncFd, Config, Ring, SubmissionQueue};
 
@@ -284,8 +284,10 @@ fn message_sending() {
     start_mulitshot_op(msg_listener.as_mut());
 
     // Send some messages.
-    sq.try_send_msg(msg_token, DATA1).unwrap();
-    waker.block_on(pin!(sq.send_msg(msg_token, DATA2))).unwrap();
+    try_send_msg(&sq, msg_token, DATA1).unwrap();
+    waker
+        .block_on(pin!(send_msg(&sq, msg_token, DATA2)))
+        .unwrap();
 
     assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA1));
     assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA2));

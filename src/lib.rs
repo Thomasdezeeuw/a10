@@ -485,8 +485,8 @@ impl SubmissionQueue {
     /// Setup a listener for user space messages.
     ///
     /// The returned [`MsgListener`] will return all messages send using
-    /// [`SubmissionQueue::try_send_msg`] and [`SubmissionQueue::send_msg`]
-    /// using the returned `MsgToken`.
+    /// [`msg::try_send_msg`] and [`msg::send_msg`] using the returned
+    /// `MsgToken`.
     ///
     /// # Notes
     ///
@@ -510,31 +510,34 @@ impl SubmissionQueue {
         msg::msg_listener(self)
     }
 
-    /// Try to send a message to iterator listening for message using `MsgToken`.
+    /// Try to send a message to iterator listening for message using [`MsgToken`].
     ///
     /// This will use the io_uring submission queue to share `data` with the
     /// receiving end. This means that it will wake up the thread if it's
     /// currently [polling].
     ///
     /// This will fail if the submission queue is currently full. See
-    /// [`SubmissionQueue::send_msg`] for a version that tries again when the
-    /// submission queue is full.
+    /// [`send_msg`] for a version that tries again when the submission queue is
+    /// full.
     ///
     /// See [`msg_listener`] for examples.
     ///
+    /// This is deprecated, use [`msg::try_send_msg`] instead.
+    ///
     /// [polling]: Ring::poll
+    /// [`send_msg`]: msg::send_msg
     /// [`msg_listener`]: msg::msg_listener
+    #[deprecated(note = "use a10::msg::try_send_msg instead")]
     pub fn try_send_msg(&self, token: MsgToken, data: u32) -> io::Result<()> {
-        self.add_no_result(|submission| unsafe {
-            submission.msg(self.shared.ring_fd.as_raw_fd(), (token.0).0 as u64, data, 0);
-            submission.no_completion_event();
-        })?;
-        Ok(())
+        msg::try_send_msg(self, token, data)
     }
 
-    /// Send a message to iterator listening for message using `MsgToken`.
+    /// Send a message to iterator listening for message using [`MsgToken`].
+    ///
+    /// This is deprecated, use [`msg::send_msg`] instead.
+    #[deprecated(note = "use a10::msg::send_msg instead")]
     pub const fn send_msg<'a>(&'a self, token: MsgToken, data: u32) -> SendMsg<'a> {
-        SendMsg::new(self, token, data)
+        msg::send_msg(self, token, data)
     }
 
     /// Wait for an event specified in `mask` on the file descriptor `fd`.
