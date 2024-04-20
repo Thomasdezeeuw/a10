@@ -1,7 +1,7 @@
 use std::{env, io, str};
 
 use a10::fs::OpenOptions;
-use a10::{Ring, SubmissionQueue};
+use a10::{AsyncFd, Ring, SubmissionQueue};
 
 mod runtime;
 
@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
 
 async fn read_file(sq: SubmissionQueue, path: String) -> io::Result<Vec<u8>> {
     // Open a file for reading.
-    let file = OpenOptions::new().open(sq, path.into()).await?;
+    let file: AsyncFd = OpenOptions::new().open(sq, path.into()).await?;
 
     // Read some bytes from the file.
     let buf = file.read(Vec::with_capacity(32 * 1024)).await?;
