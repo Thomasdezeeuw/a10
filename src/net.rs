@@ -1019,6 +1019,7 @@ op_future! {
         let (ptr, len) = SocketAddress::as_mut_ptr(&mut address.0);
         address.1 = len;
         submission.accept(fd.fd(), ptr, &mut address.1, flags);
+        D::create_flags(submission);
     },
     map_result: |this, (address,), fd| {
         let sq = this.fd.sq.clone();
@@ -1040,6 +1041,7 @@ op_async_iter! {
     setup_state: flags: libc::c_int,
     setup: |submission, this, flags| unsafe {
         submission.multishot_accept(this.fd.fd(), flags);
+        D::create_flags(submission);
     },
     map_result: |this, _flags, fd| {
         let sq = this.fd.sq.clone();
