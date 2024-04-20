@@ -112,12 +112,12 @@ impl ReadBufPool {
             resv: [0; 3],
         };
         log::trace!(ring_fd = ring_fd, bgid = id, size = pool_size; "registering buffer pool");
-        let result = libc::syscall!(io_uring_register(
-            ring_fd,
+
+        let result = sq.register(
             libc::IORING_REGISTER_PBUF_RING,
             ptr::addr_of!(buf_register).cast(),
             1,
-        ));
+        );
         if let Err(err) = result {
             // SAFETY: we just allocated this above.
             unsafe { dealloc(ring_addr.cast(), ring_layout) };
@@ -248,12 +248,11 @@ impl Drop for Shared {
             // Reserved for future use.
             resv: [0; 3],
         };
-        let result = libc::syscall!(io_uring_register(
-            self.sq.shared.ring_fd.as_raw_fd(),
+        let result = self.sq.register(
             libc::IORING_UNREGISTER_PBUF_RING,
             ptr::addr_of!(buf_register).cast(),
             1,
-        ));
+        );
         if let Err(err) = result {
             log::warn!("failed to unregister a10::ReadBufPool: {err}");
         }
