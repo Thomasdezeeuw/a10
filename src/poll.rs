@@ -9,7 +9,7 @@
 //! [`AsyncIterator`]: std::async_iter::AsyncIterator
 
 use std::future::Future;
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io};
@@ -18,28 +18,37 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::op::{poll_state, OpState};
 use crate::{QueueFull, SubmissionQueue};
 
+/// Wait for an event specified in `mask` on the file descriptor `fd`.
+///
+/// Ths is similar to calling `poll(2)` on the file descriptor.
+#[doc(alias = "poll")]
+#[doc(alias = "epoll")]
+#[doc(alias = "select")]
+#[allow(clippy::module_name_repetitions)]
+pub fn oneshot_poll<'sq>(
+    sq: &'sq SubmissionQueue,
+    fd: BorrowedFd,
+    mask: libc::c_int,
+) -> OneshotPoll<'sq> {
+    OneshotPoll {
+        sq,
+        state: OpState::NotStarted((fd.as_raw_fd(), mask)),
+    }
+}
+
 /// [`Future`] behind [`SubmissionQueue::oneshot_poll`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct OneshotPoll<'a> {
-    sq: &'a SubmissionQueue,
-    state: OpState<(RawFd, u32)>,
+pub struct OneshotPoll<'sq> {
+    sq: &'sq SubmissionQueue,
+    state: OpState<(RawFd, libc::c_int)>,
 }
 
-impl<'a> OneshotPoll<'a> {
-    /// Create a new `OneshotPoll`.
-    pub(crate) const fn new(sq: &'a SubmissionQueue, fd: RawFd, mask: u32) -> OneshotPoll {
-        OneshotPoll {
-            sq,
-            state: OpState::NotStarted((fd, mask)),
-        }
-    }
-}
-
-impl<'a> Future for OneshotPoll<'a> {
+impl<'sq> Future for OneshotPoll<'sq> {
     type Output = io::Result<PollEvent>;
 
+    #[allow(clippy::cast_sign_loss)]
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         let op_index = poll_state!(
             OneshotPoll,
@@ -47,7 +56,7 @@ impl<'a> Future for OneshotPoll<'a> {
             self.sq,
             ctx,
             |submission, (fd, mask)| unsafe {
-                submission.poll(fd, mask);
+                submission.poll(fd, mask as u32);
             }
         );
 
@@ -64,7 +73,7 @@ impl<'a> Future for OneshotPoll<'a> {
     }
 }
 
-impl<'a> Cancel for OneshotPoll<'a> {
+impl<'sq> Cancel for OneshotPoll<'sq> {
     fn try_cancel(&mut self) -> CancelResult {
         self.state.try_cancel(self.sq)
     }
@@ -74,7 +83,7 @@ impl<'a> Cancel for OneshotPoll<'a> {
     }
 }
 
-impl<'a> Drop for OneshotPoll<'a> {
+impl<'sq> Drop for OneshotPoll<'sq> {
     fn drop(&mut self) {
         if let OpState::Running(op_index) = self.state {
             let result = self.sq.cancel_op(op_index, (), |submission| unsafe {
