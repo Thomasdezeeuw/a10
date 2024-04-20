@@ -535,13 +535,12 @@ impl SubmissionQueue {
 
     /// Wait for an event specified in `mask` on the file descriptor `fd`.
     ///
-    /// Ths is similar to calling `poll(2)` the file descriptor.
-    #[doc(alias = "poll")]
-    #[doc(alias = "epoll")]
-    #[doc(alias = "select")]
-    #[allow(clippy::cast_sign_loss)]
-    pub fn oneshot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll<'a> {
-        OneshotPoll::new(self, fd.as_raw_fd(), mask as u32)
+    /// Ths is similar to calling `poll(2)` on the file descriptor.
+    ///
+    /// This is deprecated, use [`poll::oneshot_poll`] instead.
+    #[deprecated(note = "use a10::poll::oneshot_poll instead")]
+    pub fn oneshot_poll<'sq>(&'sq self, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll<'sq> {
+        poll::oneshot_poll(self, fd, mask)
     }
 
     /// Returns an [`AsyncIterator`] that returns multiple events as specified
