@@ -23,7 +23,17 @@ use crate::SubmissionQueue;
 /// Direct descriptors can be faster, but their usage is limited to them being
 /// limited to io_uring operations.
 ///
+/// An `AsyncFd` can be created using some of the following methods:
+///  * Sockets can be opened using [`socket`].
+///  * Sockets can also be accepted using [`AsyncFd::accept`].
+///  * Files can be opened using [`open_file`] or [`fs::OpenOptions`].
+///  * Finally they can be created from any valid file descriptor using
+///    [`AsyncFd::new`].
+///
 /// [`Future`]: std::future::Future
+/// [`socket`]: crate::net::socket
+/// [`open_file`]: crate::fs::open_file
+/// [`fs::OpenOptions`]: crate::fs::OpenOptions
 #[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd<D: Descriptor = File> {
     /// # Notes
