@@ -8,7 +8,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
 use crate::op::{op_future, Submission};
-use crate::SubmissionQueue;
+use crate::{libc, SubmissionQueue};
 
 /// An open file descriptor.
 ///
@@ -210,6 +210,10 @@ pub(crate) mod private {
         /// Return the equivalant of `O_CLOEXEC` for the descripor.
         fn cloexec_flag() -> libc::c_int;
 
+        /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
+        /// descriptor.
+        fn cancel_flag() -> u32;
+
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
     }
@@ -232,6 +236,10 @@ impl private::Descriptor for File {
 
     fn cloexec_flag() -> libc::c_int {
         libc::O_CLOEXEC
+    }
+
+    fn cancel_flag() -> u32 {
+        0
     }
 
     fn fmt_dbg() -> &'static str {
@@ -260,6 +268,10 @@ impl private::Descriptor for Direct {
 
     fn cloexec_flag() -> libc::c_int {
         0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
+    }
+
+    fn cancel_flag() -> u32 {
+        libc::IORING_ASYNC_CANCEL_FD_FIXED
     }
 
     fn fmt_dbg() -> &'static str {
