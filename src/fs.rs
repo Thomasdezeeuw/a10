@@ -39,8 +39,8 @@ impl OpenOptions {
     /// Empty `OpenOptions`, has reading enabled by default.
     pub const fn new() -> OpenOptions {
         OpenOptions {
-            flags: libc::O_RDONLY | libc::O_CLOEXEC, // NOTE: `O_RDONLY` is 0.
-            mode: 0o666,                             // Same as in std lib.
+            flags: libc::O_RDONLY, // NOTE: `O_RDONLY` is 0.
+            mode: 0o666,           // Same as in std lib.
         }
     }
 
@@ -180,7 +180,7 @@ impl OpenOptions {
         Open {
             path: Some(path_to_cstring(path)),
             sq: Some(sq),
-            state: OpState::NotStarted((self.flags, self.mode)),
+            state: OpState::NotStarted((self.flags | D::cloexec_flag(), self.mode)),
             kind: PhantomData,
         }
     }

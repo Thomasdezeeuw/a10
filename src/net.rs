@@ -319,7 +319,11 @@ impl<D: Descriptor> AsyncFd<D> {
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
     pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A, D> {
-        self.accept4(libc::SOCK_CLOEXEC)
+        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
+        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+        // expected.
+        debug_assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        self.accept4(D::cloexec_flag())
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
@@ -336,8 +340,12 @@ impl<D: Descriptor> AsyncFd<D> {
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
-    pub const fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd, D> {
-        self.multishot_accept4(libc::SOCK_CLOEXEC)
+    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd, D> {
+        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
+        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+        // expected.
+        debug_assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        self.multishot_accept4(D::cloexec_flag())
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
