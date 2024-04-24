@@ -207,6 +207,9 @@ pub(crate) mod private {
         /// Set any additional flags in `submission` when creating the descriptor.
         fn create_flags(submission: &mut Submission);
 
+        /// Return the equivalant of `O_CLOEXEC` for the descripor.
+        fn cloexec_flag() -> libc::c_int;
+
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
     }
@@ -220,11 +223,15 @@ impl Descriptor for File {}
 
 impl private::Descriptor for File {
     fn use_flags(_: &mut Submission) {
-        // No flags needed.
+        // No additional flags needed.
     }
 
     fn create_flags(_: &mut Submission) {
-        // No flags needed.
+        // No additional flags needed.
+    }
+
+    fn cloexec_flag() -> libc::c_int {
+        libc::O_CLOEXEC
     }
 
     fn fmt_dbg() -> &'static str {
@@ -249,6 +256,10 @@ impl private::Descriptor for Direct {
 
     fn create_flags(submission: &mut Submission) {
         submission.create_direct_fd();
+    }
+
+    fn cloexec_flag() -> libc::c_int {
+        0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
     }
 
     fn fmt_dbg() -> &'static str {
