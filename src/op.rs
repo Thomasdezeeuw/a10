@@ -257,6 +257,12 @@ impl Submission {
         self.inner.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 
+    /// Don't attempt to do the operation non-blocking first, always execute it
+    /// in an async manner.
+    pub(crate) fn set_async(&mut self) {
+        self.inner.flags |= libc::IOSQE_ASYNC;
+    }
+
     /// Set the flag to use direct descriptors.
     pub(crate) fn use_direct_fd(&mut self) {
         self.inner.flags |= libc::IOSQE_FIXED_FILE;

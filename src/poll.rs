@@ -60,6 +60,7 @@ impl<'sq> Future for OneshotPoll<'sq> {
             ctx,
             |submission, (fd, mask)| unsafe {
                 submission.poll(fd, mask as u32);
+                submission.set_async();
             }
         );
 
@@ -91,6 +92,7 @@ impl<'sq> Drop for OneshotPoll<'sq> {
         if let OpState::Running(op_index) = self.state {
             let result = self.sq.cancel_op(op_index, (), |submission| unsafe {
                 submission.remove_poll(op_index);
+                submission.set_async();
                 // We'll get a canceled completion event if we succeeded, which
                 // is sufficient to cleanup the operation.
                 submission.no_completion_event();
