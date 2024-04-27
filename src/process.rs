@@ -3,8 +3,10 @@
 //! In this module process signal handling is also supported. For that See the
 //! documentation of [`Signals`].
 
+use std::cell::UnsafeCell;
 use std::future::Future;
 use std::mem::{self, size_of, ManuallyDrop, MaybeUninit};
+use std::os::fd::RawFd;
 use std::pin::Pin;
 use std::process::Child;
 use std::task::{self, Poll};
@@ -13,7 +15,7 @@ use std::{fmt, io, ptr};
 use log::{error, trace};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::fd::{AsyncFd, Descriptor, File};
+use crate::fd::{AsyncFd, Descriptor, Direct, File};
 use crate::libc::{self, syscall};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
 use crate::{QueueFull, SubmissionQueue};
@@ -224,6 +226,19 @@ impl Signals {
         let set = unsafe { set.assume_init() };
         Signals::from_set(sq, set)
     }
+
+    /// Convert `Signals` from using a regular file descriptor to using a direct
+    /// descriptor.
+    ///
+    /// See [`AsyncFd::to_direct_descriptor`].
+    pub fn to_direct_descriptor(self) -> ToSignalsDirect {
+        let fd = self.fd.fd();
+        ToSignalsDirect {
+            signals: ManuallyDrop::new(self),
+            direct_fd: ManuallyDrop::new(Box::new(UnsafeCell::new(fd))),
+            state: OpState::NotStarted(()),
+        }
+    }
 }
 
 impl<D: Descriptor> Signals<D> {
@@ -331,6 +346,117 @@ impl<D: Descriptor> Drop for Signals<D> {
 fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
     libc::syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
     Ok(())
+}
+
+/// [`Future`] behind [`Signals::to_direct_descriptor`].
+#[derive(Debug)]
+pub struct ToSignalsDirect {
+    /// The content of `signals` will be take by the newly returned
+    /// `Signals<Direct>` value.
+    signals: ManuallyDrop<Signals<File>>,
+    /// The file descriptor we're changing into a direct descriptor, needs to
+    /// stay in memory so the kernel can access it safely.
+    direct_fd: ManuallyDrop<Box<UnsafeCell<RawFd>>>,
+    state: OpState<()>,
+}
+
+// NOTE: keep this in sync with the `fd::ToDirect` implementation.
+impl Future for ToSignalsDirect {
+    type Output = io::Result<Signals<Direct>>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        let ToSignalsDirect {
+            signals,
+            direct_fd,
+            state,
+        } = Pin::get_mut(self);
+        let op_index = match state {
+            OpState::Running(op_index) => *op_index,
+            OpState::NotStarted(()) => {
+                let result = signals.fd.sq.add(|submission| unsafe {
+                    submission.create_direct_descriptor(direct_fd.get(), 1);
+                });
+                match result {
+                    Ok(op_index) => {
+                        *state = OpState::Running(op_index);
+                        op_index
+                    }
+                    Err(QueueFull(())) => {
+                        signals.fd.sq.wait_for_submission(ctx.waker().clone());
+                        return Poll::Pending;
+                    }
+                }
+            }
+            OpState::Done => unreachable!("a10::ToSignalsDirect polled after completion"),
+        };
+
+        match signals.fd.sq.poll_op(ctx, op_index) {
+            Poll::Ready(Ok((res, _))) => {
+                debug_assert!(res == 1);
+                let sq = signals.fd.sq.clone();
+                let direct_fd = unsafe {
+                    // SAFETY: the kernel is done modifying the descriptor
+                    // value.
+                    let direct_fd = ptr::read(direct_fd.get());
+                    // SAFETY: the files update operation ensures that
+                    // `direct_fd` is valid.
+                    AsyncFd::from_direct_fd(direct_fd, sq)
+                };
+                let direct_signals = Signals {
+                    fd: direct_fd,
+                    // SAFETY: we're not dropping `signals`, thus not dropping
+                    // `signals.signals`.
+                    signals: unsafe { ptr::read(&mut signals.signals) },
+                };
+                // SAFETY: we're not dropping `signals`, thus not dropping
+                // `signals.fd`. But we don't want to leak the file descriptor,
+                // so we're manually dropping it.
+                unsafe { ptr::drop_in_place(&mut signals.fd) };
+                // NOTE: we don't run the `Drop` implementation of `Signals`.
+                Poll::Ready(Ok(direct_signals))
+            }
+            Poll::Ready(Err(err)) => {
+                *state = OpState::Done; // Consider the error as fatal.
+
+                // Drop the file descriptor and remove the error handling.
+                unsafe { ManuallyDrop::drop(&mut *signals) }
+                Poll::Ready(Err(err))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Drop for ToSignalsDirect {
+    fn drop(&mut self) {
+        match self.state {
+            OpState::Running(op_index) => {
+                // Can't drop `direct_fd` as the kernel might be writing into
+                // it, so we'll attempt to cancel the operation and delay the
+                // deallocting of `direct_fd`.
+                let direct_fd = unsafe { ManuallyDrop::take(&mut self.direct_fd) };
+                let result =
+                    self.signals
+                        .fd
+                        .sq
+                        .cancel_op(op_index, direct_fd, |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        });
+                if let Err(err) = result {
+                    log::error!(
+                        "dropped a10::ToSignalsDirect before canceling it, attempt to cancel failed: {err}"
+                    );
+                }
+            }
+            // Make sure we drop the `Signals` to not leak the file descriptor
+            // and ensure we remove our signal handling.
+            OpState::NotStarted(()) => unsafe { ManuallyDrop::drop(&mut self.signals) },
+            OpState::Done => { /* No need to do anything, valid `Signals<Direct>` was returned. */ }
+        }
+    }
 }
 
 // ReceiveSignal.
