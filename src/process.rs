@@ -36,7 +36,7 @@ pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: libc::c_int) -> WaitId {
     WaitId {
         sq,
         state: OpState::NotStarted((wait, options)),
-        info: Some(Box::new(MaybeUninit::uninit())),
+        info: Some(Box::new(UnsafeCell::new(MaybeUninit::uninit()))),
     }
 }
 
@@ -63,9 +63,13 @@ pub struct WaitId {
     sq: SubmissionQueue,
     /// Buffer to write into, needs to stay in memory so the kernel can
     /// access it safely.
-    info: Option<Box<MaybeUninit<libc::signalfd_siginfo>>>,
+    info: Option<Box<UnsafeCell<MaybeUninit<libc::signalfd_siginfo>>>>,
     state: OpState<(WaitOn, libc::c_int)>,
 }
+
+// SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
+unsafe impl Sync for WaitId {}
+unsafe impl Send for WaitId {}
 
 impl Future for WaitId {
     type Output = io::Result<Box<libc::siginfo_t>>;
@@ -82,7 +86,7 @@ impl Future for WaitId {
                     WaitOn::Group(pid) => (libc::P_PGID, pid),
                     WaitOn::All => (libc::P_ALL, 0), // NOTE: id is ignored.
                 };
-                let info = self.info.as_ref().unwrap().as_ptr().cast_mut();
+                let info = self.info.as_ref().unwrap().get().cast();
                 submission.waitid(pid, id_type, options, info);
             }
         );
