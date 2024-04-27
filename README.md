@@ -21,11 +21,11 @@ A10 is expected to be integrated into a `Future` runtime, but it can work as a
 stand-alone library.
 
 ```rust
-use std::path::PathBuf;
 use std::future::Future;
 use std::io;
+use std::path::PathBuf;
 
-use a10::{Extract, Ring, SubmissionQueue};
+use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring supporting 8 submission entries.
@@ -51,7 +51,7 @@ async fn cat(sq: SubmissionQueue, filename: &str) -> io::Result<()> {
     // case of opening a file it means we need ownership of the file name.
     let filename = PathBuf::from(filename);
     // Open a file for reading.
-    let file = a10::fs::OpenOptions::new().open(sq.clone(), filename).await?;
+    let file: AsyncFd = a10::fs::OpenOptions::new().open(sq.clone(), filename).await?;
 
     // Next we'll read from the from the file.
     // Here we need ownership of the buffer, same reason as discussed above.
@@ -75,10 +75,10 @@ async fn cat(sq: SubmissionQueue, filename: &str) -> io::Result<()> {
 /// Block on the `future`, expecting polling `ring` to drive it forward.
 fn block_on<Fut, T>(ring: &mut Ring, future: Fut) -> Fut::Output
 where
-    Fut: Future<Output = io::Result<T>>
+    Fut: Future<Output = io::Result<T>>,
 {
-    use std::task::{self, RawWaker, RawWakerVTable, Poll};
     use std::ptr;
+    use std::task::{self, Poll, RawWaker, RawWakerVTable};
 
     // Pin the future to the stack so we don't move it around.
     let mut future = std::pin::pin!(future);
