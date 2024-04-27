@@ -1,4 +1,4 @@
-//! Asynchronous memory operations.
+//! Memory operations.
 
 use std::future::Future;
 use std::io;
