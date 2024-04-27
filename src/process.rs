@@ -407,7 +407,7 @@ impl Future for ToSignalsDirect {
                     fd: direct_fd,
                     // SAFETY: we're not dropping `signals`, thus not dropping
                     // `signals.signals`.
-                    signals: unsafe { ptr::read(&mut signals.signals) },
+                    signals: unsafe { ptr::read(&signals.signals) },
                 };
                 // SAFETY: we're not dropping `signals`, thus not dropping
                 // `signals.fd`. But we don't want to leak the file descriptor,
@@ -436,26 +436,35 @@ impl Drop for ToSignalsDirect {
                 // it, so we'll attempt to cancel the operation and delay the
                 // deallocting of `direct_fd`.
                 let direct_fd = unsafe { ManuallyDrop::take(&mut self.direct_fd) };
-                let result =
-                    self.signals
-                        .fd
-                        .sq
-                        .cancel_op(op_index, direct_fd, |submission| unsafe {
-                            submission.cancel_op(op_index);
-                            // We'll get a canceled completion event if we succeeded, which
-                            // is sufficient to cleanup the operation.
-                            submission.no_completion_event();
-                        });
+                // Similar for `signals`, we don't want to file descriptor to be
+                // reused and turn that into a direct descriptor.
+                let signals = unsafe { ManuallyDrop::take(&mut self.signals) };
+                let result = self.signals.fd.sq.cancel_op(
+                    op_index,
+                    (signals, direct_fd),
+                    |submission| unsafe {
+                        submission.cancel_op(op_index);
+                        // We'll get a canceled completion event if we succeeded, which
+                        // is sufficient to cleanup the operation.
+                        submission.no_completion_event();
+                    },
+                );
                 if let Err(err) = result {
                     log::error!(
                         "dropped a10::ToSignalsDirect before canceling it, attempt to cancel failed: {err}"
                     );
                 }
             }
-            // Make sure we drop the `Signals` to not leak the file descriptor
-            // and ensure we remove our signal handling.
-            OpState::NotStarted(()) => unsafe { ManuallyDrop::drop(&mut self.signals) },
-            OpState::Done => { /* No need to do anything, valid `Signals<Direct>` was returned. */ }
+            OpState::NotStarted(()) => unsafe {
+                // Make sure we drop the `Signals` to not leak the file descriptor
+                // and ensure we remove our signal handling.
+                ManuallyDrop::drop(&mut self.signals);
+                ManuallyDrop::drop(&mut self.direct_fd);
+            },
+            OpState::Done => unsafe {
+                // Signals was returned in the `Future` impl.
+                ManuallyDrop::drop(&mut self.direct_fd);
+            },
         }
     }
 }
