@@ -505,9 +505,13 @@ op_future! {
 #[allow(clippy::module_name_repetitions)]
 pub struct ReceiveSignals<D: Descriptor = File> {
     signals: Signals<D>,
-    info: ManuallyDrop<Box<libc::signalfd_siginfo>>,
+    info: ManuallyDrop<Box<UnsafeCell<libc::signalfd_siginfo>>>,
     state: OpState<()>,
 }
+
+// SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
+unsafe impl<D: Descriptor> Sync for ReceiveSignals<D> {}
+unsafe impl<D: Descriptor> Send for ReceiveSignals<D> {}
 
 impl<D: Descriptor> ReceiveSignals<D> {
     /// Poll the next signal.
@@ -526,7 +530,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
                 let result = signals.fd.sq.add(|submission| unsafe {
                     submission.read_at(
                         signals.fd.fd(),
-                        ptr::addr_of_mut!(***info).cast(),
+                        info.get().cast(),
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
@@ -559,7 +563,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
                 }
                 // SAFETY: the kernel initialised the info allocation for us as
                 // part of the read call.
-                Poll::Ready(Some(Ok(&**info)))
+                Poll::Ready(Some(Ok(unsafe { &*info.get() })))
             }
             Poll::Ready(Err(err)) => {
                 *state = OpState::Done; // Consider the error as fatal.
