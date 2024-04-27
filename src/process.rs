@@ -481,6 +481,7 @@ op_future! {
     setup: |submission, fd, (info,), _unused| unsafe {
         let ptr = (**info).as_mut_ptr().cast();
         submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
+        D::use_flags(submission);
     },
     map_result: |this, (info,), n| {
         #[allow(clippy::cast_sign_loss)] // Negative values are mapped to errors.
