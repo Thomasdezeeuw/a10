@@ -159,17 +159,6 @@ pub mod net;
 pub mod poll;
 pub mod process;
 
-pub mod signals {
-    //! The signals module is deprecated, use the [`process`] module instead.
-    //!
-    //! [`process`]: crate::process
-
-    #![deprecated(note = "use a10::process module instead")]
-
-    #[allow(clippy::module_name_repetitions)]
-    pub use crate::process::{ReceiveSignal as Receive, ReceiveSignals, Signals};
-}
-
 use bitmap::AtomicBitMap;
 use config::munmap;
 pub use config::Config;
@@ -177,9 +166,7 @@ pub use config::Config;
 pub use extract::Extract;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
-use msg::{MsgListener, MsgToken, SendMsg};
 use op::{QueuedOperation, Submission};
-use poll::{MultishotPoll, OneshotPoll};
 use sys as libc; // TODO: replace this with definitions from the `libc` crate once available.
 
 /// This type represents the user space side of an io_uring.
@@ -489,91 +476,6 @@ impl SubmissionQueue {
         let _: Result<(), QueueFull> = self.add_no_result(|submission| unsafe {
             submission.wake(self.shared.ring_fd.as_raw_fd());
         });
-    }
-
-    /// Setup a listener for user space messages.
-    ///
-    /// The returned [`MsgListener`] will return all messages send using
-    /// [`msg::try_send_msg`] and [`msg::send_msg`] using the returned
-    /// `MsgToken`.
-    ///
-    /// # Notes
-    ///
-    /// This will return an error if too many operations are already queued,
-    /// this is usually resolved by calling [`Ring::poll`].
-    ///
-    /// The returned `MsgToken` has an implicitly lifetime linked to
-    /// `MsgListener`. If `MsgListener` is dropped the `MsgToken` will
-    /// become invalid.
-    ///
-    /// Due to the limitations mentioned above it's advised to consider the
-    /// usefulness of the type severly limited. The returned `MsgListener`
-    /// iterator should live for the entire lifetime of the `Ring`, to ensure we
-    /// don't use `MsgToken` after it became invalid. Furthermore to ensure
-    /// the creation of it succeeds it should be done early in the lifetime of
-    /// `Ring`.
-    ///
-    /// This is deprecated, use [`msg::msg_listener`] instead.
-    #[deprecated(note = "use a10::msg::msg_listener instead")]
-    pub fn msg_listener(self) -> io::Result<(MsgListener, MsgToken)> {
-        msg::msg_listener(self)
-    }
-
-    /// Try to send a message to iterator listening for message using [`MsgToken`].
-    ///
-    /// This will use the io_uring submission queue to share `data` with the
-    /// receiving end. This means that it will wake up the thread if it's
-    /// currently [polling].
-    ///
-    /// This will fail if the submission queue is currently full. See
-    /// [`send_msg`] for a version that tries again when the submission queue is
-    /// full.
-    ///
-    /// See [`msg_listener`] for examples.
-    ///
-    /// This is deprecated, use [`msg::try_send_msg`] instead.
-    ///
-    /// [polling]: Ring::poll
-    /// [`send_msg`]: msg::send_msg
-    /// [`msg_listener`]: msg::msg_listener
-    #[deprecated(note = "use a10::msg::try_send_msg instead")]
-    pub fn try_send_msg(&self, token: MsgToken, data: u32) -> io::Result<()> {
-        msg::try_send_msg(self, token, data)
-    }
-
-    /// Send a message to iterator listening for message using [`MsgToken`].
-    ///
-    /// This is deprecated, use [`msg::send_msg`] instead.
-    #[deprecated(note = "use a10::msg::send_msg instead")]
-    pub const fn send_msg<'a>(&'a self, token: MsgToken, data: u32) -> SendMsg<'a> {
-        msg::send_msg(self, token, data)
-    }
-
-    /// Wait for an event specified in `mask` on the file descriptor `fd`.
-    ///
-    /// Ths is similar to calling `poll(2)` on the file descriptor.
-    ///
-    /// This is deprecated, use [`poll::oneshot_poll`] instead.
-    #[deprecated(note = "use a10::poll::oneshot_poll instead")]
-    pub fn oneshot_poll<'sq>(&'sq self, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll<'sq> {
-        poll::oneshot_poll(self, fd, mask)
-    }
-
-    /// Returns an [`AsyncIterator`] that returns multiple events as specified
-    /// in `mask` on the file descriptor `fd`.
-    ///
-    /// This is not the same as calling [`oneshot_poll`] in a
-    /// loop as this uses a multishot operation, which means only a single
-    /// operation is created kernel side, making this more efficient.
-    ///
-    /// This is deprecated, use [`poll::multishot_poll`] instead.
-    ///
-    /// [`AsyncIterator`]: std::async_iter::AsyncIterator
-    ///
-    /// [`oneshot_poll`]: poll::oneshot_poll
-    #[deprecated(note = "use a10::poll::multishot_poll instead")]
-    pub fn multishot_poll<'a>(&'a self, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll<'a> {
-        poll::multishot_poll(self, fd, mask)
     }
 
     /// Make a `io_uring_register(2)` system call.

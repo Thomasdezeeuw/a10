@@ -169,7 +169,7 @@ impl Drop for WaitId {
 /// use std::mem::MaybeUninit;
 ///
 /// use a10::Ring;
-/// use a10::signals::Signals;
+/// use a10::process::Signals;
 ///
 /// # fn main() {
 /// async fn main() -> io::Result<()> {
