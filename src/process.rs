@@ -510,6 +510,8 @@ impl<D: Descriptor> ReceiveSignals<D> {
             info,
             state,
         } = self;
+        // NOTE: can't use `poll_state!` because we return `None` when the
+        // operation is done.
         let op_index = match state {
             OpState::Running(op_index) => *op_index,
             OpState::NotStarted(()) => {
