@@ -299,6 +299,7 @@ op_future! {
 }
 
 // ToDirect.
+// NOTE: keep this in sync with the `process::ToSignalsDirect` implementation.
 op_future! {
     fn AsyncFd::to_direct_descriptor -> AsyncFd<Direct>,
     struct ToDirect<'fd> {
