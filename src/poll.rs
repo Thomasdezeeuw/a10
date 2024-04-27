@@ -145,6 +145,7 @@ impl<'sq> MultishotPoll<'sq> {
         mut self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
     ) -> Poll<Option<io::Result<PollEvent>>> {
+        // NOTE: doesn't use `poll_state!` because it uses multishot operation.
         let op_index = match self.state {
             OpState::Running(op_index) => op_index,
             OpState::NotStarted((fd, mask)) => {
