@@ -550,21 +550,26 @@ impl<D: Descriptor> ReceiveSignals<D> {
             Poll::Pending => Poll::Pending,
         }
     }
-}
 
-#[allow(clippy::missing_fields_in_debug)]
-impl<D: Descriptor> fmt::Debug for ReceiveSignals<D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ReceiveSignals")
-            .field("signals", &self.signals)
-            // NOTE: `info` can't be read as the kernel might be writing to it.
-            .field("state", &self.state)
-            .finish()
+    /// Returns the underlying [`Signals`].
+    pub fn into_inner(self) -> Signals<D> {
+        let mut this = ManuallyDrop::new(self);
+        unsafe {
+            // SAFETY: not using `self.info`.
+            this._drop();
+            // SAFETY: we're not dropping `self`/ (due to the the
+            // `ManuallyDrop`, so `this.signals` is safe to return.
+            ptr::read(&this.signals)
+        }
     }
-}
 
-impl<D: Descriptor> Drop for ReceiveSignals<D> {
-    fn drop(&mut self) {
+    /// This [`Drop`]s the `ReceiveSignals`.
+    ///
+    /// # Safety
+    ///
+    /// This takes `self.info`, after this call returns `self.info` is
+    /// uninitialised and MUST not be used any more.
+    unsafe fn _drop(&mut self) {
         let signal_info = unsafe { ManuallyDrop::take(&mut self.info) };
         match self.state {
             OpState::Running(op_index) => {
@@ -591,5 +596,22 @@ impl<D: Descriptor> Drop for ReceiveSignals<D> {
             }
             OpState::NotStarted(()) | OpState::Done => drop(signal_info),
         }
+    }
+}
+
+#[allow(clippy::missing_fields_in_debug)]
+impl<D: Descriptor> fmt::Debug for ReceiveSignals<D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ReceiveSignals")
+            .field("signals", &self.signals)
+            // NOTE: `info` can't be read as the kernel might be writing to it.
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+impl<D: Descriptor> Drop for ReceiveSignals<D> {
+    fn drop(&mut self) {
+        unsafe { self._drop() }
     }
 }
