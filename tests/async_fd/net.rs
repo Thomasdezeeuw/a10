@@ -128,14 +128,7 @@ fn cancel_accept() {
     assert!(poll_nop(accept.as_mut()).is_pending());
 
     // Then cancel the accept multishot call.
-    let result = waker.block_on(accept.as_mut().cancel());
-    match result {
-        Ok(()) => {}
-        Err(ref err) if err.kind() == io::ErrorKind::NotFound => {
-            // Operation was not started, that's fine.
-        }
-        Err(err) => panic!("unexpected error: {err}"),
-    }
+    waker.block_on(accept.as_mut().cancel()).unwrap();
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
