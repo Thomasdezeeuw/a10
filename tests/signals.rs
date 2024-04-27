@@ -7,7 +7,7 @@ use std::task::Poll;
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, task, thread};
 
-use a10::fd::{Direct, File};
+use a10::fd::{Descriptor, Direct, File};
 use a10::process::{ReceiveSignal, ReceiveSignals, Signals};
 use a10::Ring;
 
@@ -88,7 +88,7 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
 
 fn main() {
     let start = Instant::now();
-    println!("\nrunning {} tests", (3 * SIGNALS.len()) + 1);
+    println!("\nrunning {} tests", (2 * (3 * SIGNALS.len()) + 1));
 
     is_send::<Signals<File>>();
     is_sync::<Signals<File>>();
@@ -107,7 +107,18 @@ fn main() {
     let mut harness = TestHarness::setup(quiet);
     harness.test_single_threaded();
     harness.test_multi_threaded();
-    harness.test_receive_signals(); // MUST be last as it takes `Signals`.
+    harness.test_receive_signals();
+
+    // Switch to use a direct descriptor.
+    #[rustfmt::skip]
+    let TestHarness { mut ring, signals, passed, failed, quiet } = harness;
+    let signals = Some(to_direct(&mut ring, signals.unwrap()));
+    #[rustfmt::skip]
+    let mut harness = TestHarness { ring, signals, passed, failed, quiet };
+    // Run the tests again.
+    harness.test_single_threaded();
+    harness.test_multi_threaded();
+    harness.test_receive_signals();
 
     let mut passed = harness.passed;
     let mut failed = harness.failed;
@@ -119,17 +130,17 @@ fn main() {
     println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n", start.elapsed().as_secs_f64());
 }
 
-struct TestHarness {
+struct TestHarness<D: Descriptor> {
     ring: Ring,
-    signals: Option<Signals>,
+    signals: Option<Signals<D>>,
     passed: usize,
     failed: usize,
     quiet: bool,
 }
 
-impl TestHarness {
-    fn setup(quiet: bool) -> TestHarness {
-        let ring = Ring::new(2).unwrap();
+impl TestHarness<File> {
+    fn setup(quiet: bool) -> TestHarness<File> {
+        let ring = Ring::config(2).with_direct_descriptors(2).build().unwrap();
         let sq = ring.submission_queue().clone();
         TestHarness {
             ring,
@@ -139,7 +150,9 @@ impl TestHarness {
             quiet,
         }
     }
+}
 
+impl<D: Descriptor> TestHarness<D> {
     fn test_single_threaded(&mut self) {
         let pid = process::id();
         let signals = self.signals.as_ref().unwrap();
@@ -253,6 +266,8 @@ impl TestHarness {
                 self.failed += 1
             };
         }
+
+        self.signals = Some(receive_signal.into_inner());
     }
 }
 
@@ -274,7 +289,11 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
     };
 }
 
-fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: libc::c_int) {
+fn receive_signal<D: Descriptor>(
+    ring: &mut Ring,
+    signals: &Signals<D>,
+    expected_signal: libc::c_int,
+) {
     let mut receive = signals.receive();
     let signal_info = loop {
         match poll_nop(Pin::new(&mut receive)) {
@@ -283,6 +302,16 @@ fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: libc::c_i
         }
     };
     assert_eq!(signal_info.ssi_signo as libc::c_int, expected_signal);
+}
+
+fn to_direct(ring: &mut Ring, signals: Signals<File>) -> Signals<Direct> {
+    let mut to_direct = signals.to_direct_descriptor();
+    loop {
+        match poll_nop(Pin::new(&mut to_direct)) {
+            Poll::Ready(result) => break result.unwrap(),
+            Poll::Pending => ring.poll(None).unwrap(),
+        }
+    }
 }
 
 fn send_signal(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
