@@ -496,8 +496,8 @@ pub struct ReceiveSignals<D: Descriptor = File> {
 }
 
 // SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
-unsafe impl<D: Descriptor> Sync for ReceiveSignals<D> {}
-unsafe impl<D: Descriptor> Send for ReceiveSignals<D> {}
+unsafe impl<D: Descriptor + Sync> Sync for ReceiveSignals<D> {}
+unsafe impl<D: Descriptor + Send> Send for ReceiveSignals<D> {}
 
 impl<D: Descriptor> ReceiveSignals<D> {
     /// Poll the next signal.
