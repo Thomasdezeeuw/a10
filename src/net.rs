@@ -322,7 +322,7 @@ impl<D: Descriptor> AsyncFd<D> {
         // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
-        debug_assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
         self.accept4(D::cloexec_flag())
     }
 
@@ -344,7 +344,7 @@ impl<D: Descriptor> AsyncFd<D> {
         // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
-        debug_assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
         self.multishot_accept4(D::cloexec_flag())
     }
 
