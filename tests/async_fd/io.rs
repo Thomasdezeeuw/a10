@@ -740,7 +740,9 @@ fn cancel_all_accept() {
     let n = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
-    assert_eq!(n, 1);
+    // Because the the accept call is asynchronous we can cancel up to one
+    // operations.
+    assert!(n <= 1);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
