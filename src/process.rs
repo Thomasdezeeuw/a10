@@ -369,40 +369,26 @@ impl Future for ToSignalsDirect {
     type Output = io::Result<Signals<Direct>>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let ToSignalsDirect {
-            signals,
-            direct_fd,
-            state,
-        } = Pin::get_mut(self);
-        let op_index = match state {
-            OpState::Running(op_index) => *op_index,
-            OpState::NotStarted(()) => {
-                let result = signals.fd.sq.add(|submission| unsafe {
-                    submission.create_direct_descriptor(direct_fd.get(), 1);
-                });
-                match result {
-                    Ok(op_index) => {
-                        *state = OpState::Running(op_index);
-                        op_index
-                    }
-                    Err(QueueFull(())) => {
-                        signals.fd.sq.wait_for_submission(ctx.waker().clone());
-                        return Poll::Pending;
-                    }
-                }
+        let this = Pin::get_mut(self);
+        let op_index = poll_state!(
+            ToSignalsDirect,
+            this.state,
+            this.signals.fd.sq,
+            ctx,
+            |submission, ()| unsafe {
+                submission.create_direct_descriptor(this.direct_fd.get(), 1);
             }
-            OpState::Done => unreachable!("a10::ToSignalsDirect polled after completion"),
-        };
+        );
 
-        match signals.fd.sq.poll_op(ctx, op_index) {
+        match this.signals.fd.sq.poll_op(ctx, op_index) {
             Poll::Ready(Ok((_, res))) => {
-                *state = OpState::Done;
+                this.state = OpState::Done;
                 debug_assert!(res == 1);
-                let sq = signals.fd.sq.clone();
+                let sq = this.signals.fd.sq.clone();
                 let direct_fd = unsafe {
                     // SAFETY: the kernel is done modifying the descriptor
                     // value.
-                    let direct_fd = ptr::read(direct_fd.get());
+                    let direct_fd = ptr::read(this.direct_fd.get());
                     // SAFETY: the files update operation ensures that
                     // `direct_fd` is valid.
                     AsyncFd::from_direct_fd(direct_fd, sq)
@@ -411,20 +397,20 @@ impl Future for ToSignalsDirect {
                     fd: direct_fd,
                     // SAFETY: we're not dropping `signals`, thus not dropping
                     // `signals.signals`.
-                    signals: unsafe { ptr::read(&signals.signals) },
+                    signals: unsafe { ptr::read(&this.signals.signals) },
                 };
                 // SAFETY: we're not dropping `signals`, thus not dropping
                 // `signals.fd`. But we don't want to leak the file descriptor,
                 // so we're manually dropping it.
-                unsafe { ptr::drop_in_place(&mut signals.fd) };
+                unsafe { ptr::drop_in_place(&mut this.signals.fd) };
                 // NOTE: we don't run the `Drop` implementation of `Signals`.
                 Poll::Ready(Ok(direct_signals))
             }
             Poll::Ready(Err(err)) => {
-                *state = OpState::Done; // Consider the error as fatal.
+                this.state = OpState::Done; // Consider the error as fatal.
 
                 // Drop the file descriptor and remove the error handling.
-                unsafe { ManuallyDrop::drop(&mut *signals) }
+                unsafe { ManuallyDrop::drop(&mut this.signals) }
                 Poll::Ready(Err(err))
             }
             Poll::Pending => Poll::Pending,
