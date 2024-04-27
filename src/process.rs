@@ -391,7 +391,8 @@ impl Future for ToSignalsDirect {
         };
 
         match signals.fd.sq.poll_op(ctx, op_index) {
-            Poll::Ready(Ok((res, _))) => {
+            Poll::Ready(Ok((_, res))) => {
+                *state = OpState::Done;
                 debug_assert!(res == 1);
                 let sq = signals.fd.sq.clone();
                 let direct_fd = unsafe {
@@ -532,6 +533,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
 
         match signals.fd.sq.poll_op(ctx, op_index) {
             Poll::Ready(Ok((_, n))) => {
+                *state = OpState::Done;
                 // Reset the state so that we start reading another signal in
                 // the next call.
                 *state = OpState::NotStarted(());
