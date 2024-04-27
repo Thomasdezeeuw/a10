@@ -134,6 +134,8 @@ impl<'fd> Future for CancelOp<'fd> {
     type Output = io::Result<()>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // NOTE: don't use `poll_state!` here bacause we return `ENOENT` if it
+        // hasn't started.
         let op_index = match self.state {
             OpState::Running(op_index) => op_index,
             OpState::NotStarted(Some(to_cancel_op_index)) => {
