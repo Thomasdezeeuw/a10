@@ -481,6 +481,7 @@ op_future! {
     setup: |submission, fd, (info,), _unused| unsafe {
         let ptr = (**info).as_mut_ptr().cast();
         submission.read_at(fd.fd(), ptr, size_of::<libc::signalfd_siginfo>() as u32, NO_OFFSET);
+        submission.set_async();
         D::use_flags(submission);
     },
     map_result: |this, (info,), n| {
@@ -525,6 +526,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
                         size_of::<libc::signalfd_siginfo>() as u32,
                         NO_OFFSET,
                     );
+                    submission.set_async();
                     D::use_flags(submission);
                 });
                 match result {
