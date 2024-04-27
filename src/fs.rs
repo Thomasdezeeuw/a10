@@ -199,6 +199,8 @@ pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
 pub struct Open<D: Descriptor = File> {
     /// Path used to open the file, need to stay in memory so the kernel can
     /// access it safely.
+    // SAFETY: because this is not modified by the kernel it doesn't need an
+    // UnsafeCell. It is read-only (as the kernel also has read access).
     path: Option<CString>,
     sq: Option<SubmissionQueue>,
     state: OpState<(libc::c_int, libc::mode_t)>,
@@ -721,6 +723,8 @@ pub struct CreateDir {
     sq: SubmissionQueue,
     /// Path used to create the directory, need to stay in memory so the kernel
     /// can access it safely.
+    // SAFETY: because this is not modified by the kernel it doesn't need an
+    // UnsafeCell. It is read-only (as the kernel also has read access).
     path: Option<CString>,
     state: OpState<()>,
 }
@@ -805,6 +809,8 @@ pub struct Rename {
     sq: SubmissionQueue,
     /// Paths used to rename the file, need to stay in memory so the kernel can
     /// access it safely.
+    // SAFETY: because this is not modified by the kernel it doesn't need an
+    // UnsafeCell. It is read-only (as the kernel also has read access).
     from: Option<CString>,
     to: Option<CString>,
     state: OpState<()>,
@@ -920,6 +926,8 @@ pub struct Delete {
     sq: SubmissionQueue,
     /// Paths used to rename the file, need to stay in memory so the kernel can
     /// access it safely.
+    // SAFETY: because this is not modified by the kernel it doesn't need an
+    // UnsafeCell. It is read-only (as the kernel also has read access).
     path: Option<CString>,
     state: OpState<libc::c_int>,
 }
