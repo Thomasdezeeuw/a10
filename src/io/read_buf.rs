@@ -467,6 +467,7 @@ impl ReadBuf {
     }
 
     /// Returns the remaining spare capacity of the buffer.
+    #[allow(clippy::needless_pass_by_ref_mut)] // See https://github.com/rust-lang/rust-clippy/issues/12905.
     pub fn spare_capacity_mut(&mut self) -> &mut [MaybeUninit<u8>] {
         if let Some(ptr) = self.owned {
             let unused_len = self.shared.buf_size as usize - ptr.len();
