@@ -755,19 +755,17 @@ fn cancel_all_twice_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_and_listen_ipv4(&listener);
 
-    let mut accept = listener.accept::<libc::sockaddr_in>();
-    // Poll the future to schedule the operation, can't use `start_op` as the
-    // address doesn't implement `fmt::Debug`.
-    assert!(poll_nop(Pin::new(&mut accept)).is_pending());
+    let mut accept = listener.accept::<a10::net::NoAddress>();
+    start_op(&mut accept);
 
     let n = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
-    assert!(n == 1);
+    assert_eq!(n, 1);
     let n2 = waker
         .block_on(listener.cancel_all())
         .expect("failed to cancel all calls");
-    assert!(n2 == 0);
+    assert_eq!(n2, 0);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
