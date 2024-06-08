@@ -6,7 +6,6 @@ use std::io;
 use std::ops::Bound;
 use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
-use std::pin::Pin;
 
 use a10::fd::{AsyncFd, File};
 use a10::fs::{Open, OpenOptions};
@@ -17,7 +16,7 @@ use a10::io::{
 use a10::{Extract, Ring, SubmissionQueue};
 
 use crate::util::{
-    bind_and_listen_ipv4, block_on, defer, expect_io_errno, init, is_send, is_sync, poll_nop,
+    bind_and_listen_ipv4, block_on, cancel_all, defer, expect_io_errno, init, is_send, is_sync,
     remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5,
     LOREM_IPSUM_50,
 };
@@ -732,15 +731,9 @@ fn cancel_all_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_and_listen_ipv4(&listener);
 
-    let mut accept = listener.accept::<libc::sockaddr_in>();
-    // Poll the future to schedule the operation, can't use `start_op` as the
-    // address doesn't implement `fmt::Debug`.
-    assert!(poll_nop(Pin::new(&mut accept)).is_pending());
+    let mut accept = listener.accept::<a10::net::NoAddress>();
 
-    let n = waker
-        .block_on(listener.cancel_all())
-        .expect("failed to cancel all calls");
-    assert!(n == 1);
+    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
@@ -756,16 +749,12 @@ fn cancel_all_twice_accept() {
     bind_and_listen_ipv4(&listener);
 
     let mut accept = listener.accept::<a10::net::NoAddress>();
-    start_op(&mut accept);
 
+    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
     let n = waker
         .block_on(listener.cancel_all())
-        .expect("failed to cancel all calls");
-    assert_eq!(n, 1);
-    let n2 = waker
-        .block_on(listener.cancel_all())
-        .expect("failed to cancel all calls");
-    assert_eq!(n2, 0);
+        .expect("failed to cancel all operations");
+    assert_eq!(n, 0);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
@@ -781,7 +770,7 @@ fn cancel_all_no_operation_in_progress() {
 
     let n = waker
         .block_on(socket.cancel_all())
-        .expect("failed to cancel");
+        .expect("failed to cancel all operations");
     assert_eq!(n, 0);
 }
 
