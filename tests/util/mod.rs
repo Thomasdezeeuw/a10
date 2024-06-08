@@ -223,12 +223,13 @@ where
     F: Fn(&mut O),
 {
     for _ in 0..100 {
-        start_op(operation);
         match waker.block_on(operation.cancel()) {
             Ok(()) => return,
-            Err(ref err) if err.kind() == io::ErrorKind::NotFound => continue,
+            Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
             Err(err) => panic!("unexpected error canceling operation: {err}"),
         }
+
+        start_op(operation);
     }
     panic!("couldn't cancel operation");
 }
@@ -254,7 +255,6 @@ pub(crate) fn cancel_all<D: Descriptor, F: FnMut()>(
 ) {
     let mut canceled = 0;
     for _ in 0..100 {
-        start_op();
         let n = waker
             .block_on(fd.cancel_all())
             .expect("failed to cancel all operations");
@@ -262,6 +262,8 @@ pub(crate) fn cancel_all<D: Descriptor, F: FnMut()>(
         if canceled >= expected {
             return;
         }
+
+        start_op();
     }
     panic!("couldn't cancel all expected operations");
 }
