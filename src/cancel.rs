@@ -77,7 +77,7 @@ pub trait Cancel {
     /// If the operation was found and canceled this returns `Ok(())`.
     ///
     /// If this is called on an [`AsyncIterator`] it will cause them to return
-    /// `None` (eventuaully, it may still return pending items).
+    /// `None` (eventually, it may still return pending items).
     ///
     /// [`AsyncIterator`]: std::async_iter::AsyncIterator
     fn cancel(&mut self) -> CancelOp;

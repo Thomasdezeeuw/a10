@@ -231,6 +231,7 @@ impl Ring {
     ///
     /// This only required when starting the ring in disabled mode, see
     /// [`Config::disable`].
+    #[allow(clippy::needless_pass_by_ref_mut)]
     pub fn enable(&mut self) -> io::Result<()> {
         self.sq
             .register(libc::IORING_REGISTER_ENABLE_RINGS, ptr::null(), 0)
@@ -348,6 +349,7 @@ impl Ring {
     }
 
     /// Wake [`SharedSubmissionQueue::blocked_futures`].
+    #[allow(clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self) {
         // This not particullary efficient, but with a large enough number of
         // entries, `IORING_SETUP_SQPOLL` and suffcient calls to [`Ring::poll`]
