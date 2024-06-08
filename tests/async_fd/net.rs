@@ -20,9 +20,9 @@ use a10::{Extract, Ring};
 
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
-    bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, new_socket, next, require_kernel, start_op, syscall, tcp_ipv4_socket,
-    test_queue, udp_ipv4_socket, Waker,
+    bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno, expect_io_error_kind, init,
+    is_send, is_sync, new_socket, next, require_kernel, start_mulitshot_op, start_op, syscall,
+    tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -121,12 +121,10 @@ fn cancel_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_and_listen_ipv4(&listener);
 
-    let accept = listener.accept::<NoAddress>();
-    let mut accept = std::pin::pin!(accept);
-    start_op(&mut accept);
+    let mut accept = listener.accept::<NoAddress>();
 
     // Then cancel the accept multishot call.
-    waker.block_on(accept.as_mut().cancel()).unwrap();
+    cancel(&waker, &mut accept, start_op);
 
     expect_io_errno(waker.block_on(accept), libc::ECANCELED);
 }
@@ -252,9 +250,7 @@ fn cancel_multishot_accept() {
     let c_addr1 = peer_addr(client1.as_fd()).expect("failed to get address");
 
     // Then cancel the accept multishot call.
-    waker
-        .block_on(accept_stream.cancel())
-        .expect("failed to cancel");
+    cancel(&waker, &mut accept_stream, start_mulitshot_op);
 
     // We should still be able to accept the second connection.
     let client2 = waker
