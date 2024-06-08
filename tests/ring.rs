@@ -15,7 +15,6 @@ use std::task::{self, Poll, Wake};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use a10::cancel::Cancel;
 use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
@@ -24,7 +23,7 @@ use a10::{fd, mem, process, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
-    defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel,
+    cancel, defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel,
     start_mulitshot_op, start_op, test_queue, Waker,
 };
 
@@ -340,10 +339,9 @@ fn cancel_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(oneshot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
-    start_op(&mut receiver_read);
+    let mut receiver_read = oneshot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
 
-    waker.block_on(receiver_read.cancel()).unwrap();
+    cancel(&waker, &mut receiver_read, start_op);
     expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
     drop(sender);
 }
@@ -384,10 +382,9 @@ fn cancel_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
-    start_mulitshot_op(&mut receiver_read);
+    let mut receiver_read = multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
 
-    waker.block_on(receiver_read.cancel()).unwrap();
+    cancel(&waker, &mut receiver_read, start_mulitshot_op);
     assert!(waker.block_on(next(receiver_read)).is_none());
     drop(sender);
 }
@@ -478,12 +475,15 @@ fn process_wait_on_cancel() {
     let mut process = Command::new("sleep").arg("1000").spawn().unwrap();
 
     let mut future = process::wait_on(sq, &process, libc::WEXITED);
-    let result = poll_nop(Pin::new(&mut future));
-    if !result.is_pending() {
-        panic!("unexpected result, expected it to return Poll::Pending");
-    }
 
-    waker.block_on(future.cancel()).unwrap();
+    cancel(&waker, &mut future, |future| {
+        // NOTE: can't use `start_op` as `siginfo_t` doesn't implemented
+        // `fmt::Debug`.
+        let result = poll_nop(Pin::new(future));
+        if !result.is_pending() {
+            panic!("unexpected result, expected it to return Poll::Pending");
+        }
+    });
 
     process.kill().unwrap();
     process.wait().unwrap();

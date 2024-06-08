@@ -18,6 +18,7 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
+use a10::cancel::Cancel;
 use a10::fd::Descriptor;
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
@@ -202,6 +203,34 @@ impl Waker {
             }
         }
     }
+}
+
+/// Cancel `operation`.
+///
+/// `Future`s are inert and we can't determine if an operation has actually been
+/// started or the submission queue was full. This means that we can't ensure
+/// that the operation has been queued with the Kernel. This means that in some
+/// cases we won't actually cancel the operation simply because it hasn't
+/// started. This introduces flakyness in the tests.
+///
+/// To work around this we have this cancel function. If we fail to cancel the
+/// operation we try to start the operation using `start_op`, before canceling t
+/// again. Looping until the operation is canceled.
+#[track_caller]
+pub(crate) fn cancel<O, F>(waker: &Arc<Waker>, operation: &mut O, start_op: F)
+where
+    O: Cancel,
+    F: Fn(&mut O),
+{
+    for _ in 0..100 {
+        start_op(operation);
+        match waker.block_on(operation.cancel()) {
+            Ok(()) => return,
+            Err(ref err) if err.kind() == io::ErrorKind::NotFound => continue,
+            Err(err) => panic!("unexpected error canceling operation: {err}"),
+        }
+    }
+    panic!("couldn't cancel operation");
 }
 
 /// Cancel all operations of `fd`.
