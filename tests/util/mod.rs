@@ -18,6 +18,7 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
+use a10::fd::Descriptor;
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
 
@@ -201,6 +202,39 @@ impl Waker {
             }
         }
     }
+}
+
+/// Cancel all operations of `fd`.
+///
+/// `Future`s are inert and we can't determine if an operation has actually been
+/// started or the submission queue was full. This means that we can't ensure
+/// that the operation has been queued with the Kernel. This means that in some
+/// cases we won't actually cancel any operations simply because they haven't
+/// started. This introduces flakyness in the tests.
+///
+/// To work around this we have this cancel all function. If we fail to get the
+/// `expected` number of canceled operations we try to start the operations
+/// using `start_op`, before canceling them again. Looping until we get the
+/// expected number of canceled operations.
+#[track_caller]
+pub(crate) fn cancel_all<D: Descriptor, F: FnMut()>(
+    waker: &Arc<Waker>,
+    fd: &AsyncFd<D>,
+    mut start_op: F,
+    expected: usize,
+) {
+    let mut canceled = 0;
+    for _ in 0..100 {
+        start_op();
+        let n = waker
+            .block_on(fd.cancel_all())
+            .expect("failed to cancel all operations");
+        canceled += n;
+        if canceled >= expected {
+            return;
+        }
+    }
+    panic!("couldn't cancel all expected operations");
 }
 
 /// Start an A10 operation, assumes `future` is a A10 `Future`.
