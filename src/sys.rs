@@ -400,11 +400,15 @@ pub const IORING_RECVSEND_POLL_FIRST: u32 = 1;
 pub const IORING_RECV_MULTISHOT: u32 = 2;
 pub const IORING_RECVSEND_FIXED_BUF: u32 = 4;
 pub const IORING_SEND_ZC_REPORT_USAGE: u32 = 8;
+pub const IORING_RECVSEND_BUNDLE: u32 = 16;
 pub const IORING_NOTIF_USAGE_ZC_COPIED: u32 = 2147483648;
 pub const IORING_ACCEPT_MULTISHOT: u32 = 1;
+pub const IORING_ACCEPT_DONTWAIT: u32 = 2;
+pub const IORING_ACCEPT_POLL_FIRST: u32 = 4;
 pub const IORING_MSG_RING_CQE_SKIP: u32 = 1;
 pub const IORING_MSG_RING_FLAGS_PASS: u32 = 2;
 pub const IORING_FIXED_FD_NO_CLOEXEC: u32 = 1;
+pub const IORING_NOP_INJECT_RESULT: u32 = 1;
 pub const IORING_CQE_F_BUFFER: u32 = 1;
 pub const IORING_CQE_F_MORE: u32 = 2;
 pub const IORING_CQE_F_SOCK_NONEMPTY: u32 = 4;
@@ -438,6 +442,7 @@ pub const IORING_FEAT_RSRC_TAGS: u32 = 1024;
 pub const IORING_FEAT_CQE_SKIP: u32 = 2048;
 pub const IORING_FEAT_LINKED_FILE: u32 = 4096;
 pub const IORING_FEAT_REG_REG_RING: u32 = 8192;
+pub const IORING_FEAT_RECVSEND_BUNDLE: u32 = 16384;
 pub const IORING_RSRC_REGISTER_SPARSE: u32 = 1;
 pub const IORING_REGISTER_FILES_SKIP: i32 = -2;
 pub const IOSQE_FIXED_FILE_BIT: _bindgen_ty_13 = 0;
@@ -967,6 +972,16 @@ fn bindgen_test_layout_io_uring_sqe__bindgen_ty_3() {
             stringify!(io_uring_sqe__bindgen_ty_3),
             "::",
             stringify!(install_fd_flags)
+        )
+    );
+    assert_eq!(
+        unsafe { ::std::ptr::addr_of!((*ptr).nop_flags) as usize - ptr as usize },
+        0usize,
+        concat!(
+            "Offset of field: ",
+            stringify!(io_uring_sqe__bindgen_ty_3),
+            "::",
+            stringify!(nop_flags)
         )
     );
 }
@@ -3072,6 +3087,7 @@ pub union io_uring_sqe__bindgen_ty_3 {
     pub waitid_flags: __u32,
     pub futex_flags: __u32,
     pub install_fd_flags: __u32,
+    pub nop_flags: __u32,
 }
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
