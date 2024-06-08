@@ -255,9 +255,9 @@ impl<D: Descriptor> Signals<D> {
 
     /// Receive multiple signals.
     ///
-    /// This is an combined, owned version of `Signals` and `Receive` (the
-    /// future behind `Signals::receive`). This is useful if you don't want to
-    /// deal with the `'fd` lifetime.
+    /// This is an combined, owned version of `Signals` and [`ReceiveSignal`]
+    /// (the future behind `Signals::receive`). This is useful if you don't want
+    /// to deal with the `'fd` lifetime.
     pub fn receive_signals(self) -> ReceiveSignals<D> {
         ReceiveSignals {
             signals: self,
