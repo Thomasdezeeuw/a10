@@ -252,7 +252,7 @@ where
 
 /// Start an A10 multishot operation, assumes `iter` is a A10 `AsyncIterator`.
 #[track_caller]
-pub(crate) fn start_mulitshot_op<I>(iter: I)
+pub(crate) fn start_mulitshot_op<I>(iter: &mut I)
 where
     I: AsyncIterator + Unpin,
     I::Item: fmt::Debug,
