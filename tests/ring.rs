@@ -279,7 +279,7 @@ fn message_sending() {
 
     let (msg_listener, msg_token) = msg_listener(sq.clone()).unwrap();
     let mut msg_listener = pin!(msg_listener);
-    start_mulitshot_op(msg_listener.as_mut());
+    start_mulitshot_op(&mut msg_listener);
 
     // Send some messages.
     try_send_msg(&sq, msg_token, DATA1).unwrap();
@@ -359,7 +359,7 @@ fn test_multishot_poll() {
     let (mut receiver, mut sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
-    start_mulitshot_op(Pin::new(&mut receiver_read));
+    start_mulitshot_op(&mut receiver_read);
 
     let mut buf = vec![0; DATA.len() + 1];
     for _ in 0..3 {
@@ -385,7 +385,7 @@ fn cancel_multishot_poll() {
     let (receiver, sender) = pipe2().unwrap();
 
     let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
-    start_mulitshot_op(receiver_read.as_mut());
+    start_mulitshot_op(&mut receiver_read);
 
     waker.block_on(receiver_read.cancel()).unwrap();
     assert!(waker.block_on(next(receiver_read)).is_none());
@@ -400,7 +400,7 @@ fn drop_multishot_poll() {
 
     let mut receiver_read = multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
 
-    start_mulitshot_op(Pin::new(&mut receiver_read));
+    start_mulitshot_op(&mut receiver_read);
 
     drop(receiver_read);
     drop(receiver);
