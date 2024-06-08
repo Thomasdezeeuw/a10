@@ -21,7 +21,7 @@ use a10::{Extract, Ring};
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
     bind_and_listen_ipv4, bind_ipv4, block_on, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, new_socket, next, poll_nop, require_kernel, syscall, tcp_ipv4_socket,
+    is_send, is_sync, new_socket, next, require_kernel, start_op, syscall, tcp_ipv4_socket,
     test_queue, udp_ipv4_socket, Waker,
 };
 
@@ -121,11 +121,9 @@ fn cancel_accept() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_and_listen_ipv4(&listener);
 
-    let accept = listener.accept::<(libc::sockaddr_storage, libc::socklen_t)>();
+    let accept = listener.accept::<NoAddress>();
     let mut accept = std::pin::pin!(accept);
-    // Poll the future to schedule the operation, can't use `start_op` as the
-    // address doesn't implement `fmt::Debug`.
-    assert!(poll_nop(accept.as_mut()).is_pending());
+    start_op(&mut accept);
 
     // Then cancel the accept multishot call.
     waker.block_on(accept.as_mut().cancel()).unwrap();
