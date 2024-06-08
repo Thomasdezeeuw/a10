@@ -27,7 +27,7 @@ fn to_file_descriptor() {
     let waker = Waker::new();
 
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
-    let direct_fd = dbg!(waker.block_on(open_file)).unwrap();
+    let direct_fd = waker.block_on(open_file).unwrap();
     let regular_fd = waker.block_on(direct_fd.to_file_descriptor()).unwrap();
 
     check_fs_fd(waker, regular_fd, direct_fd);
