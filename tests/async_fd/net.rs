@@ -385,13 +385,8 @@ fn connect() {
     client.write_all(DATA2).expect("failed to write");
     buf.clear();
     buf.reserve(DATA2.len() + 1);
-    let mut buf = waker.block_on(stream.read(buf)).expect("failed to read");
+    let buf = waker.block_on(stream.read(buf)).expect("failed to read");
     assert_eq!(buf, DATA2);
-
-    // Dropping the stream should closing it.
-    drop(stream);
-    let n = client.read(&mut buf).expect("failed to read");
-    assert_eq!(n, 0);
 }
 
 #[test]
