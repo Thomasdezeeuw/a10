@@ -1,3 +1,65 @@
+# v0.2.0
+
+This release adds support for direct descriptors, which are io\_uring specific
+file descriptors. Direct descriptor have lower overhead, but an only be used in
+io\_uring operations, not regular system calls. It is possible to convert a
+direct descriptor into a file descriptor and vica versa.
+
+* `AsyncFd` now has a generic parameter `D` that supports either a regular file
+  descriptor (`fd::File`) or a direct desctiptor (`fd::Direct`).
+  <https://github.com/Thomasdezeeuw/a10/pull/102>,
+  <https://github.com/Thomasdezeeuw/a10/commit/03fe635399f3e453b7b707e080ba239e498e5416>,
+  <https://github.com/Thomasdezeeuw/a10/commit/2682bbb6b4e4d18490bf954abc1342ddca003860>,
+  <https://github.com/Thomasdezeeuw/a10/commit/b7aafeaa9f615324c4168bc377625b95a14766de>,
+  <https://github.com/Thomasdezeeuw/a10/commit/1684af7b2dc3880a0db57dd3dc75184aa66057b8>,
+  <https://github.com/Thomasdezeeuw/a10/commit/ab5ae276e0ca70bf960fcc1d9fa03adce778f729>,
+  <https://github.com/Thomasdezeeuw/a10/commit/f423cd569aaf18e77e5e392dbf5054b3a35c6145>,
+  <https://github.com/Thomasdezeeuw/a10/commit/5d489afdde0a44fb9585970f6d386e42aace87ae>,
+  <https://github.com/Thomasdezeeuw/a10/commit/1eea10736d305c62edccffc53066a2ed228da6fb>,
+  <https://github.com/Thomasdezeeuw/a10/commit/632fc39963e02f396f26882abf8ca0eb33660ae8>,
+  <https://github.com/Thomasdezeeuw/a10/commit/5a8022f6f2d4f6d48a4080987bf9a4af517108ef>,
+  <https://github.com/Thomasdezeeuw/a10/commit/10a66cbd7fb40d3dcc6deac2dae2d96e0a0605e2>,
+  <https://github.com/Thomasdezeeuw/a10/commit/518dd0901cd80d8f11c96a6aa50a5ea73239ad5e>,
+  <https://github.com/Thomasdezeeuw/a10/commit/b6ecb740e9eab2027ffb8d70a76d2285b7b42f83>,
+  <https://github.com/Thomasdezeeuw/a10/commit/43d4fe1d085c6a5d1eb26044437ae0b99e74e68b>,
+  <https://github.com/Thomasdezeeuw/a10/commit/0763f2c3244956d183a86f3656be28e8899a683c>,
+  <https://github.com/Thomasdezeeuw/a10/commit/9f58db14578ef8d8fee2c419417b369d772e2249>,
+  <https://github.com/Thomasdezeeuw/a10/commit/b7f2b7fe737c9c5aeee0da2c388497aab9388b2a>,
+  <https://github.com/Thomasdezeeuw/a10/commit/c762ea2fced692e3d8b00285de0b720b68a53409>.
+* Add `Config::with_direct_descriptors`, enableing the use of direct descriptors
+  <https://github.com/Thomasdezeeuw/a10/commit/162ff632c0de2e6d8e85d7c12f433af1f3904450>.
+* Adds `AsyncFd::to_file_descriptor` to convert a direct descriptor to a file
+  descriptor.
+  <https://github.com/Thomasdezeeuw/a10/commit/a913377d7be511a430430235d6b7b6b073c9a4a8>.
+* Adds `AsyncFd::to_direct_descriptor` to convert a file descriptor to a direct
+  descriptor.
+  <https://github.com/Thomasdezeeuw/a10/commit/d611b7866b9b6aeb157a3e954a62803927d93a99>.
+* Adds `Signals::to_direct_descriptor` to use direct description for `Signals`
+  <https://github.com/Thomasdezeeuw/a10/commit/029f084733c39d26ea9a5bdd923f1c02d5f17c0a>.
+* Adds `ReceiveSignals::into_inner`, returns the underlying `Signals`
+  <https://github.com/Thomasdezeeuw/a10/commit/fcafbd44dd9b19ec3167c536335dba9e39df2d66>.
+* Moves `SubmissionQueue::oneshot_poll` to `poll` module
+  <https://github.com/Thomasdezeeuw/a10/commit/5f4b863a806a920d78880b2f525822c0969b80e2>.
+* Moves `SubmissionQueue::multishot_poll` to `poll` module
+  <https://github.com/Thomasdezeeuw/a10/commit/8787da1ca4a5c09699882a00cc73a1536a417618>.
+* Moves `SubmissionQueue::msg_listener` to `msg` module
+  <https://github.com/Thomasdezeeuw/a10/commit/0a9ff3d9816702a29caf8f5e62f2d006769599c0>.
+* Moves `SubmissionQueue::(try_)send_msg` to `msg` module
+  <https://github.com/Thomasdezeeuw/a10/commit/d620de603b5da0bfab6300873d1bfc976515b16e>.
+* Moves `signals` module into the `process` module, renames `signal::Receive` to
+  `process::ReceiveSignal`, other types are simply moved
+  <https://github.com/Thomasdezeeuw/a10/commit/5c011bc07d4bf5596401399ab2b86559d28d2c16>.
+* Removes `signals` module
+  <https://github.com/Thomasdezeeuw/a10/commit/4305a97adf3b5e3427b80f046a31790f719affa7>.
+* Removes
+  `SubmissionQueue::{msg_listener,try_send_msg,send_msg,oneshot_poll,multishot_poll}` functions
+  <https://github.com/Thomasdezeeuw/a10/commit/4305a97adf3b5e3427b80f046a31790f719affa7>.
+* `AsyncFd` now lives in it's own `fd` module, still exported at the root of the
+  crate
+  <https://github.com/Thomasdezeeuw/a10/commit/ecda8164a32062f7091d862de5c7798d26002d59>.
+* Set `IOSQE_ASYNC` for some operations
+  <https://github.com/Thomasdezeeuw/a10/commit/a1e25956b6e04e9c678293318967db3f2e4b905a>.
+
 # v0.1.9
 
 * Added `Config::disable` which enables `IORING_SETUP_R_DISABLED`
