@@ -29,7 +29,7 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{libc, SubmissionQueue};
+use crate::{libc, man_link, SubmissionQueue};
 
 mod read_buf;
 #[doc(hidden)]
@@ -92,6 +92,7 @@ stdio!(stderr() -> Stderr, libc::STDERR_FILENO);
 /// I/O system calls.
 impl<D: Descriptor> AsyncFd<D> {
     /// Read from this fd into `buf`.
+    #[doc = man_link!(read(2))]
     pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B, D>
     where
         B: BufMut,
@@ -130,6 +131,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Read from this fd into `bufs`.
+    #[doc = man_link!(readv(2))]
     pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N, D>
     where
         B: BufMutSlice<N>,
@@ -180,6 +182,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Write `buf` to this fd.
+    #[doc = man_link!(write(2))]
     pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B, D>
     where
         B: Buf,
@@ -216,6 +219,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Write `bufs` to this file.
+    #[doc = man_link!(writev(2))]
     pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N, D>
     where
         B: BufSlice<N>,
@@ -266,6 +270,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Splice `length` bytes to `target` fd.
     ///
     /// See the `splice(2)` manual for correct usage.
+    #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     pub const fn splice_to<'fd>(
         &'fd self,
@@ -350,6 +355,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// This happens automatically on drop, this can be used to get a possible
     /// error.
+    #[doc = man_link!(close(2))]
     pub fn close(self) -> Close<D> {
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.

@@ -16,7 +16,7 @@ use std::{fmt, io, str};
 use crate::extract::Extractor;
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{op_future, poll_state, OpState};
-use crate::{libc, Extract, SubmissionQueue};
+use crate::{libc, man_link, Extract, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -175,6 +175,7 @@ impl OpenOptions {
     }
 
     /// Open `path`.
+    #[doc = man_link!(openat(2))]
     #[doc(alias = "openat")]
     pub fn open<D: Descriptor>(self, sq: SubmissionQueue, path: PathBuf) -> Open<D> {
         Open {
@@ -187,6 +188,7 @@ impl OpenOptions {
 }
 
 /// Open a file in read-only mode.
+#[doc = man_link!(openat(2))]
 pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
     OpenOptions::new().read().open(sq, path)
 }
@@ -292,6 +294,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    #[doc = man_link!(fsync(2))]
     #[doc(alias = "fsync")]
     pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd, D> {
         SyncData::new(self, 0)
@@ -309,12 +312,14 @@ impl<D: Descriptor> AsyncFd<D> {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    #[doc = man_link!(fsync(2))]
     #[doc(alias = "fdatasync")]
     pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd, D> {
         SyncData::new(self, libc::IORING_FSYNC_DATASYNC)
     }
 
     /// Retrieve metadata about the file.
+    #[doc = man_link!(statx(2))]
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
         let metadata = Box::new(Metadata {
@@ -333,6 +338,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// offset and extending for len bytes (or until the end of the file if len
     /// is 0). The advice is not binding; it merely constitutes an expectation
     /// on behalf of the application.
+    #[doc = man_link!(posix_fadvise(2))]
     #[doc(alias = "fadvise")]
     #[doc(alias = "posix_fadvise")]
     pub const fn advise<'fd>(
@@ -348,6 +354,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// Manipulate the allocated disk space for the file referred for the byte
     /// range starting at `offset` and continuing for `length` bytes.
+    #[doc = man_link!(fallocate(2))]
     #[doc(alias = "fallocate")]
     #[doc(alias = "posix_fallocate")]
     pub const fn allocate<'fd>(
@@ -706,6 +713,7 @@ impl fmt::Debug for Permissions {
 }
 
 /// Creates a new, empty directory.
+#[doc = man_link!(mkdirat(2))]
 pub fn create_dir(sq: SubmissionQueue, path: PathBuf) -> CreateDir {
     CreateDir {
         sq,
@@ -793,6 +801,7 @@ impl Drop for CreateDir {
 }
 
 /// Rename a file or directory to a new name.
+#[doc = man_link!(rename(2))]
 pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
     Rename {
         sq,
@@ -895,6 +904,7 @@ impl Drop for Rename {
 }
 
 /// Remove a file.
+#[doc = man_link!(unlinkat(2))]
 #[doc(alias = "unlink")]
 #[doc(alias = "unlinkat")]
 pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
@@ -906,6 +916,7 @@ pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
 }
 
 /// Remove a directory.
+#[doc = man_link!(unlinkat(2))]
 #[doc(alias = "rmdir")]
 #[doc(alias = "unlinkat")]
 pub fn remove_dir(sq: SubmissionQueue, path: PathBuf) -> Delete {
