@@ -23,11 +23,10 @@ use crate::io::{
     Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
 use crate::op::{op_async_iter, op_future, poll_state, OpState};
-use crate::{libc, SubmissionQueue};
+use crate::{libc, man_link, SubmissionQueue};
 
 /// Creates a new socket.
-///
-/// See the `socket(2)` manual for more information.
+#[doc = man_link!(socket(2))]
 pub const fn socket<D: Descriptor>(
     sq: SubmissionQueue,
     domain: libc::c_int,
@@ -45,6 +44,7 @@ pub const fn socket<D: Descriptor>(
 /// Socket related system calls.
 impl<D: Descriptor> AsyncFd<D> {
     /// Initiate a connection on this socket to the specified address.
+    #[doc = man_link!(connect(2))]
     pub fn connect<'fd, A>(&'fd self, address: impl Into<Box<A>>) -> Connect<'fd, A, D>
     where
         A: SocketAddress,
@@ -54,6 +54,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(send(2))]
     pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
     where
         B: Buf,
@@ -90,6 +91,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
+    #[doc = man_link!(sendmsg(2))]
     pub fn send_vectored<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
@@ -128,6 +130,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(send(2))]
     pub const fn sendto<'fd, B, A>(
         &'fd self,
         buf: B,
@@ -159,6 +162,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
+    #[doc = man_link!(sendmsg(2))]
     pub fn sendto_vectored<'fd, B, A, const N: usize>(
         &'fd self,
         bufs: B,
@@ -206,6 +210,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Receives data on the socket from the remote address to which it is
     /// connected.
+    #[doc = man_link!(recv(2))]
     pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B, D>
     where
         B: BufMut,
@@ -242,6 +247,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Receives data on the socket from the remote address to which it is
     /// connected, using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
     pub fn recv_vectored<'fd, B, const N: usize>(
         &'fd self,
         mut bufs: B,
@@ -271,6 +277,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Receives data on the socket and returns the source address.
+    #[doc = man_link!(recvmsg(2))]
     pub fn recvfrom<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A, D>
     where
         B: BufMut,
@@ -288,6 +295,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Receives data on the socket and the source address using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
     pub fn recvfrom_vectored<'fd, B, A, const N: usize>(
         &'fd self,
         mut bufs: B,
@@ -305,6 +313,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Shuts down the read, write, or both halves of this connection.
+    #[doc = man_link!(shutdown(2))]
     pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd, D> {
         let how = match how {
             std::net::Shutdown::Read => libc::SHUT_RD,
@@ -318,6 +327,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
+    #[doc = man_link!(accept(2))]
     pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A, D> {
         // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
@@ -330,6 +340,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// socket.
     ///
     /// Also see [`AsyncFd::accept`].
+    #[doc = man_link!(accept4(2))]
     pub fn accept4<'fd, A>(&'fd self, flags: libc::c_int) -> Accept<'fd, A, D> {
         let address = Box::new((MaybeUninit::uninit(), 0));
         Accept::new(self, address, flags)
@@ -363,6 +374,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// # Safety
     ///
     /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(getsockopt(2))]
     #[doc(alias = "getsockopt")]
     #[allow(clippy::cast_sign_loss)] // No valid negative level or optnames.
     pub fn socket_option<'fd, T>(
@@ -382,6 +394,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// # Safety
     ///
     /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(setsockopt(2))]
     #[doc(alias = "setsockopt")]
     #[allow(clippy::cast_sign_loss)] // No valid negative level or optnames.
     pub fn set_socket_option<'fd, T>(

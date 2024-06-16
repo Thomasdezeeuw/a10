@@ -12,9 +12,12 @@
 //! operations. The modules try to follow the same structure as that of the
 //! standard library.
 //!
+//! Additional documentation can be found in the [`io_uring(7)`] manual.
+//!
 //! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
 //! [`OpenOptions`]: fs::OpenOptions
 //! [`Future`]: std::future::Future
+//! [`io_uring(7)`]: https://man7.org/linux/man-pages/man7/io_uring.7.html
 //!
 //! # Notes
 //!
@@ -1205,3 +1208,18 @@ impl fmt::Debug for Completion {
             .finish()
     }
 }
+
+/// Link to online manual.
+#[rustfmt::skip]
+macro_rules! man_link {
+    ($syscall: tt ( $section: tt ) ) => {
+        concat!(
+            "\n\nAdditional documentation can be found in the ",
+            "[`", stringify!($syscall), "(", stringify!($section), ")`]",
+            "(https://man7.org/linux/man-pages/man", stringify!($section), "/", stringify!($syscall), ".", stringify!($section), ".html)",
+            " manual.\n"
+        )
+    };
+}
+
+use man_link;

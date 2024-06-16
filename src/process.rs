@@ -18,7 +18,7 @@ use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::fd::{AsyncFd, Descriptor, Direct, File};
 use crate::libc::{self, syscall};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{QueueFull, SubmissionQueue};
+use crate::{man_link, QueueFull, SubmissionQueue};
 
 /// Wait on the child `process`.
 ///
@@ -31,6 +31,7 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: libc::c_int) -> Wa
 /// one of the caller's child processes.
 ///
 /// Also see [`wait_on`] to wait on a [`Child`] process.
+#[doc = man_link!(waitid(2))]
 #[doc(alias = "waitid")]
 pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: libc::c_int) -> WaitId {
     WaitId {

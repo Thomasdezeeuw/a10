@@ -19,11 +19,12 @@ use std::{fmt, io};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::op::{poll_state, OpState};
-use crate::{QueueFull, SubmissionQueue};
+use crate::{man_link, QueueFull, SubmissionQueue};
 
 /// Wait for an event specified in `mask` on the file descriptor `fd`.
 ///
 /// Ths is similar to calling `poll(2)` on the file descriptor.
+#[doc = man_link!(poll(2))]
 #[doc(alias = "poll")]
 #[doc(alias = "epoll")]
 #[doc(alias = "select")]
@@ -114,6 +115,10 @@ impl<'sq> Drop for OneshotPoll<'sq> {
 /// side, making this more efficient.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[doc = man_link!(poll(2))]
+#[doc(alias = "poll")]
+#[doc(alias = "epoll")]
+#[doc(alias = "select")]
 #[allow(clippy::module_name_repetitions)]
 pub fn multishot_poll<'sq>(
     sq: &'sq SubmissionQueue,

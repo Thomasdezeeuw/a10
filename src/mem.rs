@@ -6,13 +6,15 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::op::{poll_state, OpState};
-use crate::{libc, SubmissionQueue};
+use crate::{libc, man_link, SubmissionQueue};
 
 /// Give advice about use of memory.
 ///
 /// Give advice or directions to the kernel about the address range beginning at
 /// address `addr` and with size `length` bytes. In most cases, the goal of such
 /// advice is to improve system or application performance.
+#[doc = man_link!(madvise(2))]
+#[doc(alias = "madvise")]
 #[doc(alias = "posix_madvise")]
 pub const fn advise(
     sq: SubmissionQueue,
