@@ -160,6 +160,8 @@ pub mod poll;
 pub mod process;
 
 use bitmap::AtomicBitMap;
+#[doc(no_inline)]
+pub use cancel::Cancel;
 use config::munmap;
 pub use config::Config;
 #[doc(no_inline)]
