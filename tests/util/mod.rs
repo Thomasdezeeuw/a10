@@ -18,10 +18,9 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
-use a10::cancel::Cancel;
 use a10::fd::Descriptor;
 use a10::net::socket;
-use a10::{AsyncFd, Ring, SubmissionQueue};
+use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
 /// Initialise logging.
 ///
