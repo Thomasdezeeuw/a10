@@ -745,6 +745,12 @@ impl Submission {
         };
     }
 
+    pub(crate) unsafe fn ftruncate(&mut self, fd: RawFd, offset: u64) {
+        self.inner.opcode = libc::IORING_OP_FTRUNCATE as u8;
+        self.inner.fd = fd;
+        self.inner.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: offset };
+    }
+
     pub(crate) unsafe fn wake(&mut self, ring_fd: RawFd) {
         self.msg(ring_fd, u64::MAX, 0, 0);
         self.no_completion_event();

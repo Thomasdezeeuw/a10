@@ -365,6 +365,17 @@ impl<D: Descriptor> AsyncFd<D> {
     ) -> Allocate<'fd, D> {
         Allocate::new(self, (offset, length, mode))
     }
+
+    /// Truncate the file to `length`.
+    ///
+    /// If the file previously was larger than this size, the extra data is
+    /// lost. If the file previously was shorter, it is extended, and the
+    /// extended part reads as null bytes.
+    #[doc = man_link!(ftruncate(2))]
+    #[doc(alias = "ftruncate")]
+    pub const fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd, D> {
+        Truncate::new(self, length)
+    }
 }
 
 // SyncData.
@@ -423,6 +434,22 @@ op_future! {
     setup_state: flags: (u64, u32, libc::c_int),
     setup: |submission, fd, (), (offset, length, mode)| unsafe {
         submission.fallocate(fd.fd(), offset, length, mode);
+    },
+    map_result: |this, (), res| {
+        debug_assert!(res == 0);
+        Ok(())
+    },
+}
+
+// Truncate.
+op_future! {
+    fn AsyncFd::truncate -> (),
+    struct Truncate<'fd> {
+        // Doesn't need any fields.
+    },
+    setup_state: flags: u64,
+    setup: |submission, fd, (), length| unsafe {
+        submission.ftruncate(fd.fd(), length);
     },
     map_result: |this, (), res| {
         debug_assert!(res == 0);
