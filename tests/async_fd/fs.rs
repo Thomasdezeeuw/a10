@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 use std::{panic, str};
 
 use a10::fd::File;
-use a10::fs::{self, Advise, Allocate, CreateDir, Delete, Open, OpenOptions, Rename};
+use a10::fs::{self, Advise, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
-    defer, is_send, is_sync, page_size, remove_test_dir, remove_test_file, test_queue, TestFile,
-    Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
+    defer, is_send, is_sync, page_size, remove_test_dir, remove_test_file, require_kernel,
+    test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
 const DATA: &[u8] = b"Hello, World";
@@ -519,6 +519,44 @@ fn fadvise() {
         .block_on(file.read_n(buf, test_file.content.len()))
         .unwrap();
     assert!(buf == test_file.content, "read content is different");
+}
+
+#[test]
+fn ftruncate() {
+    require_kernel!(6, 9);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<Truncate>();
+    is_sync::<Truncate>();
+
+    let mut path = temp_dir();
+    path.push("ftruncate");
+    let _d = defer(|| remove_test_file(&path));
+
+    let open_file: Open<File> = OpenOptions::new()
+        .write()
+        .create()
+        .truncate()
+        .open(sq, path.clone());
+    let file = waker.block_on(open_file).unwrap();
+
+    waker
+        .block_on(file.write_all(LOREM_IPSUM_50.content))
+        .unwrap();
+
+    let metadata = waker.block_on(file.metadata()).unwrap();
+    assert_eq!(metadata.len(), LOREM_IPSUM_50.content.len() as u64);
+
+    const SIZE: u64 = 4096;
+
+    waker
+        .block_on(file.truncate(SIZE))
+        .expect("failed fallocate");
+
+    let metadata = waker.block_on(file.metadata()).unwrap();
+    assert_eq!(metadata.len(), SIZE);
 }
 
 #[test]
