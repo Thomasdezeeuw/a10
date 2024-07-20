@@ -35,8 +35,8 @@ check:
 # * `single-match-else`: prefer match statements over if statements.
 # * `use-self`: strongly disagree.
 # TODO: resolve `cast-possible-truncation` errors.
-# TODO: resolve `manual-c-str-listerals` and `ref-as-ptr` once the related
-# features are a little older (1.77 and 1.76).
+# TODO: resolve `manual-c-str-listerals`, `ref-as-ptr` and `inspect_err` once
+# the related features are a little older (1.77, 1.76 and 1.75).
 lint: clippy
 clippy:
 	cargo clippy --all-features --workspace -- \
@@ -61,6 +61,7 @@ clippy:
 		--allow clippy::ref-as-ptr \
 		--allow clippy::single-match-else \
 		--allow clippy::use-self \
+		--allow clippy::manual-inspect \
 		\
 		--allow clippy::cast-possible-truncation \
 		--allow clippy::cast-possible-wrap \
