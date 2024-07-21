@@ -1042,7 +1042,7 @@ macro_rules! op_future {
         // `PhantomPinned`.
         $(
             $(#[ $phantom_doc: meta ])*
-            impl !Upin,
+            impl !Unpin,
         )?
         // State held in the setup function.
         setup_state: $setup_field: ident : $setup_ty: ty,
@@ -1065,7 +1065,7 @@ macro_rules! op_future {
             },
             $(
                 $(#[ $phantom_doc ])*
-                impl !Upin,
+                impl !Unpin,
             )?
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
@@ -1113,7 +1113,7 @@ macro_rules! op_future {
         },
         $(
             $(#[ $phantom_doc: meta ])*
-            impl !Upin,
+            impl !Unpin,
         )?
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
@@ -1247,7 +1247,7 @@ macro_rules! op_future {
         },
         $(
             $(#[ $phantom_doc: meta ])*
-            impl !Upin,
+            impl !Unpin,
         )?
         setup_state: $setup_data: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
@@ -1264,7 +1264,7 @@ macro_rules! op_future {
             },
             $(
                 $(#[ $phantom_doc ])*
-                impl !Upin,
+                impl !Unpin,
             )?
             setup_state: $setup_data: $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
@@ -1283,7 +1283,7 @@ macro_rules! op_future {
         },
         $(
             $(#[ $phantom_doc: meta ])*
-            impl !Upin,
+            impl !Unpin,
         )?
         setup_state: $setup_field: ident : $setup_ty: ty,
         setup: |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr,
@@ -1300,7 +1300,7 @@ macro_rules! op_future {
             },
             $(
                 $(#[ $phantom_doc ])*
-                impl !Upin,
+                impl !Unpin,
             )?
             setup_state: $setup_field : $setup_ty,
             setup: |$setup_submission, $setup_fd, $setup_resources, $setup_state| $setup_fn,
