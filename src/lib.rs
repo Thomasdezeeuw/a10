@@ -212,9 +212,10 @@ impl Ring {
     ///
     /// # Notes
     ///
-    /// A10 always uses `IORING_SETUP_SQPOLL`, which required Linux kernel 5.11
-    /// to work correctly. Furthermore before Linux 5.13 the user needs the
-    /// `CAP_SYS_NICE` capability if run as non-root.
+    /// A10 uses `IORING_SETUP_SQPOLL` by default, which required Linux kernel
+    /// 5.11 to work correctly. Furthermore before Linux 5.13 the user needs the
+    /// `CAP_SYS_NICE` capability if run as non-root. This can be disabled by
+    /// [`Config::with_kernel_thread`].
     pub const fn config<'r>(entries: u32) -> Config<'r> {
         Config::new(entries)
     }
