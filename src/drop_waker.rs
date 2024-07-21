@@ -1,4 +1,4 @@
-//! [`DropWaker`] trait and implementations.
+//! [`DropWake`] trait and implementations.
 //!
 //! See [`drop_task_waker`].
 
@@ -13,8 +13,8 @@ use std::task;
 /// # Safety
 ///
 /// The returned `task::Waker` cannot be cloned, it will panic.
-pub(crate) unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
-    unsafe fn drop_by_ptr<T: DropWaker>(data: *const ()) {
+pub(crate) unsafe fn drop_task_waker<T: DropWake>(to_drop: T) -> task::Waker {
+    unsafe fn drop_by_ptr<T: DropWake>(data: *const ()) {
         T::drop_from_waker_data(data);
     }
 
@@ -34,7 +34,7 @@ pub(crate) unsafe fn drop_task_waker<T: DropWaker>(to_drop: T) -> task::Waker {
 }
 
 /// Trait used by [`drop_task_waker`].
-pub(crate) trait DropWaker {
+pub(crate) trait DropWake {
     /// Return itself as waker data.
     fn into_waker_data(self) -> *const ();
 
@@ -42,9 +42,9 @@ pub(crate) trait DropWaker {
     unsafe fn drop_from_waker_data(data: *const ());
 }
 
-impl<T> DropWaker for UnsafeCell<T>
+impl<T> DropWake for UnsafeCell<T>
 where
-    T: DropWaker,
+    T: DropWake,
 {
     fn into_waker_data(self) -> *const () {
         self.into_inner().into_waker_data()
@@ -55,9 +55,9 @@ where
     }
 }
 
-impl<T> DropWaker for (T,)
+impl<T> DropWake for (T,)
 where
-    T: DropWaker,
+    T: DropWake,
 {
     fn into_waker_data(self) -> *const () {
         self.0.into_waker_data()
@@ -68,7 +68,7 @@ where
     }
 }
 
-impl DropWaker for () {
+impl DropWake for () {
     fn into_waker_data(self) -> *const () {
         ptr::null()
     }
@@ -78,7 +78,7 @@ impl DropWaker for () {
     }
 }
 
-impl<T> DropWaker for Box<T> {
+impl<T> DropWake for Box<T> {
     fn into_waker_data(self) -> *const () {
         Box::into_raw(self).cast()
     }
@@ -88,7 +88,7 @@ impl<T> DropWaker for Box<T> {
     }
 }
 
-impl<T> DropWaker for Arc<T> {
+impl<T> DropWake for Arc<T> {
     fn into_waker_data(self) -> *const () {
         Arc::into_raw(self).cast()
     }
@@ -98,7 +98,7 @@ impl<T> DropWaker for Arc<T> {
     }
 }
 
-impl DropWaker for CString {
+impl DropWake for CString {
     fn into_waker_data(self) -> *const () {
         CString::into_raw(self).cast()
     }

@@ -168,7 +168,7 @@ use bitmap::AtomicBitMap;
 pub use cancel::Cancel;
 use config::munmap;
 pub use config::Config;
-use drop_waker::{drop_task_waker, DropWaker};
+use drop_waker::{drop_task_waker, DropWake};
 #[doc(no_inline)]
 pub use extract::Extract;
 #[doc(no_inline)]
@@ -826,7 +826,7 @@ impl SubmissionQueue {
     ) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Submission),
-        T: DropWaker,
+        T: DropWake,
     {
         log::trace!(op_index = op_index.0; "canceling operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
