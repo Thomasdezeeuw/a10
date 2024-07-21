@@ -518,7 +518,7 @@ impl SubmissionQueue {
         self._add(submit, QueuedOperation::new)
     }
 
-    /// Same as [`add`] but uses a multishot `QueuedOperation`.
+    /// Same as [`SubmissionQueue::add`] but uses a multishot `QueuedOperation`.
     fn add_multishot<F>(&self, submit: F) -> Result<OpIndex, QueueFull>
     where
         F: FnOnce(&mut Submission),
@@ -526,7 +526,7 @@ impl SubmissionQueue {
         self._add(submit, QueuedOperation::new_multishot)
     }
 
-    /// See [`add`] or [`add_multishot`].
+    /// See [`SubmissionQueue::add`] or [`SubmissionQueue::add_multishot`].
     fn _add<F, O>(&self, submit: F, new_op: O) -> Result<OpIndex, QueueFull>
     where
         F: FnOnce(&mut Submission),
@@ -567,7 +567,7 @@ impl SubmissionQueue {
         self._queue(QueuedOperation::new_multishot)
     }
 
-    /// See [`queue_multishot`].
+    /// See [`SubmissionQueue::queue_multishot`].
     fn _queue<O>(&self, new_op: O) -> Result<OpIndex, QueueFull>
     where
         O: FnOnce() -> QueuedOperation,
