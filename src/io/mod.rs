@@ -480,7 +480,7 @@ op_future! {
         iovecs: [libc::iovec; N],
     },
     /// `iovecs` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: offset: u64,
     setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
         submission.read_vectored_at(fd.fd(), iovecs, offset);
@@ -724,7 +724,7 @@ op_future! {
         iovecs: [libc::iovec; N],
     },
     /// `iovecs` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: offset: u64,
     setup: |submission, fd, (_bufs, iovecs), offset| unsafe {
         submission.write_vectored_at(fd.fd(), iovecs, offset);

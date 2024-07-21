@@ -616,7 +616,7 @@ op_future! {
         iovecs: [libc::iovec; N],
     },
     /// `msg` and `iovecs` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: flags: (u8, libc::c_int),
     setup: |submission, fd, (_, address, msg, iovecs), (op, flags)| unsafe {
         msg.msg_iov = iovecs.as_mut_ptr();
@@ -850,7 +850,7 @@ op_future! {
         iovecs: [libc::iovec; N],
     },
     /// `iovecs` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
         msg.msg_iov = iovecs.as_mut_ptr();
@@ -944,7 +944,7 @@ op_future! {
         iovec: libc::iovec,
     },
     /// `iovec` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (buf, msg, iovec), flags| unsafe {
         let address = &mut msg.1;
@@ -991,7 +991,7 @@ op_future! {
         iovecs: [libc::iovec; N],
     },
     /// `iovecs` can't move until the kernel has read the submission.
-    impl !Upin,
+    impl !Unpin,
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (_, msg, iovecs), flags| unsafe {
         let address = &mut msg.1;
