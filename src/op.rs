@@ -1038,6 +1038,10 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        // Whether or not to use a special type to implemnt `DropWake`.
+        $(
+          drop_using: $drop_wake: tt,
+        )?
         // Whether or not the structure should be `!Unpin` by including
         // `PhantomPinned`.
         $(
@@ -1055,7 +1059,7 @@ macro_rules! op_future {
         // Mapping function for `Extractor` implementation. See above.
         extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
-        $crate::op::op_future!{
+        $crate::op::op_future! {
             fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
@@ -1063,6 +1067,9 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+              drop_using: $drop_wake,
+            )?
             $(
                 $(#[ $phantom_doc ])*
                 impl !Unpin,
@@ -1111,6 +1118,9 @@ macro_rules! op_future {
             $field: ident : $value: ty,
             )*
         },
+        $(
+          drop_using: $drop_wake: tt,
+        )?
         $(
             $(#[ $phantom_doc: meta ])*
             impl !Unpin,
@@ -1217,6 +1227,9 @@ macro_rules! op_future {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
                         $crate::op::OpState::Running(op_index) => {
+                            // Use a different type for the `DropWake`
+                            // implementation.
+                            $( let resources = $drop_wake::from(resources); )?
                             let result = self.fd.sq.cancel_op(op_index, resources, |submission| unsafe {
                                 submission.cancel_op(op_index);
                                 // We'll get a canceled completion event if we succeeded, which
@@ -1246,6 +1259,9 @@ macro_rules! op_future {
             )*
         },
         $(
+          drop_using: $drop_wake: tt,
+        )?
+        $(
             $(#[ $phantom_doc: meta ])*
             impl !Unpin,
         )?
@@ -1254,7 +1270,7 @@ macro_rules! op_future {
         map_result: |$self: ident, $resources: tt, $map_arg: ident| $map_result: expr,
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
-        $crate::op::op_future!{
+        $crate::op::op_future! {
             fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
@@ -1262,6 +1278,9 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+              drop_using: $drop_wake,
+            )?
             $(
                 $(#[ $phantom_doc ])*
                 impl !Unpin,
@@ -1282,6 +1301,9 @@ macro_rules! op_future {
             )*
         },
         $(
+          drop_using: $drop_wake: tt,
+        )?
+        $(
             $(#[ $phantom_doc: meta ])*
             impl !Unpin,
         )?
@@ -1298,6 +1320,9 @@ macro_rules! op_future {
                 $field: $value,
                 )*
             },
+            $(
+              drop_using: $drop_wake,
+            )?
             $(
                 $(#[ $phantom_doc ])*
                 impl !Unpin,

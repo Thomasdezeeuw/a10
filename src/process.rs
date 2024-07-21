@@ -432,7 +432,7 @@ impl Drop for ToSignalsDirect {
                 let signals = unsafe { ManuallyDrop::take(&mut self.signals) };
                 let result = self.signals.fd.sq.cancel_op(
                     op_index,
-                    (signals, direct_fd),
+                    Box::from((signals, direct_fd)),
                     |submission| unsafe {
                         submission.cancel_op(op_index);
                         // We'll get a canceled completion event if we succeeded, which

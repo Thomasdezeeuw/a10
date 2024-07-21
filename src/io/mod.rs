@@ -381,6 +381,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
+    drop_using: Box,
     setup_state: offset: u64,
     setup: |submission, fd, (buf,), offset| unsafe {
         let (ptr, len) = buf.parts_mut();
@@ -479,6 +480,7 @@ op_future! {
         /// to heap allocation.
         iovecs: [libc::iovec; N],
     },
+    drop_using: Box,
     /// `iovecs` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: offset: u64,
@@ -596,6 +598,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
+    drop_using: Box,
     setup_state: offset: u64,
     setup: |submission, fd, (buf,), offset| unsafe {
         let (ptr, len) = buf.parts();
@@ -723,6 +726,7 @@ op_future! {
         /// to heap allocation.
         iovecs: [libc::iovec; N],
     },
+    drop_using: Box,
     /// `iovecs` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: offset: u64,
