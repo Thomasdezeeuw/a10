@@ -168,7 +168,7 @@ use bitmap::AtomicBitMap;
 pub use cancel::Cancel;
 use config::munmap;
 pub use config::Config;
-use drop_waker::drop_task_waker;
+use drop_waker::{drop_task_waker, DropWaker};
 #[doc(no_inline)]
 pub use extract::Extract;
 #[doc(no_inline)]
@@ -826,6 +826,7 @@ impl SubmissionQueue {
     ) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Submission),
+        T: DropWaker,
     {
         log::trace!(op_index = op_index.0; "canceling operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
@@ -858,7 +859,7 @@ impl SubmissionQueue {
                 // resources in `resources`.
                 let waker = if needs_drop::<T>() {
                     // SAFETY: we're not going to clone the `waker`.
-                    Some(unsafe { drop_task_waker(Box::from(resources)) })
+                    Some(unsafe { drop_task_waker(resources) })
                 } else {
                     // Of course if we don't need to drop `T`, then we don't
                     // have to use a special waker. But we still don't want to

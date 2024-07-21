@@ -909,14 +909,14 @@ impl Drop for Rename {
 
             match self.state {
                 OpState::Running(op_index) => {
-                    let result = self
-                        .sq
-                        .cancel_op(op_index, (from, to), |submission| unsafe {
-                            submission.cancel_op(op_index);
-                            // We'll get a canceled completion event if we succeeded, which
-                            // is sufficient to cleanup the operation.
-                            submission.no_completion_event();
-                        });
+                    let result =
+                        self.sq
+                            .cancel_op(op_index, Box::from((from, to)), |submission| unsafe {
+                                submission.cancel_op(op_index);
+                                // We'll get a canceled completion event if we succeeded, which
+                                // is sufficient to cleanup the operation.
+                                submission.no_completion_event();
+                            });
                     if let Err(err) = result {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }

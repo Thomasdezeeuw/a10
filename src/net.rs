@@ -483,6 +483,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
+    drop_using: Box,
     setup_state: flags: (u8, libc::c_int),
     setup: |submission, fd, (buf,), (op, flags)| unsafe {
         let (ptr, len) = buf.parts();
@@ -579,6 +580,7 @@ op_future! {
         /// Address to send to.
         address: A,
     },
+    drop_using: Box,
     setup_state: flags: (u8, libc::c_int),
     setup: |submission, fd, (buf, address), (op, flags)| unsafe {
         let (buf, buf_len) = buf.parts();
@@ -615,6 +617,7 @@ op_future! {
         msg: libc::msghdr,
         iovecs: [libc::iovec; N],
     },
+    drop_using: Box,
     /// `msg` and `iovecs` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: flags: (u8, libc::c_int),
@@ -732,6 +735,7 @@ op_future! {
         /// access it safely.
         buf: B,
     },
+    drop_using: Box,
     setup_state: flags: libc::c_int,
     setup: |submission, fd, (buf,), flags| unsafe {
         let (ptr, len) = buf.parts_mut();
@@ -849,6 +853,7 @@ op_future! {
         /// allocation.
         iovecs: [libc::iovec; N],
     },
+    drop_using: Box,
     /// `iovecs` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: flags: libc::c_int,
@@ -943,6 +948,7 @@ op_future! {
         /// allocation.
         iovec: libc::iovec,
     },
+    drop_using: Box,
     /// `iovec` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: flags: libc::c_int,
@@ -990,6 +996,7 @@ op_future! {
         /// allocation.
         iovecs: [libc::iovec; N],
     },
+    drop_using: Box,
     /// `iovecs` can't move until the kernel has read the submission.
     impl !Unpin,
     setup_state: flags: libc::c_int,
