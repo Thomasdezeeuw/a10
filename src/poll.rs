@@ -91,13 +91,17 @@ impl<'sq> Cancel for OneshotPoll<'sq> {
 impl<'sq> Drop for OneshotPoll<'sq> {
     fn drop(&mut self) {
         if let OpState::Running(op_index) = self.state {
-            let result = self.sq.cancel_op(op_index, (), |submission| unsafe {
-                submission.remove_poll(op_index);
-                submission.set_async();
-                // We'll get a canceled completion event if we succeeded, which
-                // is sufficient to cleanup the operation.
-                submission.no_completion_event();
-            });
+            let result = self.sq.cancel_op(
+                op_index,
+                || (),
+                |submission| unsafe {
+                    submission.remove_poll(op_index);
+                    submission.set_async();
+                    // We'll get a canceled completion event if we succeeded, which
+                    // is sufficient to cleanup the operation.
+                    submission.no_completion_event();
+                },
+            );
             if let Err(err) = result {
                 log::error!(
                     "dropped a10::OneshotPoll before completion, attempt to cancel failed: {err}"
@@ -217,12 +221,16 @@ impl<'sq> Cancel for MultishotPoll<'sq> {
 impl<'sq> Drop for MultishotPoll<'sq> {
     fn drop(&mut self) {
         if let OpState::Running(op_index) = self.state {
-            let result = self.sq.cancel_op(op_index, (), |submission| unsafe {
-                submission.remove_poll(op_index);
-                // We'll get a canceled completion event if we succeeded, which
-                // is sufficient to cleanup the operation.
-                submission.no_completion_event();
-            });
+            let result = self.sq.cancel_op(
+                op_index,
+                || (),
+                |submission| unsafe {
+                    submission.remove_poll(op_index);
+                    // We'll get a canceled completion event if we succeeded, which
+                    // is sufficient to cleanup the operation.
+                    submission.no_completion_event();
+                },
+            );
             if let Err(err) = result {
                 log::error!(
                     "dropped a10::MultishotPoll before canceling it, attempt to cancel failed: {err}"

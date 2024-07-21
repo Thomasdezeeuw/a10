@@ -269,12 +269,16 @@ impl<D: Descriptor> Drop for Open<D> {
                     // `None`, but in that case `self.path` would also be
                     // `None`.
                     let sq = self.sq.as_ref().unwrap();
-                    let result = sq.cancel_op(op_index, path, |submission| unsafe {
-                        submission.cancel_op(op_index);
-                        // We'll get a canceled completion event if we succeeded, which
-                        // is sufficient to cleanup the operation.
-                        submission.no_completion_event();
-                    });
+                    let result = sq.cancel_op(
+                        op_index,
+                        || path,
+                        |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        },
+                    );
                     if let Err(err) = result {
                         log::error!(
                             "dropped a10::Open before completion, attempt to cancel failed: {err}"
@@ -811,12 +815,16 @@ impl Drop for CreateDir {
         if let Some(path) = self.path.take() {
             match self.state {
                 OpState::Running(op_index) => {
-                    let result = self.sq.cancel_op(op_index, path, |submission| unsafe {
-                        submission.cancel_op(op_index);
-                        // We'll get a canceled completion event if we succeeded, which
-                        // is sufficient to cleanup the operation.
-                        submission.no_completion_event();
-                    });
+                    let result = self.sq.cancel_op(
+                        op_index,
+                        || path,
+                        |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        },
+                    );
                     if let Err(err) = result {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }
@@ -909,14 +917,16 @@ impl Drop for Rename {
 
             match self.state {
                 OpState::Running(op_index) => {
-                    let result =
-                        self.sq
-                            .cancel_op(op_index, Box::from((from, to)), |submission| unsafe {
-                                submission.cancel_op(op_index);
-                                // We'll get a canceled completion event if we succeeded, which
-                                // is sufficient to cleanup the operation.
-                                submission.no_completion_event();
-                            });
+                    let result = self.sq.cancel_op(
+                        op_index,
+                        || Box::from((from, to)),
+                        |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        },
+                    );
                     if let Err(err) = result {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }
@@ -1016,12 +1026,16 @@ impl Drop for Delete {
         if let Some(path) = self.path.take() {
             match self.state {
                 OpState::Running(op_index) => {
-                    let result = self.sq.cancel_op(op_index, path, |submission| unsafe {
-                        submission.cancel_op(op_index);
-                        // We'll get a canceled completion event if we succeeded, which
-                        // is sufficient to cleanup the operation.
-                        submission.no_completion_event();
-                    });
+                    let result = self.sq.cancel_op(
+                        op_index,
+                        || path,
+                        |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        },
+                    );
                     if let Err(err) = result {
                         log::error!("dropped a10::CreateDir before completion, attempt to cancel failed: {err}");
                     }
