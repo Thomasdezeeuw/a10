@@ -2,6 +2,9 @@
 //!
 //! See [`drop_task_waker`].
 
+use std::cell::UnsafeCell;
+use std::ffi::CString;
+use std::ptr;
 use std::sync::Arc;
 use std::task;
 
@@ -39,6 +42,42 @@ pub(crate) trait DropWaker {
     unsafe fn drop_from_waker_data(data: *const ());
 }
 
+impl<T> DropWaker for UnsafeCell<T>
+where
+    T: DropWaker,
+{
+    fn into_waker_data(self) -> *const () {
+        self.into_inner().into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        T::drop_from_waker_data(data);
+    }
+}
+
+impl<T> DropWaker for (T,)
+where
+    T: DropWaker,
+{
+    fn into_waker_data(self) -> *const () {
+        self.0.into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        T::drop_from_waker_data(data);
+    }
+}
+
+impl DropWaker for () {
+    fn into_waker_data(self) -> *const () {
+        ptr::null()
+    }
+
+    unsafe fn drop_from_waker_data(_: *const ()) {
+        // Nothing.
+    }
+}
+
 impl<T> DropWaker for Box<T> {
     fn into_waker_data(self) -> *const () {
         Box::into_raw(self).cast()
@@ -56,5 +95,15 @@ impl<T> DropWaker for Arc<T> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(Arc::<T>::from_raw(data.cast_mut().cast()));
+    }
+}
+
+impl DropWaker for CString {
+    fn into_waker_data(self) -> *const () {
+        CString::into_raw(self).cast()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(CString::from_raw(data.cast_mut().cast()));
     }
 }
