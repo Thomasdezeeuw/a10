@@ -807,26 +807,28 @@ impl SubmissionQueue {
 
     /// Mark the operation with `op_index` as dropped, attempting to cancel it.
     ///
-    /// Because the kernel still has access to the `resources`, we might have to
-    /// do some trickery to delay the deallocation of `resources` and making the
+    /// Because the kernel still has access to the resources, we might have to
+    /// do some trickery to delay the deallocation of resources and making the
     /// queued operation slot available again.
     ///
     /// When the operation is still in progress we attempt to cancel it using
     /// submission created by `cancel`. If the operation has completed it will
-    /// just drop `resources` and make the slot available again.
+    /// just drop resources (using `create_drop_waker`) and make the slot
+    /// available again.
     ///
     /// # Notes
     ///
     /// `cancel` should most likely use [`Submission::no_completion_event`]
-    pub(crate) fn cancel_op<T, F>(
+    pub(crate) fn cancel_op<R, D, F>(
         &self,
         op_index: OpIndex,
-        resources: T,
+        create_drop_waker: R,
         cancel: F,
     ) -> Result<(), QueueFull>
     where
+        R: FnOnce() -> D,
+        D: DropWake,
         F: FnOnce(&mut Submission),
-        T: DropWake,
     {
         log::trace!(op_index = op_index.0; "canceling operation");
         if let Some(operation) = self.shared.queued_ops.get(op_index.0) {
@@ -835,13 +837,13 @@ impl SubmissionQueue {
                 if op.no_more_events() {
                     // Easy path, the operation has already been completed.
                     *operation = None;
-                    // Unlock defore dropping `resources`, which might take a
+                    // Unlock defore dropping `create_drop_waker`, which might take a
                     // while.
                     drop(operation);
                     self.shared.op_indices.make_available(op_index.0);
 
                     // We can safely drop the resources.
-                    drop(resources);
+                    drop(create_drop_waker);
                     return Ok(());
                 }
 
@@ -856,10 +858,10 @@ impl SubmissionQueue {
                 //    until the kernel is done with the operation.
                 //
                 // We achieve 1 by creating a special waker that just drops the
-                // resources in `resources`.
-                let waker = if needs_drop::<T>() {
+                // resources (created by `create_drop_waker`).
+                let waker = if needs_drop::<D>() {
                     // SAFETY: we're not going to clone the `waker`.
-                    Some(unsafe { drop_task_waker(resources) })
+                    Some(unsafe { drop_task_waker(create_drop_waker()) })
                 } else {
                     // Of course if we don't need to drop `T`, then we don't
                     // have to use a special waker. But we still don't want to

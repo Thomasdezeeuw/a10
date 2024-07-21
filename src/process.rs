@@ -125,12 +125,16 @@ impl Drop for WaitId {
                     // Only drop the signal `info` field once we know the
                     // operation has finished, otherwise the kernel might write
                     // into memory we have deallocated.
-                    let result = self.sq.cancel_op(op_index, info, |submission| unsafe {
-                        submission.cancel_op(op_index);
-                        // We'll get a canceled completion event if we succeeded, which
-                        // is sufficient to cleanup the operation.
-                        submission.no_completion_event();
-                    });
+                    let result = self.sq.cancel_op(
+                        op_index,
+                        || info,
+                        |submission| unsafe {
+                            submission.cancel_op(op_index);
+                            // We'll get a canceled completion event if we succeeded, which
+                            // is sufficient to cleanup the operation.
+                            submission.no_completion_event();
+                        },
+                    );
                     if let Err(err) = result {
                         log::error!("dropped a10::WaitId before canceling it, attempt to cancel failed: {err}");
                     }
@@ -432,7 +436,7 @@ impl Drop for ToSignalsDirect {
                 let signals = unsafe { ManuallyDrop::take(&mut self.signals) };
                 let result = self.signals.fd.sq.cancel_op(
                     op_index,
-                    Box::from((signals, direct_fd)),
+                    || Box::from((signals, direct_fd)),
                     |submission| unsafe {
                         submission.cancel_op(op_index);
                         // We'll get a canceled completion event if we succeeded, which
@@ -589,16 +593,16 @@ impl<D: Descriptor> ReceiveSignals<D> {
                 // deallocated.
                 // SAFETY: we're in the `Drop` implementation, so `self.info` can't
                 // be used anymore making it safe to take ownership.
-                let result =
-                    self.signals
-                        .fd
-                        .sq
-                        .cancel_op(op_index, signal_info, |submission| unsafe {
-                            submission.cancel_op(op_index);
-                            // We'll get a canceled completion event if we succeeded, which
-                            // is sufficient to cleanup the operation.
-                            submission.no_completion_event();
-                        });
+                let result = self.signals.fd.sq.cancel_op(
+                    op_index,
+                    || signal_info,
+                    |submission| unsafe {
+                        submission.cancel_op(op_index);
+                        // We'll get a canceled completion event if we succeeded, which
+                        // is sufficient to cleanup the operation.
+                        submission.no_completion_event();
+                    },
+                );
                 if let Err(err) = result {
                     log::error!(
                         "dropped a10::ReceiveSignals before canceling it, attempt to cancel failed: {err}"

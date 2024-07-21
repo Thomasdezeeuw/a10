@@ -1229,8 +1229,11 @@ macro_rules! op_future {
                         $crate::op::OpState::Running(op_index) => {
                             // Use a different type for the `DropWake`
                             // implementation.
-                            $( let resources = $drop_wake::from(resources); )?
-                            let result = self.fd.sq.cancel_op(op_index, resources, |submission| unsafe {
+                            let drop_resource = || {
+                                $( let resources = $drop_wake::from(resources); )?
+                                resources
+                            };
+                            let result = self.fd.sq.cancel_op(op_index, drop_resource, |submission| unsafe {
                                 submission.cancel_op(op_index);
                                 // We'll get a canceled completion event if we succeeded, which
                                 // is sufficient to cleanup the operation.
@@ -1586,7 +1589,7 @@ macro_rules! op_async_iter {
         impl<$lifetime, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime, D> {
             fn drop(&mut self) {
                 if let $crate::op::OpState::Running(op_index) = self.state {
-                    let result = self.fd.sq.cancel_op(op_index, (), |submission| unsafe {
+                    let result = self.fd.sq.cancel_op(op_index, || (), |submission| unsafe {
                         submission.cancel_op(op_index);
                         // We'll get a canceled completion event if we succeeded, which
                         // is sufficient to cleanup the operation.
