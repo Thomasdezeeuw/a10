@@ -613,7 +613,7 @@ impl SubmissionQueue {
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
                 if tail - kernel_read < shared.len {
                     // Still an entry available.
-                    Some(tail + 1) // TODO: handle overflows.
+                    Some(tail.wrapping_add(1))
                 } else {
                     None
                 }
