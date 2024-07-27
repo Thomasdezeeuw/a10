@@ -8,7 +8,8 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
 use crate::op::{op_future, Submission};
-use crate::{libc, SubmissionQueue};
+use crate::SubmissionQueue;
+use crate::libc::{self, syscall};
 
 /// An open file descriptor.
 ///
@@ -188,7 +189,10 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
             D::use_flags(submission);
         });
         if let Err(err) = result {
-            log::error!("error submitting close operation for a10::AsyncFd: {err}");
+            log::warn!("error submitting close operation for a10::AsyncFd: {err}");
+            if let Err(err) = syscall!(close(self.fd())) {
+                log::warn!("error closing a10::AsyncFd: {err}");
+            }
         }
     }
 }
