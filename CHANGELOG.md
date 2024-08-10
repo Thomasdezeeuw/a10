@@ -1,3 +1,20 @@
+# v0.2.1
+
+* Added `AsyncFd::truncate`
+  <https://github.com/Thomasdezeeuw/a10/commit/6cd74479264cbd230e47b9d2a572a75aab4d83b1>.
+* Synchronously close fd if it can't be done asynchronously due to a full queue
+  <https://github.com/Thomasdezeeuw/a10/commit/42565a387be884921e5300cf3fc4f833e178906d>.
+* Exports `Cancel` at the root of the crate
+  <https://github.com/Thomasdezeeuw/a10/commit/4b91d3f1fcd8502076150bfb12853e9f08b1bdc4>.
+* Delay allocation of drop waker when possible. This is used when a `Future` is
+  dropped before it's operation is complete.
+  <https://github.com/Thomasdezeeuw/a10/commit/629c25e3883d2eedffe77eda4937cc50842f4c32>,
+  <https://github.com/Thomasdezeeuw/a10/commit/f1ff3e4bc374136fef3b0d71f5e9ba7e77cea3b0>,
+  <https://github.com/Thomasdezeeuw/a10/commit/fbc6d8478cb89a179a6c72a1dab9fb1406dfa123>.
+* Use wrapping add in determining the submission queue index (no more overflow
+  after 1 << 32 operations!)
+  <https://github.com/Thomasdezeeuw/a10/commit/39289c237453a7f57e3fa604171625a9ef2aed23>.
+
 # v0.2.0
 
 This release adds support for direct descriptors, which are io\_uring specific
