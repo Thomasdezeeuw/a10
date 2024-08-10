@@ -1,7 +1,7 @@
 [package]
 name          = "a10"
 description   = "A10 is an io_uring library."
-version       = "0.2.0"
+version       = "0.2.1"
 authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
 license       = "MIT"
 documentation = "https://docs.rs/a10"
