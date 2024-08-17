@@ -1,3 +1,10 @@
+# v0.2.2
+
+* Fix possible overflow in ReadBuf::release
+  <https://github.com/Thomasdezeeuw/a10/commit/79078cb9a2f4222eb184588ab1b05c37ad5f5507>.
+* Don't close direct descriptor using close(2)
+  <https://github.com/Thomasdezeeuw/a10/commit/a51984404c00beb6cecf4419842860fe41d23154>.
+
 # v0.2.1
 
 * Added `AsyncFd::truncate`
