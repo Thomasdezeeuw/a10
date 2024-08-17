@@ -526,7 +526,7 @@ impl ReadBuf {
                 bid: buf_idx,
                 resv: 0,
             });
-            ring_tail.store(tail + 1, Ordering::SeqCst);
+            ring_tail.store(tail.wrapping_add(1), Ordering::SeqCst);
             drop(guard);
         }
     }
