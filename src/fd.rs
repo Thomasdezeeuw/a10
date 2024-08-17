@@ -190,7 +190,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         });
         if let Err(err) = result {
             log::warn!("error submitting close operation for a10::AsyncFd: {err}");
-            if let Err(err) = syscall!(close(self.fd())) {
+            if let Err(err) = D::close(self.fd()) {
                 log::warn!("error closing a10::AsyncFd: {err}");
             }
         }
@@ -202,6 +202,9 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
+    use std::os::fd::RawFd;
+    use std::io;
+
     use crate::op::Submission;
 
     pub(crate) trait Descriptor {
@@ -220,6 +223,8 @@ pub(crate) mod private {
 
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
+
+        fn close(fd: RawFd) -> io::Result<()>;
     }
 }
 
@@ -248,6 +253,11 @@ impl private::Descriptor for File {
 
     fn fmt_dbg() -> &'static str {
         "file descriptor"
+    }
+
+    fn close(fd: RawFd) -> io::Result<()> {
+        syscall!(close(fd))?;
+        Ok(())
     }
 }
 
@@ -280,6 +290,12 @@ impl private::Descriptor for Direct {
 
     fn fmt_dbg() -> &'static str {
         "direct descriptor"
+    }
+
+    fn close(fd: RawFd) -> io::Result<()> {
+        // TODO: don't leak the the fd.
+        log::warn!("leaking direct descriptor {fd}");
+        Ok(())
     }
 }
 
