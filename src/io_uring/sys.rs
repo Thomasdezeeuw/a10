@@ -2,20 +2,7 @@
 
 #![allow(warnings, clippy::all, clippy::pedantic, clippy::nursery)]
 
-/// Helper macro to execute a system call that returns an `io::Result`.
-macro_rules! syscall {
-    ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
-        let res = unsafe { libc::$fn($( $arg, )*) };
-        if res == -1 {
-            Err(std::io::Error::last_os_error())
-        } else {
-            Ok(res)
-        }
-    }};
-}
-
 pub use libc::*;
-pub use syscall;
 
 pub unsafe fn io_uring_setup(entries: c_uint, p: *mut io_uring_params) -> c_int {
     syscall(SYS_io_uring_setup, entries as c_long, p as c_long) as _

@@ -7,9 +7,8 @@ use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::io_uring::libc::{self, syscall};
 use crate::op::{op_future, Submission};
-use crate::SubmissionQueue;
+use crate::{libc, syscall, SubmissionQueue};
 
 /// An open file descriptor.
 ///

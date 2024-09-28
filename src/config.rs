@@ -7,8 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, ptr};
 
-use crate::io_uring::libc;
-use crate::{AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
+use crate::{
+    libc, syscall, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue,
+};
 
 /// Configuration of a [`Ring`].
 ///
@@ -276,7 +277,7 @@ impl<'r> Config<'r> {
 
         let mut first_err = None;
         let fd = loop {
-            match libc::syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
+            match syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
                 // SAFETY: just created the fd (and checked the error).
                 Ok(fd) => break unsafe { OwnedFd::from_raw_fd(fd) },
                 Err(err) => {
