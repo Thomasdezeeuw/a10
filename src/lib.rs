@@ -148,6 +148,7 @@ use std::{fmt, ptr};
 mod bitmap;
 mod config;
 mod drop_waker;
+mod io_uring;
 mod op;
 mod sys;
 
