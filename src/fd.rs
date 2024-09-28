@@ -7,9 +7,9 @@ use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
+use crate::io_uring::libc::{self, syscall};
 use crate::op::{op_future, Submission};
 use crate::SubmissionQueue;
-use crate::libc::{self, syscall};
 
 /// An open file descriptor.
 ///
@@ -202,8 +202,8 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
-    use std::os::fd::RawFd;
     use std::io;
+    use std::os::fd::RawFd;
 
     use crate::op::Submission;
 
