@@ -16,9 +16,8 @@ use log::{error, trace};
 
 use crate::cancel::{Cancel, CancelOp, CancelResult};
 use crate::fd::{AsyncFd, Descriptor, Direct, File};
-use crate::libc::{self, syscall};
 use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{man_link, QueueFull, SubmissionQueue};
+use crate::{libc, man_link, syscall, QueueFull, SubmissionQueue};
 
 /// Wait on the child `process`.
 ///
@@ -210,7 +209,7 @@ impl Signals {
     pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
         let signals = SignalSet(signals);
         trace!(signals:? = signals; "setting up signal handling");
-        let fd = libc::syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
+        let fd = syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
         // Block all `signals` as we're going to read them from the signalfd.
@@ -353,7 +352,7 @@ impl<D: Descriptor> Drop for Signals<D> {
 }
 
 fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
-    libc::syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
+    syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
     Ok(())
 }
 

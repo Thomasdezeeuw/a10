@@ -323,7 +323,7 @@ impl Ring {
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
 
         log::debug!(submissions = submissions; "waiting for completion events");
-        let result = libc::syscall!(io_uring_enter2(
+        let result = syscall!(io_uring_enter2(
             self.sq.shared.ring_fd.as_raw_fd(),
             submissions,
             1, // Wait for at least one completion.
@@ -495,7 +495,7 @@ impl SubmissionQueue {
         arg: *const libc::c_void,
         nr_args: libc::c_uint,
     ) -> io::Result<()> {
-        libc::syscall!(io_uring_register(
+        syscall!(io_uring_register(
             self.shared.ring_fd.as_raw_fd(),
             op,
             arg,
@@ -722,7 +722,7 @@ impl SubmissionQueue {
     fn maybe_wake_kernel_thread(&self) {
         if self.shared.kernel_thread && (self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0) {
             log::debug!("waking submission queue polling kernel thread");
-            let res = libc::syscall!(io_uring_enter2(
+            let res = syscall!(io_uring_enter2(
                 self.shared.ring_fd.as_raw_fd(),
                 0,                            // We've already queued our submissions.
                 0,                            // Don't wait for any completion events.
@@ -742,7 +742,7 @@ impl SubmissionQueue {
         if !self.shared.kernel_thread && self.shared.is_polling.load(Ordering::Relaxed) {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");
             let ring_fd = self.shared.ring_fd.as_raw_fd();
-            let res = libc::syscall!(io_uring_enter2(ring_fd, 1, 0, 0, ptr::null(), 0));
+            let res = syscall!(io_uring_enter2(ring_fd, 1, 0, 0, ptr::null(), 0));
             if let Err(err) = res {
                 log::warn!("failed to submit event: {err}");
             }
@@ -1176,4 +1176,16 @@ macro_rules! man_link {
     };
 }
 
-use man_link;
+/// Helper macro to execute a system call that returns an `io::Result`.
+macro_rules! syscall {
+    ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
+        let res = unsafe { libc::$fn($( $arg, )*) };
+        if res == -1 {
+            ::std::result::Result::Err(::std::io::Error::last_os_error())
+        } else {
+            ::std::result::Result::Ok(res)
+        }
+    }};
+}
+
+use {man_link, syscall};
