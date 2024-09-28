@@ -150,7 +150,6 @@ mod config;
 mod drop_waker;
 mod io_uring;
 mod op;
-mod sys;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
@@ -174,8 +173,8 @@ use drop_waker::{drop_task_waker, DropWake};
 pub use extract::Extract;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
+use io_uring::libc;
 use op::{QueuedOperation, Submission};
-use sys as libc; // TODO: replace this with definitions from the `libc` crate once available.
 
 /// This type represents the user space side of an io_uring.
 ///

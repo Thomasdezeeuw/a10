@@ -6,7 +6,8 @@ use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
 use crate::cancel::{CancelOp, CancelResult};
-use crate::{libc, Completion, OpIndex, QueueFull, SubmissionQueue};
+use crate::io_uring::libc;
+use crate::{Completion, OpIndex, QueueFull, SubmissionQueue};
 
 /// State of a queued operation.
 #[derive(Debug)]

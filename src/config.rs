@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{io, ptr};
 
-use crate::{libc, AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
+use crate::io_uring::libc;
+use crate::{AtomicBitMap, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
 
 /// Configuration of a [`Ring`].
 ///
