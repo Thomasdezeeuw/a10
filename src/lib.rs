@@ -137,19 +137,84 @@
     variant_size_differences
 )]
 
-use std::cmp::min;
-use std::marker::PhantomData;
-use std::mem::{needs_drop, replace, size_of, take};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
-use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::{self, Poll};
+use std::io;
 use std::time::Duration;
-use std::{fmt, ptr};
 
 mod bitmap;
 mod drop_waker;
 mod io_uring;
+
+#[rustfmt::skip] // This must come before the other modules for the documentation.
+pub mod fd;
+
+#[doc(no_inline)]
+pub use fd::AsyncFd;
+
+/// This type represents the user space side of an io_uring.
+///
+/// An io_uring is split into two queues: the submissions and completions queue.
+/// The [`SubmissionQueue`] is public, but doesn't provide many methods. The
+/// `SubmissionQueue` is used by I/O types in the crate to schedule asynchronous
+/// operations.
+///
+/// The completions queue is not exposed by the crate and only used internally.
+/// Instead it will wake the [`Future`]s exposed by the various I/O types, such
+/// as [`AsyncFd::write`]'s [`Write`] `Future`.
+///
+/// [`Future`]: std::future::Future
+/// [`AsyncFd::write`]: AsyncFd::write
+/// [`Write`]: io::Write
+#[derive(Debug)]
+pub struct Ring {
+    // TODO.
+}
+
+impl Ring {
+    /// Returns the `SubmissionQueue` used by this ring.
+    ///
+    /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
+    pub const fn submission_queue(&self) -> &SubmissionQueue {
+        todo!()
+    }
+
+    /// Poll the ring for completions.
+    ///
+    /// This will wake all completed [`Future`]s with the result of their
+    /// operations.
+    ///
+    /// If a zero duration timeout (i.e. `Some(Duration::ZERO)`) is passed this
+    /// function will only wake all already completed operations. When using
+    /// io_uring it also guarantees to not make a system call, but it also means
+    /// it doesn't guarantee at least one completion was processed.
+    ///
+    /// [`Future`]: std::future::Future
+    #[doc(alias = "io_uring_enter")]
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        _ = timeout;
+        todo!("Ring::poll")
+    }
+}
+
+/// Queue to submit asynchronous operations to.
+///
+/// This type doesn't have many public methods, but is used by all I/O types, to
+/// queue asynchronous operations. The queue can be acquired by using
+/// [`Ring::submission_queue`].
+///
+/// The submission queue can be shared by cloning it, it's a cheap operation.
+#[derive(Clone, Debug)]
+pub struct SubmissionQueue {
+    // TODO.
+}
+
+impl SubmissionQueue {
+    /// Wake the connected [`Ring`].
+    ///
+    /// All this does is interrupt a call to [`Ring::poll`].
+    pub fn wake(&self) {
+        todo!("SubmissionQueue::wake")
+    }
+}
 
 /// Link to online manual.
 #[rustfmt::skip]
