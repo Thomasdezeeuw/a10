@@ -2,7 +2,7 @@
 //!
 //! See the [`Extract`] trait for more information.
 
-use crate::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
 
 /// Extract input arguments from operations.
 ///

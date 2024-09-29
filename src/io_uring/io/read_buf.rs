@@ -12,8 +12,8 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::{fmt, io, slice};
 
-use crate::io::{Buf, BufMut};
-use crate::{libc, SubmissionQueue};
+use crate::io_uring::io::{Buf, BufMut};
+use crate::io_uring::{libc, SubmissionQueue};
 
 /// Id for a [`BufPool`].
 #[doc(hidden)] // Public because it's used in [`BufMut`].

@@ -25,11 +25,12 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::extract::{Extract, Extractor};
-use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{libc, man_link, SubmissionQueue};
+use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io_uring::extract::{Extract, Extractor};
+use crate::io_uring::fd::{AsyncFd, Descriptor, File};
+use crate::io_uring::op::{op_future, poll_state, OpState, NO_OFFSET};
+use crate::io_uring::{libc, SubmissionQueue};
+use crate::man_link;
 
 mod read_buf;
 #[doc(hidden)]
@@ -44,8 +45,8 @@ macro_rules! stdio {
         $fn: ident () -> $name: ident, $fd: expr
     ) => {
         #[doc = concat!("Create a new `", stringify!($name), "`.\n\n")]
-        pub fn $fn(sq: $crate::SubmissionQueue) -> $name {
-            unsafe { $name(std::mem::ManuallyDrop::new($crate::AsyncFd::from_raw_fd($fd, sq))) }
+        pub fn $fn(sq: $crate::io_uring::SubmissionQueue) -> $name {
+            unsafe { $name(std::mem::ManuallyDrop::new($crate::io_uring::fd::AsyncFd::from_raw_fd($fd, sq))) }
         }
 
         #[doc = concat!(
@@ -54,10 +55,10 @@ macro_rules! stdio {
             "This directly writes to the raw file descriptor, which means it's not buffered and will not flush anything buffered by the standard library.\n\n",
             "When this type is dropped it will not close ", stringify!($fn), ".",
         )]
-        pub struct $name(std::mem::ManuallyDrop<$crate::AsyncFd>);
+        pub struct $name(std::mem::ManuallyDrop<$crate::io_uring::fd::AsyncFd>);
 
         impl std::ops::Deref for $name {
-            type Target = $crate::AsyncFd;
+            type Target = $crate::io_uring::fd::AsyncFd;
 
             fn deref(&self) -> &Self::Target {
                 &self.0

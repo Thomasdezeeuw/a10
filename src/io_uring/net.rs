@@ -16,14 +16,15 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::extract::{Extract, Extractor};
-use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{
+use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io_uring::extract::{Extract, Extractor};
+use crate::io_uring::fd::{AsyncFd, Descriptor, File};
+use crate::io_uring::io::{
     Buf, BufIdx, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
-use crate::op::{op_async_iter, op_future, poll_state, OpState};
-use crate::{libc, man_link, SubmissionQueue};
+use crate::io_uring::op::{op_async_iter, op_future, poll_state, OpState};
+use crate::io_uring::{libc, SubmissionQueue};
+use crate::{man_link, syscall};
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
@@ -767,7 +768,7 @@ op_async_iter! {
     map_result: |this, buf_idx, n| {
         if n == 0 {
             // Peer closed it's writing half.
-            this.state = crate::op::OpState::Done;
+            this.state = crate::io_uring::op::OpState::Done;
         }
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.

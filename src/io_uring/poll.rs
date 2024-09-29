@@ -17,9 +17,10 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::op::{poll_state, OpState};
-use crate::{man_link, QueueFull, SubmissionQueue};
+use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io_uring::op::{poll_state, OpState};
+use crate::io_uring::{QueueFull, SubmissionQueue};
+use crate::{man_link, syscall};
 
 /// Wait for an event specified in `mask` on the file descriptor `fd`.
 ///

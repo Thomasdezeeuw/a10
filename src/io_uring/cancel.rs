@@ -8,10 +8,9 @@ use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::fd::{AsyncFd, Descriptor};
-use crate::io_uring::libc;
-use crate::op::{op_future, poll_state, OpState};
-use crate::{OpIndex, QueueFull, SubmissionQueue};
+use crate::io_uring::fd::{AsyncFd, Descriptor};
+use crate::io_uring::op::{op_future, poll_state, OpState};
+use crate::io_uring::{libc, OpIndex, QueueFull, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
 /// operations.

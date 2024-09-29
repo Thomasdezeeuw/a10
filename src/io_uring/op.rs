@@ -5,9 +5,8 @@ use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::cancel::{CancelOp, CancelResult};
-use crate::io_uring::libc;
-use crate::{Completion, OpIndex, QueueFull, SubmissionQueue};
+use crate::io_uring::cancel::{CancelOp, CancelResult};
+use crate::io_uring::{libc, Completion, OpIndex, QueueFull, SubmissionQueue};
 
 /// State of a queued operation.
 #[derive(Debug)]
@@ -1060,7 +1059,7 @@ macro_rules! op_future {
         // Mapping function for `Extractor` implementation. See above.
         extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block,
     ) => {
-        $crate::op::op_future! {
+        $crate::io_uring::op::op_future! {
             fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
@@ -1080,9 +1079,9 @@ macro_rules! op_future {
             map_result: |$self, $resources, $flags, $map_arg| $map_result,
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> $crate::io_uring::extract::Extract for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $crate::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*, D>> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> std::future::Future for $crate::io_uring::extract::Extractor<$name<$lifetime $(, $generic)* $(, $const_generic )*, D>> {
             type Output = std::io::Result<$extract_result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1092,7 +1091,7 @@ macro_rules! op_future {
 
                 match $self.fut.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
-                        $self.fut.state = $crate::op::OpState::Done;
+                        $self.fut.state = $crate::io_uring::op::OpState::Done;
                         match result {
                             std::result::Result::Ok(($extract_flags, $extract_arg)) => {
                                 let $extract_self = &mut $self.fut;
@@ -1133,7 +1132,7 @@ macro_rules! op_future {
         #[doc = concat!("[`Future`](std::future::Future) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`Future`s do nothing unless polled"]
-        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor = $crate::fd::File> {
+        pub struct $name<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor = $crate::io_uring::fd::File> {
             /// Resoures used in the operation.
             ///
             /// If this is `Some` when the future is dropped it will assume it
@@ -1143,18 +1142,18 @@ macro_rules! op_future {
                 $( $value, )*
             )>>,
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd<D>,
+            fd: &$lifetime $crate::io_uring::fd::AsyncFd<D>,
             /// State of the operation.
-            state: $crate::op::OpState<$setup_ty>,
+            state: $crate::io_uring::op::OpState<$setup_ty>,
             $(
                 $( #[ $phantom_doc ] )*
                 _phantom: std::marker::PhantomPinned,
             )?
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+            const fn new(fd: &$lifetime $crate::io_uring::fd::AsyncFd<D>, $( $field: $value, )* $setup_field : $setup_ty) -> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
                 // This is needed because of the usage of `$phantom_doc`, which
                 // is needed for the macro to work, even though it doesn't
                 // create any documentation.
@@ -1164,7 +1163,7 @@ macro_rules! op_future {
                         $( $field, )*
                     ))),
                     fd,
-                    state: $crate::op::OpState::NotStarted($setup_field),
+                    state: $crate::io_uring::op::OpState::NotStarted($setup_field),
                     $(
                         $( #[ $phantom_doc ] )*
                         _phantom: std::marker::PhantomPinned,
@@ -1173,27 +1172,27 @@ macro_rules! op_future {
             }
         }
 
-        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
-            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+        impl<$lifetime $(, $generic )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> $crate::io_uring::cancel::Cancel for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+            fn try_cancel(&mut self) -> $crate::io_uring::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
 
-            fn cancel(&mut self) -> $crate::cancel::CancelOp {
+            fn cancel(&mut self) -> $crate::io_uring::cancel::CancelOp {
                 self.state.cancel(&self.fd.sq)
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             /// Poll for the `OpIndex`.
-            fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::OpIndex> {
-                std::task::Poll::Ready($crate::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
+            fn poll_op_index(&mut self, ctx: &mut std::task::Context<'_>) -> std::task::Poll<$crate::io_uring::OpIndex> {
+                std::task::Poll::Ready($crate::io_uring::op::poll_state!($name, *self, ctx, |$setup_submission, $setup_fd, $setup_resources, $setup_state| {
                     $setup_fn
                     D::use_flags($setup_submission);
                 }))
             }
         }
 
-        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+        impl<$lifetime $(, $generic $(: $trait )? )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> std::future::Future for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             type Output = std::io::Result<$result>;
 
             fn poll(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Self::Output> {
@@ -1203,7 +1202,7 @@ macro_rules! op_future {
 
                 match $self.fd.sq.poll_op(ctx, op_index) {
                     std::task::Poll::Ready(result) => {
-                        $self.state = $crate::op::OpState::Done;
+                        $self.state = $crate::io_uring::op::OpState::Done;
                         match result {
                             std::result::Result::Ok(($flags, $map_arg)) => {
                                 // SAFETY: this will not panic because we need
@@ -1220,14 +1219,14 @@ macro_rules! op_future {
             }
         }
 
-        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Send> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
-        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor + std::marker::Sync> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Send )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor + std::marker::Send> std::marker::Send for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
+        unsafe impl<$lifetime $(, $generic: std::marker::Sync )* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor + std::marker::Sync> std::marker::Sync for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {}
 
-        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
+        impl<$lifetime $(, $generic)* $(, const $const_generic: $const_ty )*, D: $crate::io_uring::fd::Descriptor> std::ops::Drop for $name<$lifetime $(, $generic)* $(, $const_generic )*, D> {
             fn drop(&mut self) {
                 if let std::option::Option::Some(resources) = self.resources.take() {
                     match self.state {
-                        $crate::op::OpState::Running(op_index) => {
+                        $crate::io_uring::op::OpState::Running(op_index) => {
                             // Use a different type for the `DropWake`
                             // implementation.
                             let drop_resource = || {
@@ -1247,7 +1246,7 @@ macro_rules! op_future {
                         // NOTE: `Done` should not be reachable, but no point in
                         // creating another branch.
                         #[allow(clippy::drop_non_drop)]
-                        $crate::op::OpState::NotStarted(_) | $crate::op::OpState::Done => drop(resources),
+                        $crate::io_uring::op::OpState::NotStarted(_) | $crate::io_uring::op::OpState::Done => drop(resources),
                     }
                 }
             }
@@ -1274,7 +1273,7 @@ macro_rules! op_future {
         map_result: |$self: ident, $resources: tt, $map_arg: ident| $map_result: expr,
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_flags: ident, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
-        $crate::op::op_future! {
+        $crate::io_uring::op::op_future! {
             fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
@@ -1316,7 +1315,7 @@ macro_rules! op_future {
         map_result: |$map_arg: ident| $map_result: expr, // Only difference: 1 argument.
         $( extract: |$extract_self: ident, $extract_resources: tt, $extract_arg: ident| -> $extract_result: ty $extract_map: block, )?
     ) => {
-        $crate::op::op_future!{
+        $crate::io_uring::op::op_future!{
             fn $type::$method -> $result,
             struct $name<$lifetime $(, $generic $(: $trait )? )* $(; const $const_generic: $const_ty )*> {
                 $(
@@ -1391,8 +1390,8 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_fd: ident, $setup_resources: tt, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $self.state {
-            $crate::op::OpState::Running(op_index) => op_index,
-            $crate::op::OpState::NotStarted($setup_state) => {
+            $crate::io_uring::op::OpState::Running(op_index) => op_index,
+            $crate::io_uring::op::OpState::NotStarted($setup_state) => {
                 let $name {
                     fd: $setup_fd,
                     resources,
@@ -1405,16 +1404,16 @@ macro_rules! poll_state {
                 let result = $setup_fd.sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $self.state = $crate::op::OpState::Running(op_index);
+                        $self.state = $crate::io_uring::op::OpState::Running(op_index);
                         op_index
                     }
-                    Err($crate::QueueFull(())) => {
+                    Err($crate::io_uring::QueueFull(())) => {
                         $self.fd.sq.wait_for_submission($ctx.waker().clone());
                         return std::task::Poll::Pending;
                     }
                 }
             }
-            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+            $crate::io_uring::op::OpState::Done => $crate::io_uring::op::poll_state!(__panic $name),
         }
     };
     // Without `$setup_resources`, but expects `$self.fd` to be `AsyncFd`.
@@ -1423,22 +1422,22 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_fd: ident, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $self.state {
-            $crate::op::OpState::Running(op_index) => op_index,
-            $crate::op::OpState::NotStarted($setup_state) => {
+            $crate::io_uring::op::OpState::Running(op_index) => op_index,
+            $crate::io_uring::op::OpState::NotStarted($setup_state) => {
                 let $setup_fd = $self.fd;
                 let result = $self.fd.sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $self.state = $crate::op::OpState::Running(op_index);
+                        $self.state = $crate::io_uring::op::OpState::Running(op_index);
                         op_index
                     }
-                    Err($crate::QueueFull(())) => {
+                    Err($crate::io_uring::QueueFull(())) => {
                         $self.fd.sq.wait_for_submission($ctx.waker().clone());
                         return std::task::Poll::Pending;
                     }
                 }
             }
-            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+            $crate::io_uring::op::OpState::Done => $crate::io_uring::op::poll_state!(__panic $name),
         }
     };
     // No `AsyncFd` or `$setup_resources`.
@@ -1448,21 +1447,21 @@ macro_rules! poll_state {
         |$setup_submission: ident, $setup_state: tt| $setup_fn: expr $(,)?
     ) => {
         match $state {
-            $crate::op::OpState::Running(op_index) => op_index,
-            $crate::op::OpState::NotStarted($setup_state) => {
+            $crate::io_uring::op::OpState::Running(op_index) => op_index,
+            $crate::io_uring::op::OpState::NotStarted($setup_state) => {
                 let result = $sq.add(|$setup_submission| $setup_fn);
                 match result {
                     Ok(op_index) => {
-                        $state = $crate::op::OpState::Running(op_index);
+                        $state = $crate::io_uring::op::OpState::Running(op_index);
                         op_index
                     }
-                    Err($crate::QueueFull(())) => {
+                    Err($crate::io_uring::QueueFull(())) => {
                         $sq.wait_for_submission($ctx.waker().clone());
                         return std::task::Poll::Pending;
                     }
                 }
             }
-            $crate::op::OpState::Done => $crate::op::poll_state!(__panic $name),
+            $crate::io_uring::op::OpState::Done => $crate::io_uring::op::poll_state!(__panic $name),
         }
     };
     (__panic $name: ident) => {
@@ -1495,24 +1494,24 @@ macro_rules! op_async_iter {
         #[doc = concat!("[`AsyncIterator`](std::async_iter::AsyncIterator) behind [`", stringify!($type), "::", stringify!($method), "`].")]
         #[derive(Debug)]
         #[must_use = "`AsyncIterator`s do nothing unless polled"]
-        pub struct $name<$lifetime, D: $crate::fd::Descriptor = $crate::fd::File> {
+        pub struct $name<$lifetime, D: $crate::io_uring::fd::Descriptor = $crate::io_uring::fd::File> {
             /// File descriptor used in the operation.
-            fd: &$lifetime $crate::AsyncFd<D>,
+            fd: &$lifetime $crate::io_uring::fd::AsyncFd<D>,
             $(
             $(#[ $field_doc ])*
             $field: $value,
             )?
             /// State of the operation.
-            state: $crate::op::OpState<$setup_ty>,
+            state: $crate::io_uring::op::OpState<$setup_ty>,
         }
 
-        impl<$lifetime, D: $crate::fd::Descriptor> $name<$lifetime, D> {
+        impl<$lifetime, D: $crate::io_uring::fd::Descriptor> $name<$lifetime, D> {
             #[doc = concat!("Create a new `", stringify!($name), "`.")]
-            const fn new(fd: &$lifetime $crate::AsyncFd<D>, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime, D> {
+            const fn new(fd: &$lifetime $crate::io_uring::fd::AsyncFd<D>, $($field: $value, )? $state : $setup_ty) -> $name<$lifetime, D> {
                 $name {
                     fd,
                     $( $field, )?
-                    state: $crate::op::OpState::NotStarted($state),
+                    state: $crate::io_uring::op::OpState::NotStarted($state),
                 }
             }
 
@@ -1522,18 +1521,18 @@ macro_rules! op_async_iter {
                 // SAFETY: we're not moving anything out of `self.
                 let $self = unsafe { std::pin::Pin::into_inner_unchecked(self) };
                 let op_index = match $self.state {
-                    $crate::op::OpState::Running(op_index) => op_index,
-                    $crate::op::OpState::NotStarted($setup_state) => {
+                    $crate::io_uring::op::OpState::Running(op_index) => op_index,
+                    $crate::io_uring::op::OpState::NotStarted($setup_state) => {
                         let result = $self.fd.sq.add_multishot(|$setup_submission| {
                             let $setup_self = &mut *$self;
                             $setup_fn
                         });
                         match result {
                             Ok(op_index) => {
-                                $self.state = $crate::op::OpState::Running(op_index);
+                                $self.state = $crate::io_uring::op::OpState::Running(op_index);
                                 op_index
                             }
-                            Err($crate::QueueFull(())) => {
+                            Err($crate::io_uring::QueueFull(())) => {
                                 $self.fd.sq.wait_for_submission(ctx.waker().clone());
                                 return std::task::Poll::Pending;
                             }
@@ -1541,7 +1540,7 @@ macro_rules! op_async_iter {
                     }
                     // We can reach this if we return an error, but not `None`
                     // yet.
-                    $crate::op::OpState::Done => return std::task::Poll::Ready(std::option::Option::None),
+                    $crate::io_uring::op::OpState::Done => return std::task::Poll::Ready(std::option::Option::None),
                 };
 
                 match $self.fd.sq.poll_multishot_op(ctx, op_index) {
@@ -1550,7 +1549,7 @@ macro_rules! op_async_iter {
                     },
                     std::task::Poll::Ready(std::option::Option::Some(std::result::Result::Err(err))) => {
                         // After an error we also don't expect any more results.
-                        $self.state = $crate::op::OpState::Done;
+                        $self.state = $crate::io_uring::op::OpState::Done;
                         if let Some(libc::ECANCELED) = err.raw_os_error() {
                             // Operation was canceled, so we expect no more
                             // results.
@@ -1560,7 +1559,7 @@ macro_rules! op_async_iter {
                         }
                     },
                     std::task::Poll::Ready(std::option::Option::None) => {
-                        $self.state = $crate::op::OpState::Done;
+                        $self.state = $crate::io_uring::op::OpState::Done;
                         std::task::Poll::Ready(std::option::Option::None)
                     },
                     std::task::Poll::Pending => std::task::Poll::Pending,
@@ -1568,18 +1567,18 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime, D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<$lifetime, D> {
-            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+        impl<$lifetime, D: $crate::io_uring::fd::Descriptor> $crate::io_uring::cancel::Cancel for $name<$lifetime, D> {
+            fn try_cancel(&mut self) -> $crate::io_uring::cancel::CancelResult {
                 self.state.try_cancel(&self.fd.sq)
             }
 
-            fn cancel(&mut self) -> $crate::cancel::CancelOp {
+            fn cancel(&mut self) -> $crate::io_uring::cancel::CancelOp {
                 self.state.cancel(&self.fd.sq)
             }
         }
 
         #[cfg(feature = "nightly")]
-        impl<$lifetime, D: $crate::fd::Descriptor> std::async_iter::AsyncIterator for $name<$lifetime, D> {
+        impl<$lifetime, D: $crate::io_uring::fd::Descriptor> std::async_iter::AsyncIterator for $name<$lifetime, D> {
             type Item = std::io::Result<$result>;
 
             fn poll_next(self: std::pin::Pin<&mut Self>, ctx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
@@ -1587,9 +1586,9 @@ macro_rules! op_async_iter {
             }
         }
 
-        impl<$lifetime, D: $crate::fd::Descriptor> std::ops::Drop for $name<$lifetime, D> {
+        impl<$lifetime, D: $crate::io_uring::fd::Descriptor> std::ops::Drop for $name<$lifetime, D> {
             fn drop(&mut self) {
-                if let $crate::op::OpState::Running(op_index) = self.state {
+                if let $crate::io_uring::op::OpState::Running(op_index) = self.state {
                     let result = self.fd.sq.cancel_op(op_index, || (), |submission| unsafe {
                         submission.cancel_op(op_index);
                         // We'll get a canceled completion event if we succeeded, which

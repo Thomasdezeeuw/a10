@@ -10,7 +10,7 @@ use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::{OpIndex, SubmissionQueue};
+use crate::io_uring::{OpIndex, SubmissionQueue};
 
 /// Token used to the messages.
 ///

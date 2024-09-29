@@ -13,10 +13,11 @@ use std::task::{self, Poll};
 use std::time::{Duration, SystemTime};
 use std::{fmt, io, str};
 
-use crate::extract::Extractor;
-use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, poll_state, OpState};
-use crate::{libc, man_link, Extract, SubmissionQueue};
+use crate::io_uring::extract::Extractor;
+use crate::io_uring::fd::{AsyncFd, Descriptor, File};
+use crate::io_uring::op::{op_future, poll_state, OpState};
+use crate::io_uring::{libc, Extract, SubmissionQueue};
+use crate::man_link;
 
 /// Flags needed to fill [`Metadata`].
 const METADATA_FLAGS: u32 = libc::STATX_TYPE
