@@ -31,8 +31,6 @@ pub use cancel::Cancel;
 pub use config::Config;
 #[doc(no_inline)]
 pub use extract::Extract;
-#[doc(no_inline)]
-pub use fd::AsyncFd;
 
 use crate::bitmap::AtomicBitMap;
 use crate::drop_waker::{drop_task_waker, DropWake};
