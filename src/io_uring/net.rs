@@ -24,7 +24,7 @@ use crate::io_uring::io::{
 };
 use crate::io_uring::op::{op_async_iter, op_future, poll_state, OpState};
 use crate::io_uring::{libc, SubmissionQueue};
-use crate::{man_link, syscall};
+use crate::man_link;
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]

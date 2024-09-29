@@ -20,7 +20,7 @@ use std::{fmt, io};
 use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
 use crate::io_uring::op::{poll_state, OpState};
 use crate::io_uring::{QueueFull, SubmissionQueue};
-use crate::{man_link, syscall};
+use crate::man_link;
 
 /// Wait for an event specified in `mask` on the file descriptor `fd`.
 ///
