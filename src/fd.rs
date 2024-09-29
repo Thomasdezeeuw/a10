@@ -37,8 +37,8 @@ use crate::SubmissionQueue;
 pub struct AsyncFd<D: Descriptor = File> {
     /// # Notes
     ///
-    /// We use `ManuallyDrop` because we drop the fd using io_uring, not a
-    /// blocking `close(2)` system call.
+    /// We use `ManuallyDrop` because we drop the fd using an asynchronous
+    /// operation, not a blocking `close(2)` system call.
     fd: ManuallyDrop<OwnedFd>,
     sq: SubmissionQueue,
     kind: PhantomData<D>,
@@ -92,6 +92,11 @@ impl<D: Descriptor> AsyncFd<D> {
     pub(crate) fn fd(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
+
+    /// Returns the `SubmissionQueue` of this `AsyncFd`.
+    pub(crate) fn sq(&self) -> &SubmissionQueue {
+        &self.sq
+    }
 }
 
 impl AsFd for AsyncFd<File> {
@@ -104,15 +109,15 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncFd")
             .field("fd", &self.fd())
-            .field("sq", &self.sq)
-            // TODO.
-            //.field("kind", &D::fmt_dbg())
+            .field("sq", &self.sq())
+            .field("kind", &D::fmt_dbg())
             .finish()
     }
 }
 
 impl<D: Descriptor> Drop for AsyncFd<D> {
     fn drop(&mut self) {
+        // TODO(port).
         todo!("AsyncFd::drop")
         /*
         let result = self.sq.add_no_result(|submission| unsafe {
@@ -135,7 +140,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
-    /* TODO.
+    /* TODO(port).
     use std::io;
     use std::os::fd::RawFd;
 
@@ -143,7 +148,7 @@ pub(crate) mod private {
     */
 
     pub(crate) trait Descriptor {
-        /* TODO.
+        /* TODO(port).
         /// Set any additional flags in `submission` when using the descriptor.
         fn use_flags(submission: &mut Submission);
 
@@ -156,10 +161,12 @@ pub(crate) mod private {
         /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
         /// descriptor.
         fn cancel_flag() -> u32;
+        */
 
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
 
+        /* TODO(port).
         fn sync_close(fd: RawFd) -> io::Result<()>;
         */
     }
@@ -172,7 +179,7 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    /* TODO.
+    /* TODO(port).
     fn use_flags(_: &mut Submission) {
         // No additional flags needed.
     }
@@ -188,11 +195,13 @@ impl private::Descriptor for File {
     fn cancel_flag() -> u32 {
         0
     }
+    */
 
     fn fmt_dbg() -> &'static str {
         "file descriptor"
     }
 
+    /* TODO(port).
     fn sync_close(fd: RawFd) -> io::Result<()> {
         syscall!(close(fd))?;
         Ok(())
@@ -200,7 +209,7 @@ impl private::Descriptor for File {
     */
 }
 
-// TODO: move io_uring only code.
+// TODO(port): move io_uring only code.
 
 /// Direct descriptors are io_uring private file descriptors.
 ///
@@ -213,7 +222,7 @@ pub enum Direct {}
 impl Descriptor for Direct {}
 
 impl private::Descriptor for Direct {
-    /* TODO.
+    /* TODO(port).
     fn use_flags(submission: &mut Submission) {
         submission.use_direct_fd();
     }
@@ -229,11 +238,13 @@ impl private::Descriptor for Direct {
     fn cancel_flag() -> u32 {
         libc::IORING_ASYNC_CANCEL_FD_FIXED
     }
+    */
 
     fn fmt_dbg() -> &'static str {
         "direct descriptor"
     }
 
+    /* TODO(port).
     fn sync_close(fd: RawFd) -> io::Result<()> {
         // TODO: don't leak the the fd.
         log::warn!("leaking direct descriptor {fd}");
