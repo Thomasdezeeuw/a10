@@ -14,10 +14,11 @@ use std::{fmt, io, ptr};
 
 use log::{error, trace};
 
-use crate::cancel::{Cancel, CancelOp, CancelResult};
-use crate::fd::{AsyncFd, Descriptor, Direct, File};
-use crate::op::{op_future, poll_state, OpState, NO_OFFSET};
-use crate::{libc, man_link, syscall, QueueFull, SubmissionQueue};
+use crate::io_uring::cancel::{Cancel, CancelOp, CancelResult};
+use crate::io_uring::fd::{AsyncFd, Descriptor, Direct, File};
+use crate::io_uring::op::{op_future, poll_state, OpState, NO_OFFSET};
+use crate::io_uring::{libc, QueueFull, SubmissionQueue};
+use crate::{man_link, syscall};
 
 /// Wait on the child `process`.
 ///

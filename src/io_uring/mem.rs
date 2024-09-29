@@ -5,8 +5,9 @@ use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::op::{poll_state, OpState};
-use crate::{libc, man_link, SubmissionQueue};
+use crate::io_uring::op::{poll_state, OpState};
+use crate::io_uring::{libc, SubmissionQueue};
+use crate::man_link;
 
 /// Give advice about use of memory.
 ///

@@ -7,8 +7,9 @@ use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::op::{op_future, Submission};
-use crate::{libc, syscall, SubmissionQueue};
+use crate::io_uring::op::{op_future, Submission};
+use crate::io_uring::{libc, SubmissionQueue};
+use crate::syscall;
 
 /// An open file descriptor.
 ///
@@ -204,7 +205,7 @@ pub(crate) mod private {
     use std::io;
     use std::os::fd::RawFd;
 
-    use crate::op::Submission;
+    use crate::io_uring::op::Submission;
 
     pub(crate) trait Descriptor {
         /// Set any additional flags in `submission` when using the descriptor.
