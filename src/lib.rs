@@ -137,7 +137,6 @@
     variant_size_differences
 )]
 
-use std::io;
 use std::time::Duration;
 
 mod bitmap;
@@ -148,6 +147,7 @@ mod io_uring;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
+pub mod io;
 
 #[doc(no_inline)]
 pub use fd::AsyncFd;
