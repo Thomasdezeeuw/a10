@@ -142,7 +142,6 @@ use std::time::Duration;
 
 mod bitmap;
 mod drop_waker;
-mod io_uring;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
