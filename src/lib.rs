@@ -166,7 +166,7 @@ pub use fd::AsyncFd;
 /// [`Write`]: io::Write
 #[derive(Debug)]
 pub struct Ring {
-    // TODO.
+    // TODO(port).
 }
 
 impl Ring {
@@ -174,6 +174,7 @@ impl Ring {
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
     pub const fn submission_queue(&self) -> &SubmissionQueue {
+        // TODO(port).
         todo!()
     }
 
@@ -190,6 +191,7 @@ impl Ring {
     /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        // TODO(port).
         _ = timeout;
         todo!("Ring::poll")
     }
@@ -204,7 +206,7 @@ impl Ring {
 /// The submission queue can be shared by cloning it, it's a cheap operation.
 #[derive(Clone, Debug)]
 pub struct SubmissionQueue {
-    // TODO.
+    // TODO(port).
 }
 
 impl SubmissionQueue {
@@ -212,6 +214,7 @@ impl SubmissionQueue {
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
+        // TODO(port).
         todo!("SubmissionQueue::wake")
     }
 }
