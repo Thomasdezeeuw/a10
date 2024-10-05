@@ -2,10 +2,10 @@
 //!
 //! See [`AsyncFd`].
 
+use std::fmt;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
-use std::{fmt, io};
 
 use crate::SubmissionQueue;
 

@@ -3,8 +3,7 @@
 //! See [`BufMut`] and [`Buf`], and their vectored counterparts [`BufMutSlice`]
 //! and [`BufSlice`].
 
-use std::io;
-use std::mem::{ManuallyDrop, MaybeUninit};
+use std::mem::MaybeUninit;
 
 /// Trait that defines the behaviour of buffers used in reading, which requires
 /// mutable access.
