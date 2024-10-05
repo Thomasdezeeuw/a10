@@ -1,21 +1,19 @@
-//! Completition Queue.
+//! Completion Queue.
 
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt, io, task};
+use std::{fmt, io};
 
-use crate::bitmap::AtomicBitMap;
 use crate::{Poll, SharedState};
 
 /// Queue of completion events.
 #[derive(Debug)]
-pub(crate) struct CompletionQueue<P: Poll> {
+pub(crate) struct Queue<P: Poll> {
     poll: P,
     shared: Arc<SharedState<P>>,
 }
 
-impl<P: Poll> CompletionQueue<P> {
+impl<P: Poll> Queue<P> {
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         for completion in self.poll.poll(&self.shared.data, timeout)? {
             log::trace!(completion:? = completion; "dequeued completion event");
