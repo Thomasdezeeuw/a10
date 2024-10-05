@@ -170,6 +170,7 @@ pub use fd::AsyncFd;
 /// Configuration of a [`Ring`].
 ///
 /// Created by calling [`Ring::config`].
+#[doc(inline)]
 pub use sys::config::Config;
 
 /// This type represents the user space side of an io_uring.

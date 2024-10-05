@@ -8,6 +8,7 @@ use crate::{sys, syscall, Ring};
 
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
+#[allow(missing_docs)] // NOTE: documented at the root.
 pub struct Config<'r> {
     events_capacity: u32,
     _unused: PhantomData<&'r ()>,

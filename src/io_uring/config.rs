@@ -14,6 +14,7 @@ use crate::{sys, syscall, Ring, SubmissionQueue};
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.
+#[allow(missing_docs)] // NOTE: documented at the root.
 pub struct Config<'r> {
     submission_entries: u32,
     completion_entries: Option<u32>,
