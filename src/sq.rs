@@ -1,28 +1,46 @@
 //! Submission Queue.
 
-use std::fmt;
-use std::io;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::{fmt, io, mem};
 
-use crate::SharedState;
+use crate::{QueuedOperation, SharedState};
 
 /// Queue of completion events.
 pub(crate) struct Queue<S: Submissions, CE> {
     shared: Arc<SharedState<S, CE>>,
 }
 
-impl<S: Submissions, CE> Queue<S, CE> {
+impl<S: Submissions, CE: Default> Queue<S, CE> {
     pub(crate) const fn new(shared: Arc<SharedState<S, CE>>) -> Queue<S, CE> {
         Queue { shared }
     }
 
-    pub(crate) fn add<F>(&self, submit: F) -> Result<(), QueueFull>
+    /// Add a new submission, returns an id.
+    pub(crate) fn add<F>(&self, submit: F) -> Result<usize, QueueFull>
     where
         F: FnOnce(&mut S::Submission),
     {
-        _ = submit;
-        todo!();
+        // Get an id (index) to the queued operation list.
+        let shared = &*self.shared;
+        let Some(id) = shared.op_indices.next_available() else {
+            return Err(QueueFull);
+        };
+
+        let queued_op = QueuedOperation::new();
+        // SAFETY: the `AtomicBitMap` always returns valid indices for
+        // `op_queue` (it's the whole point of it).
+        let mut op = shared.queued_ops[id].lock().unwrap();
+        let old_queued_op = mem::replace(&mut *op, Some(queued_op));
+        debug_assert!(old_queued_op.is_none());
+
+        // TODO: not great naming `data.add`. Maybe rename the method?
+        shared.data.add(|submission| {
+            submit(submission);
+            submission.set_id(id);
+        })?;
+
+        Ok(id)
     }
 
     pub(crate) fn wake(&self) {

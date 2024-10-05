@@ -94,7 +94,7 @@ pub(crate) trait Completions: fmt::Debug {
 /// Completition event.
 pub(crate) trait Event: fmt::Debug {
     /// State of an operation.
-    type State;
+    type State: Default;
 
     /// Identifier (index) of the event.
     fn id(&self) -> usize;
