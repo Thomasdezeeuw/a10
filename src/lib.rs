@@ -137,6 +137,7 @@
     variant_size_differences
 )]
 
+use std::fmt;
 use std::time::Duration;
 
 mod bitmap;
@@ -185,18 +186,45 @@ pub use sys::config::Config;
 /// [`Future`]: std::future::Future
 /// [`AsyncFd::write`]: AsyncFd::write
 /// [`Write`]: io::Write
-#[derive(Debug)]
+#[repr(transparent)]
 pub struct Ring {
-    // TODO(port).
+    sys: sys::Ring,
 }
 
 impl Ring {
+    /// Configure a `Ring`.
+    ///
+    /// For io_uring `entries` is the size of the submission queue (passed to
+    /// `io_uring_setup(2)`). It must be a power of two and in the range
+    /// 1..=4096.
+    ///
+    /// For kqueue `entries` is the number of events that can be collected in a
+    /// single call to `kevent(2)`.
+    ///
+    /// # Notes
+    ///
+    /// A10 uses `IORING_SETUP_SQPOLL` by default for io_uring, which required
+    /// Linux kernel 5.11 to work correctly. Furthermore before Linux 5.13 the
+    /// user needs the `CAP_SYS_NICE` capability if run as non-root. This can be
+    /// disabled by [`Config::with_kernel_thread`].
+    pub const fn config<'r>(entries: u32) -> Config<'r> {
+        Config::new(entries)
+    }
+
+    /// Create a new `Ring` with the default configuration.
+    ///
+    /// For more configuration options see [`Config`].
+    #[doc(alias = "io_uring_setup")]
+    #[doc(alias = "kqueue")]
+    pub fn new(entries: u32) -> io::Result<Ring> {
+        Config::new(entries).build()
+    }
+
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
     pub const fn submission_queue(&self) -> &SubmissionQueue {
-        // TODO(port).
-        todo!()
+        self.sys.submission_queue()
     }
 
     /// Poll the ring for completions.
@@ -211,10 +239,16 @@ impl Ring {
     ///
     /// [`Future`]: std::future::Future
     #[doc(alias = "io_uring_enter")]
+    #[doc(alias = "kevent")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        // TODO(port).
-        _ = timeout;
-        todo!("Ring::poll")
+        self.sys.poll(timeout)
+    }
+}
+
+impl fmt::Debug for Ring {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO.
+        f.write_str("Ring")
     }
 }
 
@@ -225,9 +259,10 @@ impl Ring {
 /// [`Ring::submission_queue`].
 ///
 /// The submission queue can be shared by cloning it, it's a cheap operation.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
+#[repr(transparent)]
 pub struct SubmissionQueue {
-    // TODO(port).
+    sys: sys::SubmissionQueue,
 }
 
 impl SubmissionQueue {
@@ -235,8 +270,14 @@ impl SubmissionQueue {
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
-        // TODO(port).
-        todo!("SubmissionQueue::wake")
+        self.sys.wake()
+    }
+}
+
+impl fmt::Debug for SubmissionQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO.
+        f.write_str("Ring")
     }
 }
 
