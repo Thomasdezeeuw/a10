@@ -51,8 +51,11 @@ impl crate::sq::Submissions for Shared {
         // SAFETY: all zero is valid for `libc::kevent`.
         let mut event = unsafe { mem::zeroed() };
         submit(&mut event);
+        event.0.flags = libc::EV_ADD | libc::EV_RECEIPT | libc::EV_ONESHOT;
+        // TODO: see if we can replace `EV_ONESHOT` with `EV_DISPATCH`, might be
+        // a cheaper operation.
 
-        // Submit the event.
+        // Add the event to the list of waiting events.
         let mut change_list = self.change_list.lock().unwrap();
         change_list.push(event);
         // If we haven't collected enough events yet we're done quickly.
@@ -61,7 +64,7 @@ impl crate::sq::Submissions for Shared {
             return Ok(());
         }
 
-        // Take ownership of the change list to submit it.
+        // Take ownership of the change list to submit it to the kernel.
         let mut changes = mem::replace(&mut *change_list, Vec::new());
         drop(change_list); // Unlock, to not block others.
 
@@ -87,16 +90,19 @@ impl crate::sq::Submissions for Shared {
             // fails with EINTR error, all changes in the changelist have been
             // applied", so we can safely ignore it.
             if err.raw_os_error() != Some(libc::EINTR) {
-                // TODO: proper error handling.
-                log::error!("failed to submit change list, dropping changes: {changes:?}");
-                return Ok(());
+                // NOTE: this should never happen.
+                log::warn!("failed to submit change list: {err}, dropping changes: {changes:?}");
             }
         }
         // Check all events for possible errors and log them.
         for event in &changes {
+            // NOTE: this can happen if one of the file descriptors was closed
+            // before the change was submitted to the kernel. We'll log it, but
+            // otherwise ignore it.
             if let Some(err) = event.error() {
-                // TODO: proper error handling.
-                log::error!("change submission errored: {err}, event: {event:?}");
+                // TODO: see if we can some how get this error to the operation
+                // that submitted it.
+                log::warn!("submitted change has an error: {err}, event: {event:?}, dropping it");
             }
         }
 
@@ -109,8 +115,10 @@ impl crate::sq::Submissions for Shared {
 
 impl fmt::Debug for Shared {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("Shared")
+        f.debug_struct("kqueue::Shared")
+            .field("kq", &self.kq)
+            .field("change_list", &self.change_list)
+            .finish()
     }
 }
 
@@ -121,7 +129,9 @@ pub(crate) struct Completions {
 
 impl Completions {
     pub(crate) fn new(events_capacity: usize) -> Completions {
-        let events = Vec::with_capacity(events_capacity);
+        // NOTE: the `events` capacity must be at least MAX_CHANGE_LIST_SIZE to
+        // ensure we can handle all submission errors.
+        let events = Vec::with_capacity(cmp::max(events_capacity, MAX_CHANGE_LIST_SIZE));
         Completions { events }
     }
 }
@@ -146,7 +156,7 @@ impl crate::cq::Completions for Completions {
             tv_nsec: libc::c_long::from(to.subsec_nanos() as i32),
         });
 
-        // Submit any submission to the kernel.
+        // Submit any submissions (changes) to the kernel.
         let mut change_list = shared.change_list.lock().unwrap();
         let mut changes = if change_list.is_empty() {
             Vec::new() // No point in taking an empty vector.
@@ -170,6 +180,7 @@ impl crate::cq::Completions for Completions {
                 .map(|s| s as *const _)
                 .unwrap_or(ptr::null_mut()),
         ));
+        let mut result_err = None;
         match result {
             // SAFETY: `kevent` ensures that `n` events are written.
             Ok(n) => unsafe { self.events.set_len(n as usize) },
@@ -179,30 +190,33 @@ impl crate::cq::Completions for Completions {
                 // applied", so we can safely ignore it. We'll have zero
                 // completions though.
                 if err.raw_os_error() != Some(libc::EINTR) {
-                    return Err(err);
+                    if !changes.is_empty() {
+                        log::warn!(
+                            "failed to submit change list: {err}, dropping changes: {changes:?}"
+                        );
+                    }
+                    result_err = Some(err);
                 }
-            }
-        }
-
-        // Check all events for possible errors and log them.
-        for event in &changes {
-            if let Some(err) = event.error() {
-                // TODO: proper error handling.
-                log::error!("change submission errored: {err}, event: {event:?}");
             }
         }
 
         changes.clear();
         shared.merge_change_list(changes);
 
-        Ok(self.events.iter())
+        if let Some(err) = result_err {
+            Err(err)
+        } else {
+            Ok(self.events.iter())
+        }
     }
 }
 
+/// Wrapper around `libc::kevent` to implementation traits and methods.
 #[repr(transparent)] // Requirement for `kevent` calls.
 pub(crate) struct Event(libc::kevent);
 
 impl Event {
+    /// Returns an error from the event, if any.
     fn error(&self) -> Option<io::Error> {
         // We can't use references to packed structures (in checking the ignored
         // errors), so we need copy the data out before use.
@@ -264,6 +278,6 @@ unsafe impl Sync for Event {}
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
-        f.write_str("CompletitionEvent")
+        f.write_str("kqueue::Event")
     }
 }
