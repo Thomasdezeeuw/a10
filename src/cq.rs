@@ -9,11 +9,14 @@ use crate::SharedState;
 /// Queue of completion events.
 pub(crate) struct Queue<C: Completions> {
     completions: C,
-    shared: Arc<SharedState<C>>,
+    shared: Arc<SharedState<C::Shared, <C::Event as Event>::State>>,
 }
 
 impl<C: Completions> Queue<C> {
-    pub(crate) const fn new(completions: C, shared: Arc<SharedState<C>>) -> Queue<C> {
+    pub(crate) const fn new(
+        completions: C,
+        shared: Arc<SharedState<C::Shared, <C::Event as Event>::State>>,
+    ) -> Queue<C> {
         Queue {
             completions,
             shared,
@@ -57,17 +60,17 @@ impl<C: Completions> Queue<C> {
 impl<C: Completions> fmt::Debug for Queue<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
-        f.write_str("Queue")
+        f.write_str("cq::Queue")
     }
 }
 
 /// Poll for completition events.
 pub(crate) trait Completions: fmt::Debug {
-    /// Completiton [`Event`] (ce).
-    type Event: Event + Sized;
-
     /// Data shared between the submission and completion queues.
     type Shared: Sized;
+
+    /// Completiton [`Event`] (ce).
+    type Event: Event + Sized;
 
     /// Poll for new completion events.
     fn poll<'a>(
