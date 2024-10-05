@@ -250,6 +250,7 @@ macro_rules! man_link {
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
+        #[allow(unused_unsafe)]
         let res = unsafe { libc::$fn($( $arg, )*) };
         if res == -1 {
             ::std::result::Result::Err(::std::io::Error::last_os_error())
