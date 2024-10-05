@@ -8,7 +8,7 @@ use std::os::fd::OwnedFd;
 pub(crate) mod config;
 mod cq;
 
-pub(crate) use cq::Poll;
+pub(crate) use cq::Completions;
 
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.

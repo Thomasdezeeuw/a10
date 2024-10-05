@@ -6,26 +6,26 @@ use crate::sys::Shared;
 use crate::syscall;
 
 #[derive(Debug)]
-pub(crate) struct Poll {
+pub(crate) struct Completions {
     events: Vec<Event>,
 }
 
-impl Poll {
-    pub(crate) fn new(events_capacity: usize) -> Poll {
+impl Completions {
+    pub(crate) fn new(events_capacity: usize) -> Completions {
         let events = Vec::with_capacity(events_capacity);
-        Poll { events }
+        Completions { events }
     }
 }
 
-impl crate::Poll for Poll {
-    type CompletionEvent = Event;
+impl crate::cq::Completions for Completions {
+    type Event = Event;
     type Shared = Shared;
 
     fn poll<'a>(
         &'a mut self,
         shared: &Self::Shared,
         timeout: Option<Duration>,
-    ) -> io::Result<impl Iterator<Item = &'a Self::CompletionEvent>> {
+    ) -> io::Result<impl Iterator<Item = &'a Self::Event>> {
         let timeout = timeout.map(|to| libc::timespec {
             tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64) as libc::time_t,
             // `Duration::subsec_nanos` is guaranteed to be less than one

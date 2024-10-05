@@ -4,8 +4,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-use crate::sys::{self, cq};
-use crate::{syscall, Ring};
+use crate::{sys, syscall, Ring};
 
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
@@ -30,7 +29,7 @@ impl<'r> Config<'r> {
         let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
         syscall!(fcntl(kq.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
         let shared = sys::Shared { kq };
-        let poll = cq::Poll::new(self.events_capacity as usize);
+        let poll = sys::Completions::new(self.events_capacity as usize);
         Ring::build(
             shared,
             poll,

@@ -197,7 +197,7 @@ use crate::bitmap::AtomicBitMap;
 #[repr(transparent)]
 pub struct Ring {
     sq: SubmissionQueue,
-    cq: cq::Queue<sys::Poll>,
+    cq: cq::Queue<sys::Completions>,
 }
 
 impl Ring {
@@ -230,13 +230,13 @@ impl Ring {
     }
 
     fn build(
-        shared_data: <sys::Poll as Poll>::Shared,
-        poll: sys::Poll,
+        shared_data: <sys::Completions as cq::Completions>::Shared,
+        completions: sys::Completions,
         queued_operations: usize,
     ) -> io::Result<Ring> {
         let shared = SharedState::new(shared_data, queued_operations);
         let sq = SubmissionQueue::new();
-        let cq = cq::Queue::new(poll, shared);
+        let cq = cq::Queue::new(completions, shared);
         Ok(Ring { sq, cq })
     }
 
@@ -265,27 +265,10 @@ impl Ring {
     }
 }
 
-/// Poll for completition events.
-// TODO: better name. Also remove Shared and move the rest to the cq module.
-pub(crate) trait Poll {
-    /// Completiton [`Event`] (ce).
-    type CompletionEvent: cq::Event + Sized;
-
-    /// Data shared between the submission and completion queues.
-    type Shared: Sized;
-
-    /// Poll for new completion events.
-    fn poll<'a>(
-        &'a mut self,
-        shared: &Self::Shared,
-        timeout: Option<Duration>,
-    ) -> io::Result<impl Iterator<Item = &'a Self::CompletionEvent>>;
-}
-
 /// State shared between the submission and completion side.
-struct SharedState<P: Poll> {
+struct SharedState<C: cq::Completions> {
     /// Data shared between the submission and completion queues.
-    data: P::Shared,
+    data: C::Shared,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
     /// Bitmap which can be used to create an id (index) into `queued_ops`.
@@ -293,13 +276,13 @@ struct SharedState<P: Poll> {
     /// State of queued operations, holds the (would be) result and
     /// `task::Waker`. It's used when adding new operations and when marking
     /// operations as complete (by the kernel).
-    queued_ops: Box<[Mutex<Option<QueuedOperation<P::CompletionEvent>>>]>,
+    queued_ops: Box<[Mutex<Option<QueuedOperation<C::Event>>>]>,
 }
 
-impl<P: Poll> SharedState<P> {
+impl<C: cq::Completions> SharedState<C> {
     /// `queued_operations` is the number of queued operations, will be rounded
     /// up depending on the capacity of `AtomicBitMap`.
-    fn new(data: P::Shared, queued_operations: usize) -> Arc<SharedState<P>> {
+    fn new(data: C::Shared, queued_operations: usize) -> Arc<SharedState<C>> {
         let op_indices = AtomicBitMap::new(queued_operations);
         let mut queued_ops = Vec::with_capacity(op_indices.capacity());
         queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
@@ -313,7 +296,10 @@ impl<P: Poll> SharedState<P> {
     }
 }
 
-impl<P: Poll> fmt::Debug for SharedState<P> {
+impl<C: cq::Completions> fmt::Debug for SharedState<C>
+where
+    C::Shared: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
         f.write_str("SharedState")

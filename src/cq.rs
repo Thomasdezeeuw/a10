@@ -4,22 +4,24 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
 
-use crate::{Poll, SharedState};
+use crate::SharedState;
 
 /// Queue of completion events.
-#[derive(Debug)]
-pub(crate) struct Queue<P: Poll> {
-    poll: P,
-    shared: Arc<SharedState<P>>,
+pub(crate) struct Queue<C: Completions> {
+    completions: C,
+    shared: Arc<SharedState<C>>,
 }
 
-impl<P: Poll> Queue<P> {
-    pub(crate) const fn new(poll: P, shared: Arc<SharedState<P>>) -> Queue<P> {
-        Queue { poll, shared }
+impl<C: Completions> Queue<C> {
+    pub(crate) const fn new(completions: C, shared: Arc<SharedState<C>>) -> Queue<C> {
+        Queue {
+            completions,
+            shared,
+        }
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        for completion in self.poll.poll(&self.shared.data, timeout)? {
+        for completion in self.completions.poll(&self.shared.data, timeout)? {
             log::trace!(completion:? = completion; "dequeued completion event");
             let id = completion.id();
             let Some(queued_op) = self.shared.queued_ops.get(id) else {
@@ -50,6 +52,29 @@ impl<P: Poll> Queue<P> {
         }
         Ok(())
     }
+}
+
+impl<C: Completions> fmt::Debug for Queue<C> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO.
+        f.write_str("Queue")
+    }
+}
+
+/// Poll for completition events.
+pub(crate) trait Completions: fmt::Debug {
+    /// Completiton [`Event`] (ce).
+    type Event: Event + Sized;
+
+    /// Data shared between the submission and completion queues.
+    type Shared: Sized;
+
+    /// Poll for new completion events.
+    fn poll<'a>(
+        &'a mut self,
+        shared: &Self::Shared,
+        timeout: Option<Duration>,
+    ) -> io::Result<impl Iterator<Item = &'a Self::Event>>;
 }
 
 /// Completition event.
