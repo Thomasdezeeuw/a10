@@ -5,12 +5,13 @@ use std::{cmp, fmt, io, ptr};
 use crate::sys::Shared;
 use crate::syscall;
 
+#[derive(Debug)]
 pub(crate) struct Poll {
-    events: Vec<CompletionEvent>,
+    events: Vec<Event>,
 }
 
 impl crate::Poll for Poll {
-    type CompletionEvent = CompletionEvent;
+    type CompletionEvent = Event;
     type Shared = Shared;
 
     fn poll<'a>(
@@ -36,8 +37,8 @@ impl crate::Poll for Poll {
             shared.kq.as_raw_fd(),
             ptr::null(),
             0,
-            // SAFETY: casting `CompletionEvent` to `libc::kevent` is safe due
-            // to `repr(transparent)` on `CompletionEvent`.
+            // SAFETY: casting `Event` to `libc::kevent` is safe due to
+            // `repr(transparent)` on `Event`.
             self.events.as_mut_ptr().cast(),
             self.events.capacity() as _,
             timeout,
@@ -50,9 +51,9 @@ impl crate::Poll for Poll {
 }
 
 #[repr(transparent)] // Requirement for `kevent` calls.
-pub(crate) struct CompletionEvent(libc::kevent);
+pub(crate) struct Event(libc::kevent);
 
-impl crate::cq::Event for CompletionEvent {
+impl crate::cq::Event for Event {
     /// No additional state is needed.
     type State = ();
 
@@ -65,7 +66,7 @@ impl crate::cq::Event for CompletionEvent {
     }
 }
 
-impl fmt::Debug for CompletionEvent {
+impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
         f.write_str("CompletitionEvent")
@@ -73,5 +74,5 @@ impl fmt::Debug for CompletionEvent {
 }
 
 // SAFETY: `libc::kevent` is thread safe.
-unsafe impl Send for CompletionEvent {}
-unsafe impl Sync for CompletionEvent {}
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
