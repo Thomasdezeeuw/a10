@@ -142,10 +142,10 @@ use std::time::Duration;
 mod bitmap;
 mod drop_waker;
 
-#[cfg(target_os = "linux")]
-mod io_uring;
-
-#[cfg(any(
+#[cfg_attr(any(
+    target_os = "linux",
+), path = "io_uring/mod.rs")]
+#[cfg_attr(any(
     target_os = "dragonfly",
     target_os = "freebsd",
     target_os = "ios",
@@ -155,8 +155,8 @@ mod io_uring;
     target_os = "tvos",
     target_os = "visionos",
     target_os = "watchos",
-))]
-mod kqueue;
+), path = "kqueue/mod.rs")]
+mod sys;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
