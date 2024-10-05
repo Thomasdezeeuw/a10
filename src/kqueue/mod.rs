@@ -1,15 +1,14 @@
 //! kqueue implementation.
 
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Mutex;
-use std::{fmt, mem};
+use std::time::Duration;
+use std::{cmp, fmt, io, mem, ptr};
 
 use crate::sq::QueueFull;
+use crate::syscall;
 
 pub(crate) mod config;
-mod cq;
-
-pub(crate) use cq::Completions;
 
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
@@ -39,6 +38,58 @@ impl fmt::Debug for Shared {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct Completions {
+    events: Vec<Event>,
+}
+
+impl Completions {
+    pub(crate) fn new(events_capacity: usize) -> Completions {
+        let events = Vec::with_capacity(events_capacity);
+        Completions { events }
+    }
+}
+
+impl crate::cq::Completions for Completions {
+    type Event = Event;
+    type Shared = Shared;
+
+    fn poll<'a>(
+        &'a mut self,
+        shared: &Self::Shared,
+        timeout: Option<Duration>,
+    ) -> io::Result<impl Iterator<Item = &'a Self::Event>> {
+        let timeout = timeout.map(|to| libc::timespec {
+            tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64) as libc::time_t,
+            // `Duration::subsec_nanos` is guaranteed to be less than one
+            // billion (the number of nanoseconds in a second), making the
+            // cast to i32 safe. The cast itself is needed for platforms
+            // where C's long is only 32 bits.
+            tv_nsec: libc::c_long::from(to.subsec_nanos() as i32),
+        });
+        let timeout = timeout
+            .as_ref()
+            .map(|s| s as *const _)
+            .unwrap_or(ptr::null_mut());
+
+        self.events.clear();
+        let n = syscall!(kevent(
+            shared.kq.as_raw_fd(),
+            ptr::null(),
+            0,
+            // SAFETY: casting `Event` to `libc::kevent` is safe due to
+            // `repr(transparent)` on `Event`.
+            self.events.as_mut_ptr().cast(),
+            self.events.capacity() as _,
+            timeout,
+        ))?;
+        // This is safe because `kevent` ensures that `n` events are written.
+        unsafe { self.events.set_len(n as usize) };
+
+        Ok(self.events.iter())
+    }
+}
+
 #[repr(transparent)] // Requirement for `kevent` calls.
 pub(crate) struct Event(libc::kevent);
 
@@ -61,13 +112,13 @@ impl crate::sq::Submission for Event {
     }
 }
 
+// SAFETY: `libc::kevent` is thread safe.
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}
+
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
         f.write_str("CompletitionEvent")
     }
 }
-
-// SAFETY: `libc::kevent` is thread safe.
-unsafe impl Send for Event {}
-unsafe impl Sync for Event {}
