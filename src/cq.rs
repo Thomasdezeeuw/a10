@@ -1,5 +1,6 @@
 //! Completion Queue.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
@@ -24,7 +25,16 @@ impl<C: Completions> Queue<C> {
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        for completion in self.completions.poll(&self.shared.data, timeout)? {
+        self.shared.is_polling.store(true, Ordering::Release);
+        let completions = match self.completions.poll(&self.shared.data, timeout) {
+            Ok(completions) => completions,
+            Err(err) => {
+                self.shared.is_polling.store(false, Ordering::Release);
+                return Err(err);
+            }
+        };
+
+        for completion in completions {
             log::trace!(completion:? = completion; "dequeued completion event");
             let id = completion.id();
             let Some(queued_op) = self.shared.queued_ops.get(id) else {
@@ -53,6 +63,7 @@ impl<C: Completions> Queue<C> {
                 waker.wake();
             }
         }
+        self.shared.is_polling.store(false, Ordering::Release);
         Ok(())
     }
 }
