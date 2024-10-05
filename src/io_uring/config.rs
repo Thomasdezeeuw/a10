@@ -8,8 +8,8 @@ use std::time::Duration;
 use std::{io, ptr};
 
 use crate::bitmap::AtomicBitMap;
-use crate::sys::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
-use crate::syscall;
+use crate::sys::{libc, CompletionQueue, SharedSubmissionQueue};
+use crate::{sys, syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
@@ -25,7 +25,7 @@ pub struct Config<'r> {
     cpu_affinity: Option<u32>,
     idle_timeout: Option<u32>,
     direct_descriptors: Option<u32>,
-    attach: Option<&'r SubmissionQueue>,
+    attach: Option<&'r sys::SubmissionQueue>,
 }
 
 macro_rules! check_feature {
@@ -55,9 +55,9 @@ macro_rules! remove_flag {
 }
 
 impl<'r> Config<'r> {
-    pub(crate) const fn new(entries: u32) -> Config<'r> {
+    pub(crate) const fn new(submission_entries: u32) -> Config<'r> {
         Config {
-            submission_entries: entries,
+            submission_entries,
             completion_entries: None,
             disabled: false,
             single_issuer: false,
@@ -217,14 +217,15 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach(self, other_ring: &'r Ring) -> Self {
-        self.attach_queue(other_ring.submission_queue())
+    pub const fn attach(mut self, other_ring: &'r Ring) -> Self {
+        self.attach = Some(&other_ring.sys.sq);
+        self
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach_queue(mut self, other_ring: &'r SubmissionQueue) -> Self {
-        self.attach = Some(other_ring);
+        self.attach = Some(&other_ring.sys);
         self
     }
 
@@ -321,7 +322,9 @@ impl<'r> Config<'r> {
             )?;
         }
 
-        Ok(Ring { cq, sq })
+        Ok(Ring {
+            sys: sys::Ring { cq, sq },
+        })
     }
 }
 
@@ -329,7 +332,7 @@ impl<'r> Config<'r> {
 fn mmap_submission_queue(
     ring_fd: OwnedFd,
     parameters: &libc::io_uring_params,
-) -> io::Result<SubmissionQueue> {
+) -> io::Result<sys::SubmissionQueue> {
     let size = parameters.sq_off.array + parameters.sq_entries * (size_of::<libc::__u32>() as u32);
 
     let submission_queue = mmap(
@@ -359,7 +362,7 @@ fn mmap_submission_queue(
 
     #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
     unsafe {
-        Ok(SubmissionQueue {
+        Ok(sys::SubmissionQueue {
             shared: Arc::new(SharedSubmissionQueue {
                 ring_fd,
                 ptr: submission_queue,
