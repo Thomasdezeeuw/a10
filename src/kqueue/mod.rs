@@ -10,10 +10,34 @@ use crate::syscall;
 
 pub(crate) mod config;
 
+/// Maximum size of the change list before it's submitted to the kernel, without
+/// waiting on a call to poll.
+// TODO: make this configurable.
+const MAX_CHANGE_LIST_SIZE: usize = 64;
+
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
     kq: OwnedFd,
     change_list: Mutex<Vec<Event>>,
+}
+
+impl Shared {
+    /// Merge the change list.
+    ///
+    /// Reusing allocations (if it makes sense).
+    fn merge_change_list(&self, mut changes: Vec<Event>) {
+        if changes.capacity() == 0 {
+            return;
+        }
+
+        let mut change_list = self.change_list.lock().unwrap();
+        if change_list.len() < changes.capacity() {
+            // Existing is smaller than `changes` alloc, reuse it.
+            mem::swap(&mut *change_list, &mut changes);
+        }
+        change_list.append(&mut changes);
+        drop(change_list); // Unlock before any deallocations.
+    }
 }
 
 impl crate::sq::Submissions for Shared {
@@ -23,10 +47,62 @@ impl crate::sq::Submissions for Shared {
     where
         F: FnOnce(&mut Self::Submission),
     {
+        // Create and fill the submission event.
         // SAFETY: all zero is valid for `libc::kevent`.
         let mut event = unsafe { mem::zeroed() };
         submit(&mut event);
-        self.change_list.lock().unwrap().push(event);
+
+        // Submit the event.
+        let mut change_list = self.change_list.lock().unwrap();
+        change_list.push(event);
+        // If we haven't collected enough events yet we're done quickly.
+        if change_list.len() < MAX_CHANGE_LIST_SIZE {
+            drop(change_list); // Unlock first.
+            return Ok(());
+        }
+
+        // Take ownership of the change list to submit it.
+        let mut changes = mem::replace(&mut *change_list, Vec::new());
+        drop(change_list); // Unlock, to not block others.
+
+        // Submit the all changes to the kernel.
+        let timeout = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        let result = syscall!(kevent(
+            self.kq.as_raw_fd(),
+            // SAFETY: casting `Event` to `libc::kevent` is safe due to
+            // `repr(transparent)` on `Event`.
+            changes.as_ptr().cast(),
+            changes.len() as _,
+            // SAFETY: casting `Event` to `libc::kevent` is safe due to
+            // `repr(transparent)` on `Event`.
+            changes.as_mut_ptr().cast(),
+            changes.capacity() as _,
+            &timeout,
+        ));
+        if let Err(err) = result {
+            // According to the manual page of FreeBSD: "When kevent() call
+            // fails with EINTR error, all changes in the changelist have been
+            // applied", so we can safely ignore it.
+            if err.raw_os_error() != Some(libc::EINTR) {
+                // TODO: proper error handling.
+                log::error!("failed to submit change list, dropping changes: {changes:?}");
+                return Ok(());
+            }
+        }
+        // Check all events for possible errors and log them.
+        for event in &changes {
+            if let Some(err) = event.error() {
+                // TODO: proper error handling.
+                log::error!("change submission errored: {err}, event: {event:?}");
+            }
+        }
+
+        // Reuse the change list allocation (if it makes sense).
+        changes.clear();
+        self.merge_change_list(changes);
         Ok(())
     }
 }
@@ -59,6 +135,8 @@ impl crate::cq::Completions for Completions {
         shared: &Self::Shared,
         timeout: Option<Duration>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>> {
+        self.events.clear();
+
         let timeout = timeout.map(|to| libc::timespec {
             tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64) as libc::time_t,
             // `Duration::subsec_nanos` is guaranteed to be less than one
@@ -67,24 +145,55 @@ impl crate::cq::Completions for Completions {
             // where C's long is only 32 bits.
             tv_nsec: libc::c_long::from(to.subsec_nanos() as i32),
         });
-        let timeout = timeout
-            .as_ref()
-            .map(|s| s as *const _)
-            .unwrap_or(ptr::null_mut());
 
-        self.events.clear();
-        let n = syscall!(kevent(
+        // Submit any submission to the kernel.
+        let mut change_list = shared.change_list.lock().unwrap();
+        let mut changes = if change_list.is_empty() {
+            Vec::new() // No point in taking an empty vector.
+        } else {
+            mem::replace(&mut *change_list, Vec::new())
+        };
+        drop(change_list); // Unlock, to not block others.
+
+        let result = syscall!(kevent(
             shared.kq.as_raw_fd(),
-            ptr::null(),
-            0,
+            // SAFETY: casting `Event` to `libc::kevent` is safe due to
+            // `repr(transparent)` on `Event`.
+            changes.as_ptr().cast(),
+            changes.capacity() as _,
             // SAFETY: casting `Event` to `libc::kevent` is safe due to
             // `repr(transparent)` on `Event`.
             self.events.as_mut_ptr().cast(),
             self.events.capacity() as _,
-            timeout,
-        ))?;
-        // This is safe because `kevent` ensures that `n` events are written.
-        unsafe { self.events.set_len(n as usize) };
+            timeout
+                .as_ref()
+                .map(|s| s as *const _)
+                .unwrap_or(ptr::null_mut()),
+        ));
+        match result {
+            // SAFETY: `kevent` ensures that `n` events are written.
+            Ok(n) => unsafe { self.events.set_len(n as usize) },
+            Err(err) => {
+                // According to the manual page of FreeBSD: "When kevent() call
+                // fails with EINTR error, all changes in the changelist have been
+                // applied", so we can safely ignore it. We'll have zero
+                // completions though.
+                if err.raw_os_error() != Some(libc::EINTR) {
+                    return Err(err);
+                }
+            }
+        }
+
+        // Check all events for possible errors and log them.
+        for event in &changes {
+            if let Some(err) = event.error() {
+                // TODO: proper error handling.
+                log::error!("change submission errored: {err}, event: {event:?}");
+            }
+        }
+
+        changes.clear();
+        shared.merge_change_list(changes);
 
         Ok(self.events.iter())
     }
@@ -92,6 +201,42 @@ impl crate::cq::Completions for Completions {
 
 #[repr(transparent)] // Requirement for `kevent` calls.
 pub(crate) struct Event(libc::kevent);
+
+impl Event {
+    fn error(&self) -> Option<io::Error> {
+        // We can't use references to packed structures (in checking the ignored
+        // errors), so we need copy the data out before use.
+        let data = self.0.data as i64;
+        // Check for the error flag, the actual error will be in the `data`
+        // field.
+        //
+        // Older versions of macOS (OS X 10.11 and 10.10 have been witnessed)
+        // can return EPIPE when registering a pipe file descriptor where the
+        // other end has already disappeared. For example code that creates a
+        // pipe, closes a file descriptor, and then registers the other end will
+        // see an EPIPE returned from `register`.
+        //
+        // It also turns out that kevent will still report events on the file
+        // descriptor, telling us that it's readable/hup at least after we've
+        // done this registration. As a result we just ignore `EPIPE` here
+        // instead of propagating it.
+        //
+        // More info can be found at tokio-rs/mio#582.
+        //
+        // The ENOENT error informs us that a filter we're trying to remove
+        // wasn't there in first place, but we don't really care since our goal
+        // is accomplished.
+        if (self.0.flags & libc::EV_ERROR != 0)
+            && data != 0
+            && data != libc::EPIPE as i64
+            && data != libc::ENOENT as i64
+        {
+            Some(io::Error::from_raw_os_error(data as i32))
+        } else {
+            None
+        }
+    }
+}
 
 impl crate::cq::Event for Event {
     /// No additional state is needed.
