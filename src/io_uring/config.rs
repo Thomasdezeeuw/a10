@@ -8,12 +8,9 @@ use std::time::Duration;
 use std::{io, ptr};
 
 use crate::bitmap::AtomicBitMap;
-use crate::io_uring::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
+use crate::sys::{libc, CompletionQueue, Ring, SharedSubmissionQueue, SubmissionQueue};
 use crate::syscall;
 
-/// Configuration of a [`Ring`].
-///
-/// Created by calling [`Ring::config`].
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.
@@ -58,7 +55,6 @@ macro_rules! remove_flag {
 }
 
 impl<'r> Config<'r> {
-    /// Create a new `Config`.
     pub(crate) const fn new(entries: u32) -> Config<'r> {
         Config {
             submission_entries: entries,
