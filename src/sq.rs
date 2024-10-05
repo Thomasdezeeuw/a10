@@ -16,7 +16,7 @@ impl<S: Submissions, CE: Default> Queue<S, CE> {
         Queue { shared }
     }
 
-    /// Add a new submission, returns an id.
+    /// Add a new submission, returns the id (index).
     pub(crate) fn add<F>(&self, submit: F) -> Result<usize, QueueFull>
     where
         F: FnOnce(&mut S::Submission),
@@ -35,10 +35,19 @@ impl<S: Submissions, CE: Default> Queue<S, CE> {
         debug_assert!(old_queued_op.is_none());
 
         // TODO: not great naming `data.add`. Maybe rename the method?
-        shared.data.add(|submission| {
+        let result = shared.data.add(|submission| {
             submit(submission);
             submission.set_id(id);
-        })?;
+        });
+        if let Err(QueueFull) = result {
+            // Release operation slot.
+            {
+                *shared.queued_ops[id].lock().unwrap() = None;
+            }
+            shared.op_indices.make_available(id);
+
+            return Err(QueueFull);
+        }
 
         Ok(id)
     }
@@ -89,12 +98,12 @@ pub(crate) trait Submissions: fmt::Debug {
     fn wake(&self) -> io::Result<()>;
 }
 
-/// Submission queue is full.
-pub(crate) struct QueueFull;
-
 /// Submission event.
 pub(crate) trait Submission: fmt::Debug {
     /// Set the identifier (index) of the completion events related to this
     /// submission.
     fn set_id(&mut self, id: usize);
 }
+
+/// Submission queue is full.
+pub(crate) struct QueueFull;
