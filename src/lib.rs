@@ -270,6 +270,7 @@ impl Ring {
 }
 
 /// State shared between the submission and completion side.
+#[derive(Debug)]
 struct SharedState<S, CE> {
     /// Data shared between the submission and completion queues.
     data: S,
@@ -304,14 +305,8 @@ impl<S, CE> SharedState<S, CE> {
     }
 }
 
-impl<S: fmt::Debug, CE: fmt::Debug> fmt::Debug for SharedState<S, CE> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("SharedState")
-    }
-}
-
 /// In progress/queued operation.
+#[derive(Debug)]
 struct QueuedOperation<T> {
     /// State of the operation.
     state: T,
@@ -377,8 +372,7 @@ impl SubmissionQueue {
 
 impl fmt::Debug for SubmissionQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("SubmissionQueue")
+        self.inner.fmt(f)
     }
 }
 
