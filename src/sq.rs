@@ -69,8 +69,9 @@ impl<S: Submissions, CE> Clone for Queue<S, CE> {
 
 impl<S: Submissions + fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("sq::Queue")
+        f.debug_struct("sq::Queue")
+            .field("shared", &self.shared)
+            .finish()
     }
 }
 

@@ -70,15 +70,17 @@ impl<C: Completions> Queue<C> {
 
 impl<C: Completions> fmt::Debug for Queue<C> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("cq::Queue")
+        f.debug_struct("cq::Queue")
+            .field("completions", &self.completions)
+            .field("shared", &self.shared)
+            .finish()
     }
 }
 
 /// Poll for completition events.
 pub(crate) trait Completions: fmt::Debug {
     /// Data shared between the submission and completion queues.
-    type Shared: Sized;
+    type Shared: fmt::Debug + Sized;
 
     /// Completiton [`Event`] (ce).
     type Event: Event + Sized;
@@ -94,7 +96,7 @@ pub(crate) trait Completions: fmt::Debug {
 /// Completition event.
 pub(crate) trait Event: fmt::Debug {
     /// State of an operation.
-    type State: Default;
+    type State: Default + fmt::Debug;
 
     /// Identifier (index) of the event.
     fn id(&self) -> usize;
