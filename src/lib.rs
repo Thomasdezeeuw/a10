@@ -138,11 +138,15 @@
 )]
 
 use std::fmt;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
+use std::task;
 use std::time::Duration;
 
 mod bitmap;
 mod drop_waker;
 
+mod cq;
 #[cfg_attr(any(target_os = "linux"), path = "io_uring/mod.rs")]
 #[cfg_attr(
     any(
@@ -173,6 +177,8 @@ pub use fd::AsyncFd;
 #[doc(inline)]
 pub use sys::config::Config;
 
+use crate::bitmap::AtomicBitMap;
+
 /// This type represents the user space side of an io_uring.
 ///
 /// An io_uring is split into two queues: the submissions and completions queue.
@@ -187,9 +193,11 @@ pub use sys::config::Config;
 /// [`Future`]: std::future::Future
 /// [`AsyncFd::write`]: AsyncFd::write
 /// [`Write`]: io::Write
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct Ring {
-    sys: sys::Ring,
+    sq: SubmissionQueue,
+    cq: cq::Queue<sys::Poll>,
 }
 
 impl Ring {
@@ -221,11 +229,22 @@ impl Ring {
         Config::new(entries).build()
     }
 
+    fn build(
+        shared_data: <sys::Poll as Poll>::Shared,
+        poll: sys::Poll,
+        queued_operations: usize,
+    ) -> io::Result<Ring> {
+        let shared = SharedState::new(shared_data, queued_operations);
+        let sq = SubmissionQueue::new();
+        let cq = cq::Queue::new(poll, shared);
+        Ok(Ring { sq, cq })
+    }
+
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
     pub const fn submission_queue(&self) -> &SubmissionQueue {
-        self.sys.submission_queue()
+        &self.sq
     }
 
     /// Poll the ring for completions.
@@ -242,15 +261,80 @@ impl Ring {
     #[doc(alias = "io_uring_enter")]
     #[doc(alias = "kevent")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        self.sys.poll(timeout)
+        self.cq.poll(timeout)
     }
 }
 
-impl fmt::Debug for Ring {
+/// Poll for completition events.
+// TODO: better name. Also remove Shared and move the rest to the cq module.
+pub(crate) trait Poll {
+    /// Completiton [`Event`] (ce).
+    type CompletionEvent: cq::Event + Sized;
+
+    /// Data shared between the submission and completion queues.
+    type Shared: Sized;
+
+    /// Poll for new completion events.
+    fn poll<'a>(
+        &'a mut self,
+        shared: &Self::Shared,
+        timeout: Option<Duration>,
+    ) -> io::Result<impl Iterator<Item = &'a Self::CompletionEvent>>;
+}
+
+/// State shared between the submission and completion side.
+struct SharedState<P: Poll> {
+    /// Data shared between the submission and completion queues.
+    data: P::Shared,
+    /// Boolean indicating a thread is [`Ring::poll`]ing.
+    is_polling: AtomicBool,
+    /// Bitmap which can be used to create an id (index) into `queued_ops`.
+    op_indices: Box<AtomicBitMap>,
+    /// State of queued operations, holds the (would be) result and
+    /// `task::Waker`. It's used when adding new operations and when marking
+    /// operations as complete (by the kernel).
+    queued_ops: Box<[Mutex<Option<QueuedOperation<P::CompletionEvent>>>]>,
+}
+
+impl<P: Poll> SharedState<P> {
+    /// `queued_operations` is the number of queued operations, will be rounded
+    /// up depending on the capacity of `AtomicBitMap`.
+    fn new(data: P::Shared, queued_operations: usize) -> Arc<SharedState<P>> {
+        let op_indices = AtomicBitMap::new(queued_operations);
+        let mut queued_ops = Vec::with_capacity(op_indices.capacity());
+        queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
+        let queued_ops = queued_ops.into_boxed_slice();
+        Arc::new(SharedState {
+            data,
+            is_polling: AtomicBool::new(false),
+            op_indices,
+            queued_ops,
+        })
+    }
+}
+
+impl<P: Poll> fmt::Debug for SharedState<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
-        f.write_str("Ring")
+        f.write_str("SharedState")
     }
+}
+
+/// In progress/queued operation.
+struct QueuedOperation<CE: cq::Event> {
+    /// State of the operation.
+    state: CE::State,
+    /// True if the connected `Future`/`AsyncIterator` is dropped and thus no
+    /// longer will retrieve the result.
+    dropped: bool,
+    /// Boolean used by operations that result in multiple completion events.
+    /// For example zero copy: one completion to report the result another to
+    /// indicate the resources are no longer used.
+    /// For io_uring multishot this will be true if no more completion events
+    /// are coming, for example in case a previous event returned an error.
+    done: bool,
+    /// Waker to wake when the operation is done.
+    waker: Option<task::Waker>,
 }
 
 /// Queue to submit asynchronous operations to.
@@ -263,15 +347,23 @@ impl fmt::Debug for Ring {
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct SubmissionQueue {
-    sys: sys::SubmissionQueue,
+    // TODO.
+    //sys: sys::SubmissionQueue,
 }
 
 impl SubmissionQueue {
+    fn new() -> SubmissionQueue {
+        SubmissionQueue {
+            // TODO.
+        }
+    }
+
     /// Wake the connected [`Ring`].
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
-        self.sys.wake()
+        todo!()
+        //self.sys.wake()
     }
 }
 

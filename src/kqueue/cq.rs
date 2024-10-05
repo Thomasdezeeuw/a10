@@ -10,6 +10,13 @@ pub(crate) struct Poll {
     events: Vec<Event>,
 }
 
+impl Poll {
+    pub(crate) fn new(events_capacity: usize) -> Poll {
+        let events = Vec::with_capacity(events_capacity);
+        Poll { events }
+    }
+}
+
 impl crate::Poll for Poll {
     type CompletionEvent = Event;
     type Shared = Shared;
@@ -61,7 +68,7 @@ impl crate::cq::Event for Event {
         self.0.udata as usize
     }
 
-    fn update_state(&self, state: &mut Self::State) -> bool {
+    fn update_state(&self, _: &mut Self::State) -> bool {
         false // Using `EV_ONESHOT`, so expecting one event.
     }
 }
