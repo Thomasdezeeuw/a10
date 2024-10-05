@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{cmp, fmt, io, mem, ptr};
 
 use crate::sq::QueueFull;
-use crate::syscall;
+use crate::{syscall, WAKE_ID};
 
 pub(crate) mod config;
 
@@ -14,6 +14,9 @@ pub(crate) mod config;
 /// waiting on a call to poll.
 // TODO: make this configurable.
 const MAX_CHANGE_LIST_SIZE: usize = 64;
+
+/// `kevent.udata` to indicate a waker.
+const WAKE_USER_DATA: usize = usize::MAX;
 
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
@@ -110,6 +113,25 @@ impl crate::sq::Submissions for Shared {
         changes.clear();
         self.merge_change_list(changes);
         Ok(())
+    }
+
+    fn wake(&self) -> io::Result<()> {
+        let mut kevent = libc::kevent {
+            ident: 0,
+            filter: libc::EVFILT_USER,
+            flags: libc::EV_ADD | libc::EV_RECEIPT,
+            fflags: libc::NOTE_TRIGGER,
+            udata: WAKE_ID as _,
+            // SAFETY: all zeros is valid for `libc::kevent`.
+            ..unsafe { mem::zeroed() }
+        };
+        let kq = self.kq.as_raw_fd();
+        syscall!(kevent(kq, &kevent, 1, &mut kevent, 1, ptr::null()))?;
+        if (kevent.flags & libc::EV_ERROR) != 0 && kevent.data != 0 {
+            Err(io::Error::from_raw_os_error(kevent.data as i32))
+        } else {
+            Ok(())
+        }
     }
 }
 

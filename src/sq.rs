@@ -1,6 +1,8 @@
 //! Submission Queue.
 
 use std::fmt;
+use std::io;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::SharedState;
@@ -21,6 +23,17 @@ impl<S: Submissions, CE> Queue<S, CE> {
     {
         _ = submit;
         todo!();
+    }
+
+    pub(crate) fn wake(&self) {
+        if !self.shared.is_polling.load(Ordering::Acquire) {
+            // Not polling, no need to wake up.
+            return;
+        }
+
+        if let Err(err) = self.shared.data.wake() {
+            log::error!("failed to wake a10::Ring: {err}");
+        }
     }
 }
 
@@ -52,6 +65,9 @@ pub(crate) trait Submissions: fmt::Debug {
     fn add<F>(&self, submit: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission);
+
+    /// Wake a polling thread.
+    fn wake(&self) -> io::Result<()>;
 }
 
 /// Submission queue is full.

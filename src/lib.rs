@@ -180,6 +180,9 @@ pub use sys::config::Config;
 
 use crate::bitmap::AtomicBitMap;
 
+/// Id to use for internal wake ups.
+const WAKE_ID: usize = usize::MAX;
+
 /// This type represents the user space side of an io_uring.
 ///
 /// An io_uring is split into two queues: the submissions and completions queue.
@@ -355,8 +358,7 @@ impl SubmissionQueue {
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
-        todo!()
-        //self.sys.wake()
+        self.inner.wake()
     }
 }
 
