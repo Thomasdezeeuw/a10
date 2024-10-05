@@ -46,7 +46,7 @@ impl<S: Submissions + fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
 /// Submit operations.
 pub(crate) trait Submissions: fmt::Debug {
     /// Type of the submission.
-    type Submission;
+    type Submission: Submission;
 
     /// Try to add a new submission.
     fn add<F>(&self, submit: F) -> Result<(), QueueFull>
@@ -56,3 +56,10 @@ pub(crate) trait Submissions: fmt::Debug {
 
 /// Submission queue is full.
 pub(crate) struct QueueFull;
+
+/// Submission event.
+pub(crate) trait Submission: fmt::Debug {
+    /// Set the identifier (index) of the completion events related to this
+    /// submission.
+    fn set_id(&mut self, id: usize);
+}
