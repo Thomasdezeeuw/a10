@@ -14,11 +14,11 @@ pub(crate) use cq::Completions;
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
     kq: OwnedFd,
-    change_list: Mutex<Vec<libc::kevent>>,
+    change_list: Mutex<Vec<Event>>,
 }
 
 impl crate::sq::Submissions for Shared {
-    type Submission = libc::kevent;
+    type Submission = Event;
 
     fn add<F>(&self, submit: F) -> Result<(), QueueFull>
     where
@@ -38,3 +38,36 @@ impl fmt::Debug for Shared {
         f.write_str("Shared")
     }
 }
+
+#[repr(transparent)] // Requirement for `kevent` calls.
+pub(crate) struct Event(libc::kevent);
+
+impl crate::cq::Event for Event {
+    /// No additional state is needed.
+    type State = ();
+
+    fn id(&self) -> usize {
+        self.0.udata as usize
+    }
+
+    fn update_state(&self, _: &mut Self::State) -> bool {
+        false // Using `EV_ONESHOT`, so expecting one event.
+    }
+}
+
+impl crate::sq::Submission for Event {
+    fn set_id(&mut self, id: usize) {
+        self.0.udata = id as _;
+    }
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // TODO.
+        f.write_str("CompletitionEvent")
+    }
+}
+
+// SAFETY: `libc::kevent` is thread safe.
+unsafe impl Send for Event {}
+unsafe impl Sync for Event {}

@@ -2,7 +2,7 @@ use std::os::fd::AsRawFd;
 use std::time::Duration;
 use std::{cmp, fmt, io, ptr};
 
-use crate::sys::Shared;
+use crate::sys::{Event, Shared};
 use crate::syscall;
 
 #[derive(Debug)]
@@ -56,30 +56,3 @@ impl crate::cq::Completions for Completions {
         Ok(self.events.iter())
     }
 }
-
-#[repr(transparent)] // Requirement for `kevent` calls.
-pub(crate) struct Event(libc::kevent);
-
-impl crate::cq::Event for Event {
-    /// No additional state is needed.
-    type State = ();
-
-    fn id(&self) -> usize {
-        self.0.udata as usize
-    }
-
-    fn update_state(&self, _: &mut Self::State) -> bool {
-        false // Using `EV_ONESHOT`, so expecting one event.
-    }
-}
-
-impl fmt::Debug for Event {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("CompletitionEvent")
-    }
-}
-
-// SAFETY: `libc::kevent` is thread safe.
-unsafe impl Send for Event {}
-unsafe impl Sync for Event {}

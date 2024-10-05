@@ -81,8 +81,6 @@ pub(crate) trait Completions: fmt::Debug {
 }
 
 /// Completition event.
-///
-/// NOTE: the actual implementation is platform dependent.
 pub(crate) trait Event: fmt::Debug {
     /// State of an operation.
     type State;
