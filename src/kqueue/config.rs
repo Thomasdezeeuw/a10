@@ -2,9 +2,10 @@
 
 use std::io;
 use std::marker::PhantomData;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 
-use crate::{sys, syscall, Ring};
+use crate::sys::{self, cq};
+use crate::{syscall, Ring};
 
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
@@ -28,9 +29,12 @@ impl<'r> Config<'r> {
         // SAFETY: `kqueue(2)` ensures the fd is valid.
         let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
         syscall!(fcntl(kq.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
-        let events = Vec::with_capacity(self.events_capacity as usize);
-        Ok(Ring {
-            sys: sys::Ring { kq, events },
-        })
+        let shared = sys::Shared { kq };
+        let poll = cq::Poll::new(self.events_capacity as usize);
+        Ring::build(
+            shared,
+            poll,
+            self.events_capacity as usize, // TODO: add option for # queued operations.
+        )
     }
 }
