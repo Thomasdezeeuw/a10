@@ -328,6 +328,17 @@ struct QueuedOperation<T> {
     waker: Option<task::Waker>,
 }
 
+impl<T: Default> QueuedOperation<T> {
+    fn new() -> QueuedOperation<T> {
+        QueuedOperation {
+            state: T::default(),
+            dropped: false,
+            done: false,
+            waker: None,
+        }
+    }
+}
+
 /// Queue to submit asynchronous operations to.
 ///
 /// This type doesn't have many public methods, but is used by all I/O types, to
