@@ -147,6 +147,7 @@ mod bitmap;
 mod drop_waker;
 
 mod cq;
+mod sq;
 #[cfg_attr(any(target_os = "linux"), path = "io_uring/mod.rs")]
 #[cfg_attr(
     any(
@@ -194,7 +195,6 @@ use crate::bitmap::AtomicBitMap;
 /// [`AsyncFd::write`]: AsyncFd::write
 /// [`Write`]: io::Write
 #[derive(Debug)]
-#[repr(transparent)]
 pub struct Ring {
     sq: SubmissionQueue,
     cq: cq::Queue<sys::Completions>,
@@ -235,7 +235,7 @@ impl Ring {
         queued_operations: usize,
     ) -> io::Result<Ring> {
         let shared = SharedState::new(shared_data, queued_operations);
-        let sq = SubmissionQueue::new();
+        let sq = SubmissionQueue::new(shared.clone());
         let cq = cq::Queue::new(completions, shared);
         Ok(Ring { sq, cq })
     }
@@ -266,9 +266,9 @@ impl Ring {
 }
 
 /// State shared between the submission and completion side.
-struct SharedState<C: cq::Completions> {
+struct SharedState<S, CE> {
     /// Data shared between the submission and completion queues.
-    data: C::Shared,
+    data: S,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
     /// Bitmap which can be used to create an id (index) into `queued_ops`.
@@ -276,30 +276,31 @@ struct SharedState<C: cq::Completions> {
     /// State of queued operations, holds the (would be) result and
     /// `task::Waker`. It's used when adding new operations and when marking
     /// operations as complete (by the kernel).
-    queued_ops: Box<[Mutex<Option<QueuedOperation<C::Event>>>]>,
+    queued_ops: Box<[Mutex<Option<QueuedOperation<CE>>>]>,
+    /// Futures that are waiting for a slot in `queued_ops`.
+    blocked_futures: Mutex<Vec<task::Waker>>,
 }
 
-impl<C: cq::Completions> SharedState<C> {
+impl<S, CE> SharedState<S, CE> {
     /// `queued_operations` is the number of queued operations, will be rounded
     /// up depending on the capacity of `AtomicBitMap`.
-    fn new(data: C::Shared, queued_operations: usize) -> Arc<SharedState<C>> {
+    fn new(data: S, queued_operations: usize) -> Arc<SharedState<S, CE>> {
         let op_indices = AtomicBitMap::new(queued_operations);
         let mut queued_ops = Vec::with_capacity(op_indices.capacity());
         queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
         let queued_ops = queued_ops.into_boxed_slice();
+        let blocked_futures = Mutex::new(Vec::new());
         Arc::new(SharedState {
             data,
             is_polling: AtomicBool::new(false),
             op_indices,
             queued_ops,
+            blocked_futures,
         })
     }
 }
 
-impl<C: cq::Completions> fmt::Debug for SharedState<C>
-where
-    C::Shared: fmt::Debug,
-{
+impl<S: fmt::Debug, CE: fmt::Debug> fmt::Debug for SharedState<S, CE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
         f.write_str("SharedState")
@@ -307,9 +308,9 @@ where
 }
 
 /// In progress/queued operation.
-struct QueuedOperation<CE: cq::Event> {
+struct QueuedOperation<T> {
     /// State of the operation.
-    state: CE::State,
+    state: T,
     /// True if the connected `Future`/`AsyncIterator` is dropped and thus no
     /// longer will retrieve the result.
     dropped: bool,
@@ -331,16 +332,22 @@ struct QueuedOperation<CE: cq::Event> {
 ///
 /// The submission queue can be shared by cloning it, it's a cheap operation.
 #[derive(Clone)]
-#[repr(transparent)]
 pub struct SubmissionQueue {
-    // TODO.
-    //sys: sys::SubmissionQueue,
+    inner:
+        sq::Queue<sys::Shared, <<sys::Completions as cq::Completions>::Event as cq::Event>::State>,
 }
 
 impl SubmissionQueue {
-    fn new() -> SubmissionQueue {
+    fn new(
+        shared: Arc<
+            SharedState<
+                sys::Shared,
+                <<sys::Completions as cq::Completions>::Event as cq::Event>::State,
+            >,
+        >,
+    ) -> SubmissionQueue {
         SubmissionQueue {
-            // TODO.
+            inner: sq::Queue::new(shared),
         }
     }
 
@@ -356,7 +363,7 @@ impl SubmissionQueue {
 impl fmt::Debug for SubmissionQueue {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // TODO.
-        f.write_str("Ring")
+        f.write_str("SubmissionQueue")
     }
 }
 

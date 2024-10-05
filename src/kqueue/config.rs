@@ -3,6 +3,7 @@
 use std::io;
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::sync::Mutex;
 
 use crate::{sys, syscall, Ring};
 
@@ -28,7 +29,8 @@ impl<'r> Config<'r> {
         // SAFETY: `kqueue(2)` ensures the fd is valid.
         let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
         syscall!(fcntl(kq.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
-        let shared = sys::Shared { kq };
+        let change_list = Mutex::new(Vec::new());
+        let shared = sys::Shared { kq, change_list };
         let poll = sys::Completions::new(self.events_capacity as usize);
         Ring::build(
             shared,
