@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
 
-use crate::{Implementation, SharedState};
+use crate::{Implementation, OperationId, SharedState};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {
@@ -54,7 +54,7 @@ impl<I: Implementation> Queue<I> {
                 *queued_op = None;
                 drop(queued_op);
                 log::trace!(id = id; "marking slot as available");
-                self.shared.op_indices.make_available(id);
+                self.shared.op_ids.make_available(id);
             } else if let Some(waker) = op.waker.take() {
                 log::trace!(completion:? = completion; "waking future");
                 waker.wake();
@@ -95,8 +95,8 @@ pub(crate) trait Event: fmt::Debug {
     /// State of an operation.
     type State: Default + fmt::Debug;
 
-    /// Identifier (index) of the event.
-    fn id(&self) -> usize;
+    /// Identifier of the operation.
+    fn id(&self) -> OperationId;
 
     /// Update the state of the operation.
     ///

@@ -4,7 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::{fmt, io, mem};
 
-use crate::{Implementation, QueuedOperation, SharedState};
+use crate::{Implementation, OperationId, QueuedOperation, SharedState};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {
@@ -23,7 +23,7 @@ impl<I: Implementation> Queue<I> {
     {
         // Get an id (index) to the queued operation list.
         let shared = &*self.shared;
-        let Some(id) = shared.op_indices.next_available() else {
+        let Some(id) = shared.op_ids.next_available() else {
             return Err(QueueFull);
         };
 
@@ -43,7 +43,7 @@ impl<I: Implementation> Queue<I> {
             {
                 *shared.queued_ops[id].lock().unwrap() = None;
             }
-            shared.op_indices.make_available(id);
+            shared.op_ids.make_available(id);
 
             return Err(QueueFull);
         }
@@ -102,9 +102,11 @@ pub(crate) trait Submissions: fmt::Debug {
 
 /// Submission event.
 pub(crate) trait Submission: fmt::Debug {
-    /// Set the identifier (index) of the completion events related to this
-    /// submission.
-    fn set_id(&mut self, id: usize);
+    /// Set the identifier of operation.
+    ///
+    /// This must cause the relevant [`cq::Event::id`] of the completion event
+    /// to return `id`.
+    fn set_id(&mut self, id: OperationId);
 }
 
 /// Submission queue is full.
