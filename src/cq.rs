@@ -3,7 +3,7 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{fmt, io};
+use std::{fmt, io, mem};
 
 use crate::{Implementation, OperationId, SharedState};
 
@@ -60,8 +60,33 @@ impl<I: Implementation> Queue<I> {
                 waker.wake();
             }
         }
+
+        self.wake_blocked_futures();
         self.shared.is_polling.store(false, Ordering::Release);
         Ok(())
+    }
+
+    /// Wake any futures that were blocked on a submission slot.
+    fn wake_blocked_futures(&mut self) {
+        // TODO: check the actual amount of submissions slot available and limit
+        // the amount of
+        let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
+        if !blocked_futures.is_empty() {
+            let mut wakers = mem::take(&mut *blocked_futures);
+            drop(blocked_futures); // Unblock other threads.
+            for waker in wakers.drain(..) {
+                waker.wake();
+            }
+
+            // Reuse allocation.
+            let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
+            mem::swap(&mut *blocked_futures, &mut wakers);
+            drop(blocked_futures);
+            // In case any wakers where added wake those as well.
+            for waker in wakers {
+                waker.wake();
+            }
+        }
     }
 }
 
