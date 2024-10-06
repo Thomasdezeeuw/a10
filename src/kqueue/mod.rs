@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{cmp, fmt, io, mem, ptr};
 
 use crate::sq::QueueFull;
-use crate::{syscall, WAKE_ID};
+use crate::{debug_detail, syscall, WAKE_ID};
 
 pub(crate) mod config;
 
@@ -250,6 +250,8 @@ impl crate::sq::Submissions for Submissions {
 }
 
 /// Wrapper around `libc::kevent` to implementation traits and methods.
+///
+/// This is both a submission and a completion event.
 #[repr(transparent)] // Requirement for `kevent` calls.
 pub(crate) struct Event(libc::kevent);
 
@@ -315,7 +317,397 @@ unsafe impl Sync for Event {}
 
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // TODO.
-        f.write_str("kqueue::Event")
+        debug_detail!(
+            match FilterDetails(libc::c_short),
+            libc::EVFILT_READ,
+            libc::EVFILT_WRITE,
+            libc::EVFILT_AIO,
+            libc::EVFILT_VNODE,
+            libc::EVFILT_PROC,
+            libc::EVFILT_SIGNAL,
+            libc::EVFILT_TIMER,
+            #[cfg(target_os = "freebsd")]
+            libc::EVFILT_PROCDESC,
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "dragonfly",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::EVFILT_FS,
+            #[cfg(target_os = "freebsd")]
+            libc::EVFILT_LIO,
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "dragonfly",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::EVFILT_USER,
+            #[cfg(target_os = "freebsd")]
+            libc::EVFILT_SENDFILE,
+            #[cfg(target_os = "freebsd")]
+            libc::EVFILT_EMPTY,
+            #[cfg(target_os = "dragonfly")]
+            libc::EVFILT_EXCEPT,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::EVFILT_MACHPORT,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::EVFILT_VM,
+        );
+
+        debug_detail!(
+            bitset FlagsDetails(libc::c_ushort),
+            libc::EV_ADD,
+            libc::EV_DELETE,
+            libc::EV_ENABLE,
+            libc::EV_DISABLE,
+            libc::EV_ONESHOT,
+            libc::EV_CLEAR,
+            libc::EV_RECEIPT,
+            libc::EV_DISPATCH,
+            #[cfg(target_os = "freebsd")]
+            libc::EV_DROP,
+            libc::EV_FLAG1,
+            libc::EV_ERROR,
+            libc::EV_EOF,
+            // Not stable across OS versions on OpenBSD.
+            #[cfg(not(target_os = "openbsd"))]
+            libc::EV_SYSFLAGS,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::EV_FLAG0,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::EV_POLL,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::EV_OOBAND,
+            #[cfg(target_os = "dragonfly")]
+            libc::EV_NODATA,
+        );
+
+        debug_detail!(
+            bitset FflagsDetails(libc::c_uint),
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_TRIGGER,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFNOP,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFAND,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFOR,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFCOPY,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFCTRLMASK,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            libc::NOTE_FFLAGSMASK,
+            libc::NOTE_LOWAT,
+            libc::NOTE_DELETE,
+            libc::NOTE_WRITE,
+            #[cfg(target_os = "dragonfly")]
+            libc::NOTE_OOB,
+            #[cfg(target_os = "openbsd")]
+            libc::NOTE_EOF,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXTEND,
+            libc::NOTE_ATTRIB,
+            libc::NOTE_LINK,
+            libc::NOTE_RENAME,
+            libc::NOTE_REVOKE,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_NONE,
+            #[cfg(any(target_os = "openbsd"))]
+            libc::NOTE_TRUNCATE,
+            libc::NOTE_EXIT,
+            libc::NOTE_FORK,
+            libc::NOTE_EXEC,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_SIGNAL,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXITSTATUS,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXIT_DETAIL,
+            libc::NOTE_PDATAMASK,
+            libc::NOTE_PCTRLMASK,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd",
+            ))]
+            libc::NOTE_TRACK,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd",
+            ))]
+            libc::NOTE_TRACKERR,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd",
+            ))]
+            libc::NOTE_CHILD,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXIT_DETAIL_MASK,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXIT_DECRYPTFAIL,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXIT_MEMORY,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_EXIT_CSERROR,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_VM_PRESSURE,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_VM_PRESSURE_TERMINATE,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_VM_PRESSURE_SUDDEN_TERMINATE,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_VM_ERROR,
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_SECONDS,
+            #[cfg(any(target_os = "freebsd"))]
+            libc::NOTE_MSECONDS,
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_USECONDS,
+            #[cfg(any(
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_NSECONDS,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_ABSOLUTE,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_LEEWAY,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_CRITICAL,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            libc::NOTE_BACKGROUND,
+        );
+
+        // Can't reference fields in packed structures.
+        let ident = self.0.ident;
+        let data = self.0.data;
+        f.debug_struct("kqueue::Event")
+            .field("id", &crate::cq::Event::id(self))
+            .field("ident", &ident)
+            .field("filter", &FilterDetails(self.0.filter))
+            .field("flags", &FlagsDetails(self.0.flags))
+            .field("fflags", &FflagsDetails(self.0.fflags))
+            .field("data", &data)
+            .finish()
     }
 }

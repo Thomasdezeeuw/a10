@@ -427,4 +427,59 @@ macro_rules! syscall {
     }};
 }
 
-use {man_link, syscall};
+macro_rules! debug_detail {
+    (
+        // Match a value exactly.
+        match $type: ident ($event_type: ty),
+        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
+    ) => {
+        struct $type($event_type);
+
+        impl fmt::Debug for $type {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str(match self.0 {
+                    $(
+                    $(#[$target])*
+                    #[allow(clippy::bad_bit_mask)] // Apparently some flags are zero.
+                    $libc :: $flag => stringify!($flag),
+                    )+
+                    _ => "<unknown>",
+                })
+            }
+        }
+    };
+    (
+        // Integer bitset.
+        bitset $type: ident ($event_type: ty),
+        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
+    ) => {
+        struct $type($event_type);
+
+        impl fmt::Debug for $type {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                let mut written_one = false;
+                $(
+                    $(#[$target])*
+                    #[allow(clippy::bad_bit_mask)] // Apparently some flags are zero.
+                    {
+                        if self.0 & $libc :: $flag != 0 {
+                            if !written_one {
+                                write!(f, "{}", stringify!($flag))?;
+                                written_one = true;
+                            } else {
+                                write!(f, "|{}", stringify!($flag))?;
+                            }
+                        }
+                    }
+                )+
+                if !written_one {
+                    write!(f, "(empty)")
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    };
+}
+
+use {debug_detail, man_link, syscall};
