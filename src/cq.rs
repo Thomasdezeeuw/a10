@@ -5,19 +5,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io};
 
-use crate::SharedState;
+use crate::{Implementation, SharedState};
 
 /// Queue of completion events.
-pub(crate) struct Queue<C: Completions> {
-    completions: C,
-    shared: Arc<SharedState<C::Shared, <C::Event as Event>::State>>,
+pub(crate) struct Queue<I: Implementation> {
+    completions: I::Completions,
+    shared: Arc<SharedState<I>>,
 }
 
-impl<C: Completions> Queue<C> {
-    pub(crate) const fn new(
-        completions: C,
-        shared: Arc<SharedState<C::Shared, <C::Event as Event>::State>>,
-    ) -> Queue<C> {
+impl<I: Implementation> Queue<I> {
+    pub(crate) const fn new(completions: I::Completions, shared: Arc<SharedState<I>>) -> Queue<I> {
         Queue {
             completions,
             shared,
@@ -68,7 +65,7 @@ impl<C: Completions> Queue<C> {
     }
 }
 
-impl<C: Completions> fmt::Debug for Queue<C> {
+impl<I: Implementation> fmt::Debug for Queue<I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("cq::Queue")
             .field("completions", &self.completions)

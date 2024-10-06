@@ -4,22 +4,22 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::{fmt, io, mem};
 
-use crate::{QueuedOperation, SharedState};
+use crate::{Implementation, QueuedOperation, SharedState};
 
 /// Queue of completion events.
-pub(crate) struct Queue<S, CE> {
-    shared: Arc<SharedState<S, CE>>,
+pub(crate) struct Queue<I: Implementation> {
+    shared: Arc<SharedState<I>>,
 }
 
-impl<S: Submissions, CE: Default> Queue<S, CE> {
-    pub(crate) const fn new(shared: Arc<SharedState<S, CE>>) -> Queue<S, CE> {
+impl<I: Implementation> Queue<I> {
+    pub(crate) const fn new(shared: Arc<SharedState<I>>) -> Queue<I> {
         Queue { shared }
     }
 
     /// Add a new submission, returns the id (index).
     pub(crate) fn add<F>(&self, submit: F) -> Result<usize, QueueFull>
     where
-        F: FnOnce(&mut S::Submission),
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
         // Get an id (index) to the queued operation list.
         let shared = &*self.shared;
@@ -34,8 +34,7 @@ impl<S: Submissions, CE: Default> Queue<S, CE> {
         let old_queued_op = mem::replace(&mut *op, Some(queued_op));
         debug_assert!(old_queued_op.is_none());
 
-        // TODO: not great naming `data.add`. Maybe rename the method?
-        let result = shared.data.add(|submission| {
+        let result = shared.submissions.add(&shared.data, |submission| {
             submit(submission);
             submission.set_id(id);
         });
@@ -58,13 +57,13 @@ impl<S: Submissions, CE: Default> Queue<S, CE> {
             return;
         }
 
-        if let Err(err) = self.shared.data.wake() {
+        if let Err(err) = self.shared.submissions.wake(&self.shared.data) {
             log::error!("failed to wake a10::Ring: {err}");
         }
     }
 }
 
-impl<S, CE> Clone for Queue<S, CE> {
+impl<I: Implementation> Clone for Queue<I> {
     fn clone(&self) -> Self {
         Queue {
             shared: self.shared.clone(),
@@ -76,7 +75,7 @@ impl<S, CE> Clone for Queue<S, CE> {
     }
 }
 
-impl<S: fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
+impl<I: Implementation> fmt::Debug for Queue<I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("sq::Queue")
             .field("shared", &self.shared)
@@ -86,16 +85,19 @@ impl<S: fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
 
 /// Submit operations.
 pub(crate) trait Submissions: fmt::Debug {
+    /// Data shared between the submission and completion queues.
+    type Shared: fmt::Debug + Sized;
+
     /// Type of the submission.
     type Submission: Submission;
 
     /// Try to add a new submission.
-    fn add<F>(&self, submit: F) -> Result<(), QueueFull>
+    fn add<F>(&self, shared: &Self::Shared, submit: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission);
 
     /// Wake a polling thread.
-    fn wake(&self) -> io::Result<()>;
+    fn wake(&self, shared: &Self::Shared) -> io::Result<()>;
 }
 
 /// Submission event.
