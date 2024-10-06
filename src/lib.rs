@@ -376,6 +376,18 @@ impl<T: Default> QueuedOperation<T> {
     }
 }
 
+/// Platform specific implementation.
+trait Implementation {
+    /// Data shared between the submission and completion queues.
+    type Shared: fmt::Debug + Sized;
+
+    /// See [`sq::Submissions`].
+    type Submissions: sq::Submissions<Shared = Self::Shared>;
+
+    /// See [`cq::Completions`].
+    type Completions: cq::Completions<Shared = Self::Shared>;
+}
+
 /// Link to online manual.
 #[rustfmt::skip]
 macro_rules! man_link {
