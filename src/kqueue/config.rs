@@ -49,6 +49,7 @@ impl<'r> Config<'r> {
         let shared = sys::Shared { kq, change_list };
         let poll = sys::Completions::new(self.events_capacity as usize);
         Ring::build(
+            sys::Submissions,
             shared,
             poll,
             self.events_capacity as usize, // TODO: add option for # queued operations.

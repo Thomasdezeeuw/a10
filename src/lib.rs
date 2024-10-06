@@ -201,7 +201,7 @@ const WAKE_ID: usize = usize::MAX;
 #[derive(Debug)]
 pub struct Ring {
     sq: SubmissionQueue,
-    cq: cq::Queue<sys::Completions>,
+    cq: cq::Queue<sys::Implementation>,
 }
 
 impl Ring {
@@ -234,11 +234,12 @@ impl Ring {
     }
 
     fn build(
-        shared_data: <sys::Completions as cq::Completions>::Shared,
+        submissions: sys::Submissions,
+        shared_data: sys::Shared,
         completions: sys::Completions,
         queued_operations: usize,
     ) -> io::Result<Ring> {
-        let shared = SharedState::new(shared_data, queued_operations);
+        let shared = SharedState::new(submissions, shared_data, queued_operations);
         let sq = SubmissionQueue::new(shared.clone());
         let cq = cq::Queue::new(completions, shared);
         Ok(Ring { sq, cq })
@@ -278,20 +279,11 @@ impl Ring {
 /// The submission queue can be shared by cloning it, it's a cheap operation.
 #[derive(Clone)]
 pub struct SubmissionQueue {
-    // TODO: drop the silly types, it's too much.
-    inner:
-        sq::Queue<sys::Shared, <<sys::Completions as cq::Completions>::Event as cq::Event>::State>,
+    inner: sq::Queue<sys::Implementation>,
 }
 
 impl SubmissionQueue {
-    fn new(
-        shared: Arc<
-            SharedState<
-                sys::Shared,
-                <<sys::Completions as cq::Completions>::Event as cq::Event>::State,
-            >,
-        >,
-    ) -> SubmissionQueue {
+    fn new(shared: Arc<SharedState<sys::Implementation>>) -> SubmissionQueue {
         SubmissionQueue {
             inner: sq::Queue::new(shared),
         }
@@ -312,10 +304,11 @@ impl fmt::Debug for SubmissionQueue {
 }
 
 /// State shared between the submission and completion side.
-#[derive(Debug)]
-struct SharedState<S, CE> {
+struct SharedState<I: Implementation> {
+    /// [`sq::Submissions`] implementation.
+    submissions: I::Submissions,
     /// Data shared between the submission and completion queues.
-    data: S,
+    data: I::Shared,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
     /// Bitmap which can be used to create an id (index) into `queued_ops`.
@@ -323,27 +316,46 @@ struct SharedState<S, CE> {
     /// State of queued operations, holds the (would be) result and
     /// `task::Waker`. It's used when adding new operations and when marking
     /// operations as complete (by the kernel).
-    queued_ops: Box<[Mutex<Option<QueuedOperation<CE>>>]>,
+    #[rustfmt::skip]
+    queued_ops: Box<[Mutex<Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>>]>,
     /// Futures that are waiting for a slot in `queued_ops`.
     blocked_futures: Mutex<Vec<task::Waker>>,
 }
 
-impl<S, CE> SharedState<S, CE> {
+impl<I: Implementation> SharedState<I> {
     /// `queued_operations` is the number of queued operations, will be rounded
     /// up depending on the capacity of `AtomicBitMap`.
-    fn new(data: S, queued_operations: usize) -> Arc<SharedState<S, CE>> {
+    fn new(
+        submissions: I::Submissions,
+        data: I::Shared,
+        queued_operations: usize,
+    ) -> Arc<SharedState<I>> {
         let op_indices = AtomicBitMap::new(queued_operations);
         let mut queued_ops = Vec::with_capacity(op_indices.capacity());
         queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
         let queued_ops = queued_ops.into_boxed_slice();
         let blocked_futures = Mutex::new(Vec::new());
         Arc::new(SharedState {
+            submissions,
             data,
             is_polling: AtomicBool::new(false),
             op_indices,
             queued_ops,
             blocked_futures,
         })
+    }
+}
+
+impl<I: Implementation> fmt::Debug for SharedState<I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SharedState")
+            .field("submissions", &self.submissions)
+            .field("data", &self.data)
+            .field("is_polling", &self.is_polling)
+            .field("op_indices", &self.op_indices)
+            .field("queued_ops", &self.queued_ops)
+            .field("blocked_futures", &self.blocked_futures)
+            .finish()
     }
 }
 
