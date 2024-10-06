@@ -7,7 +7,7 @@ use std::{fmt, io, mem};
 use crate::{QueuedOperation, SharedState};
 
 /// Queue of completion events.
-pub(crate) struct Queue<S: Submissions, CE> {
+pub(crate) struct Queue<S, CE> {
     shared: Arc<SharedState<S, CE>>,
 }
 
@@ -64,7 +64,7 @@ impl<S: Submissions, CE: Default> Queue<S, CE> {
     }
 }
 
-impl<S: Submissions, CE> Clone for Queue<S, CE> {
+impl<S, CE> Clone for Queue<S, CE> {
     fn clone(&self) -> Self {
         Queue {
             shared: self.shared.clone(),
@@ -76,7 +76,7 @@ impl<S: Submissions, CE> Clone for Queue<S, CE> {
     }
 }
 
-impl<S: Submissions + fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
+impl<S: fmt::Debug, CE: fmt::Debug> fmt::Debug for Queue<S, CE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("sq::Queue")
             .field("shared", &self.shared)
