@@ -269,6 +269,48 @@ impl Ring {
     }
 }
 
+/// Queue to submit asynchronous operations to.
+///
+/// This type doesn't have many public methods, but is used by all I/O types, to
+/// queue asynchronous operations. The queue can be acquired by using
+/// [`Ring::submission_queue`].
+///
+/// The submission queue can be shared by cloning it, it's a cheap operation.
+#[derive(Clone)]
+pub struct SubmissionQueue {
+    // TODO: drop the silly types, it's too much.
+    inner:
+        sq::Queue<sys::Shared, <<sys::Completions as cq::Completions>::Event as cq::Event>::State>,
+}
+
+impl SubmissionQueue {
+    fn new(
+        shared: Arc<
+            SharedState<
+                sys::Shared,
+                <<sys::Completions as cq::Completions>::Event as cq::Event>::State,
+            >,
+        >,
+    ) -> SubmissionQueue {
+        SubmissionQueue {
+            inner: sq::Queue::new(shared),
+        }
+    }
+
+    /// Wake the connected [`Ring`].
+    ///
+    /// All this does is interrupt a call to [`Ring::poll`].
+    pub fn wake(&self) {
+        self.inner.wake()
+    }
+}
+
+impl fmt::Debug for SubmissionQueue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
 /// State shared between the submission and completion side.
 #[derive(Debug)]
 struct SharedState<S, CE> {
@@ -331,48 +373,6 @@ impl<T: Default> QueuedOperation<T> {
             done: false,
             waker: None,
         }
-    }
-}
-
-/// Queue to submit asynchronous operations to.
-///
-/// This type doesn't have many public methods, but is used by all I/O types, to
-/// queue asynchronous operations. The queue can be acquired by using
-/// [`Ring::submission_queue`].
-///
-/// The submission queue can be shared by cloning it, it's a cheap operation.
-#[derive(Clone)]
-pub struct SubmissionQueue {
-    // TODO: drop the silly types, it's too much.
-    inner:
-        sq::Queue<sys::Shared, <<sys::Completions as cq::Completions>::Event as cq::Event>::State>,
-}
-
-impl SubmissionQueue {
-    fn new(
-        shared: Arc<
-            SharedState<
-                sys::Shared,
-                <<sys::Completions as cq::Completions>::Event as cq::Event>::State,
-            >,
-        >,
-    ) -> SubmissionQueue {
-        SubmissionQueue {
-            inner: sq::Queue::new(shared),
-        }
-    }
-
-    /// Wake the connected [`Ring`].
-    ///
-    /// All this does is interrupt a call to [`Ring::poll`].
-    pub fn wake(&self) {
-        self.inner.wake()
-    }
-}
-
-impl fmt::Debug for SubmissionQueue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt(f)
     }
 }
 
