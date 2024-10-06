@@ -15,10 +15,7 @@ pub(crate) mod config;
 // TODO: make this configurable.
 const MAX_CHANGE_LIST_SIZE: usize = 64;
 
-/// `kevent.udata` to indicate a waker.
-const WAKE_USER_DATA: usize = usize::MAX;
-
-/// kqueue implemetnation.
+/// kqueue implementation.
 pub(crate) enum Implementation {}
 
 impl crate::Implementation for Implementation {
@@ -150,8 +147,9 @@ impl crate::cq::Completions for Completions {
     }
 }
 
+/// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
-pub(crate) struct Submissions; // No state needed.
+pub(crate) struct Submissions;
 
 impl crate::sq::Submissions for Submissions {
     type Shared = Shared;

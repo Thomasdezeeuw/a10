@@ -233,6 +233,7 @@ impl Ring {
         Config::new(entries).build()
     }
 
+    /// Build a new `Ring`.
     fn build(
         submissions: sys::Submissions,
         shared_data: sys::Shared,
@@ -323,8 +324,8 @@ struct SharedState<I: Implementation> {
 }
 
 impl<I: Implementation> SharedState<I> {
-    /// `queued_operations` is the number of queued operations, will be rounded
-    /// up depending on the capacity of `AtomicBitMap`.
+    /// `queued_operations` is the maximum number of queued operations, will be
+    /// rounded up depending on the capacity of `AtomicBitMap`.
     fn new(
         submissions: I::Submissions,
         data: I::Shared,
