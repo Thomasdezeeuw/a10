@@ -30,14 +30,14 @@ impl<'r> Config<'r> {
     /// Maximum size of the change list before it's submitted to the kernel,
     /// without waiting on a call to [`Ring::poll`].
     ///
-    /// Defaults to 64 events.
+    /// Defaults to the amount of `entries` (passed to [`Ring::new`]), with a
+    /// maximum of 64 changes.
     ///
     /// [`Ring::poll`]: crate::Ring::poll
     ///
     /// # Notes
     ///
-    /// If the `entries` (passing to [`Ring::new`]) is smaller than `max` it
-    /// will be set to `max`.
+    /// If the `entries` is smaller than `max` it will be set to `max`.
     ///
     /// [`Ring::new`]: crate::Ring::new
     pub fn max_change_list_size(mut self, max: usize) -> Self {
