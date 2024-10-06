@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::{fmt, io, mem};
+use std::{fmt, io, mem, task};
 
 use crate::{Implementation, OperationId, QueuedOperation, SharedState};
 
@@ -49,6 +49,12 @@ impl<I: Implementation> Queue<I> {
         }
 
         Ok(op_id)
+    }
+
+    /// Wait for a submission slot, waking `waker` once one is available.
+    pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
+        log::trace!(waker:? = waker; "adding blocked future");
+        self.shared.blocked_futures.lock().unwrap().push(waker)
     }
 
     pub(crate) fn wake(&self) {
