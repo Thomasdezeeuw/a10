@@ -293,8 +293,7 @@ impl Event {
 }
 
 impl crate::cq::Event for Event {
-    /// No additional state is needed.
-    type State = ();
+    type State = CompletionState;
 
     fn id(&self) -> OperationId {
         self.0.udata as OperationId
@@ -304,6 +303,10 @@ impl crate::cq::Event for Event {
         false // Using `EV_ONESHOT`, so expecting one event.
     }
 }
+
+/// No additional state is needed.
+#[derive(Copy, Clone, Debug, Default)]
+pub(crate) struct CompletionState;
 
 impl crate::sq::Submission for Event {
     fn set_id(&mut self, id: OperationId) {
