@@ -18,6 +18,15 @@ const MAX_CHANGE_LIST_SIZE: usize = 64;
 /// `kevent.udata` to indicate a waker.
 const WAKE_USER_DATA: usize = usize::MAX;
 
+/// kqueue implemetnation.
+pub(crate) enum Implementation {}
+
+impl crate::Implementation for Implementation {
+    type Shared = Shared;
+    type Submissions = Submissions;
+    type Completions = Completions;
+}
+
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
     kq: OwnedFd,
