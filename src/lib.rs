@@ -181,9 +181,6 @@ pub use sys::config::Config;
 
 use crate::bitmap::AtomicBitMap;
 
-/// Id to use for internal wake ups.
-const WAKE_ID: usize = usize::MAX;
-
 /// This type represents the user space side of an io_uring.
 ///
 /// An io_uring is split into two queues: the submissions and completions queue.
@@ -312,11 +309,12 @@ struct SharedState<I: Implementation> {
     data: I::Shared,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
-    /// Bitmap which can be used to create an id (index) into `queued_ops`.
-    op_indices: Box<AtomicBitMap>,
-    /// State of queued operations, holds the (would be) result and
-    /// `task::Waker`. It's used when adding new operations and when marking
-    /// operations as complete (by the kernel).
+    /// Bitmap which can be used to create [`OperationIds`], used as index into
+    /// `queued_ops`.
+    op_ids: Box<AtomicBitMap>,
+    /// State of queued operations.
+    ///
+    /// Indexed by a [`OperationIds`], created by `op_ids`.
     #[rustfmt::skip]
     queued_ops: Box<[Mutex<Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>>]>,
     /// Futures that are waiting for a slot in `queued_ops`.
@@ -331,8 +329,8 @@ impl<I: Implementation> SharedState<I> {
         data: I::Shared,
         queued_operations: usize,
     ) -> Arc<SharedState<I>> {
-        let op_indices = AtomicBitMap::new(queued_operations);
-        let mut queued_ops = Vec::with_capacity(op_indices.capacity());
+        let op_ids = AtomicBitMap::new(queued_operations);
+        let mut queued_ops = Vec::with_capacity(op_ids.capacity());
         queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
         let queued_ops = queued_ops.into_boxed_slice();
         let blocked_futures = Mutex::new(Vec::new());
@@ -340,7 +338,7 @@ impl<I: Implementation> SharedState<I> {
             submissions,
             data,
             is_polling: AtomicBool::new(false),
-            op_indices,
+            op_ids,
             queued_ops,
             blocked_futures,
         })
@@ -353,7 +351,7 @@ impl<I: Implementation> fmt::Debug for SharedState<I> {
             .field("submissions", &self.submissions)
             .field("data", &self.data)
             .field("is_polling", &self.is_polling)
-            .field("op_indices", &self.op_indices)
+            .field("op_ids", &self.op_ids)
             .field("queued_ops", &self.queued_ops)
             .field("blocked_futures", &self.blocked_futures)
             .finish()
@@ -388,6 +386,16 @@ impl<T: Default> QueuedOperation<T> {
         }
     }
 }
+
+/// Operation id.
+///
+/// Used to relate completion events to submission events and operations. Also
+/// used as index into [`SharedState::queued_ops`], created by
+/// [`SharedState::op_ids`].
+type OperationId = usize;
+
+/// Id to use for internal wake ups.
+const WAKE_ID: OperationId = usize::MAX;
 
 /// Platform specific implementation.
 trait Implementation {

@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{cmp, fmt, io, mem, ptr};
 
 use crate::sq::QueueFull;
-use crate::{debug_detail, syscall, WAKE_ID};
+use crate::{debug_detail, syscall, OperationId, WAKE_ID};
 
 pub(crate) mod config;
 
@@ -296,8 +296,8 @@ impl crate::cq::Event for Event {
     /// No additional state is needed.
     type State = ();
 
-    fn id(&self) -> usize {
-        self.0.udata as usize
+    fn id(&self) -> OperationId {
+        self.0.udata as OperationId
     }
 
     fn update_state(&self, _: &mut Self::State) -> bool {
@@ -306,7 +306,7 @@ impl crate::cq::Event for Event {
 }
 
 impl crate::sq::Submission for Event {
-    fn set_id(&mut self, id: usize) {
+    fn set_id(&mut self, id: OperationId) {
         self.0.udata = id as _;
     }
 }
