@@ -17,38 +17,38 @@ impl<I: Implementation> Queue<I> {
     }
 
     /// Add a new submission, returns the id (index).
-    pub(crate) fn add<F>(&self, submit: F) -> Result<usize, QueueFull>
+    pub(crate) fn add<F>(&self, submit: F) -> Result<OperationId, QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
-        // Get an id (index) to the queued operation list.
+        // Get an `OperationId` to the queued operation list.
         let shared = &*self.shared;
-        let Some(id) = shared.op_ids.next_available() else {
+        let Some(op_id) = shared.op_ids.next_available() else {
             return Err(QueueFull);
         };
 
         let queued_op = QueuedOperation::new();
         // SAFETY: the `AtomicBitMap` always returns valid indices for
         // `op_queue` (it's the whole point of it).
-        let mut op = shared.queued_ops[id].lock().unwrap();
+        let mut op = shared.queued_ops[op_id].lock().unwrap();
         let old_queued_op = mem::replace(&mut *op, Some(queued_op));
         debug_assert!(old_queued_op.is_none());
 
         let result = shared.submissions.add(&shared.data, |submission| {
             submit(submission);
-            submission.set_id(id);
+            submission.set_id(op_id);
         });
         if let Err(QueueFull) = result {
             // Release operation slot.
             {
-                *shared.queued_ops[id].lock().unwrap() = None;
+                *shared.queued_ops[op_id].lock().unwrap() = None;
             }
-            shared.op_ids.make_available(id);
+            shared.op_ids.make_available(op_id);
 
             return Err(QueueFull);
         }
 
-        Ok(id)
+        Ok(op_id)
     }
 
     pub(crate) fn wake(&self) {
