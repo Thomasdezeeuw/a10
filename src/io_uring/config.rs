@@ -77,7 +77,7 @@ impl<'r> Config<'r> {
     /// While the ring is disabled submissions are not allowed. To enable the
     /// ring use [`Ring::enable`].
     #[doc(alias = "IORING_SETUP_R_DISABLED")]
-    pub const fn disable(mut self) -> Config<'r> {
+    pub const fn disable(mut self) -> Self {
         self.disabled = true;
         self
     }
@@ -98,7 +98,7 @@ impl<'r> Config<'r> {
     /// [`enabled`]: Ring::enable
     /// [`ReadBufPool`]: crate::io::ReadBufPool
     #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
-    pub const fn single_issuer(mut self) -> Config<'r> {
+    pub const fn single_issuer(mut self) -> Self {
         self.single_issuer = true;
         self
     }
@@ -116,7 +116,7 @@ impl<'r> Config<'r> {
     /// This options required [`Config::single_issuer`] to be set. This option
     /// does not work with [`Config::with_kernel_thread`] set.
     #[doc(alias = "IORING_SETUP_DEFER_TASKRUN")]
-    pub const fn defer_task_run(mut self) -> Config<'r> {
+    pub const fn defer_task_run(mut self) -> Self {
         self.defer_taskrun = true;
         self
     }
