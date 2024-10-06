@@ -10,11 +10,6 @@ use crate::{syscall, WAKE_ID};
 
 pub(crate) mod config;
 
-/// Maximum size of the change list before it's submitted to the kernel, without
-/// waiting on a call to poll.
-// TODO: make this configurable.
-const MAX_CHANGE_LIST_SIZE: usize = 64;
-
 /// kqueue implementation.
 pub(crate) enum Implementation {}
 
@@ -64,10 +59,8 @@ pub(crate) struct Completions {
 }
 
 impl Completions {
-    pub(crate) fn new(events_capacity: usize) -> Completions {
-        // NOTE: the `events` capacity must be at least MAX_CHANGE_LIST_SIZE to
-        // ensure we can handle all submission errors.
-        let events = Vec::with_capacity(cmp::max(events_capacity, MAX_CHANGE_LIST_SIZE));
+    fn new(events_capacity: usize) -> Completions {
+        let events = Vec::with_capacity(events_capacity);
         Completions { events }
     }
 }
@@ -149,7 +142,19 @@ impl crate::cq::Completions for Completions {
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
-pub(crate) struct Submissions;
+pub(crate) struct Submissions {
+    /// Maximum size of the change list before it's submitted to the kernel,
+    /// without waiting on a call to poll.
+    max_change_list_size: usize,
+}
+
+impl Submissions {
+    fn new(max_change_list_size: usize) -> Submissions {
+        Submissions {
+            max_change_list_size,
+        }
+    }
+}
 
 impl crate::sq::Submissions for Submissions {
     type Shared = Shared;
@@ -171,7 +176,7 @@ impl crate::sq::Submissions for Submissions {
         let mut change_list = shared.change_list.lock().unwrap();
         change_list.push(event);
         // If we haven't collected enough events yet we're done quickly.
-        if change_list.len() < MAX_CHANGE_LIST_SIZE {
+        if change_list.len() < self.max_change_list_size {
             drop(change_list); // Unlock first.
             return Ok(());
         }

@@ -11,16 +11,41 @@ use crate::{sys, syscall, Ring, WAKE_ID};
 #[must_use = "no ring is created until `a10::Config::build` is called"]
 #[allow(missing_docs)] // NOTE: documented at the root.
 pub struct Config<'r> {
-    events_capacity: u32,
+    events_capacity: usize,
+    max_change_list_size: usize,
     _unused: PhantomData<&'r ()>,
 }
 
 impl<'r> Config<'r> {
     pub(crate) const fn new(events_capacity: u32) -> Config<'r> {
+        let events_capacity = events_capacity as usize;
         Config {
             events_capacity,
+            #[rustfmt::skip]
+            max_change_list_size: if events_capacity > 64 { 64 } else { events_capacity },
             _unused: PhantomData,
         }
+    }
+
+    /// Maximum size of the change list before it's submitted to the kernel,
+    /// without waiting on a call to [`Ring::poll`].
+    ///
+    /// Defaults to 64 events.
+    ///
+    /// [`Ring::poll`]: crate::Ring::poll
+    ///
+    /// # Notes
+    ///
+    /// If the `entries` (passing to [`Ring::new`]) is smaller than `max` it
+    /// will be set to `max`.
+    ///
+    /// [`Ring::new`]: crate::Ring::new
+    pub fn max_change_list_size(mut self, max: usize) -> Self {
+        self.max_change_list_size = max;
+        if self.events_capacity < max {
+            self.events_capacity = max;
+        }
+        self
     }
 
     /// Build a new [`Ring`].
@@ -45,14 +70,18 @@ impl<'r> Config<'r> {
             return Err(io::Error::from_raw_os_error(kevent.data as i32));
         }
 
+        let submissions = sys::Submissions::new(self.max_change_list_size);
         let change_list = Mutex::new(Vec::new());
         let shared = sys::Shared { kq, change_list };
-        let poll = sys::Completions::new(self.events_capacity as usize);
+        // NOTE: `events_capacity` must be at least `max_change_list_size` to
+        // ensure we can handle all submission errors.
+        debug_assert!(self.events_capacity >= self.max_change_list_size);
+        let completions = sys::Completions::new(self.events_capacity);
         Ring::build(
-            sys::Submissions,
+            submissions,
             shared,
-            poll,
-            self.events_capacity as usize, // TODO: add option for # queued operations.
+            completions,
+            self.events_capacity, // TODO: add option for # queued operations.
         )
     }
 }
