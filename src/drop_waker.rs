@@ -68,15 +68,6 @@ where
     }
 }
 
-impl DropWake for () {
-    fn into_waker_data(self) -> *const () {
-        ptr::null()
-    }
-
-    unsafe fn drop_from_waker_data(_: *const ()) {
-        // Nothing.
-    }
-}
 
 impl<T> DropWake for Box<T> {
     fn into_waker_data(self) -> *const () {
