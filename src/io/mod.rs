@@ -12,13 +12,10 @@
 //! Finally we have the [`stdin`], [`stdout`] and [`stderr`] functions to create
 //! `AsyncFd`s for standard in, out and error respectively.
 
-use std::future::Future;
-use std::pin::Pin;
-use std::task::{self, Poll};
-use std::{fmt, io};
+use std::io;
 
-use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::Operation;
+use crate::fd::{AsyncFd, Descriptor};
+use crate::op::{op_future, Operation};
 use crate::{man_link, sys};
 
 mod traits;
@@ -55,33 +52,11 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMut,
     {
-        Read::new(self, buf, offset)
+        Read(Operation::new(self, buf, offset))
     }
 }
 
-/// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
-pub struct Read<'fd, B: BufMut, D: Descriptor = File> {
-    inner: Operation<'fd, sys::io::Read<B>, D>,
-}
-
-impl<'fd, B: BufMut, D: Descriptor> Read<'fd, B, D> {
-    const fn new(fd: &'fd AsyncFd<D>, buf: B, offset: u64) -> Read<'fd, B, D> {
-        Read {
-            inner: Operation::new(fd, buf, offset),
-        }
-    }
-}
-
-impl<'fd, B: BufMut + fmt::Debug, D: Descriptor> fmt::Debug for Read<'fd, B, D> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.inner.fmt_dbg("a10::Read", f)
-    }
-}
-
-impl<'fd, B: BufMut + Unpin, D: Descriptor + Unpin> Future for Read<'fd, B, D> {
-    type Output = io::Result<B>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.inner).poll(ctx)
-    }
-}
+op_future!(
+    /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
+    pub struct Read<B: BufMut>(sys::io::Read<B>) -> io::Result<B>;
+);
