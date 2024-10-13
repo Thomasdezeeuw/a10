@@ -120,9 +120,9 @@ impl crate::cq::Completions for Completions {
                 // completions though.
                 if err.raw_os_error() != Some(libc::EINTR) {
                     if !changes.is_empty() {
-                        log::warn!(
-                            "failed to submit change list: {err}, dropping changes: {changes:?}"
-                        );
+                        // TODO: do we want to put in fake error events or
+                        // something to ensure the Futures don't stall?
+                        log::warn!(change_list:? = changes; "failed to submit change list: {err}, dropping changes");
                     }
                     result_err = Some(err);
                 }
@@ -207,8 +207,9 @@ impl crate::sq::Submissions for Submissions {
             // fails with EINTR error, all changes in the changelist have been
             // applied", so we can safely ignore it.
             if err.raw_os_error() != Some(libc::EINTR) {
-                // NOTE: this should never happen.
-                log::warn!("failed to submit change list: {err}, dropping changes: {changes:?}");
+                // TODO: do we want to put in fake error events or something to
+                // ensure the Futures don't stall?
+                log::warn!(change_list:? = changes; "failed to submit change list: {err}, dropping changes");
             }
         }
         // Check all events for possible errors and log them.
@@ -218,8 +219,9 @@ impl crate::sq::Submissions for Submissions {
             // otherwise ignore it.
             if let Some(err) = event.error() {
                 // TODO: see if we can some how get this error to the operation
-                // that submitted it.
-                log::warn!("submitted change has an error: {err}, event: {event:?}, dropping it");
+                // that submitted it or something to ensure the Future doesn't
+                // stall.
+                log::warn!(kevent:? = event; "submitted change has an error: {err}, dropping it");
             }
         }
 
