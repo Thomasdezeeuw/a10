@@ -22,6 +22,7 @@ impl crate::Implementation for Implementation {
     type Completions = Completions;
 }
 
+#[derive(Debug)]
 pub(crate) struct Shared {
     /// kqueue(2) file descriptor.
     kq: OwnedFd,
@@ -44,15 +45,6 @@ impl Shared {
         }
         change_list.append(&mut changes);
         drop(change_list); // Unlock before any deallocations.
-    }
-}
-
-impl fmt::Debug for Shared {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("kqueue::Shared")
-            .field("kq", &self.kq)
-            .field("change_list", &self.change_list)
-            .finish()
     }
 }
 
