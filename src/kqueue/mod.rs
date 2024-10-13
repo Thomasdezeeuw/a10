@@ -3,7 +3,7 @@
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Mutex;
 use std::time::Duration;
-use std::{cmp, fmt, io, mem, ptr};
+use std::{cmp, fmt, mem, ptr};
 
 use crate::sq::QueueFull;
 use crate::{debug_detail, syscall, OperationId, WAKE_ID};

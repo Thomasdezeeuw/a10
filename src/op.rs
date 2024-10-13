@@ -1,19 +1,16 @@
-//! Module with the [`op_future`] and [`op_async_iter`] macros.
+//! Module with [`Operation`] [`Future`].
 
 use std::cell::UnsafeCell;
 use std::future::Future;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{fmt, io, mem};
+use std::{io, mem};
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::BufMut;
 use crate::sq::QueueFull;
-use crate::{cq, man_link, sq, sys, syscall, Implementation, OperationId};
+use crate::{cq, sq, sys, OperationId};
 
 /// Generic [`Future`] that powers other I/O operation futures.
-#[derive(Debug)]
 pub(crate) struct Operation<'fd, O: Op, D: Descriptor = File> {
     fd: &'fd AsyncFd<D>,
     state: State<O::Resources, O::Args>,
