@@ -17,7 +17,7 @@ impl<I: Implementation> Queue<I> {
     }
 
     /// Add a new submission, returns the id (index).
-    pub(crate) fn add<F>(&self, submit: F) -> Result<OperationId, QueueFull>
+    pub(crate) fn submit<F>(&self, submit: F) -> Result<OperationId, QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
