@@ -4,7 +4,7 @@ use std::cell::UnsafeCell;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{io, mem};
+use std::{fmt, io, mem};
 
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
@@ -30,6 +30,19 @@ impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D> {
                 args,
             },
         }
+    }
+}
+
+impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D>
+where
+    O::Resources: fmt::Debug,
+    O::Args: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("fd", &self.fd)
+            .field("state", &self.state)
+            .finish()
     }
 }
 
