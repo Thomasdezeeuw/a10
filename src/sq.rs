@@ -52,6 +52,27 @@ impl<I: Implementation> Queue<I> {
         }
     }
 
+    /// Re-adds a submission, reusing `op_id`.
+    ///
+    /// If this returns `QueueFull` `op_id` becomes invalid.
+    pub(crate) fn resubmit<F>(&self, op_id: OperationId, submit: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+    {
+        let shared = &*self.shared;
+        match self.submit_with_id(op_id, submit) {
+            Ok(()) => Ok(()),
+            Err(QueueFull) => {
+                // Release operation slot.
+                // SAFETY: `unwrap`s are safe as we set the operation above.
+                let queued_op = { shared.queued_ops[op_id].lock().unwrap().take() };
+                debug_assert!(queued_op.is_some());
+                shared.op_ids.make_available(op_id);
+                Err(QueueFull)
+            }
+        }
+    }
+
     /// Add a new submission using an existing operation `id`.
     ///
     /// If this returns `QueueFull` it will use the `waker` in
