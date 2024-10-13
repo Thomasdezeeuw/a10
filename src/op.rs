@@ -231,3 +231,30 @@ pub(crate) enum OpResult<T> {
     /// [`Result::Err`].
     Err(io::Error),
 }
+
+/// Create a [`Future`] based on [`Operation`].
+macro_rules! op_future {
+    (
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident <$resources: ident : $trait: ident>($sys: ty) -> $output: ty;
+    ) => {
+        $(#[ $meta ])*
+        $vis struct $name<'fd, $resources: $trait, D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::Operation<'fd, $sys, D>);
+
+        impl<'fd, $resources: $trait + ::std::marker::Unpin, D: $crate::fd::Descriptor + ::std::marker::Unpin> ::std::future::Future for $name<'fd, $resources, D> {
+            type Output = $output;
+
+            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                ::std::pin::Pin::new(&mut self.0).poll(ctx)
+            }
+        }
+
+        impl<'fd, $resources: $trait + ::std::fmt::Debug, D: $crate::fd::Descriptor> ::std::fmt::Debug for $name<'fd, $resources, D> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
+            }
+        }
+    };
+}
+
+pub(crate) use op_future;
