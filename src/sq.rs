@@ -1,10 +1,10 @@
 //! Submission Queue.
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 use std::{fmt, io, mem, task};
 
-use crate::{Implementation, OperationId, QueuedOperation, SharedState};
+use crate::{cq, Implementation, OperationId, QueuedOperation, SharedState};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {
@@ -112,6 +112,20 @@ impl<I: Implementation> Queue<I> {
         if let Err(err) = self.shared.submissions.wake(&self.shared.data) {
             log::error!("failed to wake a10::Ring: {err}");
         }
+    }
+
+    /// # Safety
+    ///
+    /// The `id` must come from [`Queue::submit`] and must not be invalid, e.g.
+    /// by using [`Queue::resubmit`].
+    pub(crate) unsafe fn get_op(
+        &self,
+        id: OperationId,
+    ) -> MutexGuard<
+        Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>,
+    > {
+        // SAFETY: we don't poison locks.
+        self.shared.queued_ops[id].lock().unwrap()
     }
 }
 

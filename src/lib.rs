@@ -139,7 +139,7 @@
 
 use std::fmt;
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::task;
 use std::time::Duration;
 
@@ -147,6 +147,7 @@ mod bitmap;
 mod drop_waker;
 
 mod cq;
+mod op;
 mod sq;
 #[cfg_attr(any(target_os = "linux"), path = "io_uring/mod.rs")]
 #[cfg_attr(
@@ -292,6 +293,16 @@ impl SubmissionQueue {
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
         self.inner.wake()
+    }
+
+    /// See [`sq::Queue::get_op`].
+    pub(crate) unsafe fn get_op(
+        &self,
+        id: OperationId,
+    ) -> MutexGuard<
+        Option<QueuedOperation<<<<sys::Implementation as Implementation>::Completions as cq::Completions>::Event as cq::Event>::State>>,
+    >{
+        self.inner.get_op(id)
     }
 }
 
