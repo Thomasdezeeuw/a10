@@ -55,9 +55,9 @@ impl<I: Implementation> Queue<I> {
                 drop(queued_op);
                 log::trace!(id = id; "marking slot as available");
                 self.shared.op_ids.make_available(id);
-            } else if let Some(waker) = op.waker.take() {
+            } else {
                 log::trace!(completion:? = completion; "waking future");
-                waker.wake();
+                op.waker.wake_by_ref();
             }
         }
 

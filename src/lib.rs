@@ -373,16 +373,16 @@ struct QueuedOperation<T> {
     /// are coming, for example in case a previous event returned an error.
     done: bool,
     /// Waker to wake when the operation is done.
-    waker: Option<task::Waker>,
+    waker: task::Waker,
 }
 
 impl<T: Default> QueuedOperation<T> {
-    fn new() -> QueuedOperation<T> {
+    fn new(waker: task::Waker) -> QueuedOperation<T> {
         QueuedOperation {
             state: T::default(),
             dropped: false,
             done: false,
-            waker: None,
+            waker,
         }
     }
 }
