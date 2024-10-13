@@ -12,6 +12,8 @@
 //! Finally we have the [`stdin`], [`stdout`] and [`stderr`] functions to create
 //! `AsyncFd`s for standard in, out and error respectively.
 
+use std::fmt;
+
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::Operation;
 use crate::{man_link, sys};
@@ -64,5 +66,11 @@ impl<'fd, B: BufMut, D: Descriptor> Read<'fd, B, D> {
         Read {
             inner: Operation::new(fd, buf, offset),
         }
+    }
+}
+
+impl<'fd, B: BufMut + fmt::Debug, D: Descriptor> fmt::Debug for Read<'fd, B, D> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.inner.fmt_dbg("a10::Read", f)
     }
 }
