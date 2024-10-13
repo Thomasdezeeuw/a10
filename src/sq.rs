@@ -17,7 +17,10 @@ impl<I: Implementation> Queue<I> {
     }
 
     /// Add a new submission, returns the id (index).
-    pub(crate) fn submit<F>(&self, submit: F) -> Result<OperationId, QueueFull>
+    ///
+    /// If this returns `QueueFull` it will use the `waker` to wait for a
+    /// submission.
+    pub(crate) fn submit<F>(&self, submit: F, waker: task::Waker) -> Result<OperationId, QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
@@ -27,28 +30,50 @@ impl<I: Implementation> Queue<I> {
             return Err(QueueFull);
         };
 
-        let queued_op = QueuedOperation::new();
+        let queued_op = QueuedOperation::new(waker);
         // SAFETY: the `AtomicBitMap` always returns valid indices for
         // `op_queue` (it's the whole point of it).
-        let mut op = shared.queued_ops[op_id].lock().unwrap();
-        let old_queued_op = mem::replace(&mut *op, Some(queued_op));
-        debug_assert!(old_queued_op.is_none());
+        {
+            let mut op = shared.queued_ops[op_id].lock().unwrap();
+            debug_assert!(op.is_none());
+            *op = Some(queued_op);
+        }
 
+        match self.submit_with_id(op_id, submit) {
+            Ok(()) => Ok(op_id),
+            Err(QueueFull) => {
+                // Release operation slot.
+                // SAFETY: `unwrap`s are safe as we set the operation above.
+                let queued_op = { shared.queued_ops[op_id].lock().unwrap().take() };
+                debug_assert!(queued_op.is_some());
+                shared.op_ids.make_available(op_id);
+                Err(QueueFull)
+            }
+        }
+    }
+
+    /// Add a new submission using an existing operation `id`.
+    ///
+    /// If this returns `QueueFull` it will use the `waker` in
+    /// `queued_ops[op_id]` to wait for a submission.
+    fn submit_with_id<F>(&self, op_id: OperationId, submit: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+    {
+        let shared = &*self.shared;
         let result = shared.submissions.add(&shared.data, |submission| {
             submit(submission);
             submission.set_id(op_id);
         });
-        if let Err(QueueFull) = result {
-            // Release operation slot.
-            {
-                *shared.queued_ops[op_id].lock().unwrap() = None;
+        match result {
+            Ok(()) => Ok(()),
+            Err(QueueFull) => {
+                if let Some(op) = shared.queued_ops[op_id].lock().unwrap().as_ref() {
+                    self.wait_for_submission(op.waker.clone());
+                }
+                Err(QueueFull)
             }
-            shared.op_ids.make_available(op_id);
-
-            return Err(QueueFull);
         }
-
-        Ok(op_id)
     }
 
     /// Wait for a submission slot, waking `waker` once one is available.
