@@ -20,7 +20,7 @@ impl<I: Implementation> Queue<I> {
     ///
     /// If this returns `QueueFull` it will use the `waker` to wait for a
     /// submission.
-    pub(crate) fn submit<F>(&self, submit: F, waker: task::Waker) -> Result<OperationId, QueueFull>
+    pub(crate) fn submit<F>(&self, fill: F, waker: task::Waker) -> Result<OperationId, QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
@@ -39,7 +39,7 @@ impl<I: Implementation> Queue<I> {
             *op = Some(queued_op);
         }
 
-        match self.submit_with_id(op_id, submit) {
+        match self.submit_with_id(op_id, fill) {
             Ok(()) => Ok(op_id),
             Err(QueueFull) => {
                 // Release operation slot.
@@ -55,12 +55,12 @@ impl<I: Implementation> Queue<I> {
     /// Re-adds a submission, reusing `op_id`.
     ///
     /// If this returns `QueueFull` `op_id` becomes invalid.
-    pub(crate) fn resubmit<F>(&self, op_id: OperationId, submit: F) -> Result<(), QueueFull>
+    pub(crate) fn resubmit<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
         let shared = &*self.shared;
-        match self.submit_with_id(op_id, submit) {
+        match self.submit_with_id(op_id, fill) {
             Ok(()) => Ok(()),
             Err(QueueFull) => {
                 // Release operation slot.
@@ -77,13 +77,13 @@ impl<I: Implementation> Queue<I> {
     ///
     /// If this returns `QueueFull` it will use the `waker` in
     /// `queued_ops[op_id]` to wait for a submission.
-    fn submit_with_id<F>(&self, op_id: OperationId, submit: F) -> Result<(), QueueFull>
+    fn submit_with_id<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
         let shared = &*self.shared;
         let result = shared.submissions.add(&shared.data, |submission| {
-            submit(submission);
+            fill(submission);
             submission.set_id(op_id);
         });
         match result {
