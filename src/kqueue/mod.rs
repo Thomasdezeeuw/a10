@@ -11,6 +11,7 @@ use crate::sq::QueueFull;
 use crate::{debug_detail, syscall, OperationId, WAKE_ID};
 
 pub(crate) mod config;
+pub(crate) mod io;
 
 /// kqueue implementation.
 pub(crate) enum Implementation {}
