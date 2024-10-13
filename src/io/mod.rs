@@ -12,7 +12,10 @@
 //! Finally we have the [`stdin`], [`stdout`] and [`stderr`] functions to create
 //! `AsyncFd`s for standard in, out and error respectively.
 
-use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{self, Poll};
+use std::{fmt, io};
 
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::Operation;
@@ -72,5 +75,13 @@ impl<'fd, B: BufMut, D: Descriptor> Read<'fd, B, D> {
 impl<'fd, B: BufMut + fmt::Debug, D: Descriptor> fmt::Debug for Read<'fd, B, D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.fmt_dbg("a10::Read", f)
+    }
+}
+
+impl<'fd, B: BufMut + Unpin, D: Descriptor + Unpin> Future for Read<'fd, B, D> {
+    type Output = io::Result<B>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.inner).poll(ctx)
     }
 }
