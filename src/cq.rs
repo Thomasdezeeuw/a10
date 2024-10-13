@@ -35,7 +35,7 @@ impl<I: Implementation> Queue<I> {
             log::trace!(completion:? = completion; "dequeued completion event");
             let id = completion.id();
             let Some(queued_op) = self.shared.queued_ops.get(id) else {
-                log::trace!(completion:? = completion; "invalid id: {id}");
+                log::trace!(completion:? = completion; "got completion for unknown operation");
                 continue;
             };
 
