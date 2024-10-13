@@ -4,7 +4,6 @@
 
 use std::cell::UnsafeCell;
 use std::ffi::CString;
-use std::ptr;
 use std::sync::Arc;
 use std::task;
 
@@ -67,7 +66,6 @@ where
         T::drop_from_waker_data(data);
     }
 }
-
 
 impl<T> DropWake for Box<T> {
     fn into_waker_data(self) -> *const () {

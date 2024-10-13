@@ -2,7 +2,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, MutexGuard};
-use std::{fmt, io, mem, task};
+use std::{fmt, io, task};
 
 use crate::{cq, Implementation, OperationId, QueuedOperation, SharedState};
 
