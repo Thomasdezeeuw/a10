@@ -5,6 +5,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 use std::{cmp, fmt, mem, ptr};
 
+use crate::fd::{AsyncFd, Descriptor};
+use crate::op::OpResult;
 use crate::sq::QueueFull;
 use crate::{debug_detail, syscall, OperationId, WAKE_ID};
 
@@ -248,6 +250,55 @@ impl crate::sq::Submissions for Submissions {
         } else {
             Ok(())
         }
+    }
+}
+
+/// kqueue specific [`crate::op::Op`] trait.
+pub(crate) trait Op {
+    type Output;
+    type Resources;
+    type Args;
+    type OperationOutput;
+
+    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut Event);
+
+    fn check_result<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> OpResult<Self::OperationOutput>;
+
+    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output;
+}
+
+impl<T: Op> crate::op::Op for T {
+    type Output = T::Output;
+    type Resources = T::Resources;
+    type Args = T::Args;
+    type Submission = Event;
+    type CompletionState = CompletionState;
+    type OperationOutput = T::OperationOutput;
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        _: &mut Self::Resources,
+        _: &mut Self::Args,
+        kevent: &mut Self::Submission,
+    ) {
+        T::fill_submission(fd, kevent)
+    }
+
+    fn check_result<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        _: &mut Self::CompletionState,
+    ) -> OpResult<Self::OperationOutput> {
+        T::check_result(fd, resources, args)
+    }
+
+    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output {
+        T::map_ok(resources, output)
     }
 }
 
