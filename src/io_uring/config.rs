@@ -8,8 +8,8 @@ use std::time::Duration;
 use std::{io, ptr};
 
 use crate::bitmap::AtomicBitMap;
-use crate::sys::{libc, CompletionQueue, SharedSubmissionQueue};
-use crate::{sys, syscall, Ring, SubmissionQueue};
+use crate::sys::{self, libc, mmap, munmap};
+use crate::{syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
 #[must_use = "no ring is created until `a10::Config::build` is called"]
@@ -26,7 +26,7 @@ pub struct Config<'r> {
     cpu_affinity: Option<u32>,
     idle_timeout: Option<u32>,
     direct_descriptors: Option<u32>,
-    attach: Option<&'r sys::SubmissionQueue>,
+    attach: Option<&'r SubmissionQueue>,
 }
 
 macro_rules! check_feature {
@@ -219,14 +219,13 @@ impl<'r> Config<'r> {
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach(mut self, other_ring: &'r Ring) -> Self {
-        self.attach = Some(&other_ring.sys.sq);
-        self
+        self.attach_queue(other_ring.submission_queue())
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach_queue(mut self, other_ring: &'r SubmissionQueue) -> Self {
-        self.attach = Some(&other_ring.sys);
+    pub const fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
+        self.attach = Some(&other_sq);
         self
     }
 
@@ -268,16 +267,16 @@ impl<'r> Config<'r> {
             parameters.sq_thread_idle = idle_timeout;
         }
         #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
-        if let Some(other_ring) = self.attach {
-            parameters.wq_fd = other_ring.shared.ring_fd.as_raw_fd() as u32;
+        if let Some(other_sq) = self.attach {
+            parameters.wq_fd = other_sq.inner.shared_data().rfd.as_raw_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
         let mut first_err = None;
-        let fd = loop {
+        let rfd = loop {
             match syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
                 // SAFETY: just created the fd (and checked the error).
-                Ok(fd) => break unsafe { OwnedFd::from_raw_fd(fd) },
+                Ok(rfd) => break unsafe { OwnedFd::from_raw_fd(rfd) },
                 Err(err) => {
                     if let io::ErrorKind::InvalidInput = err.kind() {
                         // We set some flags which are not strictly required by
@@ -305,8 +304,9 @@ impl<'r> Config<'r> {
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED); // No need for fixed files.
 
-        let cq = mmap_completion_queue(fd.as_fd(), &parameters)?;
-        let sq = mmap_submission_queue(fd, &parameters)?;
+        let shared = sys::Shared::new(rfd, &parameters)?;
+        let submissions = sys::Submissions::new();
+        let completions = sys::Completions::new(shared.rfd.as_fd(), &parameters)?;
 
         if let Some(size) = self.direct_descriptors {
             let register = libc::io_uring_rsrc_register {
@@ -316,150 +316,18 @@ impl<'r> Config<'r> {
                 data: 0,
                 tags: 0,
             };
-            sq.register(
+            shared.register(
                 libc::IORING_REGISTER_FILES2,
                 (&register as *const libc::io_uring_rsrc_register).cast(),
                 size_of::<libc::io_uring_rsrc_register>() as _,
             )?;
         }
 
-        Ok(Ring {
-            sys: sys::Ring { cq, sq },
-        })
+        Ring::build(
+            submissions,
+            shared,
+            completions,
+            parameters.cq_entries as usize, // TODO: add option for # queued operations.
+        )
     }
-}
-
-/// Memory-map the submission queue.
-fn mmap_submission_queue(
-    ring_fd: OwnedFd,
-    parameters: &libc::io_uring_params,
-) -> io::Result<sys::SubmissionQueue> {
-    let size = parameters.sq_off.array + parameters.sq_entries * (size_of::<libc::__u32>() as u32);
-
-    let submission_queue = mmap(
-        size as usize,
-        libc::PROT_READ | libc::PROT_WRITE,
-        libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd.as_raw_fd(),
-        libc::off_t::from(libc::IORING_OFF_SQ_RING),
-    )?;
-
-    let submission_queue_entries = mmap(
-        parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>(),
-        libc::PROT_READ | libc::PROT_WRITE,
-        libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd.as_raw_fd(),
-        libc::off_t::from(libc::IORING_OFF_SQES),
-    )
-    .map_err(|err| {
-        _ = munmap(submission_queue, size as usize); // Can't handle two errors.
-        err
-    })?;
-
-    let op_indices = AtomicBitMap::new(parameters.cq_entries as usize);
-    let mut queued_ops = Vec::with_capacity(op_indices.capacity());
-    queued_ops.resize_with(queued_ops.capacity(), || Mutex::new(None));
-    let queued_ops = queued_ops.into_boxed_slice();
-
-    #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
-    unsafe {
-        Ok(sys::SubmissionQueue {
-            shared: Arc::new(SharedSubmissionQueue {
-                ring_fd,
-                ptr: submission_queue,
-                size,
-                // Fields are constant, so we load them once.
-                len: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize)),
-                ring_mask: load_atomic_u32(
-                    submission_queue.add(parameters.sq_off.ring_mask as usize),
-                ),
-                kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
-                is_polling: AtomicBool::new(false),
-                op_indices,
-                queued_ops,
-                blocked_futures: Mutex::new(Vec::new()),
-                pending_tail: AtomicU32::new(0),
-                // Fields are shared with the kernel.
-                kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
-                flags: submission_queue
-                    .add(parameters.sq_off.flags as usize)
-                    .cast(),
-                entries: submission_queue_entries.cast(),
-                array_index: Mutex::new(0),
-                array: submission_queue
-                    .add(parameters.sq_off.array as usize)
-                    .cast(),
-                array_tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
-            }),
-        })
-    }
-}
-
-/// Memory-map the completion queue.
-fn mmap_completion_queue(
-    ring_fd: BorrowedFd<'_>,
-    parameters: &libc::io_uring_params,
-) -> io::Result<CompletionQueue> {
-    let size =
-        parameters.cq_off.cqes + parameters.cq_entries * (size_of::<libc::io_uring_cqe>() as u32);
-
-    let completion_queue = mmap(
-        size as usize,
-        libc::PROT_READ | libc::PROT_WRITE,
-        libc::MAP_SHARED | libc::MAP_POPULATE,
-        ring_fd.as_raw_fd(),
-        libc::off_t::from(libc::IORING_OFF_CQ_RING),
-    )?;
-
-    unsafe {
-        Ok(CompletionQueue {
-            ptr: completion_queue,
-            size,
-            // Fields are constant, so we load them once.
-            /* NOTE: usunused.
-            len: load_atomic_u32(completion_queue.add(parameters.cq_off.ring_entries as usize)),
-            */
-            ring_mask: load_atomic_u32(completion_queue.add(parameters.cq_off.ring_mask as usize)),
-            // Fields are shared with the kernel.
-            head: completion_queue.add(parameters.cq_off.head as usize).cast(),
-            tail: completion_queue.add(parameters.cq_off.tail as usize).cast(),
-            entries: completion_queue.add(parameters.cq_off.cqes as usize).cast(),
-        })
-    }
-}
-
-/// `mmap(2)` wrapper that also sets `MADV_DONTFORK`.
-fn mmap(
-    len: libc::size_t,
-    prot: libc::c_int,
-    flags: libc::c_int,
-    fd: libc::c_int,
-    offset: libc::off_t,
-) -> io::Result<*mut libc::c_void> {
-    let addr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
-        libc::MAP_FAILED => return Err(io::Error::last_os_error()),
-        addr => addr,
-    };
-
-    match unsafe { libc::madvise(addr, len, libc::MADV_DONTFORK) } {
-        0 => Ok(addr),
-        _ => {
-            let err = io::Error::last_os_error();
-            _ = munmap(addr, len); // Can't handle two errors.
-            Err(err)
-        }
-    }
-}
-
-/// `munmap(2)` wrapper.
-pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
-    match unsafe { libc::munmap(addr, len) } {
-        0 => Ok(()),
-        _ => Err(io::Error::last_os_error()),
-    }
-}
-
-/// Load a `u32` using relaxed ordering from `ptr`.
-unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-    (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed)
 }

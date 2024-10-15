@@ -127,6 +127,11 @@ impl<I: Implementation> Queue<I> {
         // SAFETY: we don't poison locks.
         self.shared.queued_ops[id].lock().unwrap()
     }
+
+    /// Returns the implementation specific shared data.
+    pub(crate) fn shared_data(&self) -> &I::Shared {
+        &self.shared.data
+    }
 }
 
 impl<I: Implementation> Clone for Queue<I> {
