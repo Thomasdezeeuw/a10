@@ -137,11 +137,10 @@
     variant_size_differences
 )]
 
-use std::fmt;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::task;
 use std::time::Duration;
+use std::{fmt, task};
 
 mod bitmap;
 mod drop_waker;
@@ -390,6 +389,8 @@ struct QueuedOperation<T> {
 impl<T: Default> QueuedOperation<T> {
     fn new(waker: task::Waker) -> QueuedOperation<T> {
         QueuedOperation {
+            // FIXME: stop using default here. io_uring needs a single operation
+            // or multishot.
             state: T::default(),
             dropped: false,
             done: false,
@@ -403,6 +404,7 @@ impl<T: Default> QueuedOperation<T> {
 /// Used to relate completion events to submission events and operations. Also
 /// used as index into [`SharedState::queued_ops`], created by
 /// [`SharedState::op_ids`].
+// TODO: reduce this to a `u32`. Could shrink some types.
 type OperationId = usize;
 
 /// Id to use for internal wake ups.
