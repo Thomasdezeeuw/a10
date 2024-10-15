@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, mem, ptr};
 
+use crate::op::OpResult;
 use crate::sys::{self, libc, mmap, munmap, Shared};
 use crate::{syscall, OperationId};
 
@@ -338,15 +339,15 @@ pub(crate) struct CompletionResult {
 }
 
 impl CompletionResult {
-    fn as_result(self) -> io::Result<(u16, u32)> {
+    pub(crate) fn as_op_result(self) -> OpResult<(u16, u32)> {
         if self.result.is_negative() {
             // TODO: handle `-EBUSY` on operations.
             // TODO: handle io_uring specific errors here, read CQE
             // ERRORS in the manual.
-            Err(io::Error::from_raw_os_error(-self.result))
+            OpResult::Err(io::Error::from_raw_os_error(-self.result))
         } else {
             // SAFETY: checked if `result` is negative above.
-            Ok((self.flags, self.result as u32))
+            OpResult::Ok((self.flags, self.result as u32))
         }
     }
 }

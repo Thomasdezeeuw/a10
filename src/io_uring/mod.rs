@@ -1,16 +1,17 @@
 //! io_uring implementation.
 
 use std::os::fd::{AsRawFd, OwnedFd};
+use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
-use std::{io, ptr};
 
 use crate::syscall;
 
 pub(crate) mod config;
-pub(crate) mod fd;
 mod cq;
+pub(crate) mod fd;
+pub(crate) mod io;
 mod libc;
 mod sq;
 
