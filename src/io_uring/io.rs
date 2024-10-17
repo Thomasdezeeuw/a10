@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::BufMut;
+use crate::io::{BufId, BufMut};
 use crate::op::OpResult;
-use crate::sys::{self, libc, sq, cq};
+use crate::sys::{self, cq, libc, sq};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -27,16 +27,12 @@ impl<B: BufMut> sys::Op for Read<B> {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
         submission.0.len = len;
-        /* TODO(port): add back support for read buffer pool.
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
         }
-        */
     }
 
-    fn check_result<D: Descriptor>(
-        state: &mut cq::CompletionState,
-    ) -> OpResult<cq::OpReturn> {
+    fn check_result<D: Descriptor>(state: &mut cq::CompletionState) -> OpResult<cq::OpReturn> {
         match state {
             cq::CompletionState::Single { result } => return result.as_op_result(),
             cq::CompletionState::Multishot { results } => {
@@ -48,13 +44,10 @@ impl<B: BufMut> sys::Op for Read<B> {
         OpResult::Again
     }
 
-    fn map_ok(mut buf: Self::Resources, (buf_idx, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
-            /* TODO(port): add back support for read buffer pool.
-            buf.buffer_init(BufIdx(buf_idx), n as u32)
-            */
-            buf.set_init(n as usize)
+            buf.buffer_init(BufId(buf_id), n);
         };
         buf
     }

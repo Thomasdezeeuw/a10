@@ -63,11 +63,11 @@ pub unsafe trait BufMut: 'static {
     /// by [`BufMut::parts_mut`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 
-    /* TODO(port).
     /// Buffer group id, or `None` if it's not part of a buffer pool.
     ///
     /// Don't implement this.
     #[doc(hidden)]
+    #[allow(private_interfaces)]
     fn buffer_group(&self) -> Option<BufGroupId> {
         None
     }
@@ -76,12 +76,20 @@ pub unsafe trait BufMut: 'static {
     ///
     /// Don't implement this.
     #[doc(hidden)]
-    unsafe fn buffer_init(&mut self, idx: BufIdx, n: u32) {
-        debug_assert!(idx.0 == 0);
+    #[allow(private_interfaces)]
+    unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
+        debug_assert!(id.0 == 0);
         self.set_init(n as usize);
     }
-    */
 }
+
+/// Id for a [`BufPool`].
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct BufGroupId(pub(crate) u16);
+
+/// Index for a [`BufPool`].
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct BufId(pub(crate) u16);
 
 /// The implementation for `Vec<u8>` only uses the unused capacity, so any bytes
 /// already in the buffer will be untouched.
