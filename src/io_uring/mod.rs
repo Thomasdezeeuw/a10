@@ -2,9 +2,8 @@
 
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
 
 use crate::syscall;
 

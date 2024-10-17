@@ -1,11 +1,10 @@
-use std::os::fd::{AsRawFd, BorrowedFd};
-use std::sync::atomic::{self, AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::os::fd::AsRawFd;
+use std::sync::atomic::{self, Ordering};
 use std::{fmt, io, ptr};
 
 use crate::sq::QueueFull;
-use crate::sys::{libc, mmap, munmap, sq, Shared};
-use crate::{syscall, OperationId, WAKE_ID};
+use crate::sys::{libc, Shared};
+use crate::{OperationId, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]

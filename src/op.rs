@@ -7,6 +7,7 @@ use std::task::{self, Poll};
 use std::{fmt, io, mem};
 
 use crate::fd::{AsyncFd, Descriptor, File};
+#[cfg(not(target_os = "linux"))]
 use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId};
 
@@ -77,6 +78,9 @@ where
                 // SAFETY: we've ensured that `op_id` is valid.
                 let mut queued_op_slot = unsafe { fd.sq().get_op(*op_id) };
                 let result = match queued_op_slot.as_mut() {
+                    // Only map the result if the operation is marked as done.
+                    // Otherwise we wait for another event.
+                    Some(queued_op) if !queued_op.done => return Poll::Pending,
                     Some(queued_op) => O::check_result(fd, resources.get_mut(), args, &mut queued_op.state),
                     // Somehow the queued operation is gone. This shouldn't
                     // happen, but we'll deal with it anyway.
@@ -90,13 +94,17 @@ where
                     }
                     OpResult::Again => {
                         // Operation wasn't completed, need to try again.
-                        let result = fd.sq().inner.resubmit(
-                            *op_id,
-                            |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
-                        );
-                        match result {
-                            Ok(()) => { /* Running again using the same operation id. */ }
-                            Err(QueueFull) => state.not_started(),
+                        // TODO: can we do this differently than using a `cfg`?
+                        #[cfg(not(target_os = "linux"))]
+                        {
+                            let result = fd.sq().inner.resubmit(
+                                *op_id,
+                                |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
+                            );
+                            match result {
+                                Ok(()) => { /* Running again using the same operation id. */ }
+                                Err(QueueFull) => state.not_started(),
+                            }
                         }
                         // We'll be awoken once the operation is ready again or
                         // if we can submit again (in case of QueueFull).
@@ -214,7 +222,7 @@ pub(crate) trait Op {
     fn check_result<D: Descriptor>(
         fd: &AsyncFd<D>,
         resources: &mut Self::Resources,
-        offset: &mut Self::Args,
+        args: &mut Self::Args,
         state: &mut Self::CompletionState,
     ) -> OpResult<Self::OperationOutput>;
 

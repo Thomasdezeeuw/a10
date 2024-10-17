@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
-use std::{fmt, io, mem, ptr};
+use std::{fmt, io, ptr};
 
 use crate::op::OpResult;
 use crate::sys::{self, libc, mmap, munmap, Shared};
@@ -263,8 +263,9 @@ impl crate::cq::Event for Completion {
             // Zero copy completed, we can now mark ourselves as done.
             CompletionState::Single { .. } if self.is_notification() => true,
             CompletionState::Single { result } => {
-                let old = mem::replace(result, Some(completion));
-                debug_assert!(old.is_none());
+                debug_assert!(result.result == -1);
+                debug_assert!(result.flags == u16::MAX);
+                *result = completion;
                 // For zero copy this may be false, in which case we get a
                 // notification (see above) in a future completion event.
                 !self.is_in_progress()
@@ -272,7 +273,7 @@ impl crate::cq::Event for Completion {
             CompletionState::Multishot { results } => {
                 results.push(completion);
                 // Multishot stops on the first error.
-                self.result().is_negative()
+                !self.result().is_negative()
             }
         }
     }
@@ -296,7 +297,7 @@ pub(crate) enum CompletionState {
     /// Single result operation.
     Single {
         /// Result of the operation.
-        result: Option<CompletionResult>,
+        result: CompletionResult,
     },
     /// Multishot operation, which expects multiple results for the same
     /// operation.
@@ -309,7 +310,12 @@ pub(crate) enum CompletionState {
 impl CompletionState {
     /// Create a queued operation.
     const fn new() -> CompletionState {
-        CompletionState::Single { result: None }
+        CompletionState::Single {
+            result: CompletionResult {
+                flags: u16::MAX,
+                result: -1,
+            },
+        }
     }
 
     /// Create a queued multishot operation.
