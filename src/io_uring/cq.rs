@@ -345,7 +345,7 @@ pub(crate) struct CompletionResult {
 }
 
 impl CompletionResult {
-    pub(crate) fn as_op_result(self) -> OpResult<(u16, u32)> {
+    pub(crate) fn as_op_result(self) -> OpResult<OpReturn> {
         if self.result.is_negative() {
             // TODO: handle `-EBUSY` on operations.
             // TODO: handle io_uring specific errors here, read CQE
@@ -357,3 +357,8 @@ impl CompletionResult {
         }
     }
 }
+
+/// Return value of a system call.
+///
+/// The flags and positive result of a system call.
+pub(crate) type OpReturn = (u16, u32);
