@@ -1,12 +1,10 @@
-use std::io;
 use std::marker::PhantomData;
-use std::task::Poll;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::BufMut;
-use crate::op::{OpResult, Operation};
+use crate::op::OpResult;
+use crate::sys::cq::CompletionState;
 use crate::sys::{self, libc};
-use crate::syscall;
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -19,7 +17,7 @@ impl<B: BufMut> crate::op::Op for Read<B> {
     type Resources = B;
     type Args = u64; // Offset.
     type Submission = sys::sq::Submission;
-    type CompletionState = sys::cq::CompletionResult;
+    type CompletionState = CompletionState;
     /// Buffer index and operation output.
     type OperationOutput = (u16, u32);
 
@@ -51,7 +49,15 @@ impl<B: BufMut> crate::op::Op for Read<B> {
         offset: &mut Self::Args,
         state: &mut Self::CompletionState,
     ) -> OpResult<Self::OperationOutput> {
-        state.as_op_result()
+        match state {
+            CompletionState::Single { result } => return result.as_op_result(),
+            CompletionState::Multishot { results } => {
+                if !results.is_empty() {
+                    return results.remove(0).as_op_result();
+                }
+            }
+        }
+        OpResult::Again
     }
 
     fn map_ok(mut buf: Self::Resources, (buf_idx, n): Self::OperationOutput) -> Self::Output {

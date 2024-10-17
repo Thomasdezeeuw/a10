@@ -1,14 +1,11 @@
 //! Configuration of a [`Ring`].
 
+use std::io;
 use std::mem::{self, size_of};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
-use std::{io, ptr};
 
-use crate::bitmap::AtomicBitMap;
-use crate::sys::{self, libc, mmap, munmap};
+use crate::sys::{self, libc};
 use crate::{syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
@@ -218,7 +215,7 @@ impl<'r> Config<'r> {
     ///
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach(mut self, other_ring: &'r Ring) -> Self {
+    pub const fn attach(self, other_ring: &'r Ring) -> Self {
         self.attach_queue(other_ring.submission_queue())
     }
 
