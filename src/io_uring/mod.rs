@@ -5,9 +5,9 @@ use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
-use crate::syscall;
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
+use crate::syscall;
 
 pub(crate) mod config;
 mod cq;
@@ -238,9 +238,7 @@ pub(crate) trait Op {
         submission: &mut sq::Submission,
     );
 
-    fn check_result<D: Descriptor>(
-        state: &mut cq::CompletionState,
-    ) -> OpResult<cq::OpReturn>;
+    fn check_result<D: Descriptor>(state: &mut cq::CompletionState) -> OpResult<cq::OpReturn>;
 
     fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
 }
