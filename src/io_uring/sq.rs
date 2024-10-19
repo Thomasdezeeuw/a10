@@ -212,7 +212,7 @@ impl fmt::Debug for Submission {
                 .field("buf_group", &buf_group);
         }
 
-        let mut f = f.debug_struct("Submission");
+        let mut f = f.debug_struct("io_uring::Submission");
         match u32::from(self.0.opcode) {
             libc::IORING_OP_NOP => {
                 f.field("opcode", &"IORING_OP_NOP");
