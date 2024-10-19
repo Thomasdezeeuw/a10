@@ -59,5 +59,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
 op_future!(
     /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
+    ///
+    /// [`Future`]: std::future::Future
     pub struct Read<B: BufMut>(sys::io::Read<B>) -> io::Result<B>;
 );
