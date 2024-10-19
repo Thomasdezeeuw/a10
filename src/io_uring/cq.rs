@@ -281,7 +281,7 @@ impl crate::cq::Event for Completion {
 
 impl fmt::Debug for Completion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Completion")
+        f.debug_struct("io_uring::Completion")
             .field("user_data", &self.0.user_data)
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
