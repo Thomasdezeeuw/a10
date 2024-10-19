@@ -192,6 +192,11 @@ impl<R, A> State<R, A> {
     }
 }
 
+// SAFETY: `UnsafeCell` is `!Sync`, but as long as `R` is `Sync` so it while
+// wrapped in `UnsafeCell`.
+unsafe impl<R: Send, A: Send> Send for State<R, A> {}
+unsafe impl<R: Sync, A: Sync> Sync for State<R, A> {}
+
 /// Implementation of an [`Operation`].
 pub(crate) trait Op {
     /// Output of the operation.
