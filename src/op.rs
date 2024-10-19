@@ -2,6 +2,7 @@
 
 use std::cell::UnsafeCell;
 use std::future::Future;
+use std::panic::RefUnwindSafe;
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, mem};
@@ -196,6 +197,8 @@ impl<R, A> State<R, A> {
 // wrapped in `UnsafeCell`.
 unsafe impl<R: Send, A: Send> Send for State<R, A> {}
 unsafe impl<R: Sync, A: Sync> Sync for State<R, A> {}
+
+impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for State<R, A> {}
 
 /// Implementation of an [`Operation`].
 pub(crate) trait Op {
