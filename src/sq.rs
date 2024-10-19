@@ -152,11 +152,6 @@ impl<I: Implementation> Queue<I> {
         drop(op);
         self.shared.op_ids.make_available(op_id);
     }
-
-    /// Returns the implementation specific shared data.
-    pub(crate) fn shared_data(&self) -> &I::Shared {
-        &self.shared.data
-    }
 }
 
 impl<I: Implementation> Clone for Queue<I> {
