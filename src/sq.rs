@@ -114,18 +114,43 @@ impl<I: Implementation> Queue<I> {
         }
     }
 
+    /// Get the queued operation with `id`.
+    ///
     /// # Safety
     ///
     /// The `id` must come from [`Queue::submit`] and must not be invalid, e.g.
     /// by using [`Queue::resubmit`].
     pub(crate) unsafe fn get_op(
         &self,
-        id: OperationId,
+        op_id: OperationId,
     ) -> MutexGuard<
         Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>,
     > {
         // SAFETY: we don't poison locks.
-        self.shared.queued_ops[id].lock().unwrap()
+        self.shared.queued_ops[op_id].lock().unwrap()
+    }
+
+    /// Make operation with `id` available.
+    ///
+    /// # Safety
+    ///
+    /// The `id` must come from [`Queue::submit`] and must not be invalid, e.g.
+    /// by using [`Queue::resubmit`].
+    ///
+    /// After this call `id` is invalid.
+    pub(crate) unsafe fn make_op_available(
+        &self,
+        op_id: OperationId,
+        mut op: MutexGuard<
+            Option<
+                QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>,
+            >,
+        >,
+    ) {
+        // SAFETY: we don't poison locks.
+        *op = None;
+        drop(op);
+        self.shared.op_ids.make_available(op_id);
     }
 
     /// Returns the implementation specific shared data.

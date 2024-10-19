@@ -77,8 +77,9 @@ where
                 return Poll::Pending;
             }
             State::Running { resources, args, op_id } => {
+                let op_id = *op_id;
                 // SAFETY: we've ensured that `op_id` is valid.
-                let mut queued_op_slot = unsafe { fd.sq().get_op(*op_id) };
+                let mut queued_op_slot = unsafe { fd.sq().get_op(op_id) };
                 log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
                 let result = match queued_op_slot.as_mut() {
                     // Only map the result if the operation is marked as done.
@@ -89,20 +90,22 @@ where
                     // happen, but we'll deal with it anyway.
                     None => OpResult::Again,
                 };
-                drop(queued_op_slot); // Unlock.
                 log::trace!(result:? = result; "mapped operation result");
                 match result {
                     OpResult::Ok(ok) => {
                         let resources = state.done();
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
                         Poll::Ready(Ok(O::map_ok(resources, ok)))
                     }
                     OpResult::Again => {
+                        drop(queued_op_slot); // Unlock.
                         // Operation wasn't completed, need to try again.
                         // TODO: can we do this differently than using a `cfg`?
                         #[cfg(not(target_os = "linux"))]
                         {
                             let result = fd.sq().inner.resubmit(
-                                *op_id,
+                                op_id,
                                 |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
                             );
                             match result {
@@ -116,6 +119,8 @@ where
                     }
                     OpResult::Err(err) => {
                         *state = State::Done;
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
                         Poll::Ready(Err(err))
                     }
                 }
