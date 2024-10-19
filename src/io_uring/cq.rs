@@ -268,7 +268,7 @@ impl crate::cq::Event for Completion {
                 *result = completion;
                 // For zero copy this may be false, in which case we get a
                 // notification (see above) in a future completion event.
-                !self.is_in_progress()
+                self.is_in_progress()
             }
             CompletionState::Multishot { results } => {
                 results.push(completion);
