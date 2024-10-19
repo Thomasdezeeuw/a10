@@ -7,7 +7,7 @@ fn main() -> io::Result<()> {
     std_logger::Config::logfmt().init();
     let mut ring = a10::Ring::new(1)?;
     let sq = ring.submission_queue().clone();
-    let mut filenames: Vec<String> = args().skip(1).collect();
+    let filenames = args().skip(1).collect();
     runtime::block_on(&mut ring, test(sq, filenames))
 }
 
@@ -26,16 +26,8 @@ async fn test(sq: a10::SubmissionQueue, filenames: Vec<String>) -> io::Result<()
                 break;
             }
 
-            let mut n = 0;
-            loop {
-                use std::io::Write;
-                let m = stdout.write(&buf[n..])?;
-                n += m;
-                if n == buf.len() {
-                    // Written all the bytes, try reading again.
-                    break;
-                }
-            }
+            use std::io::Write;
+            stdout.write_all(&buf)?;
         }
     }
     Ok(())
