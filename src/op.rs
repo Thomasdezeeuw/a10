@@ -58,6 +58,7 @@ where
     O::Resources: Unpin,
     O::Args: Unpin,
     D: Descriptor + Unpin,
+    O::OperationOutput: fmt::Debug,
 {
     type Output = io::Result<O::Output>;
 
@@ -78,6 +79,7 @@ where
             State::Running { resources, args, op_id } => {
                 // SAFETY: we've ensured that `op_id` is valid.
                 let mut queued_op_slot = unsafe { fd.sq().get_op(*op_id) };
+                log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
                 let result = match queued_op_slot.as_mut() {
                     // Only map the result if the operation is marked as done.
                     // Otherwise we wait for another event.
@@ -88,6 +90,7 @@ where
                     None => OpResult::Again,
                 };
                 drop(queued_op_slot); // Unlock.
+                log::trace!(result:? = result; "mapped operation result");
                 match result {
                     OpResult::Ok(ok) => {
                         let resources = state.done();
