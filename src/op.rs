@@ -239,6 +239,7 @@ pub(crate) trait Op {
 }
 
 /// [`Op`] result.
+#[derive(Debug)]
 pub(crate) enum OpResult<T> {
     /// [`Result::Ok`].
     Ok(T),
