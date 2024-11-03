@@ -159,6 +159,21 @@ impl<I: Implementation> Queue<I> {
     }
 }
 
+#[cfg(any(target_os = "linux"))]
+impl Queue<crate::sys::Implementation> {
+    /// Add a new submission, without waiting for a result.
+    pub(crate) fn submit_no_result<F>(&self, fill: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut crate::sys::Submission),
+    {
+        let shared = &*self.shared;
+        shared.submissions.add(&shared.data, |submission| {
+            fill(submission);
+            submission.no_completion_event();
+        })
+    }
+}
+
 impl<I: Implementation> Clone for Queue<I> {
     fn clone(&self) -> Self {
         Queue {

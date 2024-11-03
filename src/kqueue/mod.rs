@@ -21,6 +21,7 @@ mod sq;
 
 pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
+pub(crate) use Event as Submission;
 
 /// kqueue implementation.
 pub(crate) enum Implementation {}
