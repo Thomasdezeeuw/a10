@@ -2,12 +2,12 @@
 //!
 //! See [`AsyncFd`].
 
-use std::fmt;
 use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::{fmt, io};
 
-use crate::SubmissionQueue;
+use crate::{sq, sys, syscall, SubmissionQueue};
 
 #[cfg(target_os = "linux")]
 pub use crate::sys::fd::Direct;
@@ -120,21 +120,24 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
 
 impl<D: Descriptor> Drop for AsyncFd<D> {
     fn drop(&mut self) {
-        // TODO(port).
-        todo!("AsyncFd::drop")
-        /*
-        let result = self.sq.add_no_result(|submission| unsafe {
-            submission.close(self.fd());
-            submission.no_completion_event();
-            D::use_flags(submission);
-        });
-        if let Err(err) = result {
-            log::warn!("error submitting close operation for a10::AsyncFd: {err}");
-            if let Err(err) = D::sync_close(self.fd()) {
-                log::warn!("error closing a10::AsyncFd: {err}");
+        // Try to asynchronously close the desctiptor (if the OS supports it).
+        #[cfg(any(target_os = "linux"))]
+        {
+            let result = self.sq.inner.submit_no_result(|submission| {
+                sys::fd::fill_close_submission(&*self, submission);
+            });
+            match result {
+                Ok(()) => return,
+                Err(sq::QueueFull) => {
+                    log::warn!("error submitting close operation for a10::AsyncFd, queue is full")
+                }
             }
         }
-        */
+
+        // Fall back to synchronously closing the descriptor.
+        if let Err(err) = D::close(self.fd()) {
+            log::warn!("error closing a10::AsyncFd: {err}");
+        }
     }
 }
 
@@ -143,18 +146,14 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
-    /* TODO(port).
     use std::io;
     use std::os::fd::RawFd;
 
-    use crate::io_uring::op::Submission;
-    */
-
     pub(crate) trait Descriptor {
-        /* TODO(port).
         /// Set any additional flags in `submission` when using the descriptor.
-        fn use_flags(submission: &mut Submission);
+        fn use_flags(submission: &mut crate::sys::Submission);
 
+        /* TODO(port).
         /// Set any additional flags in `submission` when creating the descriptor.
         fn create_flags(submission: &mut Submission);
 
@@ -169,9 +168,8 @@ pub(crate) mod private {
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
 
-        /* TODO(port).
-        fn sync_close(fd: RawFd) -> io::Result<()>;
-        */
+        /// Synchronously close the file descriptor.
+        fn close(fd: RawFd) -> io::Result<()>;
     }
 }
 
@@ -182,11 +180,11 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    /* TODO(port).
-    fn use_flags(_: &mut Submission) {
+    fn use_flags(_: &mut crate::sys::Submission) {
         // No additional flags needed.
     }
 
+    /* TODO(port).
     fn create_flags(_: &mut Submission) {
         // No additional flags needed.
     }
@@ -204,10 +202,8 @@ impl private::Descriptor for File {
         "file descriptor"
     }
 
-    /* TODO(port).
-    fn sync_close(fd: RawFd) -> io::Result<()> {
+    fn close(fd: RawFd) -> io::Result<()> {
         syscall!(close(fd))?;
         Ok(())
     }
-    */
 }

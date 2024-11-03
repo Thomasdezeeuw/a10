@@ -17,7 +17,7 @@ mod libc;
 mod sq;
 
 pub(crate) use cq::Completions;
-pub(crate) use sq::Submissions;
+pub(crate) use sq::{Submission, Submissions};
 
 /// io_uring implementation.
 pub(crate) enum Implementation {}

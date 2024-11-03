@@ -1,3 +1,9 @@
+use std::io;
+use std::os::fd::RawFd;
+
+use crate::fd::AsyncFd;
+use crate::sys::{self, libc};
+
 /// Direct descriptors are io_uring private file descriptors.
 ///
 /// They avoid some of the overhead associated with thread shared file tables
@@ -9,11 +15,11 @@ pub enum Direct {}
 impl crate::fd::Descriptor for Direct {}
 
 impl crate::fd::private::Descriptor for Direct {
-    /* TODO(port).
-    fn use_flags(submission: &mut Submission) {
+    fn use_flags(submission: &mut sys::sq::Submission) {
         submission.use_direct_fd();
     }
 
+    /* TODO(port).
     fn create_flags(submission: &mut Submission) {
         submission.create_direct_fd();
     }
@@ -31,11 +37,18 @@ impl crate::fd::private::Descriptor for Direct {
         "direct descriptor"
     }
 
-    /* TODO(port).
-    fn sync_close(fd: RawFd) -> io::Result<()> {
+    fn close(fd: RawFd) -> io::Result<()> {
         // TODO: don't leak the the fd.
-        log::warn!("leaking direct descriptor {fd}");
+        log::warn!(fd = fd; "leaking direct descriptor");
         Ok(())
     }
-    */
+}
+
+pub(crate) fn fill_close_submission<D: crate::fd::Descriptor>(
+    fd: &AsyncFd<D>,
+    submission: &mut sys::sq::Submission,
+) {
+    submission.0.opcode = libc::IORING_OP_CLOSE as u8;
+    submission.0.fd = fd.fd();
+    D::use_flags(submission);
 }
