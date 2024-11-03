@@ -40,14 +40,20 @@ impl<I: Implementation> Queue<I> {
             *op = Some(queued_op);
         }
 
-        self.submit_with_id(op_id, fill)?;
+        // SAFETY: we just got the `op_id` above so we own it. Furthermore we
+        // don't use it in case an error is returned.
+        unsafe { self.submit_with_id(op_id, fill)? };
         Ok(op_id)
     }
 
     /// Re-adds a submission, reusing `op_id`.
     ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `op_id` is valid and owned by them.
+    ///
     /// If this returns `QueueFull` `op_id` becomes invalid.
-    pub(crate) fn resubmit<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
+    pub(crate) unsafe fn resubmit<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
@@ -56,12 +62,14 @@ impl<I: Implementation> Queue<I> {
 
     /// Add a new submission using an existing operation `id`.
     ///
-    /// Caller must ensure that `op_id` is valid and owned by them.
+    /// # Safety
+    ///
+    /// The caller must ensure that `op_id` is valid and owned by them.
     ///
     /// If this returns `QueueFull`it will use `op_id` to remove the queued
     /// operation, invalidating `op_id`, and use it's waker to wait for a
     /// submission slot.
-    fn submit_with_id<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
+    unsafe fn submit_with_id<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {

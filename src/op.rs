@@ -104,10 +104,15 @@ where
                         // TODO: can we do this differently than using a `cfg`?
                         #[cfg(not(target_os = "linux"))]
                         {
-                            let result = fd.sq().inner.resubmit(
-                                op_id,
-                                |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
-                            );
+                            // SAFETY: we've ensured that we own the `op_id`.
+                            // Furthermore we don't use it in case an error is
+                            // returned.
+                            let result = unsafe {
+                                fd.sq().inner.resubmit(
+                                    op_id,
+                                    |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
+                                )
+                            };
                             match result {
                                 Ok(()) => { /* Running again using the same operation id. */ }
                                 Err(QueueFull) => state.not_started(),
