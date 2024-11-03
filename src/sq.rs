@@ -39,17 +39,8 @@ impl<I: Implementation> Queue<I> {
             *op = Some(queued_op);
         }
 
-        match self.submit_with_id(op_id, fill) {
-            Ok(()) => Ok(op_id),
-            Err(QueueFull) => {
-                // Release operation slot.
-                // SAFETY: `unwrap`s are safe as we set the operation above.
-                let queued_op = { shared.queued_ops[op_id].lock().unwrap().take() };
-                debug_assert!(queued_op.is_some());
-                shared.op_ids.make_available(op_id);
-                Err(QueueFull)
-            }
-        }
+        self.submit_with_id(op_id, fill)?;
+        Ok(op_id)
     }
 
     /// Re-adds a submission, reusing `op_id`.
@@ -59,24 +50,16 @@ impl<I: Implementation> Queue<I> {
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
-        let shared = &*self.shared;
-        match self.submit_with_id(op_id, fill) {
-            Ok(()) => Ok(()),
-            Err(QueueFull) => {
-                // Release operation slot.
-                // SAFETY: `unwrap`s are safe as we set the operation above.
-                let queued_op = { shared.queued_ops[op_id].lock().unwrap().take() };
-                debug_assert!(queued_op.is_some());
-                shared.op_ids.make_available(op_id);
-                Err(QueueFull)
-            }
-        }
+        self.submit_with_id(op_id, fill)
     }
 
     /// Add a new submission using an existing operation `id`.
     ///
-    /// If this returns `QueueFull` it will use the `waker` in
-    /// `queued_ops[op_id]` to wait for a submission.
+    /// Caller must ensure that `op_id` is valid and owned by them.
+    ///
+    /// If this returns `QueueFull`it will use `op_id` to remove the queued
+    /// operation, invalidating `op_id`, and use it's waker to wait for a
+    /// submission slot.
     fn submit_with_id<F>(&self, op_id: OperationId, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
@@ -89,9 +72,12 @@ impl<I: Implementation> Queue<I> {
         match result {
             Ok(()) => Ok(()),
             Err(QueueFull) => {
-                if let Some(op) = shared.queued_ops[op_id].lock().unwrap().as_ref() {
-                    self.wait_for_submission(op.waker.clone());
-                }
+                // Release operation slot.
+                // SAFETY: `unwrap`s are safe as the caller must ensure it's
+                // valid.
+                let queued_op = { shared.queued_ops[op_id].lock().unwrap().take().unwrap() };
+                shared.op_ids.make_available(op_id);
+                self.wait_for_submission(queued_op.waker);
                 Err(QueueFull)
             }
         }
