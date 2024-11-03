@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::{fmt, io, mem};
 
-use crate::{Implementation, OperationId, SharedState};
+use crate::{Implementation, OperationId, SharedState, NO_COMPLETION_ID, WAKE_ID};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {
@@ -35,7 +35,13 @@ impl<I: Implementation> Queue<I> {
             log::trace!(completion:? = completion; "dequeued completion event");
             let id = completion.id();
             let Some(queued_op) = self.shared.queued_ops.get(id) else {
-                log::trace!(completion:? = completion; "got completion for unknown operation");
+                if id == WAKE_ID {
+                    /* Wake up only. */
+                } else if id == NO_COMPLETION_ID {
+                    log::warn!(completion:? = completion; "operation without completion failed");
+                } else {
+                    log::trace!(completion:? = completion; "got completion for unknown operation");
+                }
                 continue;
             };
 
