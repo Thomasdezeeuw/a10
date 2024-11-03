@@ -162,7 +162,10 @@ impl<I: Implementation> Queue<I> {
 #[cfg(any(target_os = "linux"))]
 impl Queue<crate::sys::Implementation> {
     /// Add a new submission, without waiting for a result.
-    pub(crate) fn submit_no_result<F>(&self, fill: F) -> Result<(), QueueFull>
+    ///
+    /// This marks the submission to not generate a completion event (as it will
+    /// be discarded any way).
+    pub(crate) fn submit_no_completion<F>(&self, fill: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut crate::sys::Submission),
     {
@@ -170,6 +173,7 @@ impl Queue<crate::sys::Implementation> {
         shared.submissions.add(&shared.data, |submission| {
             fill(submission);
             submission.no_completion_event();
+            submission.set_id(crate::NO_COMPLETION_ID);
         })
     }
 }

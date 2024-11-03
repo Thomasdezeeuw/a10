@@ -123,7 +123,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         // Try to asynchronously close the desctiptor (if the OS supports it).
         #[cfg(any(target_os = "linux"))]
         {
-            let result = self.sq.inner.submit_no_result(|submission| {
+            let result = self.sq.inner.submit_no_completion(|submission| {
                 sys::fd::fill_close_submission(&*self, submission);
             });
             match result {
