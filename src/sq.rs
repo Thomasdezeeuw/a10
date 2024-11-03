@@ -27,6 +27,7 @@ impl<I: Implementation> Queue<I> {
         // Get an `OperationId` to the queued operation list.
         let shared = &*self.shared;
         let Some(op_id) = shared.op_ids.next_available() else {
+            self.wait_for_submission(waker);
             return Err(QueueFull);
         };
 
