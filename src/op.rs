@@ -265,9 +265,12 @@ pub(crate) enum OpResult<T> {
 /// Create a [`Future`] based on [`Operation`].
 macro_rules! op_future {
     (
+        $(
         $(#[ $meta: meta ])*
         $vis: vis struct $name: ident <$resources: ident : $trait: ident>($sys: ty) -> $output: ty;
+        )+
     ) => {
+        $(
         $(#[ $meta ])*
         $vis struct $name<'fd, $resources: $trait, D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::Operation<'fd, $sys, D>);
 
@@ -284,6 +287,7 @@ macro_rules! op_future {
                 self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
             }
         }
+        )+
     };
 }
 
