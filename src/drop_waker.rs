@@ -13,10 +13,6 @@ use std::task;
 ///
 /// The returned `task::Waker` cannot be cloned, it will panic.
 pub(crate) unsafe fn drop_task_waker<T: DropWake>(to_drop: T) -> task::Waker {
-    unsafe fn drop_by_ptr<T: DropWake>(data: *const ()) {
-        T::drop_from_waker_data(data);
-    }
-
     // SAFETY: we meet the `task::Waker` and `task::RawWaker` requirements.
     unsafe {
         task::Waker::from_raw(task::RawWaker::new(
@@ -24,9 +20,9 @@ pub(crate) unsafe fn drop_task_waker<T: DropWake>(to_drop: T) -> task::Waker {
             &task::RawWakerVTable::new(
                 |_| panic!("attempted to clone `a10::drop_task_waker`"),
                 // SAFETY: `wake` takes ownership, so dropping is safe.
-                drop_by_ptr::<T>,
+                T::drop_from_waker_data,
                 |_| { /* `wake_by_ref` is a no-op. */ },
-                drop_by_ptr::<T>,
+                T::drop_from_waker_data,
             ),
         ))
     }
