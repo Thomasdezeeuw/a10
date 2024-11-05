@@ -21,6 +21,7 @@ use crate::{man_link, sys};
 mod traits;
 
 pub use traits::{Buf, BufMut, BufMutSlice, BufSlice};
+#[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
