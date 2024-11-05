@@ -38,7 +38,7 @@ impl<B: BufMut> sys::Op for Read<B> {
         match result {
             // SAFETY: negative result is mapped to an error.
             Ok(n) => OpResult::Ok(n as usize),
-            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => OpResult::Again,
+            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => OpResult::Again(true),
             Err(err) => OpResult::Err(err),
         }
     }
