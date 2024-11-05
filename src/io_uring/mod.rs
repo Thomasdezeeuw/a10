@@ -238,7 +238,7 @@ pub(crate) trait Op {
         submission: &mut sq::Submission,
     );
 
-    fn check_result<D: Descriptor>(state: &mut cq::CompletionState) -> OpResult<cq::OpReturn>;
+    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn>;
 
     fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
 }
@@ -248,7 +248,7 @@ impl<T: Op> crate::op::Op for T {
     type Resources = T::Resources;
     type Args = T::Args;
     type Submission = sq::Submission;
-    type CompletionState = cq::CompletionState;
+    type OperationState = cq::OperationState;
     type OperationOutput = cq::OpReturn;
 
     fn fill_submission<D: Descriptor>(
@@ -264,7 +264,7 @@ impl<T: Op> crate::op::Op for T {
         _: &AsyncFd<D>,
         _: &mut Self::Resources,
         _: &mut Self::Args,
-        state: &mut Self::CompletionState,
+        state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput> {
         T::check_result::<D>(state)
     }

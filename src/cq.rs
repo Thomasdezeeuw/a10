@@ -124,7 +124,7 @@ pub(crate) trait Completions: fmt::Debug {
 /// Completition event.
 pub(crate) trait Event: fmt::Debug {
     /// State of an operation.
-    type State: Default + fmt::Debug;
+    type State: OperationState;
 
     /// Identifier of the operation.
     fn id(&self) -> OperationId;
@@ -134,4 +134,13 @@ pub(crate) trait Event: fmt::Debug {
     /// Returns a boolean indicating if more events are expected for the same
     /// operation id.
     fn update_state(&self, state: &mut Self::State) -> bool;
+}
+
+/// State of an operation.
+pub(crate) trait OperationState: fmt::Debug {
+    /// Create a queued operation.
+    fn new() -> Self;
+
+    /// Create a queued multishot operation.
+    fn new_multishot() -> Self;
 }

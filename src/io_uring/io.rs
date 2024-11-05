@@ -32,13 +32,13 @@ impl<B: BufMut> sys::Op for Read<B> {
         }
     }
 
-    fn check_result<D: Descriptor>(state: &mut cq::CompletionState) -> OpResult<cq::OpReturn> {
+    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
         match state {
-            cq::CompletionState::Single { result } => result.as_op_result(),
-            cq::CompletionState::Multishot { results } if results.is_empty() => {
+            cq::OperationState::Single { result } => result.as_op_result(),
+            cq::OperationState::Multishot { results } if results.is_empty() => {
                 OpResult::Again(false)
             }
-            cq::CompletionState::Multishot { results } => results.remove(0).as_op_result(),
+            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
         }
     }
 

@@ -81,7 +81,7 @@ impl<T: Op> crate::op::Op for T {
     type Resources = T::Resources;
     type Args = T::Args;
     type Submission = Event;
-    type CompletionState = CompletionState;
+    type OperationState = OperationState;
     type OperationOutput = T::OperationOutput;
 
     fn fill_submission<D: Descriptor>(
@@ -97,7 +97,7 @@ impl<T: Op> crate::op::Op for T {
         fd: &AsyncFd<D>,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
-        _: &mut Self::CompletionState,
+        _: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput> {
         T::check_result(fd, resources, args)
     }
@@ -151,7 +151,7 @@ impl Event {
 }
 
 impl crate::cq::Event for Event {
-    type State = CompletionState;
+    type State = OperationState;
 
     fn id(&self) -> OperationId {
         self.0.udata as OperationId
@@ -163,8 +163,18 @@ impl crate::cq::Event for Event {
 }
 
 /// No additional state is needed.
-#[derive(Copy, Clone, Debug, Default)]
-pub(crate) struct CompletionState;
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct OperationState;
+
+impl crate::cq::OperationState for OperationState {
+    fn new() -> OperationState {
+        OperationState
+    }
+
+    fn new_multishot() -> OperationState {
+        OperationState
+    }
+}
 
 impl crate::sq::Submission for Event {
     fn set_id(&mut self, id: OperationId) {
