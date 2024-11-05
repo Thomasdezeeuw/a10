@@ -1,4 +1,4 @@
-#![allow(unused_macros, unused_imports, dead_code)] // FIXME: remove.
+#![allow(unused_imports, dead_code)] // FIXME: remove.
 
 //! The [A10] io_uring library.
 //!
@@ -460,6 +460,7 @@ macro_rules! syscall {
     }};
 }
 
+#[allow(unused_macros)] // Not used on all OS.
 macro_rules! debug_detail {
     (
         // Match a value exactly.
