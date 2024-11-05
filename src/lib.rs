@@ -397,12 +397,10 @@ struct QueuedOperation<T> {
     waker: task::Waker,
 }
 
-impl<T: Default> QueuedOperation<T> {
-    fn new(waker: task::Waker) -> QueuedOperation<T> {
+impl<T> QueuedOperation<T> {
+    const fn new(state: T, waker: task::Waker) -> QueuedOperation<T> {
         QueuedOperation {
-            // FIXME: stop using default here. io_uring needs a single operation
-            // or multishot.
-            state: T::default(),
+            state,
             dropped: false,
             done: false,
             waker,
