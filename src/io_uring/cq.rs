@@ -324,13 +324,6 @@ impl crate::cq::OperationState for OperationState {
     }
 }
 
-// FIXME: remove this an make the caller select single operation or multishot.
-impl Default for CompletionState {
-    fn default() -> CompletionState {
-        CompletionState::new()
-    }
-}
-
 /// Completed result of an operation.
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct CompletionResult {

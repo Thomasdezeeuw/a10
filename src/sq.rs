@@ -24,6 +24,46 @@ impl<I: Implementation> Queue<I> {
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
+        self.submit2(
+            <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new,
+            fill,
+            waker,
+        )
+    }
+
+    /// Add a new multishot submission, returns the id (index).
+    ///
+    /// If this returns `QueueFull` it will use the `waker` to wait for a
+    /// submission.
+    pub(crate) fn submit_multishot<F>(
+        &self,
+        fill: F,
+        waker: task::Waker,
+    ) -> Result<OperationId, QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+    {
+        self.submit2(
+            <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new_multishot,
+            fill,
+            waker,
+        )
+    }
+
+    /// Add a new submission, returns the id (index).
+    ///
+    /// If this returns `QueueFull` it will use the `waker` to wait for a
+    /// submission.
+    fn submit2<F, S>(
+        &self,
+        new_state: S,
+        fill: F,
+        waker: task::Waker,
+    ) -> Result<OperationId, QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+        S: FnOnce() -> <<I::Completions as cq::Completions>::Event as cq::Event>::State,
+    {
         // Get an `OperationId` to the queued operation list.
         let shared = &*self.shared;
         let Some(op_id) = shared.op_ids.next_available() else {
@@ -31,7 +71,7 @@ impl<I: Implementation> Queue<I> {
             return Err(QueueFull);
         };
 
-        let queued_op = QueuedOperation::new(waker);
+        let queued_op = QueuedOperation::new(new_state(), waker);
         // SAFETY: the `AtomicBitMap` always returns valid indices for
         // `op_queue` (it's the whole point of it).
         {
