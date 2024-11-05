@@ -73,7 +73,9 @@ where
                 if let Ok(op_id) = result {
                     state.running(op_id);
                 }
-                // We'll be awoken once the operation is ready.
+                // We'll be awoken once the operation is done, or if the
+                // submission queue is full we'll be awoken once a submission
+                // slot is available.
                 return Poll::Pending;
             }
             State::Running { resources, args, op_id } => {
