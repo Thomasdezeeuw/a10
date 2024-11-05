@@ -66,7 +66,10 @@ where
         match state {
             State::NotStarted { resources, args } => {
                 let result = fd.sq().inner.submit(
-                    |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
+                    |submission| {
+                        O::fill_submission(fd, resources.get_mut(), args, submission);
+                        D::use_flags(submission);
+                    },
                     ctx.waker().clone(),
                 );
                 if let Ok(op_id) = result {
@@ -109,7 +112,10 @@ where
                             let result = unsafe {
                                 fd.sq().inner.resubmit(
                                     op_id,
-                                    |submission| O::fill_submission(fd, resources.get_mut(), args, submission),
+                                    |submission| {
+                                        O::fill_submission(fd, resources.get_mut(), args, submission);
+                                        D::use_flags(submission);
+                                    },
                                 )
                             };
                             match result {
