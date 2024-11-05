@@ -248,7 +248,7 @@ impl Completion {
 }
 
 impl crate::cq::Event for Completion {
-    type State = CompletionState;
+    type State = OperationState;
 
     fn id(&self) -> OperationId {
         self.0.user_data as _
@@ -261,8 +261,8 @@ impl crate::cq::Event for Completion {
         };
         match state {
             // Zero copy completed, we can now mark ourselves as done.
-            CompletionState::Single { .. } if self.is_notification() => true,
-            CompletionState::Single { result } => {
+            OperationState::Single { .. } if self.is_notification() => true,
+            OperationState::Single { result } => {
                 debug_assert!(result.result == -1);
                 debug_assert!(result.flags == u16::MAX);
                 *result = completion;
@@ -270,7 +270,7 @@ impl crate::cq::Event for Completion {
                 // notification (see above) in a future completion event.
                 self.is_in_progress()
             }
-            CompletionState::Multishot { results } => {
+            OperationState::Multishot { results } => {
                 results.push(completion);
                 // Multishot stops on the first error.
                 !self.result().is_negative()
@@ -293,7 +293,7 @@ impl fmt::Debug for Completion {
 }
 
 #[derive(Debug)]
-pub(crate) enum CompletionState {
+pub(crate) enum OperationState {
     /// Single result operation.
     Single {
         /// Result of the operation.
@@ -307,10 +307,9 @@ pub(crate) enum CompletionState {
     },
 }
 
-impl CompletionState {
-    /// Create a queued operation.
-    const fn new() -> CompletionState {
-        CompletionState::Single {
+impl crate::cq::OperationState for OperationState {
+    fn new() -> OperationState {
+        OperationState::Single {
             result: CompletionResult {
                 flags: u16::MAX,
                 result: -1,
@@ -318,9 +317,8 @@ impl CompletionState {
         }
     }
 
-    /// Create a queued multishot operation.
-    const fn new_multishot() -> CompletionState {
-        CompletionState::Multishot {
+    fn new_multishot() -> OperationState {
+        OperationState::Multishot {
             results: Vec::new(),
         }
     }

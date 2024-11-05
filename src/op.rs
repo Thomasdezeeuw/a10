@@ -52,7 +52,7 @@ where
     // TODO: this is silly.
     O: Op<
         Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
-        CompletionState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
+        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
     >,
     O::Resources: Unpin,
     O::Args: Unpin,
@@ -229,7 +229,7 @@ pub(crate) trait Op {
     /// [`sq::Submission`].
     type Submission;
     /// [`cq::Event::State`].
-    type CompletionState;
+    type OperationState;
     /// Output of the operation specific operation. This can differ from
     /// `Output`, e.g. for a read this will be the amount bytes read, but the
     /// `Output` will be the buffer the bytes are read into.
@@ -244,12 +244,12 @@ pub(crate) trait Op {
     );
 
     /// Check the result of an operation based on the `QueuedOperation.state`
-    /// (`Self::CompletionState`).
+    /// (`Self::OperationState`).
     fn check_result<D: Descriptor>(
         fd: &AsyncFd<D>,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
-        state: &mut Self::CompletionState,
+        state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput>;
 
     /// Map the system call output to the future's output.

@@ -281,7 +281,7 @@ pub struct SubmissionQueue {
 }
 
 impl SubmissionQueue {
-    fn new(shared: Arc<SharedState<sys::Implementation>>) -> SubmissionQueue {
+    const fn new(shared: Arc<SharedState<sys::Implementation>>) -> SubmissionQueue {
         SubmissionQueue {
             inner: sq::Queue::new(shared),
         }
