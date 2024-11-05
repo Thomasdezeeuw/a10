@@ -7,7 +7,7 @@ use std::mem::ManuallyDrop;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{sq, sys, syscall, SubmissionQueue};
+use crate::{syscall, SubmissionQueue};
 
 #[cfg(target_os = "linux")]
 pub use crate::sys::fd::Direct;
@@ -124,11 +124,11 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         #[cfg(any(target_os = "linux"))]
         {
             let result = self.sq.inner.submit_no_completion(|submission| {
-                sys::fd::fill_close_submission(&*self, submission);
+                crate::sys::fd::fill_close_submission(&*self, submission);
             });
             match result {
                 Ok(()) => return,
-                Err(sq::QueueFull) => {
+                Err(crate::sq::QueueFull) => {
                     log::warn!("error submitting close operation for a10::AsyncFd, queue is full")
                 }
             }
