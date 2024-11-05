@@ -8,7 +8,6 @@ use std::task::{self, Poll};
 use std::{fmt, io, mem};
 
 use crate::fd::{AsyncFd, Descriptor, File};
-#[cfg(not(target_os = "linux"))]
 use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId};
 
@@ -90,7 +89,7 @@ where
                     Some(queued_op) => O::check_result(fd, resources.get_mut(), args, &mut queued_op.state),
                     // Somehow the queued operation is gone. This shouldn't
                     // happen, but we'll deal with it anyway.
-                    None => OpResult::Again,
+                    None => OpResult::Again(true),
                 };
                 log::trace!(result:? = result; "mapped operation result");
                 match result {
@@ -100,12 +99,10 @@ where
                         unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
                         Poll::Ready(Ok(O::map_ok(resources, ok)))
                     }
-                    OpResult::Again => {
-                        drop(queued_op_slot); // Unlock.
+                    OpResult::Again(resubmit) => {
                         // Operation wasn't completed, need to try again.
-                        // TODO: can we do this differently than using a `cfg`?
-                        #[cfg(not(target_os = "linux"))]
-                        {
+                        drop(queued_op_slot); // Unlock.
+                        if resubmit {
                             // SAFETY: we've ensured that we own the `op_id`.
                             // Furthermore we don't use it in case an error is
                             // returned.
@@ -259,7 +256,9 @@ pub(crate) enum OpResult<T> {
     /// [`Result::Ok`].
     Ok(T),
     /// Try the operation again.
-    Again,
+    ///
+    /// The boolean indicates whether or not we should resubmit.
+    Again(bool),
     /// [`Result::Err`].
     Err(io::Error),
 }
