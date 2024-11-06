@@ -43,7 +43,8 @@ pub struct AsyncFd<D: Descriptor = File> {
     /// We use `ManuallyDrop` because we drop the fd using an asynchronous
     /// operation, not a blocking `close(2)` system call.
     fd: ManuallyDrop<OwnedFd>,
-    sq: SubmissionQueue,
+    // NOTE: public because it's used by the crate::io::Std{in,out,error}.
+    pub(super) sq: SubmissionQueue,
     kind: PhantomData<D>,
 }
 
