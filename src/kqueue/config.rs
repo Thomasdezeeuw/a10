@@ -10,6 +10,7 @@ use crate::{syscall, WAKE_ID};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config<'r> {
+    max_events: Option<usize>,
     max_change_list_size: Option<usize>,
     _unused: PhantomData<&'r ()>,
 }
@@ -17,43 +18,49 @@ pub(crate) struct Config<'r> {
 impl<'r> Config<'r> {
     pub(crate) const fn new() -> Config<'r> {
         Config {
+            max_events: None,
             max_change_list_size: None,
             _unused: PhantomData,
         }
     }
 }
 
+/// kqueue specific configuration.
 impl<'r> crate::Config<'r> {
-    /// Maximum size of the change list before it's submitted to the kernel,
-    /// without waiting on a call to [`Ring::poll`].
+    /// Set the maximum number of events that can be collected in a single call
+    /// to `kevent(2)`.
     ///
-    /// Defaults to the amount of `entries` (passed to [`Ring::new`]), with a
-    /// maximum of 64 changes.
+    /// Defaults to the same value as the maximum number of queued operations
+    /// (see [`Ring::config`]).
+    ///
+    /// [`Ring::config`]: crate::Ring::config
+    pub const fn max_events(mut self, max_events: usize) -> Self {
+        self.sys.max_events = Some(max_events);
+        self
+    }
+
+    /// Set the maximum number of submissions that are buffered before
+    /// submitting to the kernel, without waiting on a call to [`Ring::poll`].
+    ///
+    /// This must be larger or equal to [`max_events`]. Defaults to 64 changes.
     ///
     /// [`Ring::poll`]: crate::Ring::poll
-    ///
-    /// # Notes
-    ///
-    /// If the `entries` is smaller than `max` it will be set to `max`.
-    ///
-    /// [`Ring::new`]: crate::Ring::new
-    pub fn max_change_list_size(mut self, max: usize) -> Self {
+    /// [`max_events`]: crate::Config::max_events
+    pub const fn max_change_list_size(mut self, max: usize) -> Self {
         self.sys.max_change_list_size = Some(max);
-        if self.queued_operations < max as u32 {
-            self.queued_operations = max as u32;
-        }
         self
     }
 
     pub(crate) fn _build(self) -> io::Result<(Submissions, Shared, Completions)> {
+        let max_events = self.sys.max_events.unwrap_or(self.queued_operations);
         #[rustfmt::skip]
-        let crate::Config { queued_operations, sys: Config { max_change_list_size, .. }} = self;
-        let queued_operations = queued_operations as usize;
-        // NOTE: `queued_operations` must be at least `max_change_list_size` to
-        // ensure we can handle all submission errors.
-        #[rustfmt::skip]
-        let max_change_list_size = max_change_list_size.unwrap_or(if queued_operations > 64 { 64 } else { queued_operations });
-        debug_assert!(queued_operations >= max_change_list_size);
+        let max_change_list_size = self.sys.max_change_list_size.unwrap_or(if max_events >= 64 { 64 } else { max_events });
+        // NOTE: `max_events` must be at least `max_change_list_size` to ensure
+        // we can handle all submission errors.
+        debug_assert!(
+            max_events >= max_change_list_size,
+            "a10::kqueue::Config: max_change_list_size larger than max_events"
+        );
 
         // SAFETY: `kqueue(2)` ensures the fd is valid.
         let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
@@ -77,7 +84,7 @@ impl<'r> crate::Config<'r> {
         let submissions = sys::Submissions::new(max_change_list_size);
         let change_list = Mutex::new(Vec::new());
         let shared = sys::Shared { kq, change_list };
-        let completions = sys::Completions::new(queued_operations);
+        let completions = sys::Completions::new(max_events);
         Ok((submissions, shared, completions))
     }
 }

@@ -11,6 +11,7 @@ use crate::{syscall, Ring, SubmissionQueue};
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.
 pub(crate) struct Config<'r> {
+    submission_entries: Option<u32>,
     completion_entries: Option<u32>,
     disabled: bool,
     single_issuer: bool,
@@ -23,35 +24,10 @@ pub(crate) struct Config<'r> {
     attach: Option<&'r SubmissionQueue>,
 }
 
-macro_rules! check_feature {
-    ($features: expr, $required: ident $(,)?) => {{
-        assert!(
-            $features & libc::$required != 0,
-            concat!(
-                "Kernel doesn't have required `",
-                stringify!($required),
-                "` feature"
-            )
-        );
-    }};
-}
-
-macro_rules! remove_flag {
-    ($parameters: ident, $first_err: ident, $err: ident, $( $flag: ident, )+ ) => {
-        $(
-        if $parameters.flags & libc::$flag != 0 {
-            log::debug!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
-            $parameters.flags &= !libc::$flag;
-            $first_err.get_or_insert($err);
-            continue;
-        }
-        )+
-    };
-}
-
 impl<'r> Config<'r> {
     pub(crate) const fn new() -> Config<'r> {
         Config {
+            submission_entries: None,
             completion_entries: None,
             disabled: false,
             single_issuer: false,
@@ -66,6 +42,7 @@ impl<'r> Config<'r> {
     }
 }
 
+/// io_uring specific configuration.
 impl<'r> crate::Config<'r> {
     /// Start the ring in a disabled state.
     ///
@@ -110,13 +87,31 @@ impl<'r> crate::Config<'r> {
     ///
     /// This options required [`Config::single_issuer`] to be set. This option
     /// does not work with [`Config::with_kernel_thread`] set.
+    ///
+    /// [`Config::single_issuer`]: crate::Config::with_kernel_thread
+    /// [`Config::with_kernel_thread`]: crate::Config::with_kernel_thread
     #[doc(alias = "IORING_SETUP_DEFER_TASKRUN")]
     pub const fn defer_task_run(mut self) -> Self {
         self.sys.defer_taskrun = true;
         self
     }
 
-    /// Set the size of the completion queue.
+    /// Set the size of the io_uring submission queue.
+    ///
+    /// `entries` is passed to `io_uring_setup(2)`. It must be a power of two
+    /// and in the range 1..=4096.
+    ///
+    /// Defaults to the same value as the maximum number of queued operations
+    /// (see [`Ring::config`]).
+    ///
+    /// [`Ring::config`]: crate::Ring::config
+    #[doc(alias = "io_uring_setup")]
+    pub const fn with_submission_queue_size(mut self, entries: u32) -> Self {
+        self.sys.submission_entries = Some(entries);
+        self
+    }
+
+    /// Set the size of the io_uring completion queue.
     ///
     /// By default the kernel will use a completion queue twice as large as the
     /// submission queue (`entries` in the call to [`Ring::config`]).
@@ -162,6 +157,8 @@ impl<'r> crate::Config<'r> {
     /// Set the CPU affinity of kernel thread polling the [`Ring`].
     ///
     /// Only works in combination with [`Config::with_kernel_thread`].
+    ///
+    /// [`Config::with_kernel_thread`]: crate::Config::with_kernel_thread
     #[doc(alias = "IORING_SETUP_SQ_AFF")]
     #[doc(alias = "sq_thread_cpu")]
     pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
@@ -218,6 +215,8 @@ impl<'r> crate::Config<'r> {
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
+    ///
+    /// [`Config::attach`]: crate::Config::attach
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
         self.sys.attach = Some(&other_sq);
@@ -245,6 +244,8 @@ impl<'r> crate::Config<'r> {
         if self.sys.defer_taskrun {
             parameters.flags |= libc::IORING_SETUP_DEFER_TASKRUN;
         }
+        #[rustfmt::skip]
+        let submission_entries = self.sys.submission_entries.unwrap_or(self.queued_operations as u32);
         if let Some(completion_entries) = self.sys.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -267,7 +268,7 @@ impl<'r> crate::Config<'r> {
 
         let mut first_err = None;
         let rfd = loop {
-            match syscall!(io_uring_setup(self.queued_operations, &mut parameters)) {
+            match syscall!(io_uring_setup(submission_entries, &mut parameters)) {
                 // SAFETY: just created the fd (and checked the error).
                 Ok(rfd) => break unsafe { OwnedFd::from_raw_fd(rfd) },
                 Err(err) => {
@@ -319,3 +320,31 @@ impl<'r> crate::Config<'r> {
         Ok((submissions, shared, completions))
     }
 }
+
+macro_rules! check_feature {
+    ($features: expr, $required: ident $(,)?) => {{
+        assert!(
+            $features & libc::$required != 0,
+            concat!(
+                "Kernel doesn't have required `",
+                stringify!($required),
+                "` feature"
+            )
+        );
+    }};
+}
+
+macro_rules! remove_flag {
+    ($parameters: ident, $first_err: ident, $err: ident, $( $flag: ident, )+ ) => {
+        $(
+        if $parameters.flags & libc::$flag != 0 {
+            log::debug!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
+            $parameters.flags &= !libc::$flag;
+            $first_err.get_or_insert($err);
+            continue;
+        }
+        )+
+    };
+}
+
+use {check_feature, remove_flag};
