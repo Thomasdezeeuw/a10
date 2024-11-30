@@ -939,3 +939,143 @@ fn pipe2(sq: SubmissionQueue) -> io::Result<(AsyncFd, AsyncFd)> {
     let w = unsafe { AsyncFd::from_raw_fd(fds[1], sq) };
     Ok((r, w))
 }
+
+#[test]
+fn read_small_file() {
+    all_bufs!(for new_buf in bufs {
+        test_read(&LOREM_IPSUM_5.content, open_file, new_buf)
+    });
+}
+
+#[test]
+fn read_large_file() {
+    all_bufs!(for new_buf in bufs {
+        test_read(&LOREM_IPSUM_50.content, open_file, new_buf)
+    });
+}
+
+#[test]
+fn read_small_pipe() {
+    all_bufs!(for new_buf in bufs {
+        test_read(&LOREM_IPSUM_5.content, open_read_pipe, new_buf)
+    });
+}
+
+#[test]
+fn read_large_pipe() {
+    all_bufs!(for new_buf in bufs {
+        test_read(&LOREM_IPSUM_50.content, open_read_pipe, new_buf)
+    });
+}
+
+fn test_read<F, Fut, B, D>(expected: &'static [u8], open_fd: F, new_buf: fn() -> B)
+where
+    F: FnOnce(&'static [u8], SubmissionQueue) -> Fut,
+    Fut: Future<Output = AsyncFd<D>>,
+    B: TestBuf + Unpin,
+    D: Descriptor + Unpin,
+{
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let fd = waker.block_on(open_fd(expected, sq.clone()));
+    let mut buf = new_buf();
+
+    let mut expected = expected;
+    loop {
+        buf = waker.block_on(fd.read(buf)).expect("failed to read");
+        assert_ne!(buf.len(), 0);
+        assert_eq!(buf.bytes().len(), buf.len());
+        if buf.bytes().len() > expected.len() {
+            panic!(
+                "read too much: buf: {}, expected: {}",
+                buf.len(),
+                expected.len(),
+            );
+        }
+        assert_eq!(buf.bytes(), &expected[..buf.len()]);
+        expected = &expected[buf.len()..];
+        if expected.is_empty() {
+            break;
+        }
+        buf.reset();
+    }
+}
+
+async fn open_file(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
+    let tmp_path = tmp_path();
+    std::fs::write(&tmp_path, expected).expect("failed to write to file");
+    // TODO: use a10 to open the file.
+    let file = std::fs::File::open(tmp_path).expect("failed to open file");
+    AsyncFd::new(file.into(), sq)
+}
+
+async fn open_read_pipe(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
+    let mut fds: [RawFd; 2] = [-1, -1];
+    syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC)).expect("failed to create pipe");
+    // SAFETY: we just initialised the `fds` above.
+    let r = unsafe { AsyncFd::from_raw_fd(fds[0], sq) };
+    let mut w = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+
+    std::thread::spawn(move || {
+        std::io::Write::write_all(&mut w, expected).expect("failed to write all data to pipe");
+    });
+
+    r
+}
+
+/// Macro to run a code block with all buffer kinds.
+macro_rules! all_bufs {
+    (
+        for $new_buf: ident in bufs
+            $code: block
+    ) => {{
+        {
+            let $new_buf = small_vec;
+            $code
+        }
+        {
+            let $new_buf = vec;
+            $code
+        }
+        {
+            let $new_buf = large_vec;
+            $code
+        }
+    }};
+}
+
+use all_bufs;
+
+/// NOTE: all implementations should be in the `all_bufs` macro.
+trait TestBuf: BufMut {
+    fn len(&self) -> usize;
+    fn bytes(&self) -> &[u8];
+    fn reset(&mut self);
+}
+
+impl TestBuf for Vec<u8> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn bytes(&self) -> &[u8] {
+        &*self
+    }
+
+    fn reset(&mut self) {
+        self.clear()
+    }
+}
+
+fn small_vec() -> Vec<u8> {
+    Vec::with_capacity(64)
+}
+
+fn vec() -> Vec<u8> {
+    Vec::with_capacity(4 * 1024) // 4KB.
+}
+
+fn large_vec() -> Vec<u8> {
+    Vec::with_capacity(1024 * 1024) // 1MB.
+}
