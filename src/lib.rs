@@ -200,12 +200,8 @@ pub struct Ring {
 impl Ring {
     /// Configure a `Ring`.
     ///
-    /// For io_uring `entries` is the size of the submission queue (passed to
-    /// `io_uring_setup(2)`). It must be a power of two and in the range
-    /// 1..=4096.
-    ///
-    /// For kqueue `entries` is the number of events that can be collected in a
-    /// single call to `kevent(2)`.
+    /// `queued_operations` is the number of queued operations, i.e. the number
+    /// of concurrent A10 operation.
     ///
     /// # Notes
     ///
@@ -213,8 +209,11 @@ impl Ring {
     /// Linux kernel 5.11 to work correctly. Furthermore before Linux 5.13 the
     /// user needs the `CAP_SYS_NICE` capability if run as non-root. This can be
     /// disabled by [`Config::with_kernel_thread`].
-    pub const fn config<'r>(entries: u32) -> Config<'r> {
-        Config::new(entries)
+    pub const fn config<'r>(queued_operations: usize) -> Config<'r> {
+        Config {
+            queued_operations,
+            sys: crate::sys::Config::new(),
+        }
     }
 
     /// Create a new `Ring` with the default configuration.
@@ -222,8 +221,8 @@ impl Ring {
     /// For more configuration options see [`Config`].
     #[doc(alias = "io_uring_setup")]
     #[doc(alias = "kqueue")]
-    pub fn new(entries: u32) -> io::Result<Ring> {
-        Config::new(entries).build()
+    pub fn new(queued_operations: usize) -> io::Result<Ring> {
+        Ring::config(queued_operations).build()
     }
 
     /// Build a new `Ring`.
