@@ -420,7 +420,7 @@ type OperationId = usize;
 const WAKE_ID: OperationId = usize::MAX;
 /// Id to use for submissions without a completions event (in the case we do
 /// actually get a completion event).
-const NO_COMPLETION_ID: OperationId = usize::MAX;
+const NO_COMPLETION_ID: OperationId = usize::MAX - 1;
 
 /// Platform specific implementation.
 trait Implementation {
