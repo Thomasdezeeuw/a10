@@ -145,6 +145,7 @@ use std::{fmt, task};
 mod bitmap;
 mod drop_waker;
 
+mod config;
 mod cq;
 mod op;
 mod sq;
@@ -169,15 +170,10 @@ mod sys;
 pub mod fd;
 pub mod io;
 
+#[doc(inline)]
+pub use config::Config;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
-
-// TODO: not a fan, let's create a wrapper type any way.
-/// Configuration of a [`Ring`].
-///
-/// Created by calling [`Ring::config`].
-#[doc(inline)]
-pub use sys::config::Config;
 
 use crate::bitmap::AtomicBitMap;
 

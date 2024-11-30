@@ -19,6 +19,7 @@ mod cq;
 pub(crate) mod io;
 mod sq;
 
+pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
 pub(crate) use Event as Submission;

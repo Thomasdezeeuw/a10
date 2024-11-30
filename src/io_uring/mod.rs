@@ -16,6 +16,7 @@ pub(crate) mod io;
 mod libc;
 mod sq;
 
+pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::{Submission, Submissions};
 
