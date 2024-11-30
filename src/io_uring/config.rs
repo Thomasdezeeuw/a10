@@ -5,15 +5,12 @@ use std::mem::{self, size_of};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
 
-use crate::sys::{self, libc};
+use crate::sys::{self, libc, Completions, Shared, Submissions};
 use crate::{syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
-#[must_use = "no ring is created until `a10::Config::build` is called"]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.
-#[allow(missing_docs)] // NOTE: documented at the root.
-pub struct Config<'r> {
-    submission_entries: u32,
+pub(crate) struct Config<'r> {
     completion_entries: Option<u32>,
     disabled: bool,
     single_issuer: bool,
@@ -53,9 +50,8 @@ macro_rules! remove_flag {
 }
 
 impl<'r> Config<'r> {
-    pub(crate) const fn new(submission_entries: u32) -> Config<'r> {
+    pub(crate) const fn new() -> Config<'r> {
         Config {
-            submission_entries,
             completion_entries: None,
             disabled: false,
             single_issuer: false,
@@ -68,14 +64,16 @@ impl<'r> Config<'r> {
             attach: None,
         }
     }
+}
 
+impl<'r> crate::Config<'r> {
     /// Start the ring in a disabled state.
     ///
     /// While the ring is disabled submissions are not allowed. To enable the
     /// ring use [`Ring::enable`].
     #[doc(alias = "IORING_SETUP_R_DISABLED")]
     pub const fn disable(mut self) -> Self {
-        self.disabled = true;
+        self.sys.disabled = true;
         self
     }
 
@@ -96,7 +94,7 @@ impl<'r> Config<'r> {
     /// [`ReadBufPool`]: crate::io::ReadBufPool
     #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
     pub const fn single_issuer(mut self) -> Self {
-        self.single_issuer = true;
+        self.sys.single_issuer = true;
         self
     }
 
@@ -114,7 +112,7 @@ impl<'r> Config<'r> {
     /// does not work with [`Config::with_kernel_thread`] set.
     #[doc(alias = "IORING_SETUP_DEFER_TASKRUN")]
     pub const fn defer_task_run(mut self) -> Self {
-        self.defer_taskrun = true;
+        self.sys.defer_taskrun = true;
         self
     }
 
@@ -126,7 +124,7 @@ impl<'r> Config<'r> {
     /// Uses `IORING_SETUP_CQSIZE`, added in Linux kernel 5.5.
     #[doc(alias = "IORING_SETUP_CQSIZE")]
     pub const fn with_completion_queue_size(mut self, entries: u32) -> Self {
-        self.completion_entries = Some(entries);
+        self.sys.completion_entries = Some(entries);
         self
     }
 
@@ -138,7 +136,7 @@ impl<'r> Config<'r> {
     /// Uses `IORING_SETUP_CLAMP`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_CLAMP")]
     pub const fn clamp_queue_sizes(mut self) -> Self {
-        self.clamp = true;
+        self.sys.clamp = true;
         self
     }
 
@@ -157,7 +155,7 @@ impl<'r> Config<'r> {
     /// might not actually be submitted until `Ring::poll` is called.
     #[doc(alias = "IORING_SETUP_SQPOLL")]
     pub const fn with_kernel_thread(mut self, enabled: bool) -> Self {
-        self.kernel_thread = enabled;
+        self.sys.kernel_thread = enabled;
         self
     }
 
@@ -167,7 +165,7 @@ impl<'r> Config<'r> {
     #[doc(alias = "IORING_SETUP_SQ_AFF")]
     #[doc(alias = "sq_thread_cpu")]
     pub const fn with_cpu_affinity(mut self, cpu: u32) -> Self {
-        self.cpu_affinity = Some(cpu);
+        self.sys.cpu_affinity = Some(cpu);
         self
     }
 
@@ -188,7 +186,7 @@ impl<'r> Config<'r> {
         } else {
             u32::MAX
         };
-        self.idle_timeout = Some(ms);
+        self.sys.idle_timeout = Some(ms);
         self
     }
 
@@ -203,7 +201,7 @@ impl<'r> Config<'r> {
     #[doc(alias = "IORING_REGISTER_FILES2")]
     #[doc(alias = "IORING_RSRC_REGISTER_SPARSE")]
     pub const fn with_direct_descriptors(mut self, size: u32) -> Self {
-        self.direct_descriptors = Some(size);
+        self.sys.direct_descriptors = Some(size);
         self
     }
 
@@ -222,56 +220,54 @@ impl<'r> Config<'r> {
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
-        self.attach = Some(&other_sq);
+        self.sys.attach = Some(&other_sq);
         self
     }
 
-    /// Build a new [`Ring`].
-    #[doc(alias = "io_uring_setup")]
-    pub fn build(self) -> io::Result<Ring> {
+    pub(crate) fn _build(self) -> io::Result<(Submissions, Shared, Completions)> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
         parameters.flags = libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
-        if self.kernel_thread {
+        if self.sys.kernel_thread {
             parameters.flags |= libc::IORING_SETUP_SQPOLL; // Kernel thread for polling.
         } else {
             // Don't interrupt userspace, the user must call `Ring::poll` any way.
             parameters.flags |= libc::IORING_SETUP_COOP_TASKRUN;
         }
-        if self.disabled {
+        if self.sys.disabled {
             // Start the ring in disabled mode.
             parameters.flags |= libc::IORING_SETUP_R_DISABLED;
         }
-        if self.single_issuer {
+        if self.sys.single_issuer {
             // Only allow access from a single thread.
             parameters.flags |= libc::IORING_SETUP_SINGLE_ISSUER;
         }
-        if self.defer_taskrun {
+        if self.sys.defer_taskrun {
             parameters.flags |= libc::IORING_SETUP_DEFER_TASKRUN;
         }
-        if let Some(completion_entries) = self.completion_entries {
+        if let Some(completion_entries) = self.sys.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
         }
-        if self.clamp {
+        if self.sys.clamp {
             parameters.flags |= libc::IORING_SETUP_CLAMP;
         }
-        if let Some(cpu) = self.cpu_affinity {
+        if let Some(cpu) = self.sys.cpu_affinity {
             parameters.flags |= libc::IORING_SETUP_SQ_AFF;
             parameters.sq_thread_cpu = cpu;
         }
-        if let Some(idle_timeout) = self.idle_timeout {
+        if let Some(idle_timeout) = self.sys.idle_timeout {
             parameters.sq_thread_idle = idle_timeout;
         }
         #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
-        if let Some(other_sq) = self.attach {
+        if let Some(other_sq) = self.sys.attach {
             parameters.wq_fd = other_sq.inner.shared_data().rfd.as_raw_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
         let mut first_err = None;
         let rfd = loop {
-            match syscall!(io_uring_setup(self.submission_entries, &mut parameters)) {
+            match syscall!(io_uring_setup(self.queued_operations, &mut parameters)) {
                 // SAFETY: just created the fd (and checked the error).
                 Ok(rfd) => break unsafe { OwnedFd::from_raw_fd(rfd) },
                 Err(err) => {
@@ -305,7 +301,7 @@ impl<'r> Config<'r> {
         let submissions = sys::Submissions::new();
         let completions = sys::Completions::new(shared.rfd.as_fd(), &parameters)?;
 
-        if let Some(size) = self.direct_descriptors {
+        if let Some(size) = self.sys.direct_descriptors {
             let register = libc::io_uring_rsrc_register {
                 flags: libc::IORING_RSRC_REGISTER_SPARSE,
                 nr: size,
@@ -320,11 +316,6 @@ impl<'r> Config<'r> {
             )?;
         }
 
-        Ring::build(
-            submissions,
-            shared,
-            completions,
-            parameters.cq_entries as usize, // TODO: add option for # queued operations.
-        )
+        Ok((submissions, shared, completions))
     }
 }
