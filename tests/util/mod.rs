@@ -11,12 +11,14 @@ use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsFd, AsRawFd};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
+
+use getrandom::getrandom;
 
 use a10::fd::Descriptor;
 use a10::net::socket;
@@ -456,6 +458,20 @@ pub(crate) fn remove_test_dir(path: &Path) {
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => panic!("unexpected error removing test directory: {err}"),
     }
+}
+
+pub(crate) fn tmp_path() -> PathBuf {
+    static CREATE_TEMP_DIR: Once = Once::new();
+    let mut tmp_dir = std::env::temp_dir();
+    tmp_dir.push("a10_tests");
+    CREATE_TEMP_DIR.call_once(|| {
+        std::fs::create_dir_all(&tmp_dir).expect("failed to create temporary directory");
+    });
+    let mut n = [0; 8];
+    getrandom(&mut n).expect("failed to get random data");
+    let n = u64::from_ne_bytes(n);
+    tmp_dir.push(&format!("{n}"));
+    tmp_dir
 }
 
 fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
