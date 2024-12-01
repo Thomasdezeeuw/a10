@@ -54,15 +54,14 @@ where
         Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
         OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
     >,
-    O::Resources: Unpin,
-    O::Args: Unpin,
-    D: Descriptor + Unpin,
+    D: Descriptor,
     O::OperationOutput: fmt::Debug,
 {
     type Output = io::Result<O::Output>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        let Operation { fd, state } = self.get_mut();
+        // SAFETY: not moving `fd` or `state`.
+        let Operation { fd, state } = unsafe { self.get_unchecked_mut() };
         match state {
             State::NotStarted { resources, args } => {
                 let result = fd.sq().inner.submit(
@@ -281,11 +280,13 @@ macro_rules! op_future {
         $(#[ $meta ])*
         $vis struct $name<'fd, $resources: $trait, D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::Operation<'fd, $sys, D>);
 
-        impl<'fd, $resources: $trait + ::std::marker::Unpin, D: $crate::fd::Descriptor + ::std::marker::Unpin> ::std::future::Future for $name<'fd, $resources, D> {
+        impl<'fd, $resources: $trait, D: $crate::fd::Descriptor> ::std::future::Future for $name<'fd, $resources, D> {
             type Output = $output;
 
-            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                ::std::pin::Pin::new(&mut self.0).poll(ctx)
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called
+                // `Future::poll` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
             }
         }
 
