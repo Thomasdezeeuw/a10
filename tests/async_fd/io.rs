@@ -972,8 +972,8 @@ fn test_read<F, Fut, B, D>(expected: &'static [u8], open_fd: F, new_buf: fn() ->
 where
     F: FnOnce(&'static [u8], SubmissionQueue) -> Fut,
     Fut: Future<Output = AsyncFd<D>>,
-    B: TestBuf + Unpin,
-    D: Descriptor + Unpin,
+    B: TestBuf,
+    D: Descriptor,
 {
     let sq = test_queue();
     let waker = Waker::new();
