@@ -32,6 +32,10 @@ impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D> {
             },
         }
     }
+
+    pub(crate) fn fd(&self) -> &'fd AsyncFd<D> {
+        self.fd
+    }
 }
 
 impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D>
