@@ -3,6 +3,7 @@
 //! See [`BufMut`] and [`Buf`], and their vectored counterparts [`BufMutSlice`]
 //! and [`BufSlice`].
 
+use std::fmt;
 use std::mem::MaybeUninit;
 
 /// Trait that defines the behaviour of buffers used in reading, which requires
@@ -115,13 +116,13 @@ unsafe impl BufMut for Vec<u8> {
 /// This has the same safety requirements as [`BufMut`], but then for all
 /// buffers used.
 pub unsafe trait BufMutSlice<const N: usize>: 'static {
-    /// Returns the writable buffers as `iovec` structures.
+    /// Returns the writable buffers as `IoMutSlice` structures.
     ///
     /// # Safety
     ///
     /// This has the same safety requirements as [`BufMut::parts_mut`], but then
     /// for all buffers used.
-    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N];
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N];
 
     /// Mark `n` bytes as initialised.
     ///
@@ -137,15 +138,33 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
     unsafe fn set_init(&mut self, n: usize);
 }
 
+/// Wrapper around [`libc::iovec`] to perform mutable vectored I/O operations,
+/// such as write.
+pub struct IoMutSlice(crate::sys::io::IoMutSlice);
+
+impl IoMutSlice {
+    fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
+        IoMutSlice(crate::sys::io::IoMutSlice::new(buf))
+    }
+}
+
+impl std::fmt::Debug for IoMutSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IoMutSlice")
+            .field("len", &self.0.len())
+            .finish()
+    }
+}
+
 // SAFETY: `BufMutSlice` has the same safety requirements as `BufMut` and since
 // `B` implements `BufMut` it's safe to implement `BufMutSlice` for an array of
 // `B`.
 unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
-    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N] {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
         // TODO: replace with `MaybeUninit::uninit_array` once stable.
         // SAFETY: an uninitialised `MaybeUninit` is valid.
         let mut iovecs =
-            unsafe { MaybeUninit::<[MaybeUninit<libc::iovec>; N]>::uninit().assume_init() };
+            unsafe { MaybeUninit::<[MaybeUninit<IoMutSlice>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter_mut().zip(iovecs.iter_mut()) {
             /* TODO(port).
             debug_assert!(
@@ -153,15 +172,11 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
                 "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
             );
             */
-            let (ptr, len) = buf.parts_mut();
-            iovec.write(libc::iovec {
-                iov_base: ptr.cast(),
-                iov_len: len as _,
-            });
+            iovec.write(IoMutSlice::new(buf));
         }
         // TODO: replace with `MaybeUninit::array_assume_init` once stable.
-        // SAFETY: `MaybeUninit<libc::iovec>` and `iovec` have the same layout
-        // as guaranteed by `MaybeUninit`.
+        // SAFETY: `MaybeUninit<IoMutSlice>` and `IoMutSlice` have the same
+        // layout as guaranteed by `MaybeUninit`.
         unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
     }
 
@@ -276,33 +291,45 @@ unsafe impl Buf for &'static str {
 /// This has the same safety requirements as [`Buf`], but then for all buffers
 /// used.
 pub unsafe trait BufSlice<const N: usize>: 'static {
-    /// Returns the reabable buffer as `iovec` structures.
+    /// Returns the reabable buffer as `IoSlice` structures.
     ///
     /// # Safety
     ///
     /// This has the same safety requirements as [`Buf::parts`], but then for
     /// all buffers used.
-    unsafe fn as_iovecs(&self) -> [libc::iovec; N];
+    unsafe fn as_iovecs(&self) -> [IoSlice; N];
+}
+
+/// Wrapper around [`libc::iovec`] to perform immutable vectored I/O operations,
+/// such as read.
+pub struct IoSlice(crate::sys::io::IoSlice);
+
+impl IoSlice {
+    fn new<B: Buf>(buf: &B) -> IoSlice {
+        IoSlice(crate::sys::io::IoSlice::new(buf))
+    }
+}
+
+impl std::fmt::Debug for IoSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.as_bytes().fmt(f)
+    }
 }
 
 // SAFETY: `BufSlice` has the same safety requirements as `Buf` and since `B`
 // implements `Buf` it's safe to implement `BufSlice` for an array of `B`.
 unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
-    unsafe fn as_iovecs(&self) -> [libc::iovec; N] {
+    unsafe fn as_iovecs(&self) -> [IoSlice; N] {
         // TODO: replace with `MaybeUninit::uninit_array` once stable.
         // SAFETY: an uninitialised `MaybeUninit` is valid.
         let mut iovecs =
-            unsafe { MaybeUninit::<[MaybeUninit<libc::iovec>; N]>::uninit().assume_init() };
+            unsafe { MaybeUninit::<[MaybeUninit<IoSlice>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
-            let (ptr, len) = buf.parts();
-            iovec.write(libc::iovec {
-                iov_base: ptr as _,
-                iov_len: len as _,
-            });
+            iovec.write(IoSlice::new(buf));
         }
         // TODO: replace with `MaybeUninit::array_assume_init` once stable.
-        // SAFETY: `MaybeUninit<libc::iovec>` and `iovec` have the same layout
-        // as guaranteed by `MaybeUninit`.
+        // SAFETY: `MaybeUninit<IoSlice>` and `IoSlice` have the same layout as
+        // guaranteed by `MaybeUninit`.
         unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
     }
 }
@@ -318,7 +345,7 @@ macro_rules! buf_slice_for_tuple {
         // and since all generic buffers must implement `BufMut` it's safe to
         // implement `BufMutSlice` for a tuple of all those buffers.
         unsafe impl<$( $generic: BufMut ),+> BufMutSlice<$N> for ($( $generic ),+) {
-            unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; $N] {
+            unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; $N] {
                 [
                     $({
                         /* TODO(port).
@@ -327,11 +354,7 @@ macro_rules! buf_slice_for_tuple {
                             "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
                         );
                         */
-                        let (ptr, len) = self.$index.parts_mut();
-                        libc::iovec {
-                            iov_base: ptr.cast(),
-                            iov_len: len as _,
-                        }
+                        IoMutSlice::new(&mut self.$index)
                     }),+
                 ]
             }
@@ -362,14 +385,10 @@ macro_rules! buf_slice_for_tuple {
         // since all generic buffers must implement `Buf` it's safe to implement
         // `BufSlice` for a tuple of all those buffers.
         unsafe impl<$( $generic: Buf ),+> BufSlice<$N> for ($( $generic ),+) {
-            unsafe fn as_iovecs(&self) -> [libc::iovec; $N] {
+            unsafe fn as_iovecs(&self) -> [IoSlice; $N] {
                 [
                     $({
-                        let (ptr, len) = self.$index.parts();
-                        libc::iovec {
-                            iov_base: ptr as _,
-                            iov_len: len as _,
-                        }
+                        IoSlice::new(&self.$index)
                     }),+
                 ]
             }

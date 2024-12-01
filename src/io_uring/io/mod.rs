@@ -1,12 +1,14 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{BufId, BufMut};
+use crate::io::{BufId, BufMut, BufMutSlice};
 use crate::op::OpResult;
 use crate::sys::{self, cq, libc, sq};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
+
+pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 
 pub(crate) struct Read<B>(PhantomData<*const B>);
 

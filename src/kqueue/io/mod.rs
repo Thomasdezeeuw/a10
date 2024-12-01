@@ -9,6 +9,8 @@ use crate::{sys, syscall};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
+pub(crate) use crate::unix::{IoMutSlice, IoSlice};
+
 pub(crate) struct Read<B>(PhantomData<*const B>);
 
 impl<B: BufMut> sys::Op for Read<B> {
