@@ -12,9 +12,12 @@
 //! Finally we have the [`stdin`], [`stdout`] and [`stderr`] functions to create
 //! `AsyncFd`s for standard in, out and error respectively.
 
+use std::future::Future;
 use std::io;
+use std::pin::Pin;
+use std::task::{self, Poll};
 
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{op_future, Operation};
 use crate::{man_link, sys};
 
@@ -108,11 +111,123 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         Read(Operation::new(self, buf, offset))
     }
+
+    /// Read at least `n` bytes from this fd into `buf`.
+    pub const fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B, D>
+    where
+        B: BufMut,
+    {
+        self.read_n_at(buf, NO_OFFSET, n)
+    }
+
+    /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub const fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B, D>
+    where
+        B: BufMut,
+    {
+        let buf = ReadNBuf { buf, last_read: 0 };
+        ReadN {
+            read: self.read_at(buf, offset),
+            offset,
+            left: n,
+        }
+    }
 }
 
 op_future!(
     /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
-    ///
-    /// [`Future`]: std::future::Future
     pub struct Read<B: BufMut>(sys::io::Read<B>) -> io::Result<B>;
 );
+
+/// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
+#[derive(Debug)]
+pub struct ReadN<'fd, B: BufMut, D: Descriptor = File> {
+    read: Read<'fd, ReadNBuf<B>, D>,
+    offset: u64,
+    /// Number of bytes we still need to read to hit our target `N`.
+    left: usize,
+}
+
+/* TODO(port): add back Cancel support.
+impl<'fd, B: BufMut, D: Descriptor> Cancel for ReadN<'fd, B, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.read.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.read.cancel()
+    }
+}
+*/
+
+impl<'fd, B: BufMut, D: Descriptor> Future for ReadN<'fd, B, D> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `self`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut read = unsafe { Pin::new_unchecked(&mut this.read) };
+        match read.as_mut().poll(ctx) {
+            Poll::Ready(Ok(buf)) => {
+                if buf.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if buf.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                this.left -= buf.last_read;
+                if this.offset != NO_OFFSET {
+                    this.offset += buf.last_read as u64;
+                }
+
+                read.set(read.0.fd().read_at(buf, this.offset));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// Wrapper around a buffer `B` to keep track of the number of bytes written.
+#[derive(Debug)]
+pub(crate) struct ReadNBuf<B> {
+    pub(crate) buf: B,
+    pub(crate) last_read: usize,
+}
+
+unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        self.buf.parts_mut()
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        self.last_read = n;
+        self.buf.set_init(n);
+    }
+
+    fn buffer_group(&self) -> Option<BufGroupId> {
+        self.buf.buffer_group()
+    }
+
+    unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
+        self.last_read = n as usize;
+        self.buf.buffer_init(id, n);
+    }
+}
+
+unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
+    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N] {
+        self.buf.as_iovecs_mut()
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        self.last_read = n;
+        self.buf.set_init(n);
+    }
+}
