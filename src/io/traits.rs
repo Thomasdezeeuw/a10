@@ -166,12 +166,10 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
         let mut iovecs =
             unsafe { MaybeUninit::<[MaybeUninit<IoMutSlice>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter_mut().zip(iovecs.iter_mut()) {
-            /* TODO(port).
             debug_assert!(
                 buf.buffer_group().is_none(),
                 "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
             );
-            */
             iovec.write(IoMutSlice::new(buf));
         }
         // TODO: replace with `MaybeUninit::array_assume_init` once stable.
@@ -348,12 +346,10 @@ macro_rules! buf_slice_for_tuple {
             unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; $N] {
                 [
                     $({
-                        /* TODO(port).
                         debug_assert!(
                             self.$index.buffer_group().is_none(),
                             "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
                         );
-                        */
                         IoMutSlice::new(&mut self.$index)
                     }),+
                 ]
