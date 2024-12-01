@@ -165,6 +165,8 @@ mod sq;
     path = "kqueue/mod.rs"
 )]
 mod sys;
+#[cfg(unix)]
+mod unix;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;

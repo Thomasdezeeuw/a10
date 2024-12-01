@@ -23,7 +23,7 @@ use crate::{man_link, sys};
 
 mod traits;
 
-pub use traits::{Buf, BufMut, BufMutSlice, BufSlice};
+pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 #[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -222,7 +222,7 @@ unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
 }
 
 unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
-    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; N] {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
         self.buf.as_iovecs_mut()
     }
 
