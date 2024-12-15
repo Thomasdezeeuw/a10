@@ -406,6 +406,38 @@ pub(crate) enum OpResult<T> {
     Err(io::Error),
 }
 
+/// Create a [`Future`] based on [`Operation`].
+macro_rules! operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty;
+        )+
+    ) => {
+        $(
+        $(#[ $meta ])*
+        #[must_use = "`Future`s do nothing unless polled"]
+        $vis struct $name<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?>($crate::op::Operation<$sys>);
+
+        impl<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?> ::std::future::Future for $name<$( $resources $(, $const_generic )?, )?> {
+            type Output = $output;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called
+                // `Future::poll` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
+            }
+        }
+
+        impl<$( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )?, )?> ::std::fmt::Debug for $name<$( $resources $(, $const_generic )?, )?> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
+            }
+        }
+        )+
+    };
+}
+
 /// Create a [`Future`] based on [`FdOperation`].
 macro_rules! fd_operation {
     (
@@ -438,4 +470,4 @@ macro_rules! fd_operation {
     };
 }
 
-pub(crate) use fd_operation;
+pub(crate) use {fd_operation, operation};
