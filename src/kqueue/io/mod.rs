@@ -2,7 +2,7 @@ use std::io;
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{BufMut, NO_OFFSET};
+use crate::io::{BufMut, BufMutSlice, NO_OFFSET};
 use crate::op::OpResult;
 use crate::{sys, syscall};
 
@@ -49,5 +49,50 @@ impl<B: BufMut> sys::Op for Read<B> {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe { buf.set_init(n) }
         buf
+    }
+}
+
+pub(crate) struct ReadVectored<B, const N: usize>(PhantomData<*const B>);
+
+impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectored<B, N> {
+    type Output = B;
+    type Resources = (B, [crate::io::IoMutSlice; N]);
+    type Args = u64; // Offset.
+    type OperationOutput = usize;
+
+    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut sys::Event) {
+        kevent.0.ident = fd.fd() as _;
+        kevent.0.filter = libc::EVFILT_READ;
+    }
+
+    fn check_result<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (_, iovecs): &mut Self::Resources,
+        offset: &mut Self::Args,
+    ) -> OpResult<Self::OperationOutput> {
+        // io_uring uses `NO_OFFSET` to issue a `readv` system call,
+        // otherwise it uses `preadv`. We emulate the same thing.
+        let result = if *offset == NO_OFFSET {
+            syscall!(readv(fd.fd(), iovecs.as_ptr() as _, iovecs.len() as _))
+        } else {
+            syscall!(preadv(
+                fd.fd(),
+                iovecs.as_ptr() as _,
+                iovecs.len() as _,
+                *offset as _
+            ))
+        };
+        match result {
+            // SAFETY: negative result is mapped to an error.
+            Ok(n) => OpResult::Ok(n as usize),
+            Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => OpResult::Again(true),
+            Err(err) => OpResult::Err(err),
+        }
+    }
+
+    fn map_ok((mut bufs, _): Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        // SAFETY: kernel just initialised the buffers for us.
+        unsafe { bufs.set_init(n) };
+        bufs
     }
 }

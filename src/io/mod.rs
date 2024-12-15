@@ -134,11 +134,41 @@ impl<D: Descriptor> AsyncFd<D> {
             left: n,
         }
     }
+
+    /// Read from this fd into `bufs`.
+    #[doc = man_link!(readv(2))]
+    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        self.read_vectored_at(bufs, NO_OFFSET)
+    }
+
+    /// Read from this fd into `bufs` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    #[doc = man_link!(preadv(2))]
+    pub fn read_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        offset: u64,
+    ) -> ReadVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        ReadVectored(Operation::new(self, (bufs, iovecs), offset))
+    }
 }
 
 op_future!(
     /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
     pub struct Read<B: BufMut>(sys::io::Read<B>) -> io::Result<B>;
+
+    /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
+    // FIXME: don't implement `Unpin`, `!Unpin` instead as the iovecs can't be
+    // moved while the kernel hasn't completed reading the submission.
+    pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectored<B, N>) -> io::Result<B>;
 );
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
