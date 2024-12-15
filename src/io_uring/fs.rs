@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::sys::{self, cq, libc, sq};
+use crate::SubmissionQueue;
 
 pub(crate) struct OpenOp<D>(PhantomData<*const D>);
 
@@ -29,10 +30,8 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
         D::create_flags(submission);
     }
 
-    fn map_ok(_: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
-        // FIXME: get the sq here.
-        let sq = todo!("get SubmissionQueue");
+    fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as _, sq) }
+        unsafe { AsyncFd::from_raw(fd as _, sq.clone()) }
     }
 }

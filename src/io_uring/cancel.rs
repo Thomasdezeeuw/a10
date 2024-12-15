@@ -1,6 +1,6 @@
 use crate::fd::{AsyncFd, Descriptor};
 use crate::sys::{self, cancel, cq, libc, sq};
-use crate::OperationId;
+use crate::{OperationId, SubmissionQueue};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
     submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
@@ -49,7 +49,7 @@ impl sys::Op for CancelOperationOp {
         cancel::operation(*op_id, submission);
     }
 
-    fn map_ok(_: Self::Resources, (_, _): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, _): cq::OpReturn) -> Self::Output {
         ()
     }
 }
