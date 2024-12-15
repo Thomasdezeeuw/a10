@@ -7,6 +7,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, mem};
 
+use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId, SubmissionQueue};
@@ -173,6 +174,27 @@ where
     }
 }
 
+impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        if let Some(op_id) = self.state.op_id() {
+            let result = self.fd.sq.inner.submit_no_completion(|submission| {
+                sys::cancel::operation(op_id, submission);
+            });
+            match result {
+                Ok(()) => CancelResult::Canceled,
+                Err(QueueFull) => CancelResult::QueueFull,
+            }
+        } else {
+            CancelResult::NotStarted
+        }
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        let op_id = self.state.op_id();
+        CancelOperation::new(self.fd.sq().clone(), op_id)
+    }
+}
+
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<'fd, O: FdOp + Unpin, D: Descriptor> Unpin for FdOperation<'fd, O, D> {}
 
@@ -220,7 +242,7 @@ pub(crate) trait FdOp {
 ///  * `R` is [`Op::Resources`] or [`FdOp::Resources`].
 ///  * `A` is [`Op::Args`] or [`FdOp::Args`].
 #[derive(Debug)]
-pub(crate) enum State<R, A> {
+enum State<R, A> {
     /// Operation has not started yet. First has to be submitted.
     NotStarted { resources: UnsafeCell<R>, args: A },
     /// Operation has been submitted and is running.
@@ -234,7 +256,7 @@ pub(crate) enum State<R, A> {
 }
 
 impl<R, A> State<R, A> {
-    pub(crate) const fn new(resources: R, args: A) -> State<R, A> {
+    const fn new(resources: R, args: A) -> State<R, A> {
         State::NotStarted {
             resources: UnsafeCell::new(resources),
             args,
@@ -244,7 +266,7 @@ impl<R, A> State<R, A> {
     /// Poll the state of this operation.
     ///
     /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
-    pub(crate) fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
+    fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
         &mut self,
         ctx: &mut task::Context<'_>,
         sq: &SubmissionQueue,
@@ -332,6 +354,14 @@ impl<R, A> State<R, A> {
                 }
             }
             State::Done => unreachable!("Future polled after completion"),
+        }
+    }
+
+    /// Returnt the operation id, if the operation is running.
+    fn op_id(&self) -> Option<OperationId> {
+        match self {
+            State::Running { op_id, .. } => Some(*op_id),
+            _ => None,
         }
     }
 
@@ -458,6 +488,16 @@ macro_rules! fd_operation {
                 // SAFETY: not moving `self.0` (`s.0`), directly called
                 // `Future::poll` on it.
                 unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
+            }
+        }
+
+        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> crate::cancel::Cancel for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
+            fn try_cancel(&mut self) -> crate::cancel::CancelResult {
+                self.0.try_cancel()
+            }
+
+            fn cancel(&mut self) -> crate::cancel::CancelOperation {
+                self.0.cancel()
             }
         }
 
