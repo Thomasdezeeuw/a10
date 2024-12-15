@@ -63,80 +63,7 @@ where
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         // SAFETY: not moving `fd` or `state`.
         let Operation { fd, state } = unsafe { self.get_unchecked_mut() };
-        match state {
-            State::NotStarted { resources, args } => {
-                let result = fd.sq().inner.submit(
-                    |submission| {
-                        O::fill_submission(fd, resources.get_mut(), args, submission);
-                        D::use_flags(submission);
-                    },
-                    ctx.waker().clone(),
-                );
-                if let Ok(op_id) = result {
-                    state.running(op_id);
-                }
-                // We'll be awoken once the operation is done, or if the
-                // submission queue is full we'll be awoken once a submission
-                // slot is available.
-                return Poll::Pending;
-            }
-            State::Running { resources, args, op_id } => {
-                let op_id = *op_id;
-                // SAFETY: we've ensured that `op_id` is valid.
-                let mut queued_op_slot = unsafe { fd.sq().get_op(op_id) };
-                log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
-                let result = match queued_op_slot.as_mut() {
-                    // Only map the result if the operation is marked as done.
-                    // Otherwise we wait for another event.
-                    Some(queued_op) if !queued_op.done => return Poll::Pending,
-                    Some(queued_op) => O::check_result(fd, resources.get_mut(), args, &mut queued_op.state),
-                    // Somehow the queued operation is gone. This shouldn't
-                    // happen, but we'll deal with it anyway.
-                    None => OpResult::Again(true),
-                };
-                log::trace!(result:? = result; "mapped operation result");
-                match result {
-                    OpResult::Ok(ok) => {
-                        let resources = state.done();
-                        // SAFETY: we've ensured that `op_id` is valid.
-                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Ok(O::map_ok(resources, ok)))
-                    }
-                    OpResult::Again(resubmit) => {
-                        // Operation wasn't completed, need to try again.
-                        drop(queued_op_slot); // Unlock.
-                        if resubmit {
-                            // SAFETY: we've ensured that we own the `op_id`.
-                            // Furthermore we don't use it in case an error is
-                            // returned.
-                            let result = unsafe {
-                                fd.sq().inner.resubmit(
-                                    op_id,
-                                    |submission| {
-                                        O::fill_submission(fd, resources.get_mut(), args, submission);
-                                        D::use_flags(submission);
-                                    },
-                                )
-                            };
-                            match result {
-                                Ok(()) => { /* Running again using the same operation id. */ }
-                                Err(QueueFull) => state.not_started(),
-                            }
-                        }
-                        // We'll be awoken once the operation is ready again or
-                        // if we can submit again (in case of QueueFull).
-                        return Poll::Pending;
-                    }
-                    OpResult::Err(err) => {
-                        *state = State::Done;
-                        // SAFETY: we've ensured that `op_id` is valid.
-                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Err(err))
-                    }
-                }
-            }
-            State::Done => unreachable!("Future polled after completion"),
-        }
+        state.poll_fd_op::<O, D>(ctx, fd)
     }
 }
 
@@ -167,6 +94,98 @@ impl<R, A> State<R, A> {
         State::NotStarted {
             resources: UnsafeCell::new(resources),
             args,
+        }
+    }
+
+    /// Poll a file description operation.
+    pub(crate) fn poll_fd_op<O, D>(&mut self, ctx: &mut task::Context<'_>, fd: &AsyncFd<D>) -> Poll<io::Result<O::Output>>
+    where
+        O: Op<
+            Resources = R,
+            Args = A,
+    // TODO: this is silly.
+            Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
+            OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
+        >,
+        O::OperationOutput: fmt::Debug,
+        D: Descriptor,
+    {
+        match self {
+            State::NotStarted { resources, args } => {
+                let result = fd.sq().inner.submit(
+                    |submission| {
+                        O::fill_submission(fd, resources.get_mut(), args, submission);
+                        D::use_flags(submission);
+                    },
+                    ctx.waker().clone(),
+                );
+                if let Ok(op_id) = result {
+                    self.running(op_id);
+                }
+                // We'll be awoken once the operation is done, or if the
+                // submission queue is full we'll be awoken once a submission
+                // slot is available.
+                return Poll::Pending;
+            }
+            State::Running {
+                resources,
+                args,
+                op_id,
+            } => {
+                let op_id = *op_id;
+                // SAFETY: we've ensured that `op_id` is valid.
+                let mut queued_op_slot = unsafe { fd.sq().get_op(op_id) };
+                log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
+                let result = match queued_op_slot.as_mut() {
+                    // Only map the result if the operation is marked as done.
+                    // Otherwise we wait for another event.
+                    Some(queued_op) if !queued_op.done => return Poll::Pending,
+                    Some(queued_op) => {
+                        O::check_result(fd, resources.get_mut(), args, &mut queued_op.state)
+                    }
+                    // Somehow the queued operation is gone. This shouldn't
+                    // happen, but we'll deal with it anyway.
+                    None => OpResult::Again(true),
+                };
+                log::trace!(result:? = result; "mapped operation result");
+                match result {
+                    OpResult::Ok(ok) => {
+                        let resources = self.done();
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
+                        Poll::Ready(Ok(O::map_ok(resources, ok)))
+                    }
+                    OpResult::Again(resubmit) => {
+                        // Operation wasn't completed, need to try again.
+                        drop(queued_op_slot); // Unlock.
+                        if resubmit {
+                            // SAFETY: we've ensured that we own the `op_id`.
+                            // Furthermore we don't use it in case an error is
+                            // returned.
+                            let result = unsafe {
+                                fd.sq().inner.resubmit(op_id, |submission| {
+                                    O::fill_submission(fd, resources.get_mut(), args, submission);
+                                    D::use_flags(submission);
+                                })
+                            };
+                            match result {
+                                Ok(()) => { /* Running again using the same operation id. */ }
+                                Err(QueueFull) => self.not_started(),
+                            }
+                        }
+                        // We'll be awoken once the operation is ready again or
+                        // if we can submit again (in case of QueueFull).
+                        return Poll::Pending;
+                    }
+                    OpResult::Err(err) => {
+                        *self = State::Done;
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
+                        Poll::Ready(Err(err))
+                    }
+                }
+            }
+            State::Done => unreachable!("Future polled after completion"),
         }
     }
 
