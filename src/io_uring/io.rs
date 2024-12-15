@@ -11,7 +11,7 @@ pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 
 pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> sys::Op for ReadOp<B> {
+impl<B: BufMut> sys::FdOp for ReadOp<B> {
     type Output = B;
     type Resources = B;
     type Args = u64; // Offset.
@@ -46,7 +46,7 @@ impl<B: BufMut> sys::Op for ReadOp<B> {
 /// must not be moved while the kernel is reading the submission.
 pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
     type Output = B;
     /// `IoMutSlice` holds the buffer references used by the kernel.
     /// NOTE: we only need these in the submission, we don't have to keep around

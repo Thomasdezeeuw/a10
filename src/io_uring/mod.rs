@@ -244,7 +244,7 @@ impl Drop for Shared {
 }
 
 /// io_uring specific [`crate::op::Op`] trait.
-pub(crate) trait Op {
+pub(crate) trait FdOp {
     type Output;
     type Resources;
     type Args;
@@ -259,7 +259,7 @@ pub(crate) trait Op {
     fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
 }
 
-impl<T: Op> crate::op::Op for T {
+impl<T: FdOp> crate::op::FdOp for T {
     type Output = T::Output;
     type Resources = T::Resources;
     type Args = T::Args;

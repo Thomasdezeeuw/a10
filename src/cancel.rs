@@ -6,7 +6,7 @@
 use std::io;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::{op_future, Operation};
+use crate::op::{op_future, FdOperation};
 use crate::sys;
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
@@ -31,7 +31,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// `Ok(0)` if operations were never polled only to start it after their
     /// first poll.
     pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd, D> {
-        CancelAll(Operation::new(self, (), ()))
+        CancelAll(FdOperation::new(self, (), ()))
     }
 }
 
