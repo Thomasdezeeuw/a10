@@ -340,7 +340,43 @@ pub(crate) trait FdOp {
     fn map_ok(resources: Self::Resources, operation_output: Self::OperationOutput) -> Self::Output;
 }
 
-/// [`Op`] result.
+/// Implementation of a [`Operation`].
+pub(crate) trait Op {
+    /// Output of the operation.
+    type Output;
+    /// Resources used in the operation, e.g. a buffer in a read call.
+    type Resources;
+    /// Arguments in the system call.
+    type Args;
+    /// [`sq::Submission`].
+    type Submission;
+    /// [`cq::Event::State`].
+    type OperationState;
+    /// Output of the operation specific operation. This can differ from
+    /// `Output`, e.g. for a read this will be the amount bytes read, but the
+    /// `Output` will be the buffer the bytes are read into.
+    type OperationOutput;
+
+    /// Fill a submission for the operation.
+    fn fill_submission(
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        submission: &mut Self::Submission,
+    );
+
+    /// Check the result of an operation based on the `QueuedOperation.state`
+    /// (`Self::OperationState`).
+    fn check_result(
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        state: &mut Self::OperationState,
+    ) -> OpResult<Self::OperationOutput>;
+
+    /// Map the system call output to the future's output.
+    fn map_ok(resources: Self::Resources, operation_output: Self::OperationOutput) -> Self::Output;
+}
+
+/// [`Op`] and [`FdOp`] result.
 #[derive(Debug)]
 pub(crate) enum OpResult<T> {
     /// [`Result::Ok`].
