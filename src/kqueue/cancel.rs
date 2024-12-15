@@ -1,8 +1,13 @@
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
-use crate::{sys, OperationId};
+use crate::sys::{self, cancel};
+use crate::OperationId;
 
 // TODO: implement cancelation for kqueue.
+
+pub(crate) fn operation(_: OperationId, _: &mut sys::Event) {
+    unimplemented!("kqueue: cancel::operation")
+}
 
 pub(crate) struct CancelAllOp;
 
