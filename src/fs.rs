@@ -198,6 +198,288 @@ operation!(
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
 );
 
+/// Metadata information about a file.
+///
+/// See [`AsyncFd::metadata`] and [`Stat`].
+#[repr(transparent)]
+pub struct Metadata {
+    inner: libc::statx,
+}
+
+impl Metadata {
+    /// Returns the file type for this metadata.
+    pub const fn file_type(&self) -> FileType {
+        FileType(self.inner.stx_mode)
+    }
+
+    /// Returns `true` if this represents a directory.
+    #[doc(alias = "S_IFDIR")]
+    pub const fn is_dir(&self) -> bool {
+        self.file_type().is_dir()
+    }
+
+    /// Returns `true` if this represents a file.
+    #[doc(alias = "S_IFREG")]
+    pub const fn is_file(&self) -> bool {
+        self.file_type().is_file()
+    }
+
+    /// Returns `true` if this represents a symbolic link.
+    #[doc(alias = "S_IFLNK")]
+    pub const fn is_symlink(&self) -> bool {
+        self.file_type().is_symlink()
+    }
+
+    /// Returns the size of the file, in bytes, this metadata is for.
+    #[allow(clippy::len_without_is_empty)] // Makes no sense.
+    pub const fn len(&self) -> u64 {
+        self.inner.stx_size
+    }
+
+    /// The "preferred" block size for efficient filesystem I/O.
+    pub const fn block_size(&self) -> u32 {
+        self.inner.stx_blksize
+    }
+
+    /// Returns the permissions of the file this metadata is for.
+    pub const fn permissions(&self) -> Permissions {
+        Permissions(self.inner.stx_mode)
+    }
+
+    /// Returns the time this file was last modified.
+    pub fn modified(&self) -> SystemTime {
+        timestamp(&self.inner.stx_mtime)
+    }
+
+    /// Returns the time this file was last accessed.
+    ///
+    /// # Notes
+    ///
+    /// It's possible to disable keeping track of this access time, which makes
+    /// this function return an invalid value.
+    pub fn accessed(&self) -> SystemTime {
+        timestamp(&self.inner.stx_atime)
+    }
+
+    /// Returns the time this file was created.
+    pub fn created(&self) -> SystemTime {
+        timestamp(&self.inner.stx_btime)
+    }
+}
+
+#[allow(clippy::cast_sign_loss)] // Checked.
+fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
+    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
+    if ts.tv_sec.is_negative() {
+        SystemTime::UNIX_EPOCH - dur
+    } else {
+        SystemTime::UNIX_EPOCH + dur
+    }
+}
+
+impl fmt::Debug for Metadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Metadata")
+            .field("file_type", &self.file_type())
+            .field("len", &self.len())
+            .field("block_size", &self.block_size())
+            .field("permissions", &self.permissions())
+            .field("modified", &self.modified())
+            .field("accessed", &self.accessed())
+            .field("created", &self.created())
+            .finish()
+    }
+}
+
+/// A structure representing a type of file with accessors for each file type.
+///
+/// See [`Metadata`].
+#[derive(Copy, Clone)]
+pub struct FileType(u16);
+
+impl FileType {
+    /// Returns `true` if this represents a directory.
+    #[doc(alias = "S_IFDIR")]
+    pub const fn is_dir(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFDIR as u16
+    }
+
+    /// Returns `true` if this represents a file.
+    #[doc(alias = "S_IFREG")]
+    pub const fn is_file(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFREG as u16
+    }
+
+    /// Returns `true` if this represents a symbolic link.
+    #[doc(alias = "S_IFLNK")]
+    pub const fn is_symlink(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFLNK as u16
+    }
+
+    /// Returns `true` if this represents a socket.
+    #[doc(alias = "S_IFSOCK")]
+    pub const fn is_socket(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFSOCK as u16
+    }
+
+    /// Returns `true` if this represents a block device.
+    #[doc(alias = "S_IFBLK")]
+    pub const fn is_block_device(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFBLK as u16
+    }
+
+    /// Returns `true` if this represents a character device.
+    #[doc(alias = "S_IFCHR")]
+    pub const fn is_character_device(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFCHR as u16
+    }
+
+    /// Returns `true` if this represents a named fifo pipe.
+    #[doc(alias = "S_IFIFO")]
+    pub const fn is_named_pipe(&self) -> bool {
+        (self.0 & libc::S_IFMT as u16) == libc::S_IFIFO as u16
+    }
+}
+
+impl fmt::Debug for FileType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let ty = if f.alternate() {
+            if self.is_dir() {
+                "directory"
+            } else if self.is_file() {
+                "file"
+            } else if self.is_symlink() {
+                "symbolic link"
+            } else if self.is_socket() {
+                "socket"
+            } else if self.is_block_device() {
+                "block device"
+            } else if self.is_character_device() {
+                "character device"
+            } else if self.is_named_pipe() {
+                "named pipe"
+            } else {
+                "unknown"
+            }
+        } else if self.is_dir() {
+            "d"
+        } else if self.is_file() {
+            "-"
+        } else if self.is_symlink() {
+            "l"
+        } else if self.is_socket() {
+            "s"
+        } else if self.is_block_device() {
+            "b"
+        } else if self.is_character_device() {
+            "c"
+        } else if self.is_named_pipe() {
+            "p"
+        } else {
+            "?"
+        };
+        f.debug_tuple("FileType").field(&ty).finish()
+    }
+}
+
+/// Access permissions.
+///
+/// See [`Metadata`].
+#[derive(Copy, Clone)]
+pub struct Permissions(u16);
+
+impl Permissions {
+    /// Return `true` if the owner has read permission.
+    #[doc(alias = "S_IRUSR")]
+    pub const fn owner_can_read(&self) -> bool {
+        self.0 & libc::S_IRUSR as u16 != 0
+    }
+
+    /// Return `true` if the owner has write permission.
+    #[doc(alias = "S_IWUSR")]
+    pub const fn owner_can_write(&self) -> bool {
+        self.0 & libc::S_IWUSR as u16 != 0
+    }
+
+    /// Return `true` if the owner has execute permission.
+    #[doc(alias = "S_IXUSR")]
+    pub const fn owner_can_execute(&self) -> bool {
+        self.0 & libc::S_IXUSR as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has read permission.
+    #[doc(alias = "S_IRGRP")]
+    pub const fn group_can_read(&self) -> bool {
+        self.0 & libc::S_IRGRP as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has write permission.
+    #[doc(alias = "S_IWGRP")]
+    pub const fn group_can_write(&self) -> bool {
+        self.0 & libc::S_IWGRP as u16 != 0
+    }
+
+    /// Return `true` if the group the file belongs to has execute permission.
+    #[doc(alias = "S_IXGRP")]
+    pub const fn group_can_execute(&self) -> bool {
+        self.0 & libc::S_IXGRP as u16 != 0
+    }
+
+    /// Return `true` if others have read permission.
+    #[doc(alias = "S_IROTH")]
+    pub const fn others_can_read(&self) -> bool {
+        self.0 & libc::S_IROTH as u16 != 0
+    }
+
+    /// Return `true` if others have write permission.
+    #[doc(alias = "S_IWOTH")]
+    pub const fn others_can_write(&self) -> bool {
+        self.0 & libc::S_IWOTH as u16 != 0
+    }
+
+    /// Return `true` if others have execute permission.
+    #[doc(alias = "S_IXOTH")]
+    pub const fn others_can_execute(&self) -> bool {
+        self.0 & libc::S_IXOTH as u16 != 0
+    }
+}
+
+impl fmt::Debug for Permissions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Create the same format as `ls(1)` uses.
+        let mut buf = [b'-'; 9];
+        if self.owner_can_read() {
+            buf[0] = b'r';
+        }
+        if self.owner_can_write() {
+            buf[1] = b'w';
+        }
+        if self.owner_can_execute() {
+            buf[2] = b'x';
+        }
+        if self.group_can_read() {
+            buf[3] = b'r';
+        }
+        if self.group_can_write() {
+            buf[4] = b'w';
+        }
+        if self.group_can_execute() {
+            buf[5] = b'x';
+        }
+        if self.others_can_read() {
+            buf[6] = b'r';
+        }
+        if self.others_can_write() {
+            buf[7] = b'w';
+        }
+        if self.others_can_execute() {
+            buf[8] = b'x';
+        }
+        let permissions = str::from_utf8(&buf).unwrap();
+        f.debug_tuple("Permissions").field(&permissions).finish()
+    }
+}
+
 fn path_to_cstring(path: PathBuf) -> CString {
     unsafe { CString::from_vec_unchecked(path.into_os_string().into_vec()) }
 }
