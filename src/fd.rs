@@ -170,13 +170,11 @@ pub(crate) mod private {
         /// Set any additional flags in `submission` when using the descriptor.
         fn use_flags(submission: &mut crate::sys::Submission);
 
-        /* TODO(port).
         /// Set any additional flags in `submission` when creating the descriptor.
-        fn create_flags(submission: &mut Submission);
+        fn create_flags(submission: &mut crate::sys::Submission);
 
         /// Return the equivalant of `O_CLOEXEC` for the descripor.
         fn cloexec_flag() -> libc::c_int;
-        */
 
         /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
         /// descriptor.
@@ -201,15 +199,13 @@ impl private::Descriptor for File {
         // No additional flags needed.
     }
 
-    /* TODO(port).
-    fn create_flags(_: &mut Submission) {
+    fn create_flags(_: &mut crate::sys::Submission) {
         // No additional flags needed.
     }
 
     fn cloexec_flag() -> libc::c_int {
         libc::O_CLOEXEC
     }
-    */
 
     fn cancel_flag() -> u32 {
         0

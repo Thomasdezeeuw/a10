@@ -13,6 +13,7 @@ pub(crate) mod cancel;
 pub(crate) mod config;
 mod cq;
 pub(crate) mod fd;
+pub(crate) mod fs;
 pub(crate) mod io;
 mod libc;
 mod sq;

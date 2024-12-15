@@ -36,7 +36,7 @@ impl sys::FdOp for CancelAllOp {
 
 pub(crate) struct CancelOperationOp;
 
-impl sys::FdOp for CancelAllOp {
+impl sys::Op for CancelAllOp {
     type Output = ();
     type Resources = OperationId;
     type Args = ();

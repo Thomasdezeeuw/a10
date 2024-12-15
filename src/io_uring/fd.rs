@@ -21,15 +21,13 @@ impl crate::fd::private::Descriptor for Direct {
         submission.use_direct_fd();
     }
 
-    /* TODO(port).
-    fn create_flags(submission: &mut Submission) {
+    fn create_flags(submission: &mut sys::sq::Submission) {
         submission.create_direct_fd();
     }
 
     fn cloexec_flag() -> libc::c_int {
         0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
     }
-    */
 
     fn cancel_flag() -> u32 {
         libc::IORING_ASYNC_CANCEL_FD_FIXED
