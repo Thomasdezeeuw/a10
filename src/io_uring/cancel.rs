@@ -7,9 +7,9 @@ pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: op_id as _ };
 }
 
-pub(crate) struct CancelAll;
+pub(crate) struct CancelAllOp;
 
-impl sys::Op for CancelAll {
+impl sys::Op for CancelAllOp {
     type Output = usize;
     type Resources = ();
     type Args = ();

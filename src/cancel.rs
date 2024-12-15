@@ -37,7 +37,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
 op_future!(
     /// [`Future`] behind [`AsyncFd::cancel_all`].
-    pub struct CancelAll(sys::cancel::CancelAll) -> io::Result<usize>;
+    pub struct CancelAll(sys::cancel::CancelAllOp) -> io::Result<usize>;
 );
 
 /// Cancelation of an in progress operations.
