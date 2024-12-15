@@ -68,9 +68,29 @@ impl AsyncFd<File> {
     }
 }
 
+/// Operations only available on direct descriptors (io_uring only).
+impl AsyncFd<Direct> {
+    /// Convert a direct descriptor into a regular file descriptor.
+    ///
+    /// The direct descriptor can continued to be used and the lifetimes of the
+    /// direct descriptor and the newly returned file descriptor are not
+    /// connected.
+    ///
+    /// # Notes
+    ///
+    /// Requires Linux 6.8.
+    #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
+    pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
+        ToFd(Operation::new(self, self.sq.clone(), ()))
+    }
+}
+
 op_future!(
     /// [`Future`] behind [`AsyncFd::to_direct_descriptor`].
     pub struct ToDirect(ToDirectOp) -> io::Result<AsyncFd<Direct>>;
+
+    /// [`Future`] behind [`AsyncFd::to_file_descriptor`].
+    pub struct ToFd(ToFdOp) -> io::Result<AsyncFd<File>>;
 );
 
 struct ToDirectOp;
@@ -110,8 +130,45 @@ impl sys::Op for ToDirectOp {
     }
 
     fn map_ok(sq: Self::Resources, (_, dfd): cq::OpReturn) -> Self::Output {
-        // SAFETY: the kernel ensure that `dfd` is valid.
+        // SAFETY: the kernel ensures that `dfd` is valid.
         unsafe { AsyncFd::from_raw(dfd as _, sq) }
+    }
+}
+
+struct ToFdOp;
+
+impl sys::Op for ToFdOp {
+    type Output = AsyncFd<File>;
+    type Resources = SubmissionQueue;
+    type Args = ();
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        _: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FIXED_FD_INSTALL as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            // NOTE: must currently be zero.
+            install_fd_flags: 0,
+        };
+    }
+
+    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
+        match state {
+            cq::OperationState::Single { result } => result.as_op_result(),
+            cq::OperationState::Multishot { results } if results.is_empty() => {
+                OpResult::Again(false)
+            }
+            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
+        }
+    }
+
+    fn map_ok(sq: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+        // SAFETY: the kernel ensures that `fd` is valid.
+        unsafe { AsyncFd::from_raw(fd as _, sq) }
     }
 }
 
