@@ -416,6 +416,7 @@ macro_rules! fd_operation {
     ) => {
         $(
         $(#[ $meta ])*
+        #[must_use = "`Future`s do nothing unless polled"]
         $vis struct $name<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::FdOperation<'fd, $sys, D>);
 
         impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::future::Future for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
