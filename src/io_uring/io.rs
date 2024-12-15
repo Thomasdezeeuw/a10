@@ -9,9 +9,9 @@ pub(crate) use std::io::*;
 
 pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 
-pub(crate) struct Read<B>(PhantomData<*const B>);
+pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> sys::Op for Read<B> {
+impl<B: BufMut> sys::Op for ReadOp<B> {
     type Output = B;
     type Resources = B;
     type Args = u64; // Offset.
