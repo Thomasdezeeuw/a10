@@ -1,5 +1,4 @@
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::OpResult;
 use crate::sys::{self, cq, libc, sq};
 use crate::OperationId;
 
@@ -28,16 +27,6 @@ impl sys::Op for CancelAll {
                 | libc::IORING_ASYNC_CANCEL_FD
                 | D::cancel_flag(),
         };
-    }
-
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
-        match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
-            cq::OperationState::Multishot { results } if results.is_empty() => {
-                OpResult::Again(false)
-            }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
-        }
     }
 
     fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {

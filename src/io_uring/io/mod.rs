@@ -2,7 +2,6 @@ use std::marker::{PhantomData, PhantomPinned};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{BufId, BufMut, BufMutSlice};
-use crate::op::OpResult;
 use crate::sys::{self, cq, libc, sq};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -31,16 +30,6 @@ impl<B: BufMut> sys::Op for Read<B> {
         submission.0.len = len;
         if let Some(buf_group) = buf.buffer_group() {
             submission.set_buffer_select(buf_group.0);
-        }
-    }
-
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
-        match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
-            cq::OperationState::Multishot { results } if results.is_empty() => {
-                OpResult::Again(false)
-            }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
         }
     }
 
@@ -83,16 +72,6 @@ impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectored<B, N> {
             addr: iovecs.as_ptr() as _,
         };
         submission.0.len = iovecs.len() as u32;
-    }
-
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
-        match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
-            cq::OperationState::Multishot { results } if results.is_empty() => {
-                OpResult::Again(false)
-            }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
-        }
     }
 
     fn map_ok((mut bufs, _): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
