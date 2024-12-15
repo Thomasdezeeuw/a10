@@ -142,6 +142,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 use std::{fmt, task};
 
+// This must come before the other modules for the documentation.
+pub mod fd;
+
 mod bitmap;
 mod config;
 mod cq;
@@ -167,8 +170,6 @@ mod sys;
 #[cfg(unix)]
 mod unix;
 
-#[rustfmt::skip] // This must come before the other modules for the documentation.
-pub mod fd;
 pub mod cancel;
 pub mod extract;
 pub mod io;
