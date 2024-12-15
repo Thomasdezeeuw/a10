@@ -170,6 +170,7 @@ mod unix;
 
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
+pub mod cancel;
 pub mod io;
 
 #[doc(inline)]

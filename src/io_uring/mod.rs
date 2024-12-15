@@ -9,6 +9,7 @@ use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::syscall;
 
+pub(crate) mod cancel;
 pub(crate) mod config;
 mod cq;
 pub(crate) mod fd;
