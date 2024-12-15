@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{BufId, BufMut, BufMutSlice};
@@ -53,7 +53,9 @@ impl<B: BufMut> sys::Op for Read<B> {
     }
 }
 
-pub(crate) struct ReadVectored<B, const N: usize>(PhantomData<*const B>);
+/// PhantomPinned is needed to unimplement `Unpin` (`!Unpin`), as the iovecs
+/// must not be moved while the kernel is reading the submission.
+pub(crate) struct ReadVectored<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
 
 impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectored<B, N> {
     type Output = B;
