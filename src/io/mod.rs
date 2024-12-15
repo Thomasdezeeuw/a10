@@ -18,7 +18,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, FdOperation};
+use crate::op::{fd_operation, FdOperation};
 use crate::{man_link, sys};
 
 mod traits;
@@ -161,7 +161,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 }
 
-op_future!(
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
     pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
 

@@ -2,7 +2,7 @@ use std::io;
 use std::os::fd::RawFd;
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, FdOperation};
+use crate::op::{fd_operation, FdOperation};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -85,7 +85,7 @@ impl AsyncFd<Direct> {
     }
 }
 
-op_future!(
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::to_direct_descriptor`].
     pub struct ToDirect(ToDirectOp) -> io::Result<AsyncFd<Direct>>;
 

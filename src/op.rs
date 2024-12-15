@@ -406,8 +406,8 @@ pub(crate) enum OpResult<T> {
     Err(io::Error),
 }
 
-/// Create a [`Future`] based on [`Operation`].
-macro_rules! op_future {
+/// Create a [`Future`] based on [`FdOperation`].
+macro_rules! fd_operation {
     (
         $(
         $(#[ $meta: meta ])*
@@ -437,4 +437,4 @@ macro_rules! op_future {
     };
 }
 
-pub(crate) use op_future;
+pub(crate) use fd_operation;

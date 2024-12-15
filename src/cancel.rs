@@ -6,7 +6,7 @@
 use std::io;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::{op_future, FdOperation};
+use crate::op::{fd_operation, FdOperation};
 use crate::sys;
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
@@ -35,7 +35,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 }
 
-op_future!(
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::cancel_all`].
     pub struct CancelAll(sys::cancel::CancelAllOp) -> io::Result<usize>;
 );
