@@ -44,9 +44,9 @@ impl<B: BufMut> sys::Op for ReadOp<B> {
 
 /// PhantomPinned is needed to unimplement `Unpin` (`!Unpin`), as the iovecs
 /// must not be moved while the kernel is reading the submission.
-pub(crate) struct ReadVectored<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
+pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectored<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectoredOp<B, N> {
     type Output = B;
     /// `IoMutSlice` holds the buffer references used by the kernel.
     /// NOTE: we only need these in the submission, we don't have to keep around

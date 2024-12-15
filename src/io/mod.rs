@@ -166,7 +166,7 @@ op_future!(
     pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
-    pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectored<B, N>) -> io::Result<B>;
+    pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
 );
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
