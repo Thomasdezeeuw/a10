@@ -171,10 +171,13 @@ mod unix;
 #[rustfmt::skip] // This must come before the other modules for the documentation.
 pub mod fd;
 pub mod cancel;
+pub mod extract;
 pub mod io;
 
 #[doc(inline)]
 pub use config::Config;
+#[doc(no_inline)]
+pub use extract::Extract;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
 
