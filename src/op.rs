@@ -1,4 +1,4 @@
-//! Module with [`FdOperation`] [`Future`].
+//! Module with [`Operation`] and [`FdOperation`] [`Future`]s.
 
 use std::cell::UnsafeCell;
 use std::future::Future;
@@ -9,7 +9,61 @@ use std::{fmt, io, mem};
 
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
-use crate::{cq, sq, sys, OperationId};
+use crate::{cq, sq, sys, OperationId, SubmissionQueue};
+
+/// Generic [`Future`] that powers other I/O operation futures.
+pub(crate) struct Operation<O: Op> {
+    sq: SubmissionQueue,
+    state: State<O::Resources, O::Args>,
+}
+
+impl<O: Op> Operation<O> {
+    /// Create a new `Operation`.
+    pub(crate) const fn new(
+        sq: SubmissionQueue,
+        resources: O::Resources,
+        args: O::Args,
+    ) -> Operation<O> {
+        Operation {
+            sq,
+            state: State::new(resources, args),
+        }
+    }
+}
+
+impl<O: Op> Operation<O>
+where
+    O::Resources: fmt::Debug,
+    O::Args: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("sq", &self.sq)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+impl<O> Future for Operation<O>
+where
+    // TODO: this is silly.
+    O: Op<
+        Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
+        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
+    >,
+    O::OperationOutput: fmt::Debug,
+{
+    type Output = io::Result<O::Output>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `fd` or `state`.
+        let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
+        todo!()
+    }
+}
+
+/// Only implement `Unpin` if the underlying operation implement `Unpin`.
+impl<O: Op + Unpin> Unpin for Operation<O> {}
 
 /// Generic [`Future`] that powers other I/O operation futures on a file
 /// descriptor.
