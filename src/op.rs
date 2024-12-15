@@ -26,10 +26,7 @@ impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D> {
     ) -> Operation<'fd, O, D> {
         Operation {
             fd,
-            state: State::NotStarted {
-                resources: UnsafeCell::new(resources),
-                args,
-            },
+            state: State::new(resources, args),
         }
     }
 
@@ -166,6 +163,13 @@ enum State<R, A> {
 }
 
 impl<R, A> State<R, A> {
+    const fn new(resources: R, args: A) -> State<R, A> {
+        State::NotStarted {
+            resources: UnsafeCell::new(resources),
+            args,
+        }
+    }
+
     /// Marks the state as not started.
     ///
     /// # Panics
