@@ -58,7 +58,13 @@ where
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         // SAFETY: not moving `fd` or `state`.
         let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
-        todo!()
+        state.poll(
+            ctx,
+            sq,
+            O::fill_submission,
+            O::check_result,
+            O::map_ok,
+        )
     }
 }
 
@@ -118,7 +124,16 @@ where
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         // SAFETY: not moving `fd` or `state`.
         let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
-        state.poll_fd_op::<O, D>(ctx, fd)
+        state.poll(
+            ctx,
+            fd.sq(),
+            |resources, args, submission| {
+                O::fill_submission(fd, resources, args, submission);
+                D::use_flags(submission);
+            },
+            |resources, args, state| O::check_result(fd, resources, args, state),
+            |resources, operation_output| O::map_ok(resources, operation_output),
+        )
     }
 }
 
@@ -152,25 +167,28 @@ impl<R, A> State<R, A> {
         }
     }
 
-    /// Poll a file description operation.
-    pub(crate) fn poll_fd_op<O, D>(&mut self, ctx: &mut task::Context<'_>, fd: &AsyncFd<D>) -> Poll<io::Result<O::Output>>
+    /// Poll the state of this operation.
+    ///
+    /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
+    pub(crate) fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
+        &mut self,
+        ctx: &mut task::Context<'_>,
+        sq: &SubmissionQueue,
+        fill_submission: FillSubmission,
+        check_result: CheckResult,
+        map_ok: MapOk,
+    ) -> Poll<io::Result<Output>>
     where
-        O: FdOp<
-            Resources = R,
-            Args = A,
-    // TODO: this is silly.
-            Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
-            OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
-        >,
-        O::OperationOutput: fmt::Debug,
-        D: Descriptor,
+        FillSubmission: FnOnce(&mut R, &mut A, &mut <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission),
+        CheckResult: FnOnce(&mut R, &mut A, &mut <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State) -> OpResult<OperationOutput>,
+        OperationOutput: fmt::Debug,
+        MapOk: FnOnce(R, OperationOutput) -> Output,
     {
         match self {
             State::NotStarted { resources, args } => {
-                let result = fd.sq().inner.submit(
+                let result = sq.inner.submit(
                     |submission| {
-                        O::fill_submission(fd, resources.get_mut(), args, submission);
-                        D::use_flags(submission);
+                        fill_submission(resources.get_mut(), args, submission);
                     },
                     ctx.waker().clone(),
                 );
@@ -189,14 +207,14 @@ impl<R, A> State<R, A> {
             } => {
                 let op_id = *op_id;
                 // SAFETY: we've ensured that `op_id` is valid.
-                let mut queued_op_slot = unsafe { fd.sq().get_op(op_id) };
+                let mut queued_op_slot = unsafe { sq.get_op(op_id) };
                 log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
                 let result = match queued_op_slot.as_mut() {
                     // Only map the result if the operation is marked as done.
                     // Otherwise we wait for another event.
                     Some(queued_op) if !queued_op.done => return Poll::Pending,
                     Some(queued_op) => {
-                        O::check_result(fd, resources.get_mut(), args, &mut queued_op.state)
+                        check_result(resources.get_mut(), args, &mut queued_op.state)
                     }
                     // Somehow the queued operation is gone. This shouldn't
                     // happen, but we'll deal with it anyway.
@@ -207,8 +225,8 @@ impl<R, A> State<R, A> {
                     OpResult::Ok(ok) => {
                         let resources = self.done();
                         // SAFETY: we've ensured that `op_id` is valid.
-                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Ok(O::map_ok(resources, ok)))
+                        unsafe { sq.make_op_available(op_id, queued_op_slot) };
+                        Poll::Ready(Ok(map_ok(resources, ok)))
                     }
                     OpResult::Again(resubmit) => {
                         // Operation wasn't completed, need to try again.
@@ -218,9 +236,8 @@ impl<R, A> State<R, A> {
                             // Furthermore we don't use it in case an error is
                             // returned.
                             let result = unsafe {
-                                fd.sq().inner.resubmit(op_id, |submission| {
-                                    O::fill_submission(fd, resources.get_mut(), args, submission);
-                                    D::use_flags(submission);
+                                sq.inner.resubmit(op_id, |submission| {
+                                    fill_submission(resources.get_mut(), args, submission);
                                 })
                             };
                             match result {
@@ -235,7 +252,7 @@ impl<R, A> State<R, A> {
                     OpResult::Err(err) => {
                         *self = State::Done;
                         // SAFETY: we've ensured that `op_id` is valid.
-                        unsafe { fd.sq().make_op_available(op_id, queued_op_slot) };
+                        unsafe { sq.make_op_available(op_id, queued_op_slot) };
                         Poll::Ready(Err(err))
                     }
                 }
