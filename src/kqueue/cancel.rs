@@ -4,10 +4,6 @@ use crate::{sys, OperationId};
 
 // TODO: implement cancelation for kqueue.
 
-pub(crate) fn operation(_: OperationId, _: &mut sys::Event) {
-    unimplemented!("kqueue: cancel::operation")
-}
-
 pub(crate) struct CancelAllOp;
 
 impl sys::FdOp for CancelAllOp {
@@ -30,5 +26,29 @@ impl sys::FdOp for CancelAllOp {
 
     fn map_ok(_: Self::Resources, _: Self::OperationOutput) -> Self::Output {
         unimplemented!("kqueue: CancelAllOp::map_ok")
+    }
+}
+
+pub(crate) struct CancelOperationOp;
+
+impl sys::FdOp for CancelAllOp {
+    type Output = ();
+    type Resources = OperationId;
+    type Args = ();
+    type OperationOutput = ();
+
+    fn fill_submission(_: &mut sys::Event) {
+        unimplemented!("kqueue: CancelOperationOp::fill_submission")
+    }
+
+    fn check_result(
+        _: &mut Self::Resources,
+        _: &mut Self::Args,
+    ) -> OpResult<Self::OperationOutput> {
+        unimplemented!("kqueue: CancelOperationOp::check_result")
+    }
+
+    fn map_ok(_: Self::Resources, _: Self::OperationOutput) -> Self::Output {
+        unimplemented!("kqueue: CancelOperationOp::map_ok")
     }
 }

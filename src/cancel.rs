@@ -6,8 +6,8 @@
 use std::io;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::{fd_operation, FdOperation};
-use crate::sys;
+use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::{sys, OperationId, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
 /// operations.
@@ -51,8 +51,16 @@ pub trait Cancel {
     /// [`cancel`]: Cancel::cancel
     fn try_cancel(&mut self) -> CancelResult;
 
-    /* TODO(port): finish below.
     /// Cancel this operation.
+    ///
+    /// Once the returned future is completed it will asynchronously cancel the
+    /// related operation. This means that it *may* still return results that
+    /// were created before the operation was actually canceled.
+    ///
+    /// For example using a TCP listener and multishot accept it's possible that
+    /// `MultishotAccept` will return more accepted connections after it's canceled.
+    /// Simply keep accepting the connections and it will return `None` after all
+    /// pending connections have been accepted.
     ///
     /// If this returns `ENOENT` it means the operation was not found. This can
     /// be caused by the operation never starting, due to the inert nature of
@@ -66,9 +74,9 @@ pub trait Cancel {
     /// If this is called on an [`AsyncIterator`] it will cause them to return
     /// `None` (eventually, it may still return pending items).
     ///
+    ///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
     /// [`AsyncIterator`]: std::async_iter::AsyncIterator
     fn cancel(&mut self) -> CancelOperation;
-    */
 }
 
 /// Result of a cancelation attempt.
@@ -88,82 +96,15 @@ pub enum CancelResult {
     QueueFull,
 }
 
-/* TODO(port): finish this.
-/// [`Future`] behind [`Cancel::cancel`].
-///
-/// Once this future is completed it will asynchronously cancel the related
-/// operation. This means that it *may* still return results that were created
-/// before the operation was actually canceled.
-///
-/// For example using a TCP listener and multishot accept it's possible that
-/// `MultishotAccept` will return more accepted connections after it's canceled.
-/// Simply keep accepting the connections and it will return `None` after all
-/// pending connections have been accepted.
-///
-///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
-#[derive(Debug)]
-#[must_use = "`Future`s do nothing unless polled"]
-#[allow(clippy::module_name_repetitions)] // Don't care.
-pub struct CancelOperation<'fd> {
-    sq: &'fd SubmissionQueue,
-    state: State<(), Option<OperationId>>,
-}
+operation!(
+    /// [`Future`] behind [`Cancel::cancel`].
+    #[allow(clippy::module_name_repetitions)] // Don't care.
+    pub struct CancelOperation(sys::cancel::CancelOperationOp) -> io::Result<()>;
+);
 
-impl<'fd> CancelOperation<'fd> {
+impl CancelOperation {
     /// Create a new `CancelOperation`.
-    pub(crate) const fn new(
-        sq: &'fd SubmissionQueue,
-        op_id: Option<OperationId>,
-    ) -> CancelOperation<'fd> {
-        let state = State::new((), op_id);
-        CancelOperation { sq, state }
+    pub(crate) const fn new(sq: SubmissionQueue, op_id: OperationId) -> CancelOperation {
+        CancelOperation(Operation::new(sq, op_id, ()))
     }
 }
-
-impl<'fd> Future for CancelOperation<'fd> {
-    type Output = io::Result<()>;
-
-    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        // SAFETY: not moving `fd` or `state`.
-        let CancelOperation { sq, state } = unsafe { self.get_unchecked_mut() };
-        match state {
-            State::NotStarted {
-                resources: _,
-                args: Some(to_cancel_op_id),
-            } => {
-                let result = sq.inner.submit(
-                    |submission| {
-                        crate::sys::cancel::operation(*to_cancel_op_id, submission);
-                    },
-                    ctx.waker().clone(),
-                );
-                if let Ok(op_id) = result {
-                    state.running(op_id);
-                }
-                // We'll be awoken once the operation is done, or if the
-                // submission queue is full we'll be awoken once a submission
-                // slot is available.
-                return Poll::Pending;
-            }
-            State::NotStarted {
-                resources: _,
-                args: None,
-            } => {
-                // If the operation was not started we pretend like we didn't
-                // find it to match io_uring behaviour.
-                state.done();
-                return Poll::Ready(Err(io::Error::from_raw_os_error(libc::ENOENT)));
-            }
-            State::Running {
-                resources: _,
-                args,
-                op_id,
-            } => {
-                // TODO.
-                todo!()
-            }
-            State::Done => unreachable!("Future polled after completion"),
-        }
-    }
-}
-*/
