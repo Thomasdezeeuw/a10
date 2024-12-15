@@ -172,6 +172,7 @@ mod unix;
 
 pub mod cancel;
 pub mod extract;
+pub mod fs;
 pub mod io;
 
 #[doc(no_inline)]
