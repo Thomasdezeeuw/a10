@@ -105,7 +105,11 @@ pub(crate) trait Op {
     ) -> OpResult<Self::OperationOutput>;
 
     /// Map the system call output to the future's output.
-    fn map_ok(resources: Self::Resources, operation_output: Self::OperationOutput) -> Self::Output;
+    fn map_ok(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::Output;
 }
 
 /// Generic [`Future`] that powers other I/O operation futures on a file
@@ -169,7 +173,7 @@ where
                 D::use_flags(submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
-            |resources, operation_output| O::map_ok(resources, operation_output),
+            |_, resources, operation_output| O::map_ok(resources, operation_output),
         )
     }
 }
@@ -278,7 +282,7 @@ impl<R, A> State<R, A> {
         FillSubmission: FnOnce(&mut R, &mut A, &mut <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission),
         CheckResult: FnOnce(&mut R, &mut A, &mut <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State) -> OpResult<OperationOutput>,
         OperationOutput: fmt::Debug,
-        MapOk: FnOnce(R, OperationOutput) -> Output,
+        MapOk: FnOnce(&SubmissionQueue, R, OperationOutput) -> Output,
     {
         match self {
             State::NotStarted { resources, args } => {
@@ -322,7 +326,7 @@ impl<R, A> State<R, A> {
                         let resources = self.done();
                         // SAFETY: we've ensured that `op_id` is valid.
                         unsafe { sq.make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Ok(map_ok(resources, ok)))
+                        Poll::Ready(Ok(map_ok(sq, resources, ok)))
                     }
                     OpResult::Again(resubmit) => {
                         // Operation wasn't completed, need to try again.

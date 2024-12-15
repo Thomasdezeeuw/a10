@@ -256,7 +256,11 @@ pub(crate) trait Op {
         submission: &mut sq::Submission,
     );
 
-    fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
+    fn map_ok(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        op_output: cq::OpReturn,
+    ) -> Self::Output;
 }
 
 impl<T: Op> crate::op::Op for T {
@@ -289,8 +293,12 @@ impl<T: Op> crate::op::Op for T {
         }
     }
 
-    fn map_ok(resources: Self::Resources, op_output: Self::OperationOutput) -> Self::Output {
-        T::map_ok(resources, op_output)
+    fn map_ok(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        op_output: Self::OperationOutput,
+    ) -> Self::Output {
+        T::map_ok(sq, resources, op_output)
     }
 }
 

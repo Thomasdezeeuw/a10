@@ -1,7 +1,7 @@
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::sys::{self, cancel};
-use crate::OperationId;
+use crate::{OperationId, SubmissionQueue};
 
 // TODO: implement cancelation for kqueue.
 
@@ -53,7 +53,7 @@ impl sys::Op for CancelAllOp {
         unimplemented!("kqueue: CancelOperationOp::check_result")
     }
 
-    fn map_ok(_: Self::Resources, _: Self::OperationOutput) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, _: Self::OperationOutput) -> Self::Output {
         unimplemented!("kqueue: CancelOperationOp::map_ok")
     }
 }
