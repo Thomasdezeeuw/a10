@@ -143,10 +143,9 @@ use std::time::Duration;
 use std::{fmt, task};
 
 mod bitmap;
-mod drop_waker;
-
 mod config;
 mod cq;
+mod drop_waker;
 mod op;
 mod sq;
 #[cfg_attr(any(target_os = "linux"), path = "io_uring/mod.rs")]
