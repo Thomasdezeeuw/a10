@@ -21,6 +21,22 @@ pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::{Submission, Submissions};
 
+/// io_uring specific methods.
+impl crate::Ring {
+    /// Enable the ring.
+    ///
+    /// This only required when starting the ring in disabled mode, see
+    /// [`Config::disable`].
+    #[allow(clippy::needless_pass_by_ref_mut)]
+    #[doc(alias = "IORING_REGISTER_ENABLE_RINGS")]
+    pub fn enable(&mut self) -> io::Result<()> {
+        self.cq
+            .shared()
+            .data
+            .register(libc::IORING_REGISTER_ENABLE_RINGS, ptr::null(), 0)
+    }
+}
+
 /// io_uring implementation.
 pub(crate) enum Implementation {}
 

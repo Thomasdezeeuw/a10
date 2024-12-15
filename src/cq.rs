@@ -94,6 +94,10 @@ impl<I: Implementation> Queue<I> {
             }
         }
     }
+
+    pub(crate) fn shared(&self) -> &SharedState<I> {
+        &self.shared
+    }
 }
 
 impl<I: Implementation> fmt::Debug for Queue<I> {
