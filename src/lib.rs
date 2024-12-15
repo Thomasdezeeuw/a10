@@ -174,6 +174,8 @@ pub mod cancel;
 pub mod extract;
 pub mod io;
 
+#[doc(no_inline)]
+pub use cancel::Cancel;
 #[doc(inline)]
 pub use config::Config;
 #[doc(no_inline)]
