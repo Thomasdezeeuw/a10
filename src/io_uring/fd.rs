@@ -2,7 +2,7 @@ use std::io;
 use std::os::fd::RawFd;
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, Operation};
+use crate::op::{op_future, FdOperation};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -64,7 +64,7 @@ impl AsyncFd<File> {
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
     pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
-        ToDirect(Operation::new(self, self.sq.clone(), ()))
+        ToDirect(FdOperation::new(self, self.sq.clone(), ()))
     }
 }
 
@@ -81,7 +81,7 @@ impl AsyncFd<Direct> {
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
     pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
-        ToFd(Operation::new(self, self.sq.clone(), ()))
+        ToFd(FdOperation::new(self, self.sq.clone(), ()))
     }
 }
 
@@ -95,7 +95,7 @@ op_future!(
 
 struct ToDirectOp;
 
-impl sys::Op for ToDirectOp {
+impl sys::FdOp for ToDirectOp {
     type Output = AsyncFd<Direct>;
     type Resources = SubmissionQueue;
     type Args = ();
@@ -127,7 +127,7 @@ impl sys::Op for ToDirectOp {
 
 struct ToFdOp;
 
-impl sys::Op for ToFdOp {
+impl sys::FdOp for ToFdOp {
     type Output = AsyncFd<File>;
     type Resources = SubmissionQueue;
     type Args = ();

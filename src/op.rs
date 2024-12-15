@@ -1,4 +1,4 @@
-//! Module with [`Operation`] [`Future`].
+//! Module with [`FdOperation`] [`Future`].
 
 use std::cell::UnsafeCell;
 use std::future::Future;
@@ -11,20 +11,21 @@ use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId};
 
-/// Generic [`Future`] that powers other I/O operation futures.
-pub(crate) struct Operation<'fd, O: Op, D: Descriptor = File> {
+/// Generic [`Future`] that powers other I/O operation futures on a file
+/// descriptor.
+pub(crate) struct FdOperation<'fd, O: FdOp, D: Descriptor = File> {
     fd: &'fd AsyncFd<D>,
     state: State<O::Resources, O::Args>,
 }
 
-impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D> {
-    /// Create a new `Operation`.
+impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
+    /// Create a new `FdOperation`.
     pub(crate) const fn new(
         fd: &'fd AsyncFd<D>,
         resources: O::Resources,
         args: O::Args,
-    ) -> Operation<'fd, O, D> {
-        Operation {
+    ) -> FdOperation<'fd, O, D> {
+        FdOperation {
             fd,
             state: State::new(resources, args),
         }
@@ -35,7 +36,7 @@ impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D> {
     }
 }
 
-impl<'fd, O: Op, D: Descriptor> Operation<'fd, O, D>
+impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
 where
     O::Resources: fmt::Debug,
     O::Args: fmt::Debug,
@@ -48,10 +49,10 @@ where
     }
 }
 
-impl<'fd, O, D> Future for Operation<'fd, O, D>
+impl<'fd, O, D> Future for FdOperation<'fd, O, D>
 where
     // TODO: this is silly.
-    O: Op<
+    O: FdOp<
         Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
         OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
     >,
@@ -62,21 +63,21 @@ where
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         // SAFETY: not moving `fd` or `state`.
-        let Operation { fd, state } = unsafe { self.get_unchecked_mut() };
+        let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
         state.poll_fd_op::<O, D>(ctx, fd)
     }
 }
 
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
-impl<'fd, O: Op + Unpin, D: Descriptor> Unpin for Operation<'fd, O, D> {}
+impl<'fd, O: FdOp + Unpin, D: Descriptor> Unpin for FdOperation<'fd, O, D> {}
 
-/// State of an [`Operation`].
+/// State of an [`FdOperation`].
 ///
 /// Generics:
 ///  * `R` is [`Op::Resources`].
 ///  * `A` is [`Op::Args`].
 #[derive(Debug)]
-enum State<R, A> {
+pub(crate) enum State<R, A> {
     /// Operation has not started yet. First has to be submitted.
     NotStarted { resources: UnsafeCell<R>, args: A },
     /// Operation has been submitted and is running.
@@ -90,7 +91,7 @@ enum State<R, A> {
 }
 
 impl<R, A> State<R, A> {
-    const fn new(resources: R, args: A) -> State<R, A> {
+    pub(crate) const fn new(resources: R, args: A) -> State<R, A> {
         State::NotStarted {
             resources: UnsafeCell::new(resources),
             args,
@@ -100,7 +101,7 @@ impl<R, A> State<R, A> {
     /// Poll a file description operation.
     pub(crate) fn poll_fd_op<O, D>(&mut self, ctx: &mut task::Context<'_>, fd: &AsyncFd<D>) -> Poll<io::Result<O::Output>>
     where
-        O: Op<
+        O: FdOp<
             Resources = R,
             Args = A,
     // TODO: this is silly.
@@ -247,8 +248,8 @@ unsafe impl<R: Sync, A: Sync> Sync for State<R, A> {}
 
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for State<R, A> {}
 
-/// Implementation of an [`Operation`].
-pub(crate) trait Op {
+/// Implementation of a [`FdOperation`].
+pub(crate) trait FdOp {
     /// Output of the operation.
     type Output;
     /// Resources used in the operation, e.g. a buffer in a read call.
@@ -308,7 +309,7 @@ macro_rules! op_future {
     ) => {
         $(
         $(#[ $meta ])*
-        $vis struct $name<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::Operation<'fd, $sys, D>);
+        $vis struct $name<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::FdOperation<'fd, $sys, D>);
 
         impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::future::Future for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
             type Output = $output;

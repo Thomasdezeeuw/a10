@@ -9,7 +9,7 @@ pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
 
 pub(crate) struct CancelAllOp;
 
-impl sys::Op for CancelAllOp {
+impl sys::FdOp for CancelAllOp {
     type Output = usize;
     type Resources = ();
     type Args = ();

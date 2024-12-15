@@ -10,7 +10,7 @@ pub(crate) fn operation(_: OperationId, _: &mut sys::Event) {
 
 pub(crate) struct CancelAllOp;
 
-impl sys::Op for CancelAllOp {
+impl sys::FdOp for CancelAllOp {
     type Output = usize;
     type Resources = ();
     type Args = ();

@@ -18,7 +18,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, Operation};
+use crate::op::{op_future, FdOperation};
 use crate::{man_link, sys};
 
 mod traits;
@@ -109,7 +109,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMut,
     {
-        Read(Operation::new(self, buf, offset))
+        Read(FdOperation::new(self, buf, offset))
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
@@ -157,7 +157,7 @@ impl<D: Descriptor> AsyncFd<D> {
         B: BufMutSlice<N>,
     {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        ReadVectored(Operation::new(self, (bufs, iovecs), offset))
+        ReadVectored(FdOperation::new(self, (bufs, iovecs), offset))
     }
 }
 
