@@ -52,9 +52,9 @@ impl<B: BufMut> sys::Op for ReadOp<B> {
     }
 }
 
-pub(crate) struct ReadVectored<B, const N: usize>(PhantomData<*const B>);
+pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectored<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> sys::Op for ReadVectoredOp<B, N> {
     type Output = B;
     type Resources = (B, [crate::io::IoMutSlice; N]);
     type Args = u64; // Offset.
