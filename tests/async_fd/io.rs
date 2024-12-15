@@ -1030,18 +1030,19 @@ macro_rules! all_bufs {
         for $new_buf: ident in bufs
             $code: block
     ) => {{
+        all_bufs!(for $new_buf in [ small_vec, vec, large_vec] $code);
+    }};
+    (
+        // Private.
+        for $new_buf: ident in [ $( $create_buf: ident ),+ ]
+            $code: block
+    ) => {{
+        $(
         {
-            let $new_buf = small_vec;
+            let $new_buf = $create_buf;
             $code
         }
-        {
-            let $new_buf = vec;
-            $code
-        }
-        {
-            let $new_buf = large_vec;
-            $code
-        }
+        )+
     }};
 }
 
