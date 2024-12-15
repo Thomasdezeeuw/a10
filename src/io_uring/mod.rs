@@ -256,8 +256,6 @@ pub(crate) trait Op {
         submission: &mut sq::Submission,
     );
 
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn>;
-
     fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
 }
 
@@ -284,7 +282,13 @@ impl<T: Op> crate::op::Op for T {
         _: &mut Self::Args,
         state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput> {
-        T::check_result::<D>(state)
+        match state {
+            cq::OperationState::Single { result } => result.as_op_result(),
+            cq::OperationState::Multishot { results } if results.is_empty() => {
+                OpResult::Again(false)
+            }
+            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
+        }
     }
 
     fn map_ok(resources: Self::Resources, op_output: Self::OperationOutput) -> Self::Output {

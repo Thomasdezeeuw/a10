@@ -2,7 +2,7 @@ use std::io;
 use std::os::fd::RawFd;
 
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{op_future, OpResult, Operation};
+use crate::op::{op_future, Operation};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -119,16 +119,6 @@ impl sys::Op for ToDirectOp {
         submission.0.len = 1;
     }
 
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
-        match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
-            cq::OperationState::Multishot { results } if results.is_empty() => {
-                OpResult::Again(false)
-            }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
-        }
-    }
-
     fn map_ok(sq: Self::Resources, (_, dfd): cq::OpReturn) -> Self::Output {
         // SAFETY: the kernel ensures that `dfd` is valid.
         unsafe { AsyncFd::from_raw(dfd as _, sq) }
@@ -154,16 +144,6 @@ impl sys::Op for ToFdOp {
             // NOTE: must currently be zero.
             install_fd_flags: 0,
         };
-    }
-
-    fn check_result<D: Descriptor>(state: &mut cq::OperationState) -> OpResult<cq::OpReturn> {
-        match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
-            cq::OperationState::Multishot { results } if results.is_empty() => {
-                OpResult::Again(false)
-            }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
-        }
     }
 
     fn map_ok(sq: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
