@@ -104,7 +104,9 @@ operation!(
 
 impl CancelOperation {
     /// Create a new `CancelOperation`.
-    pub(crate) const fn new(sq: SubmissionQueue, op_id: OperationId) -> CancelOperation {
+    pub(crate) const fn new(sq: SubmissionQueue, op_id: Option<OperationId>) -> CancelOperation {
+        // FIXME(port): take optional op_id and return ok if None.
+        let op_id = op_id.expect("TODO: handle not in progress operations");
         CancelOperation(Operation::new(sq, op_id, ()))
     }
 }
