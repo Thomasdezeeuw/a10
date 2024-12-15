@@ -166,8 +166,6 @@ op_future!(
     pub struct Read<B: BufMut>(sys::io::Read<B>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
-    // FIXME: don't implement `Unpin`, `!Unpin` instead as the iovecs can't be
-    // moved while the kernel hasn't completed reading the submission.
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectored<B, N>) -> io::Result<B>;
 );
 

@@ -143,6 +143,9 @@ where
     }
 }
 
+/// Only implement `Unpin` if the underlying operation implement `Unpin`.
+impl<'fd, O: Op + Unpin, D: Descriptor> Unpin for Operation<'fd, O, D> {}
+
 /// State of an [`Operation`].
 ///
 /// Generics:
