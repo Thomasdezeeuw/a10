@@ -61,6 +61,48 @@ impl Shared {
 }
 
 /// kqueue specific [`crate::op::Op`] trait.
+pub(crate) trait Op {
+    type Output;
+    type Resources;
+    type Args;
+    type OperationOutput;
+
+    fn fill_submission(kevent: &mut Event);
+
+    fn check_result(
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> OpResult<Self::OperationOutput>;
+
+    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output;
+}
+
+impl<T: Op> crate::op::Op for T {
+    type Output = T::Output;
+    type Resources = T::Resources;
+    type Args = T::Args;
+    type Submission = Event;
+    type OperationState = OperationState;
+    type OperationOutput = T::OperationOutput;
+
+    fn fill_submission(_: &mut Self::Resources, _: &mut Self::Args, kevent: &mut Self::Submission) {
+        T::fill_submission(kevent)
+    }
+
+    fn check_result(
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        _: &mut Self::OperationState,
+    ) -> OpResult<Self::OperationOutput> {
+        T::check_result(resources, args)
+    }
+
+    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output {
+        T::map_ok(resources, output)
+    }
+}
+
+/// kqueue specific [`crate::op::FdOp`] trait.
 pub(crate) trait FdOp {
     type Output;
     type Resources;
