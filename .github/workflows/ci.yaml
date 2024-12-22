@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   Test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
     - name: Run Tests (release build)
       run: cargo test --release
   Nightly:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -37,7 +37,7 @@ jobs:
     - name: Run Tests (nightly feature, release build)
       run: cargo test --features nightly --release
   Clippy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
     - name: Run Clippy
       run: make clippy
   Docs:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
     - name: Check docs
       run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
   Rustfmt:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -65,7 +65,7 @@ jobs:
     - name: Check formatting
       run: cargo fmt --all -- --check
   Sanitizer:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     strategy:
       fail-fast: false
