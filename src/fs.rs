@@ -240,6 +240,27 @@ impl<D: Descriptor> AsyncFd<D> {
         });
         Stat(FdOperation::new(self, metadata, ()))
     }
+
+    /// Predeclare an access pattern for file data.
+    ///
+    /// Announce an intention to access file data in a specific pattern in the
+    /// future, thus allowing the kernel to perform appropriate optimizations.
+    ///
+    /// The advice applies to a (not necessarily existent) region starting at
+    /// offset and extending for len bytes (or until the end of the file if len
+    /// is 0). The advice is not binding; it merely constitutes an expectation
+    /// on behalf of the application.
+    #[doc = man_link!(posix_fadvise(2))]
+    #[doc(alias = "fadvise")]
+    #[doc(alias = "posix_fadvise")]
+    pub const fn advise<'fd>(
+        &'fd self,
+        offset: u64,
+        length: u32,
+        advice: libc::c_int,
+    ) -> Advise<'fd, D> {
+        Advise(FdOperation::new(self, (), (offset, length, advice)))
+    }
 }
 
 #[derive(Debug)]
@@ -254,6 +275,9 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::metadata`].
     pub struct Stat(sys::fs::StatOp) -> io::Result<Metadata>;
+
+    /// [`Future`] behind [`AsyncFd::advise`].
+    pub struct Advise(sys::fs::AdviseOp) -> io::Result<()>;
 );
 
 /// Metadata information about a file.
