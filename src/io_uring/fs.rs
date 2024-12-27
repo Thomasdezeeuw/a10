@@ -19,7 +19,6 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
     ) {
         submission.0.opcode = libc::IORING_OP_OPENAT as u8;
         submission.0.fd = libc::AT_FDCWD;
-
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr() as _,
         };
