@@ -8,6 +8,7 @@ impl sys::Op for Advise {
     type Resources = ();
     type Args = (*mut (), u32, libc::c_int); // address, length, advice.
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         (): &mut Self::Resources,
         (address, length, advice): &mut Self::Args,
@@ -24,7 +25,7 @@ impl sys::Op for Advise {
         };
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

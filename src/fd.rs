@@ -114,7 +114,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
-    pub(crate) fn sq(&self) -> &SubmissionQueue {
+    pub(crate) const fn sq(&self) -> &SubmissionQueue {
         &self.sq
     }
 }
@@ -146,7 +146,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
             match result {
                 Ok(()) => return,
                 Err(crate::sq::QueueFull) => {
-                    log::warn!("error submitting close operation for a10::AsyncFd, queue is full")
+                    log::warn!("error submitting close operation for a10::AsyncFd, queue is full");
                 }
             }
         }

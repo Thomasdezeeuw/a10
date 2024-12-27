@@ -53,6 +53,7 @@ impl Completions {
     }
 
     /// Make the `io_uring_enter` system call.
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     fn enter(&mut self, shared: &sys::Shared, timeout: Option<Duration>) -> io::Result<()> {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
@@ -336,6 +337,7 @@ pub(crate) struct CompletionResult {
 }
 
 impl CompletionResult {
+    #[allow(clippy::cast_sign_loss)]
     pub(crate) fn as_op_result(self) -> OpResult<OpReturn> {
         if self.result.is_negative() {
             // TODO: handle `-EBUSY` on operations.

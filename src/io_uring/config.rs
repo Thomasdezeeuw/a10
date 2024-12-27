@@ -219,7 +219,7 @@ impl<'r> crate::Config<'r> {
     /// [`Config::attach`]: crate::Config::attach
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
-        self.sys.attach = Some(&other_sq);
+        self.sys.attach = Some(other_sq);
         self
     }
 

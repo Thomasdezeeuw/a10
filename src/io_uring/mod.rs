@@ -49,6 +49,7 @@ impl crate::Implementation for Implementation {
 }
 
 #[derive(Debug)]
+#[allow(clippy::mutex_integer)]
 pub(crate) struct Shared {
     /// File descriptor of the io_uring.
     rfd: OwnedFd,

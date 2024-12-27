@@ -134,12 +134,12 @@ impl ReadBufPool {
         Ok(pool)
     }
 
-    pub(crate) fn buf_size(&self) -> usize {
+    pub(crate) const fn buf_size(&self) -> usize {
         self.buf_size as usize
     }
 
     /// Returns the group id for this pool.
-    pub(crate) fn group_id(&self) -> BufGroupId {
+    pub(crate) const fn group_id(&self) -> BufGroupId {
         self.id
     }
 

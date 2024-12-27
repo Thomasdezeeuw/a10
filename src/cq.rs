@@ -73,6 +73,8 @@ impl<I: Implementation> Queue<I> {
     }
 
     /// Wake any futures that were blocked on a submission slot.
+    // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
+    #[allow(clippy::iter_with_drain)]
     fn wake_blocked_futures(&mut self) {
         // TODO: check the actual amount of submissions slot available and limit
         // the amount of

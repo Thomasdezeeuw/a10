@@ -132,7 +132,7 @@ impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
         }
     }
 
-    pub(crate) fn fd(&self) -> &'fd AsyncFd<D> {
+    pub(crate) const fn fd(&self) -> &'fd AsyncFd<D> {
         self.fd
     }
 }
@@ -298,7 +298,7 @@ impl<R, A> State<R, A> {
                 // We'll be awoken once the operation is done, or if the
                 // submission queue is full we'll be awoken once a submission
                 // slot is available.
-                return Poll::Pending;
+                Poll::Pending
             }
             State::Running {
                 resources,
@@ -347,7 +347,7 @@ impl<R, A> State<R, A> {
                         }
                         // We'll be awoken once the operation is ready again or
                         // if we can submit again (in case of QueueFull).
-                        return Poll::Pending;
+                        Poll::Pending
                     }
                     OpResult::Err(err) => {
                         *self = State::Done;
@@ -362,7 +362,7 @@ impl<R, A> State<R, A> {
     }
 
     /// Returnt the operation id, if the operation is running.
-    fn op_id(&self) -> Option<OperationId> {
+    const fn op_id(&self) -> Option<OperationId> {
         match self {
             State::Running { op_id, .. } => Some(*op_id),
             _ => None,
@@ -376,8 +376,8 @@ impl<R, A> State<R, A> {
     /// Panics if `self` is `Done`.
     fn not_started(&mut self) {
         let (resources, args) = match mem::replace(self, State::Done) {
-            State::NotStarted { resources, args } => (resources, args),
-            State::Running {
+            State::NotStarted { resources, args }
+            | State::Running {
                 resources, args, ..
             } => (resources, args),
             State::Done => unreachable!(),
@@ -392,8 +392,8 @@ impl<R, A> State<R, A> {
     /// Panics if `self` is `Done`.
     fn running(&mut self, op_id: OperationId) {
         let (resources, args) = match mem::replace(self, State::Done) {
-            State::NotStarted { resources, args } => (resources, args),
-            State::Running {
+            State::NotStarted { resources, args }
+            | State::Running {
                 resources, args, ..
             } => (resources, args),
             State::Done => unreachable!(),
@@ -412,8 +412,7 @@ impl<R, A> State<R, A> {
     /// Panics if `self` is `Done`.
     fn done(&mut self) -> R {
         match mem::replace(self, State::Done) {
-            State::NotStarted { resources, .. } => resources,
-            State::Running { resources, .. } => resources,
+            State::NotStarted { resources, .. } | State::Running { resources, .. } => resources,
             State::Done => unreachable!(),
         }
         .into_inner()

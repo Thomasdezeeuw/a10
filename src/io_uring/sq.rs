@@ -13,7 +13,7 @@ pub(crate) struct Submissions {
 }
 
 impl Submissions {
-    pub(crate) fn new() -> Submissions {
+    pub(crate) const fn new() -> Submissions {
         Submissions {}
     }
 }
@@ -22,6 +22,7 @@ impl crate::sq::Submissions for Submissions {
     type Shared = Shared;
     type Submission = Submission;
 
+    #[allow(clippy::mutex_integer)]
     fn add<F>(&self, shared: &Self::Shared, submit: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission),
