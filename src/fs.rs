@@ -237,31 +237,14 @@ operation!(
       with Extract -> io::Result<PathBuf>;
 
     /// [`Future`] behind [`rename`].
-    pub struct Rename(sys::fs::RenameOp) -> io::Result<()>;
+    pub struct Rename(sys::fs::RenameOp) -> io::Result<()>,
+      with Extract -> io::Result<(PathBuf, PathBuf)>;
 
     /// [`Future`] behind [`remove_file`] and [`remove_dir`].
     pub struct Delete(sys::fs::DeleteOp) -> io::Result<()>;
 );
 
 /* TODO: add `Extract` support to the `operation!` macro.
-impl Extract for Rename {}
-
-impl Future for Extractor<Rename> {
-    type Output = io::Result<(PathBuf, PathBuf)>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.fut).poll(ctx) {
-            Poll::Ready(Ok(())) => {
-                let from = path_from_cstring(self.fut.from.take().unwrap());
-                let to = path_from_cstring(self.fut.to.take().unwrap());
-                Poll::Ready(Ok((from, to)))
-            }
-            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
 impl Extract for Delete {}
 
 impl Future for Extractor<Delete> {
