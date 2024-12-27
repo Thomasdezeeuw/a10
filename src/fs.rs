@@ -22,7 +22,7 @@ use crate::op::{self, fd_operation, operation, FdOperation, Operation};
 use crate::{sys, Extract, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
-const METADATA_FLAGS: u32 = libc::STATX_TYPE
+pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
     | libc::STATX_MODE
     | libc::STATX_SIZE
     | libc::STATX_BLOCKS
@@ -227,6 +227,19 @@ impl<D: Descriptor> AsyncFd<D> {
     pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd, D> {
         SyncData(FdOperation::new(self, (), SyncDataFlag::Data))
     }
+
+    /// Retrieve metadata about the file.
+    #[doc = man_link!(statx(2))]
+    #[doc(alias = "statx")]
+    pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
+        // TODO: use `Box::new_zeroed` once stable
+        // <https://github.com/rust-lang/rust/issues/129396>.
+        let metadata = Box::new(Metadata {
+            // SAFETY: all zero values are valid representations.
+            inner: unsafe { zeroed() },
+        });
+        Stat(FdOperation::new(self, metadata, ()))
+    }
 }
 
 #[derive(Debug)]
@@ -238,6 +251,9 @@ pub(crate) enum SyncDataFlag {
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::sync_all`] and [`AsyncFd::sync_data`].
     pub struct SyncData(sys::fs::SyncDataOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::metadata`].
+    pub struct Stat(sys::fs::StatOp) -> io::Result<Metadata>;
 );
 
 /// Metadata information about a file.
@@ -249,6 +265,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
+    pub(crate) const fn mask(&self) -> u32 {
+        self.inner.stx_mask
+    }
+
     /// Returns the file type for this metadata.
     pub const fn file_type(&self) -> FileType {
         FileType(self.inner.stx_mode)
