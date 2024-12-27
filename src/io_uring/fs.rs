@@ -39,6 +39,19 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
     }
 }
 
+impl<D: Descriptor> OpExtract for OpenOp<D> {
+    type ExtractOutput = PathBuf;
+
+    fn map_ok_extract(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        debug_assert!(n == 0);
+        path_from_cstring(path)
+    }
+}
+
 pub(crate) struct CreateDirOp;
 
 impl sys::Op for CreateDirOp {
