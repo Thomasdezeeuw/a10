@@ -85,9 +85,13 @@ impl AsyncFd<Direct> {
 
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::to_direct_descriptor`].
+    ///
+    /// [`Future`]: std::future::Future
     pub struct ToDirect(ToDirectOp) -> io::Result<AsyncFd<Direct>>;
 
     /// [`Future`] behind [`AsyncFd::to_file_descriptor`].
+    ///
+    /// [`Future`]: std::future::Future
     pub struct ToFd(ToFdOp) -> io::Result<AsyncFd<File>>;
 );
 
