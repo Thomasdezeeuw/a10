@@ -2,6 +2,7 @@ use std::ffi::CString;
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
+use crate::fs::SyncDataFlag;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -33,5 +34,32 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
     fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as _, sq.clone()) }
+    }
+}
+
+pub(crate) struct SyncDataOp;
+
+impl sys::FdOp for SyncDataOp {
+    type Output = ();
+    type Resources = ();
+    type Args = SyncDataFlag;
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FSYNC as u8;
+        submission.0.fd = fd.fd();
+        let fsync_flags = match flags {
+            SyncDataFlag::All => 0,
+            SyncDataFlag::Data => libc::IORING_FSYNC_DATASYNC,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
+    }
+
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
     }
 }
