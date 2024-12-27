@@ -86,11 +86,11 @@ pub unsafe trait BufMut: 'static {
 
 /// Id for a [`BufPool`].
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct BufGroupId(pub(crate) u16);
+pub struct BufGroupId(pub(crate) u16);
 
 /// Index for a [`BufPool`].
 #[derive(Copy, Clone, Debug)]
-pub(crate) struct BufId(pub(crate) u16);
+pub struct BufId(pub(crate) u16);
 
 /// The implementation for `Vec<u8>` only uses the unused capacity, so any bytes
 /// already in the buffer will be untouched.
