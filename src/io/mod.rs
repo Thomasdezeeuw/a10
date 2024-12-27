@@ -17,6 +17,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
+use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, FdOperation};
 use crate::{man_link, sys};
@@ -215,6 +216,30 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         Write(FdOperation::new(self, buf, offset))
     }
+
+    /// Write all of `buf` to this fd.
+    pub const fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B, D>
+    where
+        B: Buf,
+    {
+        self.write_all_at(buf, NO_OFFSET)
+    }
+
+    /// Write all of `buf` to this fd at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub const fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        WriteAll {
+            write: Extractor {
+                fut: self.write_at(buf, offset),
+            },
+            offset,
+        }
+    }
 }
 
 fd_operation!(
@@ -335,11 +360,77 @@ impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for ReadNVect
     }
 }
 
+/// [`Future`] behind [`AsyncFd::write_all`] and [`AsyncFd::write_all_at`].
+#[derive(Debug)]
+pub struct WriteAll<'fd, B: Buf, D: Descriptor = File> {
+    write: Extractor<Write<'fd, SkipBuf<B>, D>>,
+    offset: u64,
+}
+
+impl<'fd, B: Buf, D: Descriptor> WriteAll<'fd, B, D> {
+    fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut write = unsafe { Pin::new_unchecked(&mut this.write) };
+        match write.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((mut buf, n))) => {
+                buf.skip += n as u32;
+                if this.offset != NO_OFFSET {
+                    this.offset += n as u64;
+                }
+
+                if let (_, 0) = unsafe { buf.parts() } {
+                    // Written everything.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                write.set(write.fut.0.fd().write_at(buf, this.offset).extract());
+                unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/* TODO(port): add back Cancel support.
+impl<'fd, B, D: Descriptor> Cancel for WriteAll<'fd, B, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.write.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.write.cancel()
+    }
+}
+*/
+
+impl<'fd, B: Buf, D: Descriptor> Future for WriteAll<'fd, B, D> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.poll_inner(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: Buf, D: Descriptor> Extract for WriteAll<'fd, B, D> {}
+
+impl<'fd, B: Buf, D: Descriptor> Future for Extractor<WriteAll<'fd, B, D>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `self.fut` (`s.fut`), directly called
+        // `Future::poll` on it.
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
+    }
+}
+
 /// Wrapper around a buffer `B` to keep track of the number of bytes written.
 #[derive(Debug)]
-pub(crate) struct ReadNBuf<B> {
-    pub(crate) buf: B,
-    pub(crate) last_read: usize,
+struct ReadNBuf<B> {
+    buf: B,
+    last_read: usize,
 }
 
 unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
@@ -370,5 +461,23 @@ unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
     unsafe fn set_init(&mut self, n: usize) {
         self.last_read = n;
         self.buf.set_init(n);
+    }
+}
+
+/// Wrapper around a buffer `B` to skip a number of bytes.
+#[derive(Debug)]
+struct SkipBuf<B> {
+    buf: B,
+    skip: u32,
+}
+
+unsafe impl<B: Buf> Buf for SkipBuf<B> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let (ptr, size) = self.buf.parts();
+        if self.skip >= size {
+            (ptr, 0)
+        } else {
+            (ptr.add(self.skip as usize), size - self.skip)
+        }
     }
 }
