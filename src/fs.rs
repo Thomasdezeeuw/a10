@@ -198,15 +198,25 @@ pub fn create_dir(sq: SubmissionQueue, path: PathBuf) -> CreateDir {
     CreateDir(Operation::new(sq, path_to_cstring(path), ()))
 }
 
+/// Rename a file or directory to a new name.
+#[doc = man_link!(rename(2))]
+pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
+    let resources = (path_to_cstring(from), path_to_cstring(to));
+    Rename(Operation::new(sq, resources, ()))
+}
+
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
 
     /// [`Future`] behind [`create_dir`].
-    pub struct CreateDir(sys::fs::CreateDir) -> io::Result<()>;
+    pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`create_dir`].
+    pub struct Rename(sys::fs::RenameOp) -> io::Result<()>;
 );
 
-/* TODO: add this to the `operation!` macro.
+/* TODO: add `Extract` support to the `operation!` macro.
 impl Extract for CreateDir {}
 
 impl Future for Extractor<CreateDir> {
@@ -217,6 +227,24 @@ impl Future for Extractor<CreateDir> {
             Poll::Ready(Ok(())) => {
                 let path = path_from_cstring(self.fut.path.take().unwrap());
                 Poll::Ready(Ok(path))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Extract for Rename {}
+
+impl Future for Extractor<Rename> {
+    type Output = io::Result<(PathBuf, PathBuf)>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let from = path_from_cstring(self.fut.from.take().unwrap());
+                let to = path_from_cstring(self.fut.to.take().unwrap());
+                Poll::Ready(Ok((from, to)))
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,

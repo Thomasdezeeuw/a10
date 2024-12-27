@@ -174,9 +174,9 @@ impl sys::FdOp for TruncateOp {
     }
 }
 
-pub(crate) struct CreateDir;
+pub(crate) struct CreateDirOp;
 
-impl sys::Op for CreateDir {
+impl sys::Op for CreateDirOp {
     type Output = ();
     type Resources = CString; // path.
     type Args = ();
@@ -192,6 +192,34 @@ impl sys::Op for CreateDir {
             addr: path.as_ptr() as _,
         };
         submission.0.len = 0o777; // Same as used by the standard library.
+    }
+
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct RenameOp;
+
+impl sys::Op for RenameOp {
+    type Output = ();
+    type Resources = (CString, CString); // from path, to path
+    type Args = ();
+
+    fn fill_submission(
+        (from, to): &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_RENAMEAT as u8;
+        submission.0.fd = libc::AT_FDCWD;
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: to.as_ptr() as _,
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: from.as_ptr() as _,
+        };
+        submission.0.len = libc::AT_FDCWD as _;
     }
 
     fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
