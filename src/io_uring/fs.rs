@@ -105,6 +105,19 @@ impl sys::Op for RenameOp {
     }
 }
 
+impl OpExtract for RenameOp {
+    type ExtractOutput = (PathBuf, PathBuf);
+
+    fn map_ok_extract(
+        _: &SubmissionQueue,
+        (from, to): Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        debug_assert!(n == 0);
+        (path_from_cstring(from), path_from_cstring(to))
+    }
+}
+
 pub(crate) struct DeleteOp;
 
 impl sys::Op for DeleteOp {
