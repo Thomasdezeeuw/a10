@@ -98,3 +98,30 @@ impl sys::FdOp for StatOp {
         *metadata
     }
 }
+
+pub(crate) struct AdviseOp;
+
+impl sys::FdOp for AdviseOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (u64, u32, libc::c_int); // offset, length, advice
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        (offset, length, advice): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FADVISE as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.len = *length;
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            fadvise_advice: *advice as _,
+        };
+    }
+
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
