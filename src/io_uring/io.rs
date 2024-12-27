@@ -1,14 +1,14 @@
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
 use std::marker::{PhantomData, PhantomPinned};
 use std::mem::MaybeUninit;
-use std::os::fd::AsRawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice};
+use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection};
 use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -428,6 +428,43 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         (buf, n as usize)
+    }
+}
+
+pub(crate) struct SpliceOp;
+
+impl sys::FdOp for SpliceOp {
+    type Output = usize;
+    type Resources = ();
+    type Args = (RawFd, SpliceDirection, u64, u64, u32, libc::c_int); // target, direction, off_in, off_out, len, flags
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        (target, direction, off_in, off_out, length, flags): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (fd_in, fd_out) = match *direction {
+            SpliceDirection::To => (fd.fd(), target.as_raw_fd()),
+            SpliceDirection::From => (target.as_raw_fd(), fd.fd()),
+        };
+        submission.0.opcode = libc::IORING_OP_SPLICE as u8;
+        submission.0.fd = fd_out;
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *off_out };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            splice_off_in: *off_in,
+        };
+        submission.0.len = *length;
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            splice_flags: *flags as _,
+        };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            splice_fd_in: fd_in,
+        };
+    }
+
+    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        n as usize
     }
 }
 
