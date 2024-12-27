@@ -188,7 +188,7 @@ where
     D: Descriptor,
     O::OperationOutput: fmt::Debug,
 {
-    fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
         // SAFETY: not moving `fd` or `state`.
         let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -515,7 +515,7 @@ macro_rules! fd_operation {
     (
         $(
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty;
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , with Extract -> $extract_output: ty )? ;
         )+
     ) => {
         $(
@@ -527,18 +527,20 @@ macro_rules! fd_operation {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called
-                // `Future::poll` on it.
+                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
                 unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
             }
         }
 
-        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> crate::cancel::Cancel for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
-            fn try_cancel(&mut self) -> crate::cancel::CancelResult {
+        // Optionally implement `Extract`.
+        $crate::op::fd_operation!(Extract for $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? -> $( $extract_output )?);
+
+        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
+            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.0.try_cancel()
             }
 
-            fn cancel(&mut self) -> crate::cancel::CancelOperation {
+            fn cancel(&mut self) -> $crate::cancel::CancelOperation {
                 self.0.cancel()
             }
         }
@@ -549,6 +551,25 @@ macro_rules! fd_operation {
             }
         }
         )+
+    };
+    (
+        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? -> $output: ty
+    ) => {
+        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> $crate::extract::Extract for $name<'fd, $( $resources $(, $const_generic )?, )? D> {}
+
+        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::future::Future for $crate::extract::Extractor<$name<'fd, $( $resources $(, $const_generic )?, )? D>> {
+            type Output = $output;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called `poll_extract` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.fut.0) }.poll_extract(ctx)
+            }
+        }
+    };
+    (
+        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ->
+    ) => {
+        // No `Extract` implementation.
     };
 }
 
