@@ -135,7 +135,7 @@ impl<I: Implementation> Queue<I> {
     /// Wait for a submission slot, waking `waker` once one is available.
     pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
         log::trace!(waker:? = waker; "adding blocked future");
-        self.shared.blocked_futures.lock().unwrap().push(waker)
+        self.shared.blocked_futures.lock().unwrap().push(waker);
     }
 
     pub(crate) fn wake(&self) {
@@ -155,6 +155,7 @@ impl<I: Implementation> Queue<I> {
     ///
     /// The `id` must come from [`Queue::submit`] and must not be invalid, e.g.
     /// by using [`Queue::resubmit`].
+    #[allow(clippy::type_complexity)]
     pub(crate) unsafe fn get_op(
         &self,
         op_id: OperationId,
@@ -173,6 +174,7 @@ impl<I: Implementation> Queue<I> {
     /// by using [`Queue::resubmit`].
     ///
     /// After this call `id` is invalid.
+    #[allow(clippy::type_complexity)]
     pub(crate) unsafe fn make_op_available(
         &self,
         op_id: OperationId,
@@ -221,7 +223,7 @@ impl<I: Implementation> Clone for Queue<I> {
     }
 
     fn clone_from(&mut self, source: &Self) {
-        self.shared.clone_from(&source.shared)
+        self.shared.clone_from(&source.shared);
     }
 }
 

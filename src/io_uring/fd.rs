@@ -98,6 +98,7 @@ impl sys::FdOp for ToDirectOp {
     type Resources = SubmissionQueue;
     type Args = ();
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         _: &mut Self::Resources,

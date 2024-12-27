@@ -194,7 +194,6 @@ pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
 
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
-    #[allow(clippy::module_name_repetitions)] // Don't care.
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
 );
 

@@ -12,6 +12,7 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
     type Resources = CString; // path.
     type Args = (libc::c_int, libc::mode_t); // flags, mode.
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         path: &mut Self::Resources,
         (flags, mode): &mut Self::Args,
