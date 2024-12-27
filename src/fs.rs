@@ -261,6 +261,22 @@ impl<D: Descriptor> AsyncFd<D> {
     ) -> Advise<'fd, D> {
         Advise(FdOperation::new(self, (), (offset, length, advice)))
     }
+
+    /// Manipulate file space.
+    ///
+    /// Manipulate the allocated disk space for the file referred for the byte
+    /// range starting at `offset` and continuing for `length` bytes.
+    #[doc = man_link!(fallocate(2))]
+    #[doc(alias = "fallocate")]
+    #[doc(alias = "posix_fallocate")]
+    pub const fn allocate<'fd>(
+        &'fd self,
+        offset: u64,
+        length: u32,
+        mode: libc::c_int,
+    ) -> Allocate<'fd, D> {
+        Allocate(FdOperation::new(self, (), (offset, length, mode)))
+    }
 }
 
 #[derive(Debug)]
@@ -278,6 +294,9 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::advise`].
     pub struct Advise(sys::fs::AdviseOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::allocate`].
+    pub struct Allocate(sys::fs::AllocateOp) -> io::Result<()>;
 );
 
 /// Metadata information about a file.

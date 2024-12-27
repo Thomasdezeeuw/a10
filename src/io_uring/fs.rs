@@ -125,3 +125,28 @@ impl sys::FdOp for AdviseOp {
         debug_assert!(n == 0);
     }
 }
+
+pub(crate) struct AllocateOp;
+
+impl sys::FdOp for AllocateOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (u64, u32, libc::c_int); // offset, length, mode
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        (offset, length, mode): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FALLOCATE as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: *length as _ };
+        submission.0.len = *mode as u32;
+    }
+
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
