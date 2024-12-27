@@ -468,6 +468,29 @@ impl sys::FdOp for SpliceOp {
     }
 }
 
+pub(crate) struct CloseOp<D>(PhantomData<*const D>);
+
+impl<D: Descriptor> sys::Op for CloseOp<D> {
+    type Output = ();
+    type Resources = ();
+    type Args = RawFd;
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        (): &mut Self::Resources,
+        fd: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_CLOSE as u8;
+        submission.0.fd = *fd;
+        D::use_flags(submission);
+    }
+
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
 /// Size of a single page, often 4096.
 #[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
 fn page_size() -> usize {

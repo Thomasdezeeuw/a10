@@ -13,14 +13,15 @@
 //! `AsyncFd`s for standard in, out and error respectively.
 
 use std::future::Future;
-use std::io;
+use std::mem::ManuallyDrop;
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::pin::Pin;
 use std::task::{self, Poll};
+use std::{io, ptr};
 
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::op::{fd_operation, FdOperation};
+use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys};
 
 mod read_buf;
@@ -378,6 +379,24 @@ impl<D: Descriptor> AsyncFd<D> {
         let args = (target_fd, direction, off_in, off_out, length, flags);
         Splice(FdOperation::new(self, (), args))
     }
+
+    /// Explicitly close the file descriptor.
+    ///
+    /// # Notes
+    ///
+    /// This happens automatically on drop, this can be used to get a possible
+    /// error.
+    #[doc = man_link!(close(2))]
+    pub fn close(self) -> Close<D> {
+        // We deconstruct `self` without dropping it to avoid closing the fd
+        // twice.
+        let this = ManuallyDrop::new(self);
+        // SAFETY: this is safe because we're ensure the pointers are valid and
+        // not touching `this` after reading the fields.
+        let fd = this.fd();
+        let sq = unsafe { ptr::read(&this.sq) };
+        Close(Operation::new(sq, (), fd))
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -669,6 +688,11 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future
         unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
     }
 }
+
+operation!(
+    /// [`Future`] behind [`AsyncFd::close`].
+    pub struct Close<D: Descriptor>(sys::io::CloseOp<D>) -> io::Result<()>;
+);
 
 /// Wrapper around a buffer `B` to keep track of the number of bytes written.
 #[derive(Debug)]
