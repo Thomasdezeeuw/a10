@@ -9,6 +9,7 @@ use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice};
+use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -370,6 +371,14 @@ impl<B: Buf> sys::FdOp for WriteOp<B> {
 
     fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
+    }
+}
+
+impl<B: Buf> FdOpExtract for WriteOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
+        (buf, n as usize)
     }
 }
 
