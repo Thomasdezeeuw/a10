@@ -277,6 +277,17 @@ impl<D: Descriptor> AsyncFd<D> {
     ) -> Allocate<'fd, D> {
         Allocate(FdOperation::new(self, (), (offset, length, mode)))
     }
+
+    /// Truncate the file to `length`.
+    ///
+    /// If the file previously was larger than this size, the extra data is
+    /// lost. If the file previously was shorter, it is extended, and the
+    /// extended part reads as null bytes.
+    #[doc = man_link!(ftruncate(2))]
+    #[doc(alias = "ftruncate")]
+    pub const fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd, D> {
+        Truncate(FdOperation::new(self, (), length))
+    }
 }
 
 #[derive(Debug)]
@@ -297,6 +308,9 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::allocate`].
     pub struct Allocate(sys::fs::AllocateOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::truncate`].
+    pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
 );
 
 /// Metadata information about a file.
