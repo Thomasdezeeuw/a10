@@ -161,6 +161,41 @@ impl<D: Descriptor> AsyncFd<D> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         ReadVectored(FdOperation::new(self, (bufs, iovecs), offset))
     }
+
+    /// Read at least `n` bytes from this fd into `bufs`.
+    pub fn read_n_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        n: usize,
+    ) -> ReadNVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        self.read_n_vectored_at(bufs, NO_OFFSET, n)
+    }
+
+    /// Read at least `n` bytes from this fd into `bufs`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn read_n_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        offset: u64,
+        n: usize,
+    ) -> ReadNVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        let bufs = ReadNBuf {
+            buf: bufs,
+            last_read: 0,
+        };
+        ReadNVectored {
+            read: self.read_vectored_at(bufs, offset),
+            offset,
+            left: n,
+        }
+    }
 }
 
 fd_operation!(
@@ -176,7 +211,7 @@ fd_operation!(
 pub struct ReadN<'fd, B: BufMut, D: Descriptor = File> {
     read: Read<'fd, ReadNBuf<B>, D>,
     offset: u64,
-    /// Number of bytes we still need to read to hit our target `N`.
+    /// Number of bytes we still need to read to hit our minimum.
     left: usize,
 }
 
@@ -216,6 +251,59 @@ impl<'fd, B: BufMut, D: Descriptor> Future for ReadN<'fd, B, D> {
                 }
 
                 read.set(read.0.fd().read_at(buf, this.offset));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::read_n_vectored`] and [`AsyncFd::read_n_vectored_at`].
+#[derive(Debug)]
+pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor = File> {
+    read: ReadVectored<'fd, ReadNBuf<B>, N, D>,
+    offset: u64,
+    /// Number of bytes we still need to read to hit our minimum.
+    left: usize,
+}
+
+/* TODO(port): add back Cancel support.
+impl<'fd, B, const N: usize, D: Descriptor> Cancel for ReadNVectored<'fd, B, N, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.read.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOp {
+        self.read.cancel()
+    }
+}
+*/
+
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for ReadNVectored<'fd, B, N, D> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut read = unsafe { Pin::new_unchecked(&mut this.read) };
+        match read.as_mut().poll(ctx) {
+            Poll::Ready(Ok(bufs)) => {
+                if bufs.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if bufs.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(bufs.buf));
+                }
+
+                this.left -= bufs.last_read;
+                if this.offset != NO_OFFSET {
+                    this.offset += bufs.last_read as u64;
+                }
+
+                read.set(read.0.fd().read_vectored_at(bufs, this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
