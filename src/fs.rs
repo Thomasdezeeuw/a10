@@ -241,27 +241,9 @@ operation!(
       with Extract -> io::Result<(PathBuf, PathBuf)>;
 
     /// [`Future`] behind [`remove_file`] and [`remove_dir`].
-    pub struct Delete(sys::fs::DeleteOp) -> io::Result<()>;
+    pub struct Delete(sys::fs::DeleteOp) -> io::Result<()>,
+      with Extract -> io::Result<PathBuf>;
 );
-
-/* TODO: add `Extract` support to the `operation!` macro.
-impl Extract for Delete {}
-
-impl Future for Extractor<Delete> {
-    type Output = io::Result<PathBuf>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.fut).poll(ctx) {
-            Poll::Ready(Ok(())) => {
-                let path = path_from_cstring(self.fut.path.take().unwrap());
-                Poll::Ready(Ok(path))
-            }
-            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-*/
 
 /// File(system) related system calls.
 impl<D: Descriptor> AsyncFd<D> {
