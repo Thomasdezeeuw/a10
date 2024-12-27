@@ -233,7 +233,8 @@ operation!(
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
 
     /// [`Future`] behind [`create_dir`].
-    pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>;
+    pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>,
+      with Extract -> io::Result<PathBuf>;
 
     /// [`Future`] behind [`rename`].
     pub struct Rename(sys::fs::RenameOp) -> io::Result<()>;
@@ -243,23 +244,6 @@ operation!(
 );
 
 /* TODO: add `Extract` support to the `operation!` macro.
-impl Extract for CreateDir {}
-
-impl Future for Extractor<CreateDir> {
-    type Output = io::Result<PathBuf>;
-
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        match Pin::new(&mut self.fut).poll(ctx) {
-            Poll::Ready(Ok(())) => {
-                let path = path_from_cstring(self.fut.path.take().unwrap());
-                Poll::Ready(Ok(path))
-            }
-            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
-            Poll::Pending => Poll::Pending,
-        }
-    }
-}
-
 impl Extract for Rename {}
 
 impl Future for Extractor<Rename> {
@@ -702,6 +686,6 @@ fn path_to_cstring(path: PathBuf) -> CString {
     unsafe { CString::from_vec_unchecked(path.into_os_string().into_vec()) }
 }
 
-fn path_from_cstring(path: CString) -> PathBuf {
+pub(crate) fn path_from_cstring(path: CString) -> PathBuf {
     OsString::from_vec(path.into_bytes()).into()
 }
