@@ -230,7 +230,8 @@ pub(crate) enum RemoveFlag {
 
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
-    pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
+    pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>,
+      with Extract -> io::Result<PathBuf>;
 
     /// [`Future`] behind [`create_dir`].
     pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>,
