@@ -1,8 +1,10 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::fs::{Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
+use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
+use crate::op::OpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -59,6 +61,19 @@ impl sys::Op for CreateDirOp {
 
     fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+impl OpExtract for CreateDirOp {
+    type ExtractOutput = PathBuf;
+
+    fn map_ok_extract(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        debug_assert!(n == 0);
+        path_from_cstring(path)
     }
 }
 
