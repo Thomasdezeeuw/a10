@@ -261,3 +261,25 @@ pub(crate) trait Submission: fmt::Debug {
 
 /// Submission queue is full.
 pub(crate) struct QueueFull;
+
+impl From<QueueFull> for io::Error {
+    fn from(_: QueueFull) -> io::Error {
+        #[cfg(not(feature = "nightly"))]
+        let kind = io::ErrorKind::Other;
+        #[cfg(feature = "nightly")]
+        let kind = io::ErrorKind::ResourceBusy;
+        io::Error::new(kind, "submission queue is full")
+    }
+}
+
+impl fmt::Debug for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QueueFull").finish()
+    }
+}
+
+impl fmt::Display for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("`a10::Ring` submission queue is full")
+    }
+}
