@@ -14,6 +14,7 @@
 
 use std::future::Future;
 use std::io;
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::pin::Pin;
 use std::task::{self, Poll};
 
@@ -293,6 +294,96 @@ impl<D: Descriptor> AsyncFd<D> {
             skip: 0,
         }
     }
+
+    /// Splice `length` bytes to `target` fd.
+    ///
+    /// See the `splice(2)` manual for correct usage.
+    #[doc = man_link!(splice(2))]
+    #[doc(alias = "splice")]
+    pub fn splice_to<'fd>(
+        &'fd self,
+        target: BorrowedFd<'fd>,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd, D> {
+        self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
+    }
+
+    /// Same as [`AsyncFd::splice_to`], but starts reading data at `offset` from
+    /// the file (instead of the current position of the read cursor) and starts
+    /// writing at `target_offset` to `target`.
+    pub fn splice_to_at<'fd>(
+        &'fd self,
+        offset: u64,
+        target: BorrowedFd<'fd>,
+        target_offset: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd, D> {
+        self.splice(
+            target,
+            SpliceDirection::To,
+            offset,
+            target_offset,
+            length,
+            flags,
+        )
+    }
+
+    /// Splice `length` bytes from `target` fd.
+    ///
+    /// See the `splice(2)` manual for correct usage.
+    #[doc(alias = "splice")]
+    pub fn splice_from<'fd>(
+        &'fd self,
+        target: BorrowedFd<'fd>,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd, D> {
+        self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
+    }
+
+    /// Same as [`AsyncFd::splice_from`], but starts reading writing at `offset`
+    /// to the file (instead of the current position of the write cursor) and
+    /// starts reading at `target_offset` from `target`.
+    #[doc(alias = "splice")]
+    pub fn splice_from_at<'fd>(
+        &'fd self,
+        offset: u64,
+        target: BorrowedFd<'fd>,
+        target_offset: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd, D> {
+        self.splice(
+            target,
+            SpliceDirection::From,
+            target_offset,
+            offset,
+            length,
+            flags,
+        )
+    }
+
+    fn splice<'fd>(
+        &'fd self,
+        target: BorrowedFd<'fd>,
+        direction: SpliceDirection,
+        off_in: u64,
+        off_out: u64,
+        length: u32,
+        flags: libc::c_int,
+    ) -> Splice<'fd, D> {
+        let target_fd = target.as_raw_fd();
+        let args = (target_fd, direction, off_in, off_out, length, flags);
+        Splice(FdOperation::new(self, (), args))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum SpliceDirection {
+    To,
+    From,
 }
 
 fd_operation!(
@@ -309,6 +400,10 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       with Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
+    /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
+    pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
