@@ -149,6 +149,19 @@ impl sys::Op for DeleteOp {
     }
 }
 
+impl OpExtract for DeleteOp {
+    type ExtractOutput = PathBuf;
+
+    fn map_ok_extract(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        debug_assert!(n == 0);
+        path_from_cstring(path)
+    }
+}
+
 pub(crate) struct SyncDataOp;
 
 impl sys::FdOp for SyncDataOp {
