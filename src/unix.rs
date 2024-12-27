@@ -43,6 +43,15 @@ impl IoSlice {
         // valid.
         unsafe { std::slice::from_raw_parts(self.0.iov_base.cast(), self.0.iov_len) }
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.iov_len
+    }
+
+    pub(crate) fn set_len(&mut self, new_len: usize) {
+        debug_assert!(self.0.iov_len <= new_len);
+        self.0.iov_len = new_len;
+    }
 }
 
 // SAFETY: `libc::iovec` is `!Sync`, but it's just a point to some bytes, so

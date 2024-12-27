@@ -306,6 +306,14 @@ impl IoSlice {
     fn new<B: Buf>(buf: &B) -> IoSlice {
         IoSlice(crate::sys::io::IoSlice::new(buf))
     }
+
+    pub(crate) fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub(crate) fn set_len(&mut self, new_len: usize) {
+        self.0.set_len(new_len)
+    }
 }
 
 impl std::fmt::Debug for IoSlice {
