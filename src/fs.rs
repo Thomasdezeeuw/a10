@@ -197,6 +197,49 @@ operation!(
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
 );
 
+/// File(system) related system calls.
+impl<D: Descriptor> AsyncFd<D> {
+    /// Sync all OS-internal metadata to disk.
+    ///
+    /// # Notes
+    ///
+    /// Any uncompleted writes may not be synced to disk.
+    #[doc = man_link!(fsync(2))]
+    #[doc(alias = "fsync")]
+    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd, D> {
+        SyncData(FdOperation::new(self, (), SyncDataFlag::All))
+    }
+
+    /// This function is similar to [`sync_all`], except that it may not
+    /// synchronize file metadata to the filesystem.
+    ///
+    /// This is intended for use cases that must synchronize content, but don’t
+    /// need the metadata on disk. The goal of this method is to reduce disk
+    /// operations.
+    ///
+    /// [`sync_all`]: AsyncFd::sync_all
+    ///
+    /// # Notes
+    ///
+    /// Any uncompleted writes may not be synced to disk.
+    #[doc = man_link!(fsync(2))]
+    #[doc(alias = "fdatasync")]
+    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd, D> {
+        SyncData(FdOperation::new(self, (), SyncDataFlag::Data))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum SyncDataFlag {
+    All,
+    Data,
+}
+
+fd_operation!(
+    /// [`Future`] behind [`AsyncFd::sync_all`] and [`AsyncFd::sync_data`].
+    pub struct SyncData(sys::fs::SyncDataOp) -> io::Result<()>;
+);
+
 /// Metadata information about a file.
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
