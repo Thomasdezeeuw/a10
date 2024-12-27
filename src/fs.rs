@@ -192,10 +192,38 @@ pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
     OpenOptions::new().read().open(sq, path)
 }
 
+/// Creates a new, empty directory.
+#[doc = man_link!(mkdirat(2))]
+pub fn create_dir(sq: SubmissionQueue, path: PathBuf) -> CreateDir {
+    CreateDir(Operation::new(sq, path_to_cstring(path), ()))
+}
+
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
+
+    /// [`Future`] behind [`create_dir`].
+    pub struct CreateDir(sys::fs::CreateDir) -> io::Result<()>;
 );
+
+/* TODO: add this to the `operation!` macro.
+impl Extract for CreateDir {}
+
+impl Future for Extractor<CreateDir> {
+    type Output = io::Result<PathBuf>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let path = path_from_cstring(self.fut.path.take().unwrap());
+                Poll::Ready(Ok(path))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+*/
 
 /// File(system) related system calls.
 impl<D: Descriptor> AsyncFd<D> {
