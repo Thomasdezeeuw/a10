@@ -173,3 +173,28 @@ impl sys::FdOp for TruncateOp {
         debug_assert!(n == 0);
     }
 }
+
+pub(crate) struct CreateDir;
+
+impl sys::Op for CreateDir {
+    type Output = ();
+    type Resources = CString; // path.
+    type Args = ();
+
+    fn fill_submission(
+        path: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_MKDIRAT as u8;
+        submission.0.fd = libc::AT_FDCWD;
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: path.as_ptr() as _,
+        };
+        submission.0.len = 0o777; // Same as used by the standard library.
+    }
+
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
