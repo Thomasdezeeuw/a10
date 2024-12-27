@@ -222,7 +222,7 @@ pub fn remove_dir(sq: SubmissionQueue, path: PathBuf) -> Delete {
     Delete(Operation::new(sq, path, RemoveFlag::Directory))
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum RemoveFlag {
     File,
     Directory,
@@ -389,7 +389,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) enum SyncDataFlag {
     All,
     Data,
