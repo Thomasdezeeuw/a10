@@ -139,15 +139,9 @@ pub(crate) struct Submission(pub(super) libc::io_uring_sqe);
 impl Submission {
     /// Reset the submission.
     #[allow(clippy::assertions_on_constants)]
-    pub(crate) fn reset(&mut self) {
+    fn reset(&mut self) {
         debug_assert!(libc::IORING_OP_NOP == 0);
         unsafe { ptr::addr_of_mut!(self.0).write_bytes(0, 1) };
-    }
-
-    /// Mark the submission as using `IOSQE_BUFFER_SELECT`.
-    pub(crate) fn set_buffer_select(&mut self, buf_group: u16) {
-        self.0.__bindgen_anon_4.buf_group = buf_group;
-        self.0.flags |= libc::IOSQE_BUFFER_SELECT;
     }
 
     /// Don't return a completion event for this submission.
@@ -155,29 +149,11 @@ impl Submission {
         self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 
-    /// Don't attempt to do the operation non-blocking first, always execute it
-    /// in an async manner.
-    pub(crate) fn set_async(&mut self) {
-        self.0.flags |= libc::IOSQE_ASYNC;
-    }
-
-    /// Set the flag to use direct descriptors.
-    pub(crate) fn use_direct_fd(&mut self) {
-        self.0.flags |= libc::IOSQE_FIXED_FILE;
-    }
-
-    /// Set the flag to create direct descriptors.
-    pub(crate) fn create_direct_fd(&mut self) {
-        self.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: libc::IORING_FILE_INDEX_ALLOC as _,
-        };
-    }
-
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
     #[cfg(debug_assertions)]
-    pub(crate) const fn is_unchanged(&self) -> bool {
+    const fn is_unchanged(&self) -> bool {
         self.0.opcode == libc::IORING_OP_NOP as u8
     }
 }

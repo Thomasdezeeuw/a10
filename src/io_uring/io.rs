@@ -296,7 +296,8 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
         submission.0.len = len;
         if let Some(buf_group) = buf.buffer_group() {
-            submission.set_buffer_select(buf_group.0);
+            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
+            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         }
     }
 
