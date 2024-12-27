@@ -196,6 +196,25 @@ impl<D: Descriptor> AsyncFd<D> {
             left: n,
         }
     }
+
+    /// Write `buf` to this fd.
+    #[doc = man_link!(write(2))]
+    pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B, D>
+    where
+        B: Buf,
+    {
+        self.write_at(buf, NO_OFFSET)
+    }
+
+    /// Write `buf` to this fd at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B, D>
+    where
+        B: Buf,
+    {
+        Write(FdOperation::new(self, buf, offset))
+    }
 }
 
 fd_operation!(
@@ -204,6 +223,9 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
+
+    /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
+    pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>;
 );
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].

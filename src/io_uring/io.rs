@@ -8,7 +8,7 @@ use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{BufGroupId, BufId, BufMut, BufMutSlice};
+use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -344,6 +344,32 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
+    }
+}
+
+pub(crate) struct WriteOp<B>(PhantomData<*const B>);
+
+impl<B: Buf> sys::FdOp for WriteOp<B> {
+    type Output = usize;
+    type Resources = B;
+    type Args = u64; // Offset.
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        buf: &mut Self::Resources,
+        offset: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (ptr, length) = unsafe { buf.parts() };
+        submission.0.opcode = libc::IORING_OP_WRITE as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
+        submission.0.len = length;
+    }
+
+    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        n as usize
     }
 }
 
