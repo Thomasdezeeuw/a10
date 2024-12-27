@@ -29,5 +29,5 @@ operation!(
     /// [`Future`] behind [`advise`].
     ///
     /// [`Future`]: std::future::Future
-    pub struct Advise(sys::mem::Advise) -> io::Result<()>;
+    pub struct Advise(sys::mem::AdviseOp) -> io::Result<()>;
 );
