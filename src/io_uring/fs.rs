@@ -150,3 +150,26 @@ impl sys::FdOp for AllocateOp {
         debug_assert!(n == 0);
     }
 }
+
+pub(crate) struct TruncateOp;
+
+impl sys::FdOp for TruncateOp {
+    type Output = ();
+    type Resources = ();
+    type Args = u64; // length
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        length: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FTRUNCATE as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *length };
+    }
+
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
