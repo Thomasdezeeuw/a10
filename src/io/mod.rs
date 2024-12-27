@@ -240,6 +240,30 @@ impl<D: Descriptor> AsyncFd<D> {
             offset,
         }
     }
+
+    /// Write `bufs` to this file.
+    #[doc = man_link!(writev(2))]
+    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        self.write_vectored_at(bufs, NO_OFFSET)
+    }
+
+    /// Write `bufs` to this file at `offset`.
+    ///
+    /// The current file cursor is not affected by this function.
+    pub fn write_vectored_at<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        offset: u64,
+    ) -> WriteVectored<'fd, B, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        let iovecs = unsafe { bufs.as_iovecs() };
+        WriteVectored(FdOperation::new(self, (bufs, iovecs), offset))
+    }
 }
 
 fd_operation!(
@@ -251,6 +275,10 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
     pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
+      with Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
+    pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       with Extract -> io::Result<(B, usize)>;
 );
 
