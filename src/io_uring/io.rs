@@ -8,7 +8,7 @@ use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice};
+use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice};
 use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -379,6 +379,54 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
     type ExtractOutput = (B, usize);
 
     fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
+        (buf, n as usize)
+    }
+}
+
+/// PhantomPinned is needed to unimplement `Unpin` (`!Unpin`), as the iovecs
+/// must not be moved while the kernel is reading the submission.
+pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
+
+impl<B: BufSlice<N>, const N: usize> sys::FdOp for WriteVectoredOp<B, N> {
+    type Output = usize;
+    /// `IoMutSlice` holds the buffer references used by the kernel.
+    /// NOTE: we only need these in the submission, we don't have to keep around
+    /// during the operation. Because of this we don't heap allocate it like we
+    /// for other operations. This leaves a small duration between the
+    /// submission of the entry and the submission being read by the kernel in
+    /// which this future could be dropped and the kernel will read memory we
+    /// don't own. However because we wake the kernel after submitting the
+    /// timeout entry it's not really worth to heap allocation.
+    type Resources = (B, [crate::io::IoSlice; N]);
+    type Args = u64; // Offset.
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (_, iovecs): &mut Self::Resources,
+        offset: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_WRITEV as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: iovecs.as_ptr() as _,
+        };
+        submission.0.len = iovecs.len() as _;
+    }
+
+    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        n as usize
+    }
+}
+
+impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        (buf, _): Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
         (buf, n as usize)
     }
 }
