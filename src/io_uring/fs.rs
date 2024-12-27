@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::fs::SyncDataFlag;
+use crate::fs::{Metadata, SyncDataFlag, METADATA_FLAGS};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -61,5 +61,40 @@ impl sys::FdOp for SyncDataOp {
 
     fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct StatOp;
+
+impl sys::FdOp for StatOp {
+    type Output = Metadata;
+    type Resources = Box<Metadata>;
+    type Args = ();
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        metadata: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_STATX as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            // SAFETY: this is safe because `Metadata` is transparent.
+            off: metadata as *mut _ as _,
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: "\0".as_ptr() as _, // Not using a path.
+        };
+        submission.0.len = METADATA_FLAGS;
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            statx_flags: libc::AT_EMPTY_PATH as _,
+        };
+    }
+
+    fn map_ok(metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+        debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
+        *metadata
     }
 }
