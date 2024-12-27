@@ -10,7 +10,7 @@ use std::{fmt, io};
 use crate::{syscall, SubmissionQueue};
 
 #[cfg(target_os = "linux")]
-pub use crate::sys::fd::Direct;
+pub use crate::sys::fd::{Direct, ToDirect, ToFd};
 
 /// An open file descriptor.
 ///
