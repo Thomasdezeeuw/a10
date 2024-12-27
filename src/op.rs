@@ -69,6 +69,28 @@ where
     }
 }
 
+impl<O> Operation<O>
+where
+    // TODO: this is silly.
+    O: OpExtract<
+        Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
+        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
+    >,
+    O::OperationOutput: fmt::Debug,
+{
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
+        // SAFETY: not moving `fd` or `state`.
+        let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
+        state.poll(
+            ctx,
+            sq,
+            O::fill_submission,
+            O::check_result,
+            O::map_ok_extract,
+        )
+    }
+}
+
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<O: Op + Unpin> Unpin for Operation<O> {}
 
@@ -110,6 +132,20 @@ pub(crate) trait Op {
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::Output;
+}
+
+/// Extension of [`Op`] to extract the resources used in the operation. To
+/// support the [`Extract`] trait.
+pub(crate) trait OpExtract: Op {
+    /// Output of the operation.
+    type ExtractOutput;
+
+    /// Map the system call output to the future's output.
+    fn map_ok_extract(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::ExtractOutput;
 }
 
 /// Generic [`Future`] that powers other I/O operation futures on a file
@@ -483,30 +519,51 @@ macro_rules! operation {
     (
         $(
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty;
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , with Extract -> $extract_output: ty )? ;
         )+
     ) => {
         $(
         $(#[ $meta ])*
         #[must_use = "`Future`s do nothing unless polled"]
-        $vis struct $name<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?>($crate::op::Operation<$sys>);
+        $vis struct $name<$( $resources: $trait $(, const $const_generic: $const_ty )? )?>($crate::op::Operation<$sys>);
 
-        impl<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?> ::std::future::Future for $name<$( $resources $(, $const_generic )?, )?> {
+        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> ::std::future::Future for $name<$( $resources $(, $const_generic )?, )?> {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called
-                // `Future::poll` on it.
+                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
                 unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
             }
         }
 
-        impl<$( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )?, )?> ::std::fmt::Debug for $name<$( $resources $(, $const_generic )?, )?> {
+        // Optionally implement `Extract`.
+        $crate::op::operation!(Extract for $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? -> $( $extract_output )?);
+
+        impl<$( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )? )?> ::std::fmt::Debug for $name<$( $resources $(, $const_generic )?, )?> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
             }
         }
         )+
+    };
+    (
+        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? -> $output: ty
+    ) => {
+        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> $crate::extract::Extract for $name<$( $resources $(, $const_generic )?, )?> {}
+
+        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $resources $(, $const_generic )?, )?>> {
+            type Output = $output;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called `poll_extract` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.fut.0) }.poll_extract(ctx)
+            }
+        }
+    };
+    (
+        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ->
+    ) => {
+        // No `Extract` implementation.
     };
 }
 
