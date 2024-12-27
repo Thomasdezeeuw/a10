@@ -178,6 +178,32 @@ where
     }
 }
 
+impl<'fd, O, D> FdOperation<'fd, O, D>
+where
+    // TODO: this is silly.
+    O: FdOpExtract<
+        Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
+        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
+    >,
+    D: Descriptor,
+    O::OperationOutput: fmt::Debug,
+{
+    fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
+        // SAFETY: not moving `fd` or `state`.
+        let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
+        state.poll(
+            ctx,
+            fd.sq(),
+            |resources, args, submission| {
+                O::fill_submission(fd, resources, args, submission);
+                D::use_flags(submission);
+            },
+            |resources, args, state| O::check_result(fd, resources, args, state),
+            |_, resources, operation_output| O::map_ok_extract(resources, operation_output),
+        )
+    }
+}
+
 impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
     fn try_cancel(&mut self) -> CancelResult {
         if let Some(op_id) = self.state.op_id() {
@@ -238,6 +264,19 @@ pub(crate) trait FdOp {
 
     /// Map the system call output to the future's output.
     fn map_ok(resources: Self::Resources, operation_output: Self::OperationOutput) -> Self::Output;
+}
+
+/// Extension of [`FdOp`] to extract the resources used in the operation. To
+/// support the [`Extract`] trait.
+pub(crate) trait FdOpExtract: FdOp {
+    /// Output of the operation.
+    type ExtractOutput;
+
+    /// Map the system call output to the future's output.
+    fn map_ok_extract(
+        resources: Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::ExtractOutput;
 }
 
 /// State of an [`Operation`] or [`FdOperation`].
