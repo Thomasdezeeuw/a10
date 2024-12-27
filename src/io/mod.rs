@@ -21,8 +21,10 @@ use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, FdOperation};
 use crate::{man_link, sys};
 
+mod read_buf;
 mod traits;
 
+pub use read_buf::{ReadBuf, ReadBufPool};
 pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 #[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
