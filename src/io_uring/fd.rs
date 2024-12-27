@@ -18,11 +18,13 @@ impl Descriptor for Direct {}
 
 impl crate::fd::private::Descriptor for Direct {
     fn use_flags(submission: &mut sys::sq::Submission) {
-        submission.use_direct_fd();
+        submission.0.flags |= libc::IOSQE_FIXED_FILE;
     }
 
     fn create_flags(submission: &mut sys::sq::Submission) {
-        submission.create_direct_fd();
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            file_index: libc::IORING_FILE_INDEX_ALLOC as _,
+        };
     }
 
     fn cloexec_flag() -> libc::c_int {
