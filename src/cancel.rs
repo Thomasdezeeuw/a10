@@ -37,6 +37,8 @@ impl<D: Descriptor> AsyncFd<D> {
 
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::cancel_all`].
+    ///
+    /// [`Future`]: std::future::Future
     pub struct CancelAll(sys::cancel::CancelAllOp) -> io::Result<usize>;
 );
 
@@ -98,6 +100,8 @@ pub enum CancelResult {
 
 operation!(
     /// [`Future`] behind [`Cancel::cancel`].
+    ///
+    /// [`Future`]: std::future::Future
     #[allow(clippy::module_name_repetitions)] // Don't care.
     pub struct CancelOperation(sys::cancel::CancelOperationOp) -> io::Result<()>;
 );
