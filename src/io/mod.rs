@@ -225,7 +225,8 @@ fd_operation!(
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
-    pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>;
+    pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
+      with Extract -> io::Result<(B, usize)>;
 );
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
