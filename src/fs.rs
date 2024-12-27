@@ -205,6 +205,29 @@ pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
     Rename(Operation::new(sq, resources, ()))
 }
 
+/// Remove a file.
+#[doc = man_link!(unlinkat(2))]
+#[doc(alias = "unlink")]
+#[doc(alias = "unlinkat")]
+pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
+    Delete(Operation::new(sq, path_to_cstring(path), RemoveFlag::File))
+}
+
+/// Remove a directory.
+#[doc = man_link!(unlinkat(2))]
+#[doc(alias = "rmdir")]
+#[doc(alias = "unlinkat")]
+pub fn remove_dir(sq: SubmissionQueue, path: PathBuf) -> Delete {
+    let path = path_to_cstring(path);
+    Delete(Operation::new(sq, path, RemoveFlag::Directory))
+}
+
+#[derive(Debug)]
+pub(crate) enum RemoveFlag {
+    File,
+    Directory,
+}
+
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>;
@@ -212,8 +235,11 @@ operation!(
     /// [`Future`] behind [`create_dir`].
     pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>;
 
-    /// [`Future`] behind [`create_dir`].
+    /// [`Future`] behind [`rename`].
     pub struct Rename(sys::fs::RenameOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`remove_file`] and [`remove_dir`].
+    pub struct Delete(sys::fs::DeleteOp) -> io::Result<()>;
 );
 
 /* TODO: add `Extract` support to the `operation!` macro.
@@ -245,6 +271,23 @@ impl Future for Extractor<Rename> {
                 let from = path_from_cstring(self.fut.from.take().unwrap());
                 let to = path_from_cstring(self.fut.to.take().unwrap());
                 Poll::Ready(Ok((from, to)))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl Extract for Delete {}
+
+impl Future for Extractor<Delete> {
+    type Output = io::Result<PathBuf>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match Pin::new(&mut self.fut).poll(ctx) {
+            Poll::Ready(Ok(())) => {
+                let path = path_from_cstring(self.fut.path.take().unwrap());
+                Poll::Ready(Ok(path))
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,

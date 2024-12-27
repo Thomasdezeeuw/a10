@@ -2,7 +2,7 @@ use std::ffi::CString;
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::fs::{Metadata, SyncDataFlag, METADATA_FLAGS};
+use crate::fs::{Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -220,6 +220,37 @@ impl sys::Op for RenameOp {
             addr: from.as_ptr() as _,
         };
         submission.0.len = libc::AT_FDCWD as _;
+    }
+
+    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct DeleteOp;
+
+impl sys::Op for DeleteOp {
+    type Output = ();
+    type Resources = CString; // path
+    type Args = RemoveFlag;
+
+    fn fill_submission(
+        path: &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_UNLINKAT as u8;
+        submission.0.fd = libc::AT_FDCWD;
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: path.as_ptr() as _,
+        };
+        let flags = match flags {
+            RemoveFlag::File => 0,
+            RemoveFlag::Directory => libc::AT_REMOVEDIR,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            unlink_flags: flags as _,
+        };
     }
 
     fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
