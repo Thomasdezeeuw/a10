@@ -176,6 +176,12 @@ fd_operation!(
     pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<Box<libc::signalfd_siginfo>>;
 );
 
+// SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<'fd, D: Descriptor> Sync for ReceiveSignal<'fd, D> {}
+#[allow(clippy::non_send_fields_in_send_ty)]
+unsafe impl<'fd, D: Descriptor> Send for ReceiveSignal<'fd, D> {}
+
 /// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
 #[repr(transparent)]
 struct SignalSet(libc::sigset_t);

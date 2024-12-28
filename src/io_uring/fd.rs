@@ -21,6 +21,7 @@ impl crate::fd::private::Descriptor for Direct {
         submission.0.flags |= libc::IOSQE_FIXED_FILE;
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn create_flags(submission: &mut sys::sq::Submission) {
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             file_index: libc::IORING_FILE_INDEX_ALLOC as _,

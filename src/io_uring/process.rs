@@ -14,6 +14,7 @@ impl sys::Op for WaitIdOp {
     type Resources = Box<UnsafeCell<libc::signalfd_siginfo>>;
     type Args = (WaitOn, libc::c_int); // options.
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         info: &mut Self::Resources,
         (wait, options): &mut Self::Args,

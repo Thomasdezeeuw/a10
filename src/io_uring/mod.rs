@@ -279,7 +279,7 @@ impl<T: Op> crate::op::Op for T {
         args: &mut Self::Args,
         submission: &mut Self::Submission,
     ) {
-        T::fill_submission(resources, args, submission)
+        T::fill_submission(resources, args, submission);
     }
 
     fn check_result(
@@ -335,7 +335,7 @@ impl<T: FdOp> crate::op::FdOp for T {
         args: &mut Self::Args,
         submission: &mut Self::Submission,
     ) {
-        T::fill_submission(fd, resources, args, submission)
+        T::fill_submission(fd, resources, args, submission);
     }
 
     fn check_result<D: Descriptor>(

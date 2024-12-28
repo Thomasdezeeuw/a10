@@ -23,6 +23,7 @@ impl<'r> Config<'r> {
         // NOTE: defined in the implementation specific configuration code.
         let queued_operations = self.queued_operations; // TODO: add option for # queued operations.
         let (submissions, shared, completions) = self._build()?;
-        Ring::build(submissions, shared, completions, queued_operations)
+        let ring = Ring::build(submissions, shared, completions, queued_operations);
+        Ok(ring)
     }
 }

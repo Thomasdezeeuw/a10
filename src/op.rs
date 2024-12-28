@@ -40,7 +40,7 @@ where
     >,
     O::OperationOutput: fmt::Debug,
 {
-    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::Output>> {
+    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::Output>> {
         // SAFETY: not moving `fd` or `state`.
         let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -52,7 +52,7 @@ where
         )
     }
 
-    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
         where O: OpExtract,
     {
         // SAFETY: not moving `fd` or `state`.
@@ -193,7 +193,7 @@ where
     D: Descriptor,
     O::OperationOutput: fmt::Debug,
 {
-    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::Output>> {
+    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::Output>> {
         // SAFETY: not moving `fd` or `state`.
         let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -208,7 +208,7 @@ where
         )
     }
 
-    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
         where O: FdOpExtract,
     {
         // SAFETY: not moving `fd` or `state`.
@@ -346,7 +346,7 @@ impl<R, A> State<R, A> {
     /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
     fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
         &mut self,
-        ctx: &mut task::Context<'_>,
+        ctx: &task::Context<'_>,
         sq: &SubmissionQueue,
         fill_submission: FillSubmission,
         check_result: CheckResult,
