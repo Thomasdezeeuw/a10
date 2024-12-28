@@ -1,25 +1,17 @@
-#![allow(unused_imports)]
-
 //! Filesystem manipulation operations.
 //!
 //! To open a file ([`AsyncFd`]) use [`open_file`] or [`OpenOptions`].
 
+use std::cell::UnsafeCell;
 use std::ffi::{CString, OsString};
-use std::future::Future;
-use std::marker::PhantomData;
-use std::mem::zeroed;
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::task::{self, Poll};
 use std::time::{Duration, SystemTime};
-use std::{fmt, io, str};
+use std::{fmt, io, mem, str};
 
-use crate::extract::Extractor;
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::man_link;
-use crate::op::{self, fd_operation, operation, FdOperation, Operation};
-use crate::{sys, Extract, SubmissionQueue};
+use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::{man_link, sys, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -281,12 +273,8 @@ impl<D: Descriptor> AsyncFd<D> {
     #[doc = man_link!(statx(2))]
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
-        // TODO: use `Box::new_zeroed` once stable
-        // <https://github.com/rust-lang/rust/issues/129396>.
-        let metadata = Box::new(Metadata {
-            // SAFETY: all zero values are valid representations.
-            inner: unsafe { zeroed() },
-        });
+        // SAFETY: fully zeroed `libc::statx` is a valid value.
+        let metadata = unsafe { Box::new(UnsafeCell::new(mem::zeroed())) };
         Stat(FdOperation::new(self, metadata, ()))
     }
 
