@@ -66,7 +66,7 @@ impl<'r> crate::Config<'r> {
     /// or `AlreadyExists` if another thread attempt to register resource or
     /// otherwise use the [`Ring`] in a way that is not allowed.
     ///
-    /// [`build`]: Config::build
+    /// [`build`]: crate::Config::build
     /// [`enabled`]: Ring::enable
     /// [`ReadBufPool`]: crate::io::ReadBufPool
     #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
