@@ -19,6 +19,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
+use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
@@ -434,17 +435,15 @@ pub struct ReadN<'fd, B: BufMut, D: Descriptor = File> {
     left: usize,
 }
 
-/* TODO(port): add back Cancel support.
 impl<'fd, B: BufMut, D: Descriptor> Cancel for ReadN<'fd, B, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.read.try_cancel()
     }
 
-    fn cancel(&mut self) -> CancelOp {
+    fn cancel(&mut self) -> CancelOperation {
         self.read.cancel()
     }
 }
-*/
 
 impl<'fd, B: BufMut, D: Descriptor> Future for ReadN<'fd, B, D> {
     type Output = io::Result<B>;
@@ -487,17 +486,15 @@ pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor =
     left: usize,
 }
 
-/* TODO(port): add back Cancel support.
-impl<'fd, B, const N: usize, D: Descriptor> Cancel for ReadNVectored<'fd, B, N, D> {
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Cancel for ReadNVectored<'fd, B, N, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.read.try_cancel()
     }
 
-    fn cancel(&mut self) -> CancelOp {
+    fn cancel(&mut self) -> CancelOperation {
         self.read.cancel()
     }
 }
-*/
 
 impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for ReadNVectored<'fd, B, N, D> {
     type Output = io::Result<B>;
@@ -565,17 +562,15 @@ impl<'fd, B: Buf, D: Descriptor> WriteAll<'fd, B, D> {
     }
 }
 
-/* TODO(port): add back Cancel support.
-impl<'fd, B, D: Descriptor> Cancel for WriteAll<'fd, B, D> {
+impl<'fd, B: Buf, D: Descriptor> Cancel for WriteAll<'fd, B, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.write.try_cancel()
     }
 
-    fn cancel(&mut self) -> CancelOp {
+    fn cancel(&mut self) -> CancelOperation {
         self.write.cancel()
     }
 }
-*/
 
 impl<'fd, B: Buf, D: Descriptor> Future for WriteAll<'fd, B, D> {
     type Output = io::Result<()>;
@@ -654,17 +649,15 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> WriteAllVectored<'fd, B
     }
 }
 
-/* TODO(port): add back Cancel support.
-impl<'fd, B, const N: usize, D: Descriptor> Cancel for WriteAllVectored<'fd, B, N, D> {
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Cancel for WriteAllVectored<'fd, B, N, D> {
     fn try_cancel(&mut self) -> CancelResult {
         self.write.try_cancel()
     }
 
-    fn cancel(&mut self) -> CancelOp {
+    fn cancel(&mut self) -> CancelOperation {
         self.write.cancel()
     }
 }
-*/
 
 impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future for WriteAllVectored<'fd, B, N, D> {
     type Output = io::Result<()>;

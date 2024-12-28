@@ -56,18 +56,6 @@ operation!(
 unsafe impl Sync for WaitId {}
 unsafe impl Send for WaitId {}
 
-/* TODO(port): add back Cancel support.
-impl Cancel for WaitId {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.state.try_cancel(&self.sq)
-    }
-
-    fn cancel(&mut self) -> CancelOp {
-        self.state.cancel(&self.sq)
-    }
-}
-*/
-
 /// Notification of process signals.
 ///
 /// # Multithreaded process
