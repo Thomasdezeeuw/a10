@@ -117,7 +117,7 @@ impl ReadBuf {
 
     /// Returns true if the buffer is empty.
     pub fn is_empty(&self) -> bool {
-        self.owned.map_or(true, |ptr| ptr.len() == 0)
+        self.owned.is_none_or(|ptr| ptr.len() == 0)
     }
 
     /// Returns itself as slice.
@@ -280,7 +280,7 @@ impl ReadBuf {
 }
 
 /// Changes the size of `slice` to `new_len`.
-fn change_size<T>(slice: NonNull<[T]>, new_len: usize) -> NonNull<[T]> {
+const fn change_size<T>(slice: NonNull<[T]>, new_len: usize) -> NonNull<[T]> {
     // SAFETY: `ptr` is `NonNull`, thus not NULL.
     let ptr = unsafe { NonNull::new_unchecked(slice.as_ptr().cast()) };
     NonNull::slice_from_raw_parts(ptr, new_len)
@@ -333,7 +333,7 @@ unsafe impl BufMut for ReadBuf {
             debug_assert!(id.0 == 0);
             self.owned = Some(change_size(ptr, ptr.len() + n as usize));
         } else {
-            self.owned = Some(self.shared.init_buffer(id, n))
+            self.owned = Some(self.shared.init_buffer(id, n));
         }
     }
 }

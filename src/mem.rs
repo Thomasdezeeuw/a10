@@ -22,7 +22,10 @@ pub const fn advise(
     Advise(Operation::new(sq, (), (address, length, advice)))
 }
 
+// SAFETY: `!Send` due to address, but the future is `Send`.
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Sync for Advise {}
+#[allow(clippy::non_send_fields_in_send_ty)]
 unsafe impl Send for Advise {}
 
 operation!(

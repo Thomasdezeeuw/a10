@@ -242,11 +242,11 @@ impl Ring {
         shared_data: sys::Shared,
         completions: sys::Completions,
         queued_operations: usize,
-    ) -> io::Result<Ring> {
+    ) -> Ring {
         let shared = SharedState::new(submissions, shared_data, queued_operations);
         let sq = SubmissionQueue::new(shared.clone());
         let cq = cq::Queue::new(completions, shared);
-        Ok(Ring { sq, cq })
+        Ring { sq, cq }
     }
 
     /// Returns the `SubmissionQueue` used by this ring.
@@ -297,10 +297,11 @@ impl SubmissionQueue {
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
     pub fn wake(&self) {
-        self.inner.wake()
+        self.inner.wake();
     }
 
     /// See [`sq::Queue::get_op`].
+    #[allow(clippy::type_complexity)]
     pub(crate) unsafe fn get_op(
         &self,
         op_id: OperationId,
@@ -311,6 +312,7 @@ impl SubmissionQueue {
     }
 
     /// See [`sq::Queue::make_op_available`].
+    #[allow(clippy::type_complexity)]
     pub(crate) unsafe fn make_op_available(
         &self,
         op_id: OperationId,
@@ -318,7 +320,7 @@ impl SubmissionQueue {
         Option<QueuedOperation<<<<sys::Implementation as Implementation>::Completions as cq::Completions>::Event as cq::Event>::State>>,
     >,
     ) {
-        self.inner.make_op_available(op_id, op)
+        self.inner.make_op_available(op_id, op);
     }
 }
 
@@ -343,6 +345,7 @@ struct SharedState<I: Implementation> {
     ///
     /// Indexed by a [`OperationIds`], created by `op_ids`.
     #[rustfmt::skip]
+    #[allow(clippy::type_complexity)]
     queued_ops: Box<[Mutex<Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>>]>,
     /// Futures that are waiting for a slot in `queued_ops`.
     blocked_futures: Mutex<Vec<task::Waker>>,

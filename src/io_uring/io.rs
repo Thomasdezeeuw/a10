@@ -438,6 +438,7 @@ impl sys::FdOp for SpliceOp {
     type Resources = ();
     type Args = (RawFd, SpliceDirection, u64, u64, u32, libc::c_int); // target, direction, off_in, off_out, len, flags
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         (): &mut Self::Resources,
@@ -463,7 +464,7 @@ impl sys::FdOp for SpliceOp {
         };
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -486,7 +487,7 @@ impl<D: Descriptor> sys::Op for CloseOp<D> {
         D::use_flags(submission);
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

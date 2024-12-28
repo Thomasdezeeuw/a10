@@ -98,6 +98,7 @@ impl sys::Op for RenameOp {
     type Resources = (CString, CString); // from path, to path
     type Args = ();
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         (from, to): &mut Self::Resources,
         (): &mut Self::Args,
@@ -139,6 +140,7 @@ impl sys::Op for DeleteOp {
     type Resources = CString; // path
     type Args = RemoveFlag;
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         path: &mut Self::Resources,
         flags: &mut Self::Args,
@@ -246,6 +248,7 @@ impl sys::FdOp for AdviseOp {
     type Resources = ();
     type Args = (u64, u32, libc::c_int); // offset, length, advice
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         (): &mut Self::Resources,
@@ -273,6 +276,7 @@ impl sys::FdOp for AllocateOp {
     type Resources = ();
     type Args = (u64, u32, libc::c_int); // offset, length, mode
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         (): &mut Self::Resources,
@@ -282,7 +286,9 @@ impl sys::FdOp for AllocateOp {
         submission.0.opcode = libc::IORING_OP_FALLOCATE as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: *length as _ };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: (*length).into(),
+        };
         submission.0.len = *mode as u32;
     }
 

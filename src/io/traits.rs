@@ -307,12 +307,12 @@ impl IoSlice {
         IoSlice(crate::sys::io::IoSlice::new(buf))
     }
 
-    pub(crate) fn len(&self) -> usize {
+    pub(crate) const fn len(&self) -> usize {
         self.0.len()
     }
 
     pub(crate) fn set_len(&mut self, new_len: usize) {
-        self.0.set_len(new_len)
+        self.0.set_len(new_len);
     }
 }
 
