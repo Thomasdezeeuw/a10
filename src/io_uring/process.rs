@@ -1,6 +1,8 @@
 use std::cell::UnsafeCell;
 use std::mem;
 
+use crate::fd::{AsyncFd, Descriptor};
+use crate::io::NO_OFFSET;
 use crate::process::WaitOn;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -35,6 +37,41 @@ impl sys::Op for WaitIdOp {
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+        // SAFETY: `UnsafeCell` is `repr(transparent)` so this transmute is
+        // safe.
+        unsafe {
+            mem::transmute::<Box<UnsafeCell<libc::signalfd_siginfo>>, Box<libc::signalfd_siginfo>>(
+                info,
+            )
+        }
+    }
+}
+
+pub(crate) struct ReceiveSignalOp;
+
+impl sys::FdOp for ReceiveSignalOp {
+    type Output = Box<libc::signalfd_siginfo>;
+    type Resources = Box<UnsafeCell<libc::signalfd_siginfo>>;
+    type Args = ();
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        info: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_READ as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: &**info as *const _ as _,
+        };
+        submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
+        submission.set_async();
+    }
+
+    fn map_ok(info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         // SAFETY: `UnsafeCell` is `repr(transparent)` so this transmute is
         // safe.
         unsafe {
