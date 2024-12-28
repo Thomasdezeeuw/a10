@@ -1,7 +1,6 @@
 //! Module with [`Operation`] and [`FdOperation`] [`Future`]s.
 
 use std::cell::UnsafeCell;
-use std::future::Future;
 use std::panic::RefUnwindSafe;
 use std::pin::Pin;
 use std::task::{self, Poll};
@@ -32,20 +31,7 @@ impl<O: Op> Operation<O> {
     }
 }
 
-impl<O: Op> Operation<O>
-where
-    O::Resources: fmt::Debug,
-    O::Args: fmt::Debug,
-{
-    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(name)
-            .field("sq", &self.sq)
-            .field("state", &self.state)
-            .finish()
-    }
-}
-
-impl<O> Future for Operation<O>
+impl<O> Operation<O>
 where
     // TODO: this is silly.
     O: Op<
@@ -54,9 +40,7 @@ where
     >,
     O::OperationOutput: fmt::Debug,
 {
-    type Output = io::Result<O::Output>;
-
-    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::Output>> {
         // SAFETY: not moving `fd` or `state`.
         let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -67,18 +51,10 @@ where
             O::map_ok,
         )
     }
-}
 
-impl<O> Operation<O>
-where
-    // TODO: this is silly.
-    O: OpExtract<
-        Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
-        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
-    >,
-    O::OperationOutput: fmt::Debug,
-{
-    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
+        where O: OpExtract,
+    {
         // SAFETY: not moving `fd` or `state`.
         let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -88,6 +64,19 @@ where
             O::check_result,
             O::map_ok_extract,
         )
+    }
+}
+
+impl<O: Op> Operation<O>
+where
+    O::Resources: fmt::Debug,
+    O::Args: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("sq", &self.sq)
+            .field("state", &self.state)
+            .finish()
     }
 }
 
@@ -173,20 +162,7 @@ impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
     }
 }
 
-impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
-where
-    O::Resources: fmt::Debug,
-    O::Args: fmt::Debug,
-{
-    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(name)
-            .field("fd", &self.fd)
-            .field("state", &self.state)
-            .finish()
-    }
-}
-
-impl<'fd, O, D> Future for FdOperation<'fd, O, D>
+impl<'fd, O, D> FdOperation<'fd, O, D>
 where
     // TODO: this is silly.
     O: FdOp<
@@ -196,9 +172,7 @@ where
     D: Descriptor,
     O::OperationOutput: fmt::Debug,
 {
-    type Output = io::Result<O::Output>;
-
-    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+    pub(crate) fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::Output>> {
         // SAFETY: not moving `fd` or `state`.
         let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -212,19 +186,10 @@ where
             |_, resources, operation_output| O::map_ok(resources, operation_output),
         )
     }
-}
 
-impl<'fd, O, D> FdOperation<'fd, O, D>
-where
-    // TODO: this is silly.
-    O: FdOpExtract<
-        Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
-        OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
-    >,
-    D: Descriptor,
-    O::OperationOutput: fmt::Debug,
-{
-    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>> {
+    pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
+        where O: FdOpExtract,
+    {
         // SAFETY: not moving `fd` or `state`.
         let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
         state.poll(
@@ -237,6 +202,19 @@ where
             |resources, args, state| O::check_result(fd, resources, args, state),
             |_, resources, operation_output| O::map_ok_extract(resources, operation_output),
         )
+    }
+}
+
+impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
+where
+    O::Resources: fmt::Debug,
+    O::Args: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("fd", &self.fd)
+            .field("state", &self.state)
+            .finish()
     }
 }
 
