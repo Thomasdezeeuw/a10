@@ -522,58 +522,11 @@ macro_rules! operation {
         )+
     ) => {
         $(
-        $(#[ $meta ])*
-        #[doc = "\n\n[`Future`]: std::future::Future"]
-        #[must_use = "`Future`s do nothing unless polled"]
-        $vis struct $name<$( $resources: $trait $(, const $const_generic: $const_ty )? )?>($crate::op::Operation<$sys>);
-
-        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> ::std::future::Future for $name<$( $resources $(, $const_generic )?, )?> {
-            type Output = $output;
-
-            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
-                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
-            }
-        }
-
-        // Optionally implement `Extract`.
-        $crate::op::operation!(Extract for $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? -> $( $extract_output )?);
-
-        impl<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?> $crate::cancel::Cancel for $name<$( $resources $(, $const_generic )?, )?> {
-            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
-                self.0.try_cancel()
-            }
-
-            fn cancel(&mut self) -> $crate::cancel::CancelOperation {
-                self.0.cancel()
-            }
-        }
-
-        impl<$( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )? )?> ::std::fmt::Debug for $name<$( $resources $(, $const_generic )?, )?> {
-            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
-            }
-        }
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? (Operation($sys)) -> $output $( , with Extract -> $extract_output )?
+        );
         )+
-    };
-    (
-        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? -> $output: ty
-    ) => {
-        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> $crate::extract::Extract for $name<$( $resources $(, $const_generic )?, )?> {}
-
-        impl<$( $resources: $trait $(, const $const_generic: $const_ty )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $resources $(, $const_generic )?, )?>> {
-            type Output = $output;
-
-            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called `poll_extract` on it.
-                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.fut.0) }.poll_extract(ctx)
-            }
-        }
-    };
-    (
-        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ->
-    ) => {
-        // No `Extract` implementation.
     };
 }
 
@@ -586,12 +539,26 @@ macro_rules! fd_operation {
         )+
     ) => {
         $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name <'fd, $( $resources : $trait $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys)) -> $output $( , with Extract -> $extract_output )?
+        );
+        )+
+    };
+}
+
+/// Helper macro for [`operation`] and [`fd_operation`], use those instead.
+macro_rules! new_operation {
+    (
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) ) -> $output: ty $( , with Extract -> $extract_output: ty )?
+    ) => {
         $(#[ $meta ])*
         #[doc = "\n\n[`Future`]: std::future::Future"]
         #[must_use = "`Future`s do nothing unless polled"]
-        $vis struct $name<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::FdOperation<'fd, $sys, D>);
+        $vis struct $name<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait = $gen_default )? )?>($crate::op::$op_type<$( $( $lifetime, )* )? $sys $( $(, $gen )? )? >);
 
-        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::future::Future for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
@@ -600,10 +567,9 @@ macro_rules! fd_operation {
             }
         }
 
-        // Optionally implement `Extract`.
-        $crate::op::fd_operation!(Extract for $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? -> $( $extract_output )?);
+        $crate::op::new_operation!(Extract for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?);
 
-        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> $crate::cancel::Cancel for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::cancel::Cancel for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
             fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
                 self.0.try_cancel()
             }
@@ -613,19 +579,18 @@ macro_rules! fd_operation {
             }
         }
 
-        impl<'fd, $( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::fmt::Debug for $name<'fd, $( $resources $(, $const_generic )?, )? D> {
+        impl<$( $( $lifetime, )* $( $resources: $trait + ::std::fmt::Debug, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::fmt::Debug for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
             }
         }
-        )+
     };
     (
-        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? -> $output: ty
+        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
     ) => {
-        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> $crate::extract::Extract for $name<'fd, $( $resources $(, $const_generic )?, )? D> {}
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::extract::Extract for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {}
 
-        impl<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor> ::std::future::Future for $crate::extract::Extractor<$name<'fd, $( $resources $(, $const_generic )?, )? D>> {
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?>> {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
@@ -635,10 +600,10 @@ macro_rules! fd_operation {
         }
     };
     (
-        Extract for $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ->
+        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? ->
     ) => {
         // No `Extract` implementation.
     };
 }
 
-pub(crate) use {fd_operation, operation};
+pub(crate) use {fd_operation, new_operation, operation};
