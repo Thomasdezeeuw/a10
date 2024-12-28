@@ -30,6 +30,8 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Due to the lazyness of [`Future`]s it is possible that this will return
     /// `Ok(0)` if operations were never polled only to start it after their
     /// first poll.
+    ///
+    /// [`Future`]: std::future::Future
     pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd, D> {
         CancelAll(FdOperation::new(self, (), ()))
     }
@@ -74,7 +76,7 @@ pub trait Cancel {
     /// If this is called on an [`AsyncIterator`] it will cause them to return
     /// `None` (eventually, it may still return pending items).
     ///
-    ///[`MultishotAccept::cancel`]: crate::net::MultishotAccept::cancel
+    /// [`Future`]: std::future::Future
     /// [`AsyncIterator`]: std::async_iter::AsyncIterator
     fn cancel(&mut self) -> CancelOperation;
 }

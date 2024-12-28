@@ -30,6 +30,8 @@ impl crate::Ring {
     ///
     /// This only required when starting the ring in disabled mode, see
     /// [`Config::disable`].
+    ///
+    /// [`Config::disable`]: crate::Config::disable
     #[allow(clippy::needless_pass_by_ref_mut)]
     #[doc(alias = "IORING_REGISTER_ENABLE_RINGS")]
     pub fn enable(&mut self) -> io::Result<()> {
