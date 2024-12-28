@@ -524,6 +524,7 @@ macro_rules! operation {
     ) => {
         $(
         $(#[ $meta ])*
+        #[doc = "\n\n[`Future`]: std::future::Future"]
         #[must_use = "`Future`s do nothing unless polled"]
         $vis struct $name<$( $resources: $trait $(, const $const_generic: $const_ty )? )?>($crate::op::Operation<$sys>);
 
@@ -577,6 +578,7 @@ macro_rules! fd_operation {
     ) => {
         $(
         $(#[ $meta ])*
+        #[doc = "\n\n[`Future`]: std::future::Future"]
         #[must_use = "`Future`s do nothing unless polled"]
         $vis struct $name<'fd, $( $resources: $trait $(, const $const_generic: $const_ty )?, )? D: $crate::fd::Descriptor = $crate::fd::File>($crate::op::FdOperation<'fd, $sys, D>);
 
