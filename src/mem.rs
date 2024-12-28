@@ -27,7 +27,5 @@ unsafe impl Send for Advise {}
 
 operation!(
     /// [`Future`] behind [`advise`].
-    ///
-    /// [`Future`]: std::future::Future
     pub struct Advise(sys::mem::AdviseOp) -> io::Result<()>;
 );
