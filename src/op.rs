@@ -67,6 +67,30 @@ where
     }
 }
 
+impl<O: Op> Cancel for Operation<O> {
+    fn try_cancel(&mut self) -> CancelResult {
+        if let Some(op_id) = self.state.op_id() {
+            let result = self.sq.inner.submit_no_completion(|submission| {
+                sys::cancel::operation(op_id, submission);
+            });
+            match result {
+                Ok(()) => CancelResult::Canceled,
+                Err(QueueFull) => CancelResult::QueueFull,
+            }
+        } else {
+            CancelResult::NotStarted
+        }
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        let op_id = self.state.op_id();
+        CancelOperation::new(self.sq.clone(), op_id)
+    }
+}
+
+/// Only implement `Unpin` if the underlying operation implement `Unpin`.
+impl<O: Op + Unpin> Unpin for Operation<O> {}
+
 impl<O: Op> Operation<O>
 where
     O::Resources: fmt::Debug,
@@ -79,9 +103,6 @@ where
             .finish()
     }
 }
-
-/// Only implement `Unpin` if the underlying operation implement `Unpin`.
-impl<O: Op + Unpin> Unpin for Operation<O> {}
 
 /// Implementation of a [`Operation`].
 pub(crate) trait Op {
@@ -205,19 +226,6 @@ where
     }
 }
 
-impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
-where
-    O::Resources: fmt::Debug,
-    O::Args: fmt::Debug,
-{
-    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(name)
-            .field("fd", &self.fd)
-            .field("state", &self.state)
-            .finish()
-    }
-}
-
 impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
     fn try_cancel(&mut self) -> CancelResult {
         if let Some(op_id) = self.state.op_id() {
@@ -241,6 +249,19 @@ impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
 
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<'fd, O: FdOp + Unpin, D: Descriptor> Unpin for FdOperation<'fd, O, D> {}
+
+impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
+where
+    O::Resources: fmt::Debug,
+    O::Args: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("fd", &self.fd)
+            .field("state", &self.state)
+            .finish()
+    }
+}
 
 /// Implementation of a [`FdOperation`].
 pub(crate) trait FdOp {
@@ -517,6 +538,16 @@ macro_rules! operation {
 
         // Optionally implement `Extract`.
         $crate::op::operation!(Extract for $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? -> $( $extract_output )?);
+
+        impl<$( $resources: $trait $(, const $const_generic: $const_ty )?, )?> $crate::cancel::Cancel for $name<$( $resources $(, $const_generic )?, )?> {
+            fn try_cancel(&mut self) -> $crate::cancel::CancelResult {
+                self.0.try_cancel()
+            }
+
+            fn cancel(&mut self) -> $crate::cancel::CancelOperation {
+                self.0.cancel()
+            }
+        }
 
         impl<$( $resources: $trait + ::std::fmt::Debug $(, const $const_generic: $const_ty )? )?> ::std::fmt::Debug for $name<$( $resources $(, $const_generic )?, )?> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
