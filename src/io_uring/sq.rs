@@ -156,6 +156,12 @@ impl Submission {
     const fn is_unchanged(&self) -> bool {
         self.0.opcode == libc::IORING_OP_NOP as u8
     }
+
+    /// Don't attempt to do the operation non-blocking first, always execute it
+    /// in an async manner.
+    pub(crate) fn set_async(&mut self) {
+        self.0.flags |= libc::IOSQE_ASYNC;
+    }
 }
 
 impl crate::sq::Submission for Submission {
