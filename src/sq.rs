@@ -64,6 +64,37 @@ impl<I: Implementation> Queue<I> {
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
         S: FnOnce() -> <<I::Completions as cq::Completions>::Event as cq::Event>::State,
     {
+        let op_id = self.queue2(new_state, waker)?;
+
+        // SAFETY: we just got the `op_id` above so we own it. Furthermore we
+        // don't use it in case an error is returned.
+        unsafe { self.submit_with_id(op_id, fill)? };
+
+        Ok(op_id)
+    }
+
+    /// Queue a new operation, without submitting an operation, returns the
+    /// operation id.
+    pub(crate) fn queue(&self) -> Result<OperationId, QueueFull> {
+        self.queue2(
+            <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new,
+            task::Waker::noop().clone(),
+        )
+    }
+
+    /// Queue a new multishot operation, without submitting an operation,
+    /// returns the operation id.
+    pub(crate) fn queue_multishot(&self) -> Result<OperationId, QueueFull> {
+        self.queue2(
+            <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new_multishot,
+            task::Waker::noop().clone(),
+        )
+    }
+
+    fn queue2<S>(&self, new_state: S, waker: task::Waker) -> Result<OperationId, QueueFull>
+    where
+        S: FnOnce() -> <<I::Completions as cq::Completions>::Event as cq::Event>::State,
+    {
         // Get an `OperationId` to the queued operation list.
         let shared = &*self.shared;
         let Some(op_id) = shared.op_ids.next_available() else {
@@ -80,9 +111,6 @@ impl<I: Implementation> Queue<I> {
             *op = Some(queued_op);
         }
 
-        // SAFETY: we just got the `op_id` above so we own it. Furthermore we
-        // don't use it in case an error is returned.
-        unsafe { self.submit_with_id(op_id, fill)? };
         Ok(op_id)
     }
 
