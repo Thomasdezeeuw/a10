@@ -9,7 +9,7 @@ use std::{fmt, io};
 
 use crate::{syscall, SubmissionQueue};
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{Direct, ToDirect, ToFd};
 
 /// An open file descriptor.
@@ -138,7 +138,7 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
 impl<D: Descriptor> Drop for AsyncFd<D> {
     fn drop(&mut self) {
         // Try to asynchronously close the desctiptor (if the OS supports it).
-        #[cfg(any(target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         {
             let result = self.sq.inner.submit_no_completion(|submission| {
                 crate::sys::fd::fill_close_submission(&*self, submission);
