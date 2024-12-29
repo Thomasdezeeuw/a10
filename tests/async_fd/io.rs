@@ -2,12 +2,13 @@
 
 use std::cell::Cell;
 use std::env::temp_dir;
+use std::future::Future;
 use std::io;
 use std::ops::Bound;
-use std::os::fd::{AsFd, AsRawFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 
-use a10::fd::{AsyncFd, File};
+use a10::fd::{AsyncFd, Descriptor, File};
 use a10::fs::{Open, OpenOptions};
 use a10::io::{
     stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Splice,
@@ -17,8 +18,8 @@ use a10::{Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     bind_and_listen_ipv4, block_on, cancel_all, defer, expect_io_errno, init, is_send, is_sync,
-    remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue, Waker, LOREM_IPSUM_5,
-    LOREM_IPSUM_50,
+    remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket, test_queue, tmp_path,
+    Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
 
 const BUF_SIZE: usize = 4096;
