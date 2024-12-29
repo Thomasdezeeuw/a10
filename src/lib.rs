@@ -28,7 +28,7 @@
 //! being polled to completion. This data can be retrieved again by using the
 //! [`Extract`] trait.
 //!
-//! ## Examples
+//! # Examples
 //!
 //! The example below implements the `cat(1)` program that concatenates files
 //! and prints them to standard out.
