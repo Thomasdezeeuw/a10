@@ -10,10 +10,10 @@ use std::os::linux::net::SocketAddrExt;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::{io, ptr, slice};
+use std::{fmt, io, ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::{operation, Operation};
+use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
 /// Creates a new socket.
@@ -34,6 +34,24 @@ operation!(
     /// If you're looking for a socket type, there is none, see [`AsyncFd`].
     pub struct Socket<D: Descriptor>(sys::net::SocketOp<D>) -> io::Result<AsyncFd<D>>;
 );
+
+/// Socket related system calls.
+impl<D: Descriptor> AsyncFd<D> {
+    /// Initiate a connection on this socket to the specified address.
+    #[doc = man_link!(connect(2))]
+    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A, D>
+    where
+        A: SocketAddress,
+    {
+        let storage = AddressStorage(Box::from(address.as_storage()));
+        Connect(FdOperation::new(self, storage, ()))
+    }
+}
+
+fd_operation! {
+    /// [`Future`] behind [`AsyncFd::connect`].
+    pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
+}
 
 /// Trait that defines the behaviour of socket addresses.
 ///
@@ -276,7 +294,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
 ///
 /// [`accept`]: AsyncFd::accept
 /// [`connect`]: AsyncFd::connect
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct NoAddress;
 
 impl SocketAddress for NoAddress {}
@@ -301,5 +319,14 @@ impl private::SocketAddress for NoAddress {
     unsafe fn init(_: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
         debug_assert!(length == 0);
         NoAddress
+    }
+}
+
+/// Implement [`fmt::Debug`] for [`SocketAddress::Storage`].
+pub(crate) struct AddressStorage<A>(pub(crate) A);
+
+impl<A> fmt::Debug for AddressStorage<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Address").finish()
     }
 }
