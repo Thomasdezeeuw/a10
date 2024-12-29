@@ -4,16 +4,20 @@
 //! issues a non-blocking `socket(2)` call.
 
 use std::ffi::OsStr;
+use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
+use std::pin::Pin;
+use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufMut};
+use crate::cancel::{Cancel, CancelOperation, CancelResult};
+use crate::fd::{AsyncFd, Descriptor, File};
+use crate::io::{Buf, BufMut, ReadNBuf};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -56,6 +60,19 @@ impl<D: Descriptor> AsyncFd<D> {
         B: BufMut,
     {
         Recv(FdOperation::new(self, buf, flags))
+    }
+
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected.
+    pub const fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B, D>
+    where
+        B: BufMut,
+    {
+        let buf = ReadNBuf { buf, last_read: 0 };
+        RecvN {
+            recv: self.recv(buf, 0),
+            left: n,
+        }
     }
 
     /// Sends data on the socket to a connected peer.
@@ -103,6 +120,53 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       with Extract -> io::Result<(B, usize)>;
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n`].
+#[derive(Debug)]
+pub struct RecvN<'fd, B: BufMut, D: Descriptor = File> {
+    recv: Recv<'fd, ReadNBuf<B>, D>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMut, D: Descriptor> Cancel for RecvN<'fd, B, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.recv.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        self.recv.cancel()
+    }
+}
+
+impl<'fd, B: BufMut, D: Descriptor> Future for RecvN<'fd, B, D> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving the `Recv` future.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok(buf)) => {
+                if buf.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if buf.last_read >= this.left {
+                    // Received the required amount of bytes.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                this.left -= buf.last_read;
+
+                recv.set(recv.0.fd().recv(buf, 0));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
 }
 
 /// Trait that defines the behaviour of socket addresses.

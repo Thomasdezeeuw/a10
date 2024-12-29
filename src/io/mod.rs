@@ -688,10 +688,11 @@ operation!(
 );
 
 /// Wrapper around a buffer `B` to keep track of the number of bytes written.
+// Also used in the `net` module.
 #[derive(Debug)]
-struct ReadNBuf<B> {
-    buf: B,
-    last_read: usize,
+pub(crate) struct ReadNBuf<B> {
+    pub(crate) buf: B,
+    pub(crate) last_read: usize,
 }
 
 unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
