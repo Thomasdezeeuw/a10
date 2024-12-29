@@ -1,7 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::net::{AddressStorage, SocketAddress};
+use crate::io::Buf;
+use crate::net::{AddressStorage, SendCall, SocketAddress};
+use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -56,5 +58,44 @@ impl<A: SocketAddress> sys::FdOp for ConnectOp<A> {
 
     fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct SendOp<B>(PhantomData<*const B>);
+
+impl<B: Buf> sys::FdOp for SendOp<B> {
+    type Output = usize;
+    type Resources = B;
+    type Args = (SendCall, libc::c_int); // send_op, flags
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        buf: &mut Self::Resources,
+        (send_op, flags): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = match *send_op {
+            SendCall::Normal => libc::IORING_OP_SEND as u8,
+            SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
+        };
+        submission.0.fd = fd.fd();
+        let (ptr, length) = unsafe { buf.parts() };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = length;
+    }
+
+    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        n as usize
+    }
+}
+
+impl<B: Buf> FdOpExtract for SendOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
+        (buf, n as usize)
     }
 }

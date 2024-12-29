@@ -13,6 +13,7 @@ use std::path::Path;
 use std::{fmt, io, ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
+use crate::io::Buf;
 use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -46,11 +47,49 @@ impl<D: Descriptor> AsyncFd<D> {
         let storage = AddressStorage(Box::from(address.as_storage()));
         Connect(FdOperation::new(self, storage, ()))
     }
+
+    /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(send(2))]
+    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    where
+        B: Buf,
+    {
+        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
+    }
+
+    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
+    /// of `buf`.
+    ///
+    /// # Notes
+    ///
+    /// Zerocopy execution is not guaranteed and may fall back to copying. The
+    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
+    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
+    /// instead.
+    ///
+    /// The `Future` only returns once it safe for the buffer to be used again,
+    /// for TCP for example this means until the data is ACKed by the peer.
+    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    where
+        B: Buf,
+    {
+        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum SendCall {
+    Normal,
+    ZeroCopy,
 }
 
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::connect`].
     pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
+    pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
+      with Extract -> io::Result<(B, usize)>;
 }
 
 /// Trait that defines the behaviour of socket addresses.
