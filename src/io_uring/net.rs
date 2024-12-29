@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::Buf;
+use crate::io::{Buf, BufId, BufMut};
 use crate::net::{AddressStorage, SendCall, SocketAddress};
 use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
@@ -58,6 +58,42 @@ impl<A: SocketAddress> sys::FdOp for ConnectOp<A> {
 
     fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct RecvOp<B>(PhantomData<*const B>);
+
+impl<B: BufMut> sys::FdOp for RecvOp<B> {
+    type Output = B;
+    type Resources = B;
+    type Args = libc::c_int; // flags
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        buf: &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_RECV as u8;
+        submission.0.fd = fd.fd();
+        let (ptr, length) = unsafe { buf.parts_mut() };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = length;
+        if let Some(buf_group) = buf.buffer_group() {
+            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
+            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        }
+    }
+
+    fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+        // SAFETY: kernel just initialised the bytes for us.
+        unsafe {
+            buf.buffer_init(BufId(buf_id), n);
+        };
+        buf
     }
 }
 

@@ -13,7 +13,7 @@ use std::path::Path;
 use std::{fmt, io, ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::Buf;
+use crate::io::{Buf, BufMut};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -46,6 +46,16 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         let storage = AddressStorage(Box::from(address.as_storage()));
         Connect(FdOperation::new(self, storage, ()))
+    }
+
+    /// Receives data on the socket from the remote address to which it is
+    /// connected.
+    #[doc = man_link!(recv(2))]
+    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B, D>
+    where
+        B: BufMut,
+    {
+        Recv(FdOperation::new(self, buf, flags))
     }
 
     /// Sends data on the socket to a connected peer.
@@ -86,6 +96,9 @@ pub(crate) enum SendCall {
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::connect`].
     pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::recv`].
+    pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
