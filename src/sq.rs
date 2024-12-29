@@ -224,7 +224,7 @@ impl<I: Implementation> Queue<I> {
     }
 }
 
-#[cfg(any(target_os = "linux"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl Queue<crate::sys::Implementation> {
     /// Add a new submission, without waiting for a result.
     ///

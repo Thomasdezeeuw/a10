@@ -151,7 +151,10 @@ mod cq;
 mod drop_waker;
 mod op;
 mod sq;
-#[cfg_attr(any(target_os = "linux"), path = "io_uring/mod.rs")]
+#[cfg_attr(
+    any(target_os = "android", target_os = "linux"),
+    path = "io_uring/mod.rs"
+)]
 #[cfg_attr(
     any(
         target_os = "dragonfly",
