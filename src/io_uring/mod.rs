@@ -17,6 +17,7 @@ pub(crate) mod fs;
 pub(crate) mod io;
 mod libc;
 pub(crate) mod mem;
+pub(crate) mod net;
 pub(crate) mod process;
 mod sq;
 
