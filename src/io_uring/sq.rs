@@ -2,7 +2,7 @@ use std::os::fd::AsRawFd;
 use std::sync::atomic::{self, Ordering};
 use std::{fmt, io, ptr};
 
-use crate::sq::QueueFull;
+use crate::sq::{Cancelled, QueueFull};
 use crate::sys::{libc, Shared};
 use crate::{OperationId, WAKE_ID};
 
@@ -108,6 +108,53 @@ impl crate::sq::Submissions for Submissions {
         // (user space) polling thread is calling `Ring::poll`.
         shared.maybe_submit_event();
         Ok(())
+    }
+
+    fn cancel(&self, shared: &Self::Shared, op_id: OperationId) -> Cancelled {
+        let result = self.add(shared, |submission| {
+            use crate::sq::Submission;
+            submission.set_id(op_id);
+            // We'll get a canceled completion event if we succeeded, which is
+            // sufficient to cleanup the operation.
+            submission.no_completion_event();
+            submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
+            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: op_id as u64 };
+        });
+        if let Ok(()) = result {
+            return Cancelled::Async;
+        }
+
+        // We failed to asynchronously cancel the operation, so we'll fallback
+        // to doing it synchronously.
+        let cancel = libc::io_uring_sync_cancel_reg {
+            addr: op_id as u64,
+            fd: 0,
+            flags: 0,
+            // No timeout, saves the kernel from setting up a timer etc.
+            timeout: libc::__kernel_timespec {
+                tv_sec: libc::__kernel_time64_t::MAX,
+                tv_nsec: std::os::raw::c_longlong::MAX,
+            },
+            pad: [0; 4],
+        };
+        let arg = (&cancel as *const libc::io_uring_sync_cancel_reg).cast();
+        match shared.register(libc::IORING_REGISTER_SYNC_CANCEL, arg, 1) {
+            Ok(()) => Cancelled::Immediate,
+            Err(err) => match err.raw_os_error() {
+                // Operation was already completed.
+                Some(libc::ENOENT) => Cancelled::Immediate,
+                // Operation is nearly complete, can't be cancelled
+                // anymore (EALREADY), or the cancellation failed
+                // (ETIME, EINVAL). Either way we'll have to wait until
+                // the operation is completed.
+                Some(libc::EALREADY | libc::ETIME | libc::EINVAL) => Cancelled::Async,
+                _ => {
+                    log::error!(id = op_id; "unexpected error cancelling operation: {err}");
+                    // Waiting is the safest thing we can do.
+                    Cancelled::Async
+                }
+            },
+        }
     }
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {

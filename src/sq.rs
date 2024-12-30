@@ -2,8 +2,9 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, MutexGuard};
-use std::{fmt, io, task};
+use std::{fmt, io, mem, task};
 
+use crate::drop_waker::{drop_task_waker, DropWake};
 use crate::{cq, Implementation, OperationId, QueuedOperation, SharedState};
 
 /// Queue of completion events.
@@ -160,6 +161,68 @@ impl<I: Implementation> Queue<I> {
         }
     }
 
+    /// Cancel an operation with `op_id`.
+    ///
+    /// # Safety
+    ///
+    /// After this function is called the queued operation with `op_id` may no
+    /// longer be accessed.
+    pub(crate) unsafe fn cancel<T: DropWake>(&self, op_id: OperationId, resources: T) {
+        let shared = &*self.shared;
+        let mut queued_op_slot = { shared.queued_ops[op_id].lock().unwrap() };
+        let queued_op = { queued_op_slot.as_mut().unwrap() };
+
+        if queued_op.done {
+            // Easy path, the operation has already been completed.
+            *queued_op_slot = None;
+            // Unlock defore dropping `resources`, which might take a while.
+            drop(queued_op_slot);
+            shared.op_ids.make_available(op_id);
+
+            // We can safely drop the resources.
+            drop(resources);
+            return;
+        }
+
+        // Harder path, the operation is not done, but the Future holding the
+        // resource is about to be dropped, so we need to cancel the operation.
+        match shared.submissions.cancel(&shared.data, op_id) {
+            Cancelled::Immediate => {
+                // Operation has been cancelled, we can drop the resources and
+                // make the slot available.
+                *queued_op_slot = None;
+                // Unlock defore dropping `resources`, which might take a while.
+                drop(queued_op_slot);
+                shared.op_ids.make_available(op_id);
+
+                // We can safely drop the resources.
+                drop(resources);
+            }
+            Cancelled::Async => {
+                // Hardest path, the operation is cancelled asynchronously,
+                // which means the kernel still has access to the resources and
+                // we can't drop them yet.
+                //
+                // We need to do two things:
+                // 1. Delay the dropping of `resources` until the kernel is done
+                //    with the operation.
+                // 2. Delay the available making of the queued operation slot
+                //    until the kernel is done with the operation.
+                //
+                // We achieve 1 by creating a special waker that just drops the
+                // resources (created by `drop_task_waker`).
+                // 2. is achieved by `cq::Queue::poll`, which makes the slot
+                // available if the operation is dropped and expects no more
+                // events.
+                queued_op.dropped = true;
+                if mem::needs_drop::<T>() {
+                    // SAFETY: not cloning the waker.
+                    queued_op.waker = unsafe { drop_task_waker(resources) };
+                }
+            }
+        }
+    }
+
     /// Wait for a submission slot, waking `waker` once one is available.
     pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
         log::trace!(waker:? = waker; "adding blocked future");
@@ -276,8 +339,21 @@ pub(crate) trait Submissions: fmt::Debug {
     where
         F: FnOnce(&mut Self::Submission);
 
+    /// Try to cancel an operation.
+    fn cancel(&self, shared: &Self::Shared, op_id: OperationId) -> Cancelled;
+
     /// Wake a polling thread.
     fn wake(&self, shared: &Self::Shared) -> io::Result<()>;
+}
+
+/// Result of [cancelling] an operation.
+///
+/// [cancelling]: Submissions::cancel
+pub(crate) enum Cancelled {
+    /// Operation is cancelled synchronously, operation is already cancelled.
+    Immediate,
+    /// Operation is cancelled asynchronously, operation is still in progress.
+    Async,
 }
 
 /// Submission event.
