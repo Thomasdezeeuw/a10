@@ -91,11 +91,7 @@ impl<O: Op> Cancel for Operation<O> {
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<O: Op + Unpin> Unpin for Operation<O> {}
 
-impl<O: Op> Operation<O>
-where
-    O::Resources: fmt::Debug,
-    O::Args: fmt::Debug,
-{
+impl<O: Op> Operation<O> {
     pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(name)
             .field("sq", &self.sq)
@@ -250,11 +246,7 @@ impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<'fd, O: FdOp + Unpin, D: Descriptor> Unpin for FdOperation<'fd, O, D> {}
 
-impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D>
-where
-    O::Resources: fmt::Debug,
-    O::Args: fmt::Debug,
-{
+impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
     pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(name)
             .field("fd", &self.fd)
@@ -319,7 +311,6 @@ pub(crate) trait FdOpExtract: FdOp {
 /// Generics:
 ///  * `R` is [`Op::Resources`] or [`FdOp::Resources`].
 ///  * `A` is [`Op::Args`] or [`FdOp::Args`].
-#[derive(Debug)]
 enum State<R, A> {
     /// Operation has not started yet. First has to be submitted.
     NotStarted { resources: UnsafeCell<R>, args: A },
@@ -499,6 +490,20 @@ unsafe impl<R: Send, A: Send> Send for State<R, A> {}
 unsafe impl<R: Sync, A: Sync> Sync for State<R, A> {}
 
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for State<R, A> {}
+
+impl<R, A> fmt::Debug for State<R, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // When the state is `Running` we can't access
+        match self {
+            State::NotStarted { .. } => f.debug_struct("State::NotStarted").finish(),
+            State::Running { op_id, .. } => f
+                .debug_struct("State::Running")
+                .field("op_id", &op_id)
+                .finish(),
+            State::Done { .. } => f.debug_struct("State::Done").finish(),
+        }
+    }
+}
 
 /// [`Op`] and [`FdOp`] result.
 #[derive(Debug)]
