@@ -180,7 +180,7 @@ impl crate::sq::Submissions for Submissions {
 /// It is up to the caller to ensure any data passed to the kernel outlives the
 /// operation.
 #[repr(transparent)]
-pub(crate) struct Submission(pub(super) libc::io_uring_sqe);
+pub(crate) struct Submission(pub(crate) libc::io_uring_sqe);
 
 impl Submission {
     /// Reset the submission.
