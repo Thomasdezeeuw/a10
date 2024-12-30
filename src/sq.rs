@@ -285,6 +285,20 @@ impl<I: Implementation> Queue<I> {
     pub(crate) fn shared_data(&self) -> &I::Shared {
         &self.shared.data
     }
+
+    /// Converts the queue into a raw pointer, used by the [`DropWake`]
+    /// implementation.
+    pub(crate) unsafe fn into_raw(self) -> *const () {
+        Arc::into_raw(self.shared).cast()
+    }
+
+    /// Converts the queue into a raw pointer, used by the [`DropWake`]
+    /// implementation.
+    pub(crate) unsafe fn from_raw(ptr: *const ()) -> Queue<I> {
+        Queue {
+            shared: Arc::from_raw(ptr.cast_mut().cast()),
+        }
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
