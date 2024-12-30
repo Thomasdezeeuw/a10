@@ -68,6 +68,7 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
     type Resources = Buffer<B>;
     type Args = libc::c_int; // flags
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         buf: &mut Self::Resources,
@@ -104,6 +105,7 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
     type Resources = Buffer<B>;
     type Args = (SendCall, libc::c_int); // send_op, flags
 
+    #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         buf: &mut Self::Resources,
