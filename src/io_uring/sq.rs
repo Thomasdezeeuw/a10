@@ -3,7 +3,7 @@ use std::sync::atomic::{self, Ordering};
 use std::{fmt, io, ptr};
 
 use crate::sq::{Cancelled, QueueFull};
-use crate::sys::{libc, Shared};
+use crate::sys::{cancel, libc, Shared};
 use crate::{OperationId, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].
@@ -117,8 +117,7 @@ impl crate::sq::Submissions for Submissions {
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
             submission.no_completion_event();
-            submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
-            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: op_id as u64 };
+            cancel::operation(op_id, submission);
         });
         if let Ok(()) = result {
             return Cancelled::Async;
