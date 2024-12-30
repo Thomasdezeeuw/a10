@@ -116,7 +116,7 @@ impl sys::FdOp for ToDirectOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             // SAFETY: this is safe because OwnedFd has `repr(transparent)` and
             // is safe to use in FFI per it's docs.
-            addr: ptr::from_ref(fd.owned_fd()).addr() as _,
+            addr: ptr::from_ref(fd.fd_ref()).addr() as _,
         };
         submission.0.len = 1;
     }

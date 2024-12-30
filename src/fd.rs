@@ -44,7 +44,7 @@ pub struct AsyncFd<D: Descriptor = File> {
     /// operation, not a blocking `close(2)` system call.
     fd: ManuallyDrop<OwnedFd>,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
-    pub(super) sq: SubmissionQueue,
+    pub(crate) sq: SubmissionQueue,
     kind: PhantomData<D>,
 }
 
@@ -109,7 +109,7 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 
     /// Returns a reference to the `OwnedFd`.
-    pub(crate) fn owned_fd(&self) -> &OwnedFd {
+    pub(crate) fn fd_ref(&self) -> &OwnedFd {
         &self.fd
     }
 
