@@ -5,7 +5,10 @@
 use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::sync::Arc;
-use std::task;
+use std::{ptr, task};
+
+use crate::net::AddressStorage;
+use crate::{sq, SubmissionQueue};
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
@@ -50,6 +53,14 @@ where
     }
 }
 
+impl DropWake for () {
+    fn into_waker_data(self) -> *const () {
+        ptr::null()
+    }
+
+    unsafe fn drop_from_waker_data(_: *const ()) {}
+}
+
 impl<T> DropWake for (T,)
 where
     T: DropWake,
@@ -90,5 +101,27 @@ impl DropWake for CString {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(CString::from_raw(data.cast_mut().cast()));
+    }
+}
+
+impl DropWake for SubmissionQueue {
+    fn into_waker_data(self) -> *const () {
+        unsafe { sq::Queue::into_raw(self.inner) }
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        drop(SubmissionQueue {
+            inner: sq::Queue::from_raw(data),
+        })
+    }
+}
+
+impl<A> DropWake for AddressStorage<Box<A>> {
+    fn into_waker_data(self) -> *const () {
+        self.0.into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        Box::<A>::drop_from_waker_data(data)
     }
 }
