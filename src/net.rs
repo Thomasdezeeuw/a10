@@ -48,7 +48,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         A: SocketAddress,
     {
-        let storage = AddressStorage(Box::from(address.as_storage()));
+        let storage = AddressStorage(Box::from(address.into_storage()));
         Connect(FdOperation::new(self, storage, ()))
     }
 
@@ -185,7 +185,7 @@ mod private {
         type Storage: Sized;
 
         /// Returns itself as storage.
-        fn as_storage(self) -> Self::Storage;
+        fn into_storage(self) -> Self::Storage;
 
         /// Returns a raw pointer and length to the storage.
         ///
@@ -225,7 +225,7 @@ impl SocketAddress for SocketAddr {}
 impl private::SocketAddress for SocketAddr {
     type Storage = libc::sockaddr_in6; // Fits both v4 and v6.
 
-    fn as_storage(self) -> Self::Storage {
+    fn into_storage(self) -> Self::Storage {
         match self {
             SocketAddr::V4(addr) => {
                 // SAFETY: all zeroes is valid for `sockaddr_in6`.
@@ -234,11 +234,11 @@ impl private::SocketAddress for SocketAddr {
                 unsafe {
                     (&mut storage as *mut libc::sockaddr_in6)
                         .cast::<libc::sockaddr_in>()
-                        .write(addr.as_storage());
+                        .write(addr.into_storage());
                 }
                 storage
             }
-            SocketAddr::V6(addr) => addr.as_storage(),
+            SocketAddr::V6(addr) => addr.into_storage(),
         }
     }
 
@@ -275,7 +275,7 @@ impl SocketAddress for SocketAddrV4 {}
 impl private::SocketAddress for SocketAddrV4 {
     type Storage = libc::sockaddr_in;
 
-    fn as_storage(self) -> Self::Storage {
+    fn into_storage(self) -> Self::Storage {
         libc::sockaddr_in {
             sin_family: libc::AF_INET as libc::sa_family_t,
             sin_port: self.port().to_be(),
@@ -313,7 +313,7 @@ impl SocketAddress for SocketAddrV6 {}
 impl private::SocketAddress for SocketAddrV6 {
     type Storage = libc::sockaddr_in6;
 
-    fn as_storage(self) -> Self::Storage {
+    fn into_storage(self) -> Self::Storage {
         libc::sockaddr_in6 {
             sin6_family: libc::AF_INET6 as libc::sa_family_t,
             sin6_port: self.port().to_be(),
@@ -352,7 +352,7 @@ impl SocketAddress for unix::net::SocketAddr {}
 impl private::SocketAddress for unix::net::SocketAddr {
     type Storage = libc::sockaddr_un;
 
-    fn as_storage(self) -> Self::Storage {
+    fn into_storage(self) -> Self::Storage {
         let mut storage = libc::sockaddr_un {
             sun_family: libc::AF_UNIX as libc::sa_family_t,
             // SAFETY: all zero is valid for `sockaddr_un`.
@@ -421,7 +421,7 @@ impl SocketAddress for NoAddress {}
 impl private::SocketAddress for NoAddress {
     type Storage = Self;
 
-    fn as_storage(self) -> Self::Storage {
+    fn into_storage(self) -> Self::Storage {
         NoAddress
     }
 
