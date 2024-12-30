@@ -7,6 +7,7 @@ use std::ffi::CString;
 use std::sync::Arc;
 use std::{ptr, task};
 
+use crate::io::Buffer;
 use crate::net::AddressStorage;
 use crate::{sq, SubmissionQueue};
 
@@ -123,5 +124,15 @@ impl<A> DropWake for AddressStorage<Box<A>> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         Box::<A>::drop_from_waker_data(data)
+    }
+}
+
+impl<B> DropWake for Buffer<B> {
+    fn into_waker_data(self) -> *const () {
+        Box::<B>::from(self.buf).into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        Box::<B>::drop_from_waker_data(data)
     }
 }
