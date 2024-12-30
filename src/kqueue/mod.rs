@@ -14,10 +14,8 @@ use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::{debug_detail, OperationId};
 
-pub(crate) mod cancel;
 pub(crate) mod config;
 mod cq;
-pub(crate) mod fs;
 pub(crate) mod io;
 mod sq;
 
