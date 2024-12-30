@@ -232,7 +232,7 @@ impl private::SocketAddress for SocketAddr {
                 let mut storage = unsafe { mem::zeroed::<libc::sockaddr_in6>() };
                 // SAFETY: `sockaddr_in` fits in `sockaddr_in6`.
                 unsafe {
-                    (&mut storage as *mut libc::sockaddr_in6)
+                    ptr::from_mut(&mut storage)
                         .cast::<libc::sockaddr_in>()
                         .write(addr.into_storage());
                 }
@@ -243,7 +243,7 @@ impl private::SocketAddress for SocketAddr {
     }
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
-        let ptr = (storage as *const Self::Storage).cast();
+        let ptr = ptr::from_ref(storage).cast();
         let size = if <libc::c_int>::from(storage.sin6_family) == libc::AF_INET {
             size_of::<libc::sockaddr_in>()
         } else {
@@ -287,7 +287,7 @@ impl private::SocketAddress for SocketAddrV4 {
     }
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
-        let ptr = (storage as *const Self::Storage).cast();
+        let ptr = ptr::from_ref(storage).cast();
         (ptr, size_of::<Self::Storage>() as _)
     }
 
@@ -326,7 +326,7 @@ impl private::SocketAddress for SocketAddrV6 {
     }
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
-        let ptr = (storage as *const Self::Storage).cast();
+        let ptr = ptr::from_ref(storage).cast();
         (ptr, size_of::<Self::Storage>() as _)
     }
 
@@ -377,7 +377,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
     }
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
-        let ptr = (storage as *const Self::Storage).cast();
+        let ptr = ptr::from_ref(storage).cast();
         (ptr, size_of::<Self::Storage>() as _)
     }
 

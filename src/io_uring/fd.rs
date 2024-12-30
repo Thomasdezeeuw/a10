@@ -1,5 +1,5 @@
-use std::io;
 use std::os::fd::RawFd;
+use std::{io, ptr};
 
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, FdOperation};
@@ -116,7 +116,7 @@ impl sys::FdOp for ToDirectOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             // SAFETY: this is safe because OwnedFd has `repr(transparent)` and
             // is safe to use in FFI per it's docs.
-            addr: fd.owned_fd() as *const _ as _,
+            addr: ptr::from_ref(fd.owned_fd()).addr() as _,
         };
         submission.0.len = 1;
     }

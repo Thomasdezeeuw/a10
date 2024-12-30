@@ -137,7 +137,7 @@ impl crate::sq::Submissions for Submissions {
             },
             pad: [0; 4],
         };
-        let arg = (&cancel as *const libc::io_uring_sync_cancel_reg).cast();
+        let arg = ptr::from_ref(&cancel).cast();
         match shared.register(libc::IORING_REGISTER_SYNC_CANCEL, arg, 1) {
             Ok(()) => Cancelled::Immediate,
             Err(err) => match err.raw_os_error() {

@@ -1,9 +1,9 @@
 //! Configuration of a [`Ring`].
 
-use std::io;
 use std::mem::{self, size_of};
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
+use std::{io, ptr};
 
 use crate::sys::{self, libc, Completions, Shared, Submissions};
 use crate::{syscall, Ring, SubmissionQueue};
@@ -310,11 +310,9 @@ impl<'r> crate::Config<'r> {
                 data: 0,
                 tags: 0,
             };
-            shared.register(
-                libc::IORING_REGISTER_FILES2,
-                (&register as *const libc::io_uring_rsrc_register).cast(),
-                size_of::<libc::io_uring_rsrc_register>() as _,
-            )?;
+            let arg = ptr::from_ref(&register).cast();
+            let size = size_of::<libc::io_uring_rsrc_register>();
+            shared.register(libc::IORING_REGISTER_FILES2, arg, size as _)?;
         }
 
         Ok((submissions, shared, completions))
