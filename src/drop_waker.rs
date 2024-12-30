@@ -78,7 +78,7 @@ impl DropWake for SubmissionQueue {
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(SubmissionQueue {
             inner: sq::Queue::from_raw(data),
-        })
+        });
     }
 }
 
@@ -88,7 +88,7 @@ impl<A> DropWake for AddressStorage<Box<A>> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<A>::drop_from_waker_data(data)
+        Box::<A>::drop_from_waker_data(data);
     }
 }
 
@@ -119,7 +119,7 @@ impl<T, U> DropWake for (T, U) {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<(T, U)>::drop_from_waker_data(data)
+        Box::<(T, U)>::drop_from_waker_data(data);
     }
 }
 
@@ -129,6 +129,6 @@ impl<B> DropWake for Buffer<B> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<B>::drop_from_waker_data(data)
+        Box::<B>::drop_from_waker_data(data);
     }
 }

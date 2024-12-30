@@ -244,7 +244,7 @@ impl private::SocketAddress for SocketAddr {
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
         let ptr = (storage as *const Self::Storage).cast();
-        let size = if storage.sin6_family as i32 == libc::AF_INET {
+        let size = if <libc::c_int>::from(storage.sin6_family) == libc::AF_INET {
             size_of::<libc::sockaddr_in>()
         } else {
             size_of::<libc::sockaddr_in6>()
@@ -301,7 +301,7 @@ impl private::SocketAddress for SocketAddrV4 {
         debug_assert!(length == size_of::<Self::Storage>() as _);
         // SAFETY: caller must initialise the address.
         let storage = unsafe { storage.assume_init() };
-        debug_assert!(storage.sin_family as i32 == libc::AF_INET);
+        debug_assert!(<libc::c_int>::from(storage.sin_family) == libc::AF_INET);
         let ip = Ipv4Addr::from(storage.sin_addr.s_addr.to_ne_bytes());
         let port = u16::from_be(storage.sin_port);
         SocketAddrV4::new(ip, port)
@@ -340,7 +340,7 @@ impl private::SocketAddress for SocketAddrV6 {
         debug_assert!(length == size_of::<Self::Storage>() as _);
         // SAFETY: caller must initialise the address.
         let storage = unsafe { storage.assume_init() };
-        debug_assert!(storage.sin6_family as i32 == libc::AF_INET6);
+        debug_assert!(<libc::c_int>::from(storage.sin6_family) == libc::AF_INET6);
         let ip = Ipv6Addr::from(storage.sin6_addr.s6_addr);
         let port = u16::from_be(storage.sin6_port);
         SocketAddrV6::new(ip, port, storage.sin6_flowinfo, storage.sin6_scope_id)
@@ -396,7 +396,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
         // SAFETY: the kernel ensures that at least `length` bytes are
         // initialised.
         let path = unsafe { slice::from_raw_parts::<u8>(path_ptr.cast(), length) };
-        if let Some(0) = path.get(0) {
+        if let Some(0) = path.first() {
             // NOTE: `from_abstract_name` adds a starting null byte.
             unix::net::SocketAddr::from_abstract_name(&path[1..])
         } else {
