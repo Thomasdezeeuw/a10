@@ -125,9 +125,8 @@ impl Shared {
             rfd.as_raw_fd(),
             libc::off_t::from(libc::IORING_OFF_SQES),
         )
-        .map_err(|err| {
+        .inspect_err(|_| {
             _ = munmap(submission_queue, submission_queue_size as usize); // Can't handle two errors.
-            err
         })?;
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
