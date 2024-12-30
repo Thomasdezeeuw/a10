@@ -1,4 +1,3 @@
-use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::path::PathBuf;
@@ -209,7 +208,7 @@ pub(crate) struct StatOp;
 
 impl sys::FdOp for StatOp {
     type Output = Metadata;
-    type Resources = Box<UnsafeCell<Metadata>>;
+    type Resources = Box<Metadata>;
     type Args = ();
 
     fn fill_submission<D: Descriptor>(
@@ -235,9 +234,8 @@ impl sys::FdOp for StatOp {
 
     fn map_ok(metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
-        let metadata = metadata.into_inner();
         debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
-        metadata
+        *metadata
     }
 }
 
