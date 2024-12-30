@@ -101,6 +101,30 @@ impl<O: Op> Operation<O> {
     }
 }
 
+impl<O: Op> Drop for Operation<O> {
+    fn drop(&mut self) {
+        if let State::Running { .. } = self.state {
+            let State::Running {
+                resources,
+                args,
+                op_id,
+            } = mem::replace(&mut self.state, State::Done)
+            else {
+                unreachable!()
+            };
+            // Can safely drop the argument already as they're not
+            // used by the kernel.
+            drop(args);
+            // SAFETY: we marked the state as done above so we won't reuse
+            // `op_id`.
+            unsafe { self.sq.inner.cancel(op_id, resources) };
+        } else {
+            // If we haven't started or if we're done we can safely drop the
+            // remaining resources.
+        }
+    }
+}
+
 /// Implementation of a [`Operation`].
 pub(crate) trait Op {
     /// Output of the operation.
@@ -253,6 +277,30 @@ impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
             .field("fd", &self.fd)
             .field("state", &self.state)
             .finish()
+    }
+}
+
+impl<'fd, O: FdOp, D: Descriptor> Drop for FdOperation<'fd, O, D> {
+    fn drop(&mut self) {
+        if let State::Running { .. } = self.state {
+            let State::Running {
+                resources,
+                args,
+                op_id,
+            } = mem::replace(&mut self.state, State::Done)
+            else {
+                unreachable!()
+            };
+            // Can safely drop the argument already as they're not
+            // used by the kernel.
+            drop(args);
+            // SAFETY: we marked the state as done above so we won't reuse
+            // `op_id`.
+            unsafe { self.fd.sq.inner.cancel(op_id, resources) };
+        } else {
+            // If we haven't started or if we're done we can safely drop the
+            // remaining resources.
+        }
     }
 }
 
