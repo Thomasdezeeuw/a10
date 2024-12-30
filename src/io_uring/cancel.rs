@@ -38,12 +38,12 @@ pub(crate) struct CancelOperationOp;
 
 impl sys::Op for CancelOperationOp {
     type Output = ();
-    type Resources = OperationId;
-    type Args = ();
+    type Resources = ();
+    type Args = OperationId;
 
     fn fill_submission(
-        op_id: &mut Self::Resources,
-        (): &mut Self::Args,
+        (): &mut Self::Resources,
+        op_id: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         cancel::operation(*op_id, submission);
