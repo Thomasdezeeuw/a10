@@ -3,7 +3,6 @@
 //! In this module process signal handling is also supported. For that See the
 //! documentation of [`Signals`].
 
-use std::cell::UnsafeCell;
 use std::mem::{self, MaybeUninit};
 use std::process::Child;
 use std::{fmt, io, ptr};
@@ -27,7 +26,7 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: libc::c_int) -> Wa
 #[doc(alias = "waitid")]
 pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: libc::c_int) -> WaitId {
     // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
-    let info = unsafe { Box::new(UnsafeCell::new(mem::zeroed())) };
+    let info = unsafe { Box::new(mem::zeroed()) };
     WaitId(Operation::new(sq, info, (wait, options)))
 }
 
@@ -51,10 +50,6 @@ operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
     pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<libc::signalfd_siginfo>>;
 );
-
-// SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
-unsafe impl Sync for WaitId {}
-unsafe impl Send for WaitId {}
 
 /// Notification of process signals.
 ///
@@ -148,7 +143,7 @@ impl<D: Descriptor> Signals<D> {
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd, D> {
         // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
-        let info = unsafe { Box::new(UnsafeCell::new(mem::zeroed())) };
+        let info = unsafe { Box::new(mem::zeroed()) };
         ReceiveSignal(FdOperation::new(&self.fd, info, ()))
     }
 }
@@ -176,11 +171,6 @@ fd_operation!(
     pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<Box<libc::signalfd_siginfo>>;
 );
 
-// SAFETY: `!Sync` due to `UnsafeCell`, but it's actually `Sync`.
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl<'fd, D: Descriptor> Sync for ReceiveSignal<'fd, D> {}
-#[allow(clippy::non_send_fields_in_send_ty)]
-unsafe impl<'fd, D: Descriptor> Send for ReceiveSignal<'fd, D> {}
 
 /// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
 #[repr(transparent)]

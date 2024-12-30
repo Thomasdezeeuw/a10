@@ -1,6 +1,3 @@
-use std::cell::UnsafeCell;
-use std::mem;
-
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::NO_OFFSET;
 use crate::process::WaitOn;
@@ -11,7 +8,7 @@ pub(crate) struct WaitIdOp;
 
 impl sys::Op for WaitIdOp {
     type Output = Box<libc::signalfd_siginfo>;
-    type Resources = Box<UnsafeCell<libc::signalfd_siginfo>>;
+    type Resources = Box<libc::signalfd_siginfo>;
     type Args = (WaitOn, libc::c_int); // options.
 
     #[allow(clippy::cast_sign_loss)]
@@ -38,13 +35,7 @@ impl sys::Op for WaitIdOp {
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
-        // SAFETY: `UnsafeCell` is `repr(transparent)` so this transmute is
-        // safe.
-        unsafe {
-            mem::transmute::<Box<UnsafeCell<libc::signalfd_siginfo>>, Box<libc::signalfd_siginfo>>(
-                info,
-            )
-        }
+        info
     }
 }
 
@@ -52,7 +43,7 @@ pub(crate) struct ReceiveSignalOp;
 
 impl sys::FdOp for ReceiveSignalOp {
     type Output = Box<libc::signalfd_siginfo>;
-    type Resources = Box<UnsafeCell<libc::signalfd_siginfo>>;
+    type Resources = Box<libc::signalfd_siginfo>;
     type Args = ();
 
     fn fill_submission<D: Descriptor>(
@@ -73,12 +64,6 @@ impl sys::FdOp for ReceiveSignalOp {
 
     fn map_ok(info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        // SAFETY: `UnsafeCell` is `repr(transparent)` so this transmute is
-        // safe.
-        unsafe {
-            mem::transmute::<Box<UnsafeCell<libc::signalfd_siginfo>>, Box<libc::signalfd_siginfo>>(
-                info,
-            )
-        }
+        info
     }
 }

@@ -2,7 +2,6 @@
 //!
 //! To open a file ([`AsyncFd`]) use [`open_file`] or [`OpenOptions`].
 
-use std::cell::UnsafeCell;
 use std::ffi::{CString, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
@@ -274,7 +273,7 @@ impl<D: Descriptor> AsyncFd<D> {
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
         // SAFETY: fully zeroed `libc::statx` is a valid value.
-        let metadata = unsafe { Box::new(UnsafeCell::new(mem::zeroed())) };
+        let metadata = unsafe { Box::new(mem::zeroed()) };
         Stat(FdOperation::new(self, metadata, ()))
     }
 
