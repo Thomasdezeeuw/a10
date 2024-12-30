@@ -17,7 +17,7 @@ use std::{fmt, io, ptr, slice};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{Buf, BufMut, ReadNBuf};
+use crate::io::{Buf, BufMut, Buffer, ReadNBuf};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -59,6 +59,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMut,
     {
+        let buf = Buffer { buf };
         Recv(FdOperation::new(self, buf, flags))
     }
 
@@ -81,6 +82,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
+        let buf = Buffer { buf };
         Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
     }
 
@@ -100,6 +102,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
+        let buf = Buffer { buf };
         Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
     }
 }

@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufId, BufMut};
+use crate::io::{Buf, BufId, BufMut, Buffer};
 use crate::net::{AddressStorage, SendCall, SocketAddress};
 use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
@@ -65,7 +65,7 @@ pub(crate) struct RecvOp<B>(PhantomData<*const B>);
 
 impl<B: BufMut> sys::FdOp for RecvOp<B> {
     type Output = B;
-    type Resources = B;
+    type Resources = Buffer<B>;
     type Args = libc::c_int; // flags
 
     fn fill_submission<D: Descriptor>(
@@ -76,13 +76,13 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
         submission.0.fd = fd.fd();
-        let (ptr, length) = unsafe { buf.parts_mut() };
+        let (ptr, length) = unsafe { buf.buf.parts_mut() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
         };
         submission.0.len = length;
-        if let Some(buf_group) = buf.buffer_group() {
+        if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
             submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         }
@@ -91,9 +91,9 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
     fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
-            buf.buffer_init(BufId(buf_id), n);
+            buf.buf.buffer_init(BufId(buf_id), n);
         };
-        buf
+        buf.buf
     }
 }
 
@@ -101,7 +101,7 @@ pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
 impl<B: Buf> sys::FdOp for SendOp<B> {
     type Output = usize;
-    type Resources = B;
+    type Resources = Buffer<B>;
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     fn fill_submission<D: Descriptor>(
@@ -115,7 +115,7 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
         submission.0.fd = fd.fd();
-        let (ptr, length) = unsafe { buf.parts() };
+        let (ptr, length) = unsafe { buf.buf.parts() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
@@ -132,6 +132,6 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
     type ExtractOutput = (B, usize);
 
     fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
-        (buf, n as usize)
+        (buf.buf, n as usize)
     }
 }

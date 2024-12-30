@@ -8,7 +8,7 @@ use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection};
+use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection};
 use crate::op::FdOpExtract;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -280,7 +280,7 @@ pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
 impl<B: BufMut> sys::FdOp for ReadOp<B> {
     type Output = B;
-    type Resources = B;
+    type Resources = Buffer<B>;
     type Args = u64; // Offset.
 
     fn fill_submission<D: Descriptor>(
@@ -289,13 +289,13 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, len) = unsafe { buf.parts_mut() };
+        let (ptr, len) = unsafe { buf.buf.parts_mut() };
         submission.0.opcode = libc::IORING_OP_READ as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
         submission.0.len = len;
-        if let Some(buf_group) = buf.buffer_group() {
+        if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
             submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         }
@@ -304,9 +304,9 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
     fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
-            buf.buffer_init(BufId(buf_id), n);
+            buf.buf.buffer_init(BufId(buf_id), n);
         };
-        buf
+        buf.buf
     }
 }
 
@@ -353,7 +353,7 @@ pub(crate) struct WriteOp<B>(PhantomData<*const B>);
 
 impl<B: Buf> sys::FdOp for WriteOp<B> {
     type Output = usize;
-    type Resources = B;
+    type Resources = Buffer<B>;
     type Args = u64; // Offset.
 
     fn fill_submission<D: Descriptor>(
@@ -362,7 +362,7 @@ impl<B: Buf> sys::FdOp for WriteOp<B> {
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, length) = unsafe { buf.parts() };
+        let (ptr, length) = unsafe { buf.buf.parts() };
         submission.0.opcode = libc::IORING_OP_WRITE as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
@@ -379,7 +379,7 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
     type ExtractOutput = (B, usize);
 
     fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
-        (buf, n as usize)
+        (buf.buf, n as usize)
     }
 }
 
