@@ -84,8 +84,7 @@ impl<O: Op> Cancel for Operation<O> {
     }
 
     fn cancel(&mut self) -> CancelOperation {
-        let op_id = self.state.op_id();
-        CancelOperation::new(self.sq.clone(), op_id)
+        CancelOperation::new(self.sq.clone(), self.state.op_id())
     }
 }
 
@@ -263,8 +262,7 @@ impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
     }
 
     fn cancel(&mut self) -> CancelOperation {
-        let op_id = self.state.op_id();
-        CancelOperation::new(self.fd.sq().clone(), op_id)
+        CancelOperation::new(self.fd.sq.clone(), self.state.op_id())
     }
 }
 

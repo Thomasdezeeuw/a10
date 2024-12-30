@@ -194,7 +194,7 @@ impl Shared {
     /// Submit the event to the kernel when not using a kernel polling thread
     /// and another thread is currently [`Ring::poll`]ing.
     fn maybe_submit_event(&self) {
-        // FIXME: need access too `is_polling` from the root `Shared` here.
+        // FIXME: need access to `is_polling` from the root `Shared` here.
         // Add `&& self.is_polling.load(Ordering::Relaxed)`
         if !self.kernel_thread {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");
