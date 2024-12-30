@@ -4,12 +4,11 @@
 
 use std::cell::UnsafeCell;
 use std::ffi::CString;
-use std::sync::Arc;
 use std::{ptr, task};
 
 use crate::io::Buffer;
 use crate::net::AddressStorage;
-use crate::{sq, SubmissionQueue};
+use crate::{sq, OperationId, SubmissionQueue};
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
@@ -41,33 +40,9 @@ pub(crate) trait DropWake {
     unsafe fn drop_from_waker_data(data: *const ());
 }
 
-impl<T> DropWake for UnsafeCell<T>
-where
-    T: DropWake,
-{
+impl<T: DropWake> DropWake for UnsafeCell<T> {
     fn into_waker_data(self) -> *const () {
         self.into_inner().into_waker_data()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        T::drop_from_waker_data(data);
-    }
-}
-
-impl DropWake for () {
-    fn into_waker_data(self) -> *const () {
-        ptr::null()
-    }
-
-    unsafe fn drop_from_waker_data(_: *const ()) {}
-}
-
-impl<T> DropWake for (T,)
-where
-    T: DropWake,
-{
-    fn into_waker_data(self) -> *const () {
-        self.0.into_waker_data()
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
@@ -82,16 +57,6 @@ impl<T> DropWake for Box<T> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(Box::<T>::from_raw(data.cast_mut().cast()));
-    }
-}
-
-impl<T> DropWake for Arc<T> {
-    fn into_waker_data(self) -> *const () {
-        Arc::into_raw(self).cast()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Arc::<T>::from_raw(data.cast_mut().cast()));
     }
 }
 
@@ -124,6 +89,37 @@ impl<A> DropWake for AddressStorage<Box<A>> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         Box::<A>::drop_from_waker_data(data)
+    }
+}
+
+// Don't need to be deallocated.
+
+impl DropWake for () {
+    fn into_waker_data(self) -> *const () {
+        ptr::null()
+    }
+
+    unsafe fn drop_from_waker_data(_: *const ()) {}
+}
+
+impl DropWake for OperationId {
+    fn into_waker_data(self) -> *const () {
+        // Doesn't have to stay alive.
+        ptr::null()
+    }
+
+    unsafe fn drop_from_waker_data(_: *const ()) {}
+}
+
+// Uses a `Box` to get a single pointer.
+
+impl<T, U> DropWake for (T, U) {
+    fn into_waker_data(self) -> *const () {
+        Box::from(self).into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        Box::<(T, U)>::drop_from_waker_data(data)
     }
 }
 
