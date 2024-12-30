@@ -134,7 +134,9 @@ impl crate::sq::Submissions for Submissions {
                 tv_sec: libc::__kernel_time64_t::MAX,
                 tv_nsec: std::os::raw::c_longlong::MAX,
             },
-            pad: [0; 4],
+            opcode: 0,
+            pad: [0; 7],
+            pad2: [0; 3],
         };
         let arg = ptr::from_ref(&cancel).cast();
         match shared.register(libc::IORING_REGISTER_SYNC_CANCEL, arg, 1) {
