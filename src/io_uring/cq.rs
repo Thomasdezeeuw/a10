@@ -58,7 +58,7 @@ impl Completions {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
-            pad: 0,
+            min_wait_usec: 0,
             ts: 0,
         };
         let mut timespec = libc::timespec {

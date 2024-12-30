@@ -6,4 +6,4 @@ e.g. from <https://github.com/axboe/liburing>.
 Then run `make` and copy all files from `liburing/src/include` into `include`.
 
 After the headers are prepared run `cargo build` and copy `src/sys.rs` to
-`../src/io_uring/sys.rs` and run `cargo fmt` at the root.
+`../src/io_uring/libc.rs` and run `cargo fmt` at the root.
