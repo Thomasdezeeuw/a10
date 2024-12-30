@@ -7,6 +7,7 @@ use std::task::{self, Poll};
 use std::{fmt, io, mem};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
+use crate::drop_waker::DropWake;
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId, SubmissionQueue};
@@ -105,7 +106,7 @@ pub(crate) trait Op {
     /// Output of the operation.
     type Output;
     /// Resources used in the operation, e.g. a buffer in a read call.
-    type Resources;
+    type Resources: DropWake;
     /// Arguments in the system call.
     type Args;
     /// [`sq::Submission`].
@@ -260,7 +261,7 @@ pub(crate) trait FdOp {
     /// Output of the operation.
     type Output;
     /// Resources used in the operation, e.g. a buffer in a read call.
-    type Resources;
+    type Resources: DropWake;
     /// Arguments in the system call.
     type Args;
     /// [`sq::Submission`].
