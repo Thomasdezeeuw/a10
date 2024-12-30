@@ -10,4 +10,4 @@ edition       = "2021"
 libc         = { version = "0.2.132", default-features = false }
 
 [build-dependencies]
-bindgen      = { version = "0.69.4", default-features = false }
+bindgen      = { version = "0.71.1", default-features = false }
