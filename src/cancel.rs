@@ -3,10 +3,13 @@
 //! See the [`Cancel`] trait to cancel a specific operation or
 //! [`AsyncFd::cancel_all`] to cancel all operations on a fd.
 
-use std::io;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{self, Poll};
+use std::{fmt, io};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::op::{fd_operation, FdOperation, Operation};
 use crate::{sys, OperationId, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
@@ -98,17 +101,47 @@ pub enum CancelResult {
     QueueFull,
 }
 
-operation!(
-    /// [`Future`] behind [`Cancel::cancel`].
-    #[allow(clippy::module_name_repetitions)] // Don't care.
-    pub struct CancelOperation(sys::cancel::CancelOperationOp) -> io::Result<()>;
-);
+/// [`Future`] behind [`Cancel::cancel`].
+#[must_use = "`Future`s do nothing unless polled"]
+pub struct CancelOperation(pub(crate) CancelOperationState);
 
 impl CancelOperation {
     /// Create a new `CancelOperation`.
-    pub(crate) const fn new(sq: SubmissionQueue, op_id: Option<OperationId>) -> CancelOperation {
-        // FIXME(port): take optional op_id and return ok if None.
-        let op_id = op_id.expect("TODO: handle not in progress operations");
-        CancelOperation(Operation::new(sq, op_id, ()))
+    pub(crate) fn new(sq: SubmissionQueue, op_id: Option<OperationId>) -> CancelOperation {
+        if let Some(op_id) = op_id {
+            let operation = Operation::new(sq, (), op_id);
+            CancelOperation(CancelOperationState::InProgress(operation))
+        } else {
+            CancelOperation(CancelOperationState::Done)
+        }
+    }
+}
+
+/// State of `CancelOperation`.
+pub(crate) enum CancelOperationState {
+    /// Cancellation is already done, or the operation was never started.
+    Done,
+    /// Cancellation is in progress.
+    InProgress(Operation<sys::cancel::CancelOperationOp>),
+}
+
+impl Future for CancelOperation {
+    type Output = io::Result<()>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match &mut self.0 {
+            CancelOperationState::Done => Poll::Ready(Ok(())),
+            CancelOperationState::InProgress(op) => Pin::new(op).poll(ctx),
+        }
+    }
+}
+
+impl fmt::Debug for CancelOperation {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        const NAME: &str = "a10::CancelOperation";
+        match &self.0 {
+            CancelOperationState::Done => f.debug_struct(NAME).field("state", &"done").finish(),
+            CancelOperationState::InProgress(op) => op.fmt_dbg(NAME, f),
+        }
     }
 }
