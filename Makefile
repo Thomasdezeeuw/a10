@@ -50,7 +50,6 @@ clippy:
 		--deny clippy::cargo \
 		--allow clippy::doc-markdown \
 		--allow clippy::equatable-if-let \
-		--allow clippy::manual-c-str-literals \
 		--allow clippy::missing-errors-doc \
 		--allow clippy::missing-panics-doc \
 		--allow clippy::must-use-candidate \
@@ -58,13 +57,12 @@ clippy:
 		--allow clippy::new-without-default \
 		--allow clippy::option-if-let-else \
 		--allow clippy::redundant-pub-crate \
-		--allow clippy::ref-as-ptr \
 		--allow clippy::single-match-else \
 		--allow clippy::use-self \
-		--allow clippy::manual-inspect \
 		\
 		--allow clippy::cast-possible-truncation \
 		--allow clippy::cast-possible-wrap \
+		--allow clippy::cast-sign-loss \
 
 doc:
 	cargo doc
