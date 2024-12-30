@@ -5,6 +5,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 
+use crate::drop_waker::DropWake;
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::syscall;
@@ -253,7 +254,7 @@ impl Drop for Shared {
 /// io_uring specific [`crate::op::Op`] trait.
 pub(crate) trait Op {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
 
     fn fill_submission(
@@ -311,7 +312,7 @@ impl<T: Op> crate::op::Op for T {
 /// io_uring specific [`crate::op::FdOp`] trait.
 pub(crate) trait FdOp {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
 
     fn fill_submission<D: Descriptor>(
