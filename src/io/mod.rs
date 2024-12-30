@@ -115,6 +115,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMut,
     {
+        let buf = Buffer { buf };
         Read(FdOperation::new(self, buf, offset))
     }
 
@@ -217,6 +218,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
+        let buf = Buffer { buf };
         Write(FdOperation::new(self, buf, offset))
     }
 
@@ -742,4 +744,12 @@ unsafe impl<B: Buf> Buf for SkipBuf<B> {
             (ptr.add(self.skip as usize), size - self.skip)
         }
     }
+}
+
+/// Wrapper around a buffer `B` to implement [`DropWake`] on.
+///
+/// [`DropWake`]: crate::drop_waker::DropWake
+#[derive(Debug)]
+pub(crate) struct Buffer<B> {
+    pub(crate) buf: B,
 }
