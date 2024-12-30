@@ -51,7 +51,7 @@ impl<'r> crate::Config<'r> {
         self
     }
 
-    pub(crate) fn _build(self) -> io::Result<(Submissions, Shared, Completions)> {
+    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Shared, Completions)> {
         let max_events = self.sys.max_events.unwrap_or(self.queued_operations);
         #[rustfmt::skip]
         let max_change_list_size = self.sys.max_change_list_size.unwrap_or(if max_events >= 64 { 64 } else { max_events });
