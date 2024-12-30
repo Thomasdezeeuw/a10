@@ -224,7 +224,7 @@ impl sys::FdOp for StatOp {
             off: metadata as *mut _ as _,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: "\0".as_ptr() as _, // Not using a path.
+            addr: c"".as_ptr() as _, // Not using a path.
         };
         submission.0.len = METADATA_FLAGS;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
