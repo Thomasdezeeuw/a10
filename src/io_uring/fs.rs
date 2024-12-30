@@ -1,6 +1,7 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use std::ptr;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
@@ -221,7 +222,7 @@ impl sys::FdOp for StatOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             // SAFETY: this is safe because `Metadata` is transparent.
-            off: metadata as *mut _ as _,
+            off: ptr::from_mut(&mut **metadata).addr() as _,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: c"".as_ptr() as _, // Not using a path.

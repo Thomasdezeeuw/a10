@@ -1,3 +1,5 @@
+use std::ptr;
+
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::NO_OFFSET;
 use crate::process::WaitOn;
@@ -25,7 +27,7 @@ impl sys::Op for WaitIdOp {
         submission.0.opcode = libc::IORING_OP_WAITID as u8;
         submission.0.fd = pid as _;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            addr2: &**info as *const _ as _,
+            addr2: ptr::from_mut(&mut **info).addr() as _,
         };
         submission.0.len = id_type;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
@@ -56,7 +58,7 @@ impl sys::FdOp for ReceiveSignalOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: &**info as *const _ as _,
+            addr: ptr::from_mut(&mut **info).addr() as _,
         };
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
