@@ -4,6 +4,7 @@
 //! well as a [`MsgToken`], which can be used in [`try_send_msg`] and
 //! [`send_msg`] to send a message to the created `MsgListener`.
 
+use std::future::Future;
 use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
@@ -98,6 +99,36 @@ pub fn try_send_msg(sq: &SubmissionQueue, token: MsgToken, data: MsgData) -> io:
     sq.inner
         .submit_no_completion(|submission| sys::msg::send(sq, token.0, data, submission))?;
     Ok(())
+}
+
+/// Send a message to iterator listening for message using [`MsgToken`].
+#[allow(clippy::module_name_repetitions)]
+pub const fn send_msg(sq: SubmissionQueue, token: MsgToken, data: MsgData) -> SendMsg {
+    SendMsg { sq, token, data }
+}
+
+/// [`Future`] behind [`send_msg`].
+#[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
+#[allow(clippy::module_name_repetitions)]
+pub struct SendMsg {
+    sq: SubmissionQueue,
+    token: MsgToken,
+    data: MsgData,
+}
+
+impl Future for SendMsg {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        match try_send_msg(&self.sq, self.token, self.data) {
+            Ok(()) => Poll::Ready(Ok(())),
+            Err(_) => {
+                self.sq.inner.wait_for_submission(ctx.waker().clone());
+                Poll::Pending
+            }
+        }
+    }
 }
 
 /// Type of data this module can send.
