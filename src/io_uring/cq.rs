@@ -352,7 +352,7 @@ impl CompletionResult {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub(crate) fn as_msg(self) -> MsgData {
+    pub(crate) const fn as_msg(self) -> MsgData {
         self.result as MsgData
     }
 }
