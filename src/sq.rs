@@ -74,15 +74,6 @@ impl<I: Implementation> Queue<I> {
         Ok(op_id)
     }
 
-    /// Queue a new operation, without submitting an operation, returns the
-    /// operation id.
-    pub(crate) fn queue(&self) -> Result<OperationId, QueueFull> {
-        self.queue2(
-            <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new,
-            task::Waker::noop().clone(),
-        )
-    }
-
     /// Queue a new multishot operation, without submitting an operation,
     /// returns the operation id.
     pub(crate) fn queue_multishot(&self) -> Result<OperationId, QueueFull> {

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // FIXME: remove.
-
 //! The [A10] io_uring library.
 //!
 //! This library is meant as a low-level library safely exposing the io_uring
