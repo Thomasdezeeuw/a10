@@ -1,10 +1,11 @@
 use std::marker::{PhantomData, PhantomPinned};
 use std::mem::{ManuallyDrop, MaybeUninit};
-use std::ptr;
+use std::os::fd::RawFd;
+use std::{array, ptr};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, Buffer, ReadBuf, ReadBufPool};
-use crate::net::{AddressStorage, SendCall, SocketAddress};
+use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -167,19 +168,8 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
         submission: &mut sq::Submission,
     ) {
         let (msg, iovecs) = &mut **resources;
-        // SAFETY: this cast is safe because `IoMutSlice` is
-        // `repr(transparent)`.
-        msg.msg_iov = iovecs.as_mut_ptr().cast();
-        msg.msg_iovlen = N;
-        submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
-        submission.0.fd = fd.fd();
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut *msg).addr() as _,
-        };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as _,
-        };
-        submission.0.len = 1;
+        let address = &mut MaybeUninit::new(NoAddress);
+        fill_recvmsg_submission::<NoAddress, N>(fd.fd(), msg, iovecs, address, *flags, submission)
     }
 
     fn map_ok<D: Descriptor>(
@@ -212,23 +202,8 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
         submission: &mut sq::Submission,
     ) {
         let (msg, iovec, address) = &mut **resources;
-        let (ptr, length) = unsafe { A::as_mut_ptr(address) };
-        msg.msg_name = ptr.cast();
-        msg.msg_namelen = length;
-        // SAFETY: this cast is safe because `IoMutSlice` is
-        // `repr(transparent)`.
-        msg.msg_iov = ptr::from_mut(&mut *iovec).cast();
-        msg.msg_iovlen = 1;
-
-        submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
-        submission.0.fd = fd.fd();
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut *msg).addr() as _,
-        };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as _,
-        };
-        submission.0.len = 1;
+        let iovecs = array::from_mut(iovec);
+        fill_recvmsg_submission::<A, 1>(fd.fd(), msg, iovecs, address, *flags, submission)
     }
 
     fn map_ok<D: Descriptor>(
@@ -272,23 +247,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         submission: &mut sq::Submission,
     ) {
         let (msg, iovecs, address) = &mut **resources;
-        let (ptr, length) = unsafe { A::as_mut_ptr(address) };
-        msg.msg_name = ptr.cast();
-        msg.msg_namelen = length;
-        // SAFETY: this cast is safe because `IoMutSlice` is
-        // `repr(transparent)`.
-        msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
-        msg.msg_iovlen = N;
-
-        submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
-        submission.0.fd = fd.fd();
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut *msg).addr() as _,
-        };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as _,
-        };
-        submission.0.len = 1;
+        fill_recvmsg_submission::<A, N>(fd.fd(), msg, iovecs, address, *flags, submission)
     }
 
     fn map_ok<D: Descriptor>(
@@ -303,6 +262,32 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         let address = unsafe { A::init(resources.2, resources.0.msg_namelen) };
         (bufs, address, resources.0.msg_flags)
     }
+}
+
+fn fill_recvmsg_submission<A: SocketAddress, const N: usize>(
+    fd: RawFd,
+    msg: &mut libc::msghdr,
+    iovecs: &mut [crate::io::IoMutSlice; N],
+    address: &mut MaybeUninit<A::Storage>,
+    flags: libc::c_int,
+    submission: &mut sq::Submission,
+) {
+    let (ptr, length) = unsafe { A::as_mut_ptr(address) };
+    msg.msg_name = ptr.cast();
+    msg.msg_namelen = length;
+    // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
+    msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
+    msg.msg_iovlen = N;
+
+    submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
+    submission.0.fd = fd;
+    submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+        addr: ptr::from_mut(&mut *msg).addr() as _,
+    };
+    submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+        msg_flags: flags as _,
+    };
+    submission.0.len = 1;
 }
 
 pub(crate) struct SendOp<B>(PhantomData<*const B>);
