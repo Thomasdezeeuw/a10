@@ -178,6 +178,12 @@ impl<D: Descriptor> AsyncFd<D> {
         let value = Box::new(optvalue);
         SetSocketOption(FdOperation::new(self, value, (level, optname)))
     }
+
+    /// Shuts down the read, write, or both halves of this connection.
+    #[doc = man_link!(shutdown(2))]
+    pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd, D> {
+        Shutdown(FdOperation::new(self, (), how))
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -203,6 +209,9 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::set_socket_option`].
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
       impl Extract -> io::Result<T>;
+
+    /// [`Future`] behind [`AsyncFd::shutdown`].
+    pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
 fd_iter_operation! {
