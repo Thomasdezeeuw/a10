@@ -63,7 +63,7 @@ impl AsyncFd<File> {
     /// [`with_direct_descriptors`]: crate::Config::with_direct_descriptors
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
-    pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
+    pub const fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
         ToDirect(FdOperation::new(self, (), ()))
     }
 }
@@ -80,7 +80,7 @@ impl AsyncFd<Direct> {
     ///
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
+    pub const fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
         ToFd(FdOperation::new(self, (), ()))
     }
 }

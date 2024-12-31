@@ -169,7 +169,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     ) {
         let (msg, iovecs) = &mut **resources;
         let address = &mut MaybeUninit::new(NoAddress);
-        fill_recvmsg_submission::<NoAddress, N>(fd.fd(), msg, iovecs, address, *flags, submission)
+        fill_recvmsg_submission::<NoAddress, N>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -203,7 +203,7 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
     ) {
         let (msg, iovec, address) = &mut **resources;
         let iovecs = array::from_mut(iovec);
-        fill_recvmsg_submission::<A, 1>(fd.fd(), msg, iovecs, address, *flags, submission)
+        fill_recvmsg_submission::<A, 1>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -244,7 +244,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         submission: &mut sq::Submission,
     ) {
         let (msg, iovecs, address) = &mut **resources;
-        fill_recvmsg_submission::<A, N>(fd.fd(), msg, iovecs, address, *flags, submission)
+        fill_recvmsg_submission::<A, N>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -306,7 +306,7 @@ impl<B: Buf, A: SocketAddress> sys::FdOp for SendOp<B, A> {
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
         submission.0.fd = fd.fd();
-        let (address, address_length) = unsafe { A::as_ptr(&address) };
+        let (address, address_length) = unsafe { A::as_ptr(address) };
         submission.0.__bindgen_anon_1.addr2 = address as _;
         let (ptr, length) = unsafe { buf.parts() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
