@@ -222,6 +222,19 @@ impl<D: Descriptor> AsyncFd<D> {
         self.sendmsg(SendCall::Normal, bufs, NoAddress, flags)
     }
 
+    /// Same as [`AsyncFd::send_vectored`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    pub fn send_vectored_zc<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, NoAddress, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(SendCall::ZeroCopy, bufs, NoAddress, flags)
+    }
+
     fn sendmsg<'fd, B, A, const N: usize>(
         &'fd self,
         send_op: SendCall,
@@ -363,7 +376,7 @@ fd_operation! {
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
-    /// [`Future`] behind [`AsyncFd::send_vectored`].
+    /// [`Future`] behind [`AsyncFd::send_vectored`] and [`AsyncFd::send_vectored_zc`].
     pub struct SendMsg<B: BufSlice<N>, A: SocketAddress; const N: usize>(sys::net::SendMsgOp<B, A, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
