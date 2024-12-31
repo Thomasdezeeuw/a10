@@ -81,6 +81,25 @@ impl std::async_iter::AsyncIterator for MsgListener {
     }
 }
 
+/// Try to send a message to [`MsgListener`] using [`MsgToken`].
+///
+/// This will use the io_uring submission queue to share `data` with the
+/// receiving end. This means that it will wake up the thread if it's currently
+/// [polling].
+///
+/// This will fail if the submission queue is currently full. See [`send_msg`]
+/// for a version that tries again when the submission queue is full.
+///
+/// See [`msg_listener`] for examples.
+///
+/// [polling]: crate::Ring::poll
+#[allow(clippy::module_name_repetitions)]
+pub fn try_send_msg(sq: &SubmissionQueue, token: MsgToken, data: MsgData) -> io::Result<()> {
+    sq.inner
+        .submit_no_completion(|submission| sys::msg::send(sq, token.0, data, submission))?;
+    Ok(())
+}
+
 /// Type of data this module can send.
 pub type MsgData = u32;
 
