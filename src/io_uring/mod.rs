@@ -321,7 +321,11 @@ pub(crate) trait FdOp {
         submission: &mut sq::Submission,
     );
 
-    fn map_ok(resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
+    fn map_ok<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        resources: Self::Resources,
+        op_output: cq::OpReturn,
+    ) -> Self::Output;
 }
 
 impl<T: FdOp> crate::op::FdOp for T {
@@ -356,8 +360,12 @@ impl<T: FdOp> crate::op::FdOp for T {
         }
     }
 
-    fn map_ok(resources: Self::Resources, op_output: Self::OperationOutput) -> Self::Output {
-        T::map_ok(resources, op_output)
+    fn map_ok<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        resources: Self::Resources,
+        op_output: Self::OperationOutput,
+    ) -> Self::Output {
+        T::map_ok(fd, resources, op_output)
     }
 }
 

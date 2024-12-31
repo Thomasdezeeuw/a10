@@ -301,7 +301,11 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
         }
     }
 
-    fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        mut buf: Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -342,7 +346,11 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok((mut bufs, _): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (mut bufs, _): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
@@ -370,7 +378,11 @@ impl<B: Buf> sys::FdOp for WriteOp<B> {
         submission.0.len = length;
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         n as usize
     }
 }
@@ -378,7 +390,11 @@ impl<B: Buf> sys::FdOp for WriteOp<B> {
 impl<B: Buf> FdOpExtract for WriteOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
+        buf: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
         (buf.buf, n as usize)
     }
 }
@@ -415,7 +431,11 @@ impl<B: BufSlice<N>, const N: usize> sys::FdOp for WriteVectoredOp<B, N> {
         submission.0.len = iovecs.len() as _;
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         n as usize
     }
 }
@@ -423,7 +443,8 @@ impl<B: BufSlice<N>, const N: usize> sys::FdOp for WriteVectoredOp<B, N> {
 impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract(
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
         (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -464,7 +485,11 @@ impl sys::FdOp for SpliceOp {
         };
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         n as usize
     }
 }
