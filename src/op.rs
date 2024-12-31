@@ -455,9 +455,7 @@ impl<R, A> State<R, A> {
         match self {
             State::NotStarted { resources, args } => {
                 let result = sq.inner.submit(
-                    |submission| {
-                        fill_submission(resources.get_mut(), args, submission);
-                    },
+                    |submission| fill_submission(resources.get_mut(), args, submission),
                     ctx.waker().clone(),
                 );
                 if let Ok(op_id) = result {
@@ -548,10 +546,8 @@ impl<R, A> State<R, A> {
     {
         match self {
             State::NotStarted { resources, args } => {
-                let result = sq.inner.submit(
-                    |submission| {
-                        fill_submission(resources.get_mut(), args, submission);
-                    },
+                let result = sq.inner.submit_multishot(
+                    |submission| fill_submission(resources.get_mut(), args, submission),
                     ctx.waker().clone(),
                 );
                 if let Ok(op_id) = result {
