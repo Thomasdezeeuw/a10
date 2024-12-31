@@ -89,4 +89,9 @@ impl crate::cq::Completions for Completions {
             Ok(self.events.iter())
         }
     }
+
+    fn queue_space(&mut self, shared: &Self::Shared) -> usize {
+        // No practical limit.
+        usize::MAX
+    }
 }
