@@ -228,6 +228,23 @@ where
         )
     }
 
+    pub(crate) fn poll_next(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<Option<io::Result<O::Output>>>
+        where O: FdIter,
+    {
+        // SAFETY: not moving `fd` or `state`.
+        let FdOperation { fd, state } = unsafe { self.get_unchecked_mut() };
+        state.poll_next(
+            ctx,
+            fd.sq(),
+            |resources, args, submission| {
+                O::fill_submission(fd, resources, args, submission);
+                D::use_flags(submission);
+            },
+            |resources, args, state| O::check_result(fd, resources, args, state),
+            |_, resources, operation_output| O::map_next(resources, operation_output),
+        )
+    }
+
     pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
         where O: FdOpExtract,
     {
@@ -353,6 +370,15 @@ pub(crate) trait FdOpExtract: FdOp {
     ) -> Self::ExtractOutput;
 }
 
+/// Implementation of a [`FdOperation`].
+pub(crate) trait FdIter: FdOp {
+    /// Map the system call output to the future's output.
+    fn map_next(
+        resources: &mut Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::Output;
+}
+
 /// State of an [`Operation`] or [`FdOperation`].
 ///
 /// Generics:
@@ -470,6 +496,109 @@ impl<R, A> State<R, A> {
                 }
             }
             State::Done => unreachable!("Future polled after completion"),
+        }
+    }
+
+    /// Poll the next item from the state of this operation.
+    ///
+    /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
+    fn poll_next<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
+        &mut self,
+        ctx: &task::Context<'_>,
+        sq: &SubmissionQueue,
+        fill_submission: FillSubmission,
+        check_result: CheckResult,
+        map_ok: MapOk,
+    ) -> Poll<Option<io::Result<Output>>>
+    where
+        FillSubmission: FnOnce(&mut R, &mut A, &mut <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission),
+        CheckResult: FnOnce(&mut R, &mut A, &mut <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State) -> OpResult<OperationOutput>,
+        OperationOutput: fmt::Debug,
+        MapOk: FnOnce(&SubmissionQueue, &mut R, OperationOutput) -> Output,
+    {
+        match self {
+            State::NotStarted { resources, args } => {
+                let result = sq.inner.submit(
+                    |submission| {
+                        fill_submission(resources.get_mut(), args, submission);
+                    },
+                    ctx.waker().clone(),
+                );
+                if let Ok(op_id) = result {
+                    self.running(op_id);
+                }
+                // We'll be awoken once the operation is done, or if the
+                // submission queue is full we'll be awoken once a submission
+                // slot is available.
+                Poll::Pending
+            }
+            State::Running {
+                resources,
+                args,
+                op_id,
+            } => {
+                let op_id = *op_id;
+                // SAFETY: we've ensured that `op_id` is valid.
+                let mut queued_op_slot = unsafe { sq.get_op(op_id) };
+                log::trace!(queued_op:? = &*queued_op_slot; "mapping operation result");
+                let result = match queued_op_slot.as_mut() {
+                    Some(queued_op) => {
+                        check_result(resources.get_mut(), args, &mut queued_op.state)
+                    }
+                    // Somehow the queued operation is gone. This shouldn't
+                    // happen, but we'll deal with it anyway.
+                    None => OpResult::Again(true),
+                };
+                log::trace!(result:? = result; "mapped operation result");
+                match result {
+                    OpResult::Ok(ok) => Poll::Ready(Some(Ok(map_ok(sq, resources.get_mut(), ok)))),
+                    OpResult::Again(false) if matches!(&*queued_op_slot, Some(o) if o.done) => {
+                        // Multishot operation is complete, mark ourselves as
+                        // done.
+                        *self = State::Done;
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { sq.make_op_available(op_id, queued_op_slot) };
+                        Poll::Ready(None)
+                    }
+                    OpResult::Again(false) => {
+                        // We'll be awoken once the operation is ready again.
+                        Poll::Pending
+                    }
+                    OpResult::Again(true) => {
+                        // Operation wasn't completed, need to try again.
+                        drop(queued_op_slot); // Unlock.
+
+                        // SAFETY: we've ensured that we own the `op_id`.
+                        // Furthermore we don't use it in case an error is
+                        // returned.
+                        let result = unsafe {
+                            sq.inner.resubmit(op_id, |submission| {
+                                fill_submission(resources.get_mut(), args, submission);
+                            })
+                        };
+                        match result {
+                            Ok(()) => { /* Running again using the same operation id. */ }
+                            Err(QueueFull) => self.not_started(),
+                        }
+                        // We'll be awoken once can submit again.
+                        Poll::Pending
+                    }
+                    OpResult::Err(err) => {
+                        *self = State::Done;
+                        // SAFETY: we've ensured that `op_id` is valid.
+                        unsafe { sq.make_op_available(op_id, queued_op_slot) };
+
+                        if let Some(libc::ECANCELED) = err.raw_os_error() {
+                            // Operation was canceled, so we expect no more
+                            // results.
+                            Poll::Ready(None)
+                        } else {
+                            Poll::Ready(Some(Err(err)))
+                        }
+                    }
+                }
+            }
+            State::Done => Poll::Ready(None),
         }
     }
 
@@ -603,12 +732,32 @@ macro_rules! fd_operation {
     };
 }
 
+/// Create an [`AsyncIterator`] based on multishot [`FdOperation`]s.
+macro_rules! fd_iter_operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
+        )+
+    ) => {
+        $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name <'fd, $( $resources : $trait $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys))
+              impl AsyncIter -> $output,
+              $( impl Extract -> $extract_output, )?
+        );
+        )+
+    };
+}
+
 /// Helper macro for [`operation`] and [`fd_operation`], use those instead.
 macro_rules! new_operation {
     (
         $(#[ $meta: meta ])*
         $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) )
           $( impl Future -> $future_output: ty , )?
+          $( impl AsyncIter -> $iter_output: ty , )?
           $( impl Extract -> $extract_output: ty , )?
     ) => {
         // NOTE: the weird meta ordering is required here.
@@ -617,10 +766,16 @@ macro_rules! new_operation {
         #[doc = "\n\n[`Future`]: std::future::Future"]
         #[must_use = "`Future`s do nothing unless polled"]
         )?
+        $(
+        $crate::op::new_operation!(ignore $iter_output);
+        #[doc = "\n\n[`AsyncIterator`]: std::async_iter::AsyncIterator"]
+        #[must_use = "`AsyncIterator`s do nothing unless polled"]
+        )?
         $(#[ $meta ])*
         $vis struct $name<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait = $gen_default )? )?>($crate::op::$op_type<$( $( $lifetime, )* )? $sys $( $(, $gen )? )? >);
 
         $crate::op::new_operation!(Future for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $future_output )?);
+        $crate::op::new_operation!(AsyncIter for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $iter_output )?);
         $crate::op::new_operation!(Extract for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?);
 
         impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::cancel::Cancel for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
@@ -646,8 +801,27 @@ macro_rules! new_operation {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
+                // SAFETY: not moving `self.0` (`s.0`), directly called `poll` on it.
                 unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
+            }
+        }
+    };
+    (
+        AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+    ) => {
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
+            fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called `poll_next` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll_next(ctx)
+            }
+        }
+
+        #[cfg(feature = "nightly")]
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::async_iter::AsyncIterator for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
+            type Item = $output;
+
+            fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<Self::Item>> {
+                self.poll_next()
             }
         }
     };
@@ -675,4 +849,4 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {fd_operation, new_operation, operation};
+pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
