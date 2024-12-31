@@ -19,7 +19,7 @@ use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::io::{
-    Buf, BufMut, BufMutSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
+    Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
@@ -209,6 +209,37 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    /// Sends data in `bufs` on the socket to a connected peer.
+    #[doc = man_link!(sendmsg(2))]
+    pub fn send_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, NoAddress, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(SendCall::Normal, bufs, NoAddress, flags)
+    }
+
+    fn sendmsg<'fd, B, A, const N: usize>(
+        &'fd self,
+        send_op: SendCall,
+        bufs: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendMsg<'fd, B, A, N, D>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        let iovecs = unsafe { bufs.as_iovecs() };
+        let address = address.into_storage();
+        // SAFETY: zeroed `msghdr` is valid.
+        let resources = unsafe { Box::new((mem::zeroed(), iovecs, address)) };
+        SendMsg(FdOperation::new(self, (bufs, resources), (send_op, flags)))
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -330,6 +361,10 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
+      impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::send_vectored`].
+    pub struct SendMsg<B: BufSlice<N>, A: SocketAddress; const N: usize>(sys::net::SendMsgOp<B, A, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::accept`].

@@ -4,7 +4,7 @@ use std::os::fd::RawFd;
 use std::{array, ptr};
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, Buffer, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
 use crate::sys::{self, cq, libc, sq};
@@ -332,6 +332,67 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         (buf.buf, n as usize)
+    }
+}
+
+pub(crate) struct SendMsgOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
+
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> sys::FdOp for SendMsgOp<B, A, N> {
+    type Output = usize;
+    type Resources = (
+        B,
+        // These types need a stable address for the duration of the operation.
+        Box<(libc::msghdr, [crate::io::IoSlice; N], A::Storage)>,
+    );
+    type Args = (SendCall, libc::c_int); // send_op, flags
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (_, resources): &mut Self::Resources,
+        (send_op, flags): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (msg, iovecs, address) = &mut **resources;
+        let (ptr, length) = unsafe { A::as_ptr(address) };
+        msg.msg_name = ptr.cast_mut().cast();
+        msg.msg_namelen = length;
+        // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
+        msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
+        msg.msg_iovlen = N;
+
+        submission.0.opcode = match *send_op {
+            SendCall::Normal => libc::IORING_OP_SENDMSG as u8,
+            SendCall::ZeroCopy => libc::IORING_OP_SENDMSG_ZC as u8,
+        };
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr::from_mut(&mut *msg).addr() as _,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = 1;
+    }
+
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        n as usize
+    }
+}
+
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp<B, A, N> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (buf, _): Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (buf, n as usize)
     }
 }
 
