@@ -246,6 +246,50 @@ impl<A: SocketAddress, D: Descriptor> sys::FdOp for AcceptOp<A, D> {
     }
 }
 
+pub(crate) struct MultishotAcceptOp<D>(PhantomData<*const D>);
+
+impl<D: Descriptor> sys::FdOp for MultishotAcceptOp<D> {
+    type Output = AsyncFd<D>;
+    type Resources = ();
+    type Args = libc::c_int; // flags
+
+    fn fill_submission<LD: Descriptor>(
+        fd: &AsyncFd<LD>,
+        (): &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_ACCEPT as u8;
+        submission.0.ioprio = libc::IORING_ACCEPT_MULTISHOT as _;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            accept_flags: *flags as _,
+        };
+        submission.0.flags = libc::IOSQE_ASYNC;
+        D::create_flags(submission);
+    }
+
+    fn map_ok<LD: Descriptor>(
+        lfd: &AsyncFd<LD>,
+        (): Self::Resources,
+        ok: cq::OpReturn,
+    ) -> Self::Output {
+        MultishotAcceptOp::map_next(lfd, &mut (), ok)
+    }
+}
+
+impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
+    fn map_next<LD: Descriptor>(
+        lfd: &AsyncFd<LD>,
+        (): &mut Self::Resources,
+        (_, fd): cq::OpReturn,
+    ) -> Self::Output {
+        let sq = lfd.sq.clone();
+        // SAFETY: the accept operation ensures that `fd` is valid.
+        unsafe { AsyncFd::from_raw(fd as _, sq) }
+    }
+}
+
 pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
 impl<T> sys::FdOp for SocketOptionOp<T> {
