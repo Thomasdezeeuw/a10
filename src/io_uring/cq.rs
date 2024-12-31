@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
+use crate::msg::MsgData;
 use crate::op::OpResult;
 use crate::sys::{self, libc, mmap, munmap, Shared};
 use crate::{syscall, OperationId};
@@ -348,6 +349,11 @@ impl CompletionResult {
             // SAFETY: checked if `result` is negative above.
             OpResult::Ok((self.flags, self.result as u32))
         }
+    }
+
+    #[allow(clippy::cast_sign_loss)]
+    pub(crate) fn as_msg(self) -> MsgData {
+        self.result as MsgData
     }
 }
 
