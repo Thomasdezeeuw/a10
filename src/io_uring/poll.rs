@@ -1,5 +1,6 @@
 use std::os::fd::RawFd;
 
+use crate::op::Iter;
 use crate::poll::PollEvent;
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
@@ -24,6 +25,37 @@ impl sys::Op for OneshotPollOp {
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, events): cq::OpReturn) -> Self::Output {
+        PollEvent(events as _)
+    }
+}
+
+pub(crate) struct MultishotPollOp;
+
+impl sys::Op for MultishotPollOp {
+    type Output = PollEvent;
+    type Resources = ();
+    type Args = (RawFd, libc::c_int); // mask;
+
+    fn fill_submission(
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        OneshotPollOp::fill_submission(resources, args, submission);
+        submission.0.len = libc::IORING_POLL_ADD_MULTI;
+    }
+
+    fn map_ok(sq: &SubmissionQueue, (): Self::Resources, ok: cq::OpReturn) -> Self::Output {
+        MultishotPollOp::map_next(sq, &mut (), ok)
+    }
+}
+
+impl Iter for MultishotPollOp {
+    fn map_next(
+        _: &SubmissionQueue,
+        (): &mut Self::Resources,
+        (_, events): cq::OpReturn,
+    ) -> Self::Output {
         PollEvent(events as _)
     }
 }
