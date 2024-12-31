@@ -14,7 +14,7 @@
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::{fmt, io};
 
-use crate::op::{operation, Operation};
+use crate::op::{iter_operation, operation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
 /// Wait for an event specified in `mask` on the file descriptor `fd`.
@@ -37,6 +37,33 @@ pub fn oneshot_poll(sq: SubmissionQueue, fd: BorrowedFd, mask: libc::c_int) -> O
 operation!(
     /// [`Future`] behind [`oneshot_poll`].
     pub struct OneshotPoll(sys::poll::OneshotPollOp) -> io::Result<PollEvent>;
+);
+
+/// Returns an [`AsyncIterator`] that returns multiple events as specified
+/// in `mask` on the file descriptor `fd`.
+///
+/// This is not the same as calling [`oneshot_poll`] in a loop as this uses a
+/// multishot operation, which means only a single operation is created kernel
+/// side, making this more efficient.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+///
+/// # Notes
+///
+/// In general it's more efficient to perform the I/O operation you want to
+/// perform instead of polling for it to be ready.
+#[doc = man_link!(poll(2))]
+#[doc(alias = "poll")]
+#[doc(alias = "epoll")]
+#[doc(alias = "select")]
+#[allow(clippy::module_name_repetitions)]
+pub fn multishot_poll(sq: SubmissionQueue, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll {
+    MultishotPoll(Operation::new(sq, (), (fd.as_raw_fd(), mask)))
+}
+
+iter_operation!(
+    /// [`AsyncIterator`] behind [`multishot_poll`].
+    pub struct MultishotPoll(sys::poll::MultishotPollOp) -> io::Result<PollEvent>;
 );
 
 /// Event returned by [`OneshotPoll`].
