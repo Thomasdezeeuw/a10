@@ -97,51 +97,6 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
-    /// Sends data on the socket to a connected peer.
-    #[doc = man_link!(send(2))]
-    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
-    where
-        B: Buf,
-    {
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
-    }
-
-    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
-    /// of `buf`.
-    ///
-    /// # Notes
-    ///
-    /// Zerocopy execution is not guaranteed and may fall back to copying. The
-    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
-    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
-    /// instead.
-    ///
-    /// The `Future` only returns once it safe for the buffer to be used again,
-    /// for TCP for example this means until the data is ACKed by the peer.
-    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
-    where
-        B: Buf,
-    {
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
-    }
-
-    /// Sends all data in `buf` on the socket to a connected peer.
-    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub const fn send_all<'fd, B>(&'fd self, buf: B) -> SendAll<'fd, B, D>
-    where
-        B: Buf,
-    {
-        let buf = SkipBuf { buf, skip: 0 };
-        SendAll {
-            // TODO: once `Extract` is a constant trait use that.
-            send: Extractor {
-                fut: self.send(buf, 0),
-            },
-        }
-    }
-
     /// Receives data on the socket from the remote address to which it is
     /// connected, using vectored I/O.
     #[doc = man_link!(recvmsg(2))]
@@ -207,6 +162,51 @@ impl<D: Descriptor> AsyncFd<D> {
         // SAFETY: zeroed `msghdr` is valid.
         let resources = Box::new((unsafe { mem::zeroed() }, iovecs, MaybeUninit::uninit()));
         RecvFromVectored(FdOperation::new(self, (bufs, resources), flags))
+    }
+
+    /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(send(2))]
+    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = Buffer { buf };
+        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
+    }
+
+    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
+    /// of `buf`.
+    ///
+    /// # Notes
+    ///
+    /// Zerocopy execution is not guaranteed and may fall back to copying. The
+    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
+    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
+    /// instead.
+    ///
+    /// The `Future` only returns once it safe for the buffer to be used again,
+    /// for TCP for example this means until the data is ACKed by the peer.
+    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = Buffer { buf };
+        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
+    }
+
+    /// Sends all data in `buf` on the socket to a connected peer.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub const fn send_all<'fd, B>(&'fd self, buf: B) -> SendAll<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            // TODO: once `Extract` is a constant trait use that.
+            send: Extractor {
+                fut: self.send(buf, 0),
+            },
+        }
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
