@@ -170,8 +170,8 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
+        let resources = (buf, NoAddress);
+        Send(FdOperation::new(self, resources, (SendCall::Normal, flags)))
     }
 
     /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
@@ -190,8 +190,9 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
+        let resources = (buf, NoAddress);
+        let args = (SendCall::ZeroCopy, flags);
+        Send(FdOperation::new(self, resources, args))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
