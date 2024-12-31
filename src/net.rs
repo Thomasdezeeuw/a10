@@ -159,6 +159,25 @@ impl<D: Descriptor> AsyncFd<D> {
         let value = Box::new(MaybeUninit::uninit());
         SocketOption(FdOperation::new(self, value, (level, optname)))
     }
+
+    /// Set socket option.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(setsockopt(2))]
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option<'fd, T>(
+        &'fd self,
+        level: libc::c_int,
+        optname: libc::c_int,
+        optvalue: T,
+    ) -> SetSocketOption<'fd, T, D> {
+        let value = Box::new(optvalue);
+        SetSocketOption(FdOperation::new(self, value, (level, optname)))
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -180,6 +199,10 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::socket_option`].
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
+
+    /// [`Future`] behind [`AsyncFd::set_socket_option`].
+    pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
+      impl Extract -> io::Result<T>;
 }
 
 fd_iter_operation! {
