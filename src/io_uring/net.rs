@@ -1,4 +1,4 @@
-use std::marker::{PhantomData, PhantomPinned};
+use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{array, ptr};
@@ -154,7 +154,7 @@ impl FdIter for MultishotRecvOp {
     }
 }
 
-pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
+pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
@@ -184,7 +184,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     }
 }
 
-pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>, PhantomPinned);
+pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
 
 impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
     type Output = (B, A, libc::c_int);
@@ -220,10 +220,7 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
     }
 }
 
-pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(
-    PhantomData<*const (B, A)>,
-    PhantomPinned,
-);
+pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
 impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
     for RecvFromVectoredOp<B, A, N>
