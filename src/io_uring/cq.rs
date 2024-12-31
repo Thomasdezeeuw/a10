@@ -209,11 +209,6 @@ impl<'a> Drop for CompletionsIter<'a> {
 pub(crate) struct Completion(libc::io_uring_cqe);
 
 impl Completion {
-    /// Returns the operation index.
-    const fn index(&self) -> usize {
-        self.0.user_data as usize
-    }
-
     /// Returns the result of the operation.
     const fn result(&self) -> i32 {
         self.0.res
