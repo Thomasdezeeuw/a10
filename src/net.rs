@@ -270,6 +270,42 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(sendto(2))]
+    pub fn send_to<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendTo<'fd, B, A, D>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        let resources = (buf, address.into_storage());
+        let args = (SendCall::Normal, flags);
+        SendTo(FdOperation::new(self, resources, args))
+    }
+
+    /// Same as [`AsyncFd::send_to`], but tries to avoid making intermediate
+    /// copies of `buf`.
+    ///
+    /// See [`AsyncFd::send_zc`] for additional notes.
+    pub fn send_to_zc<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: libc::c_int,
+    ) -> SendTo<'fd, B, A, D>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        let resources = (buf, address.into_storage());
+        let args = (SendCall::ZeroCopy, flags);
+        SendTo(FdOperation::new(self, resources, args))
+    }
+
     fn sendmsg<'fd, B, A, const N: usize>(
         &'fd self,
         send_op: SendCall,
@@ -409,6 +445,10 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
+      impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::send_to`] and [`AsyncFd::send_to_zc`].
+    pub struct SendTo<B: Buf, A: SocketAddress>(sys::net::SendOp<B, A>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::send_vectored`] and [`AsyncFd::send_vectored_zc`].
