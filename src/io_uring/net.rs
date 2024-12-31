@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
+use std::ptr;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, Buffer, ReadBuf, ReadBufPool};
@@ -216,5 +217,57 @@ impl<T> sys::FdOp for SocketOptionOp<T> {
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
         unsafe { MaybeUninit::assume_init(*value) }
+    }
+}
+
+pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
+
+impl<T> sys::FdOp for SetSocketOptionOp<T> {
+    type Output = ();
+    type Resources = Box<T>;
+    type Args = (libc::c_int, libc::c_int); // level, optname.
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        value: &mut Self::Resources,
+        (level, optname): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_1__bindgen_ty_1 {
+                cmd_op: libc::SOCKET_URING_OP_SETSOCKOPT,
+                __pad1: 0,
+            },
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
+                level: *level as _,
+                optname: *optname as _,
+            },
+        };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            optlen: size_of::<T>() as u32,
+        };
+        submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
+            optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as _),
+        };
+    }
+
+    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
+impl<T> FdOpExtract for SetSocketOptionOp<T> {
+    type ExtractOutput = T;
+
+    fn map_ok_extract(
+        value: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        debug_assert!(n == 0);
+        *value
     }
 }
