@@ -827,7 +827,7 @@ macro_rules! new_operation {
             type Item = $output;
 
             fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<Self::Item>> {
-                self.poll_next()
+                self.poll_next(ctx)
             }
         }
     };
