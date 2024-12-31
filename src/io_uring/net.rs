@@ -287,17 +287,17 @@ fn fill_recvmsg_submission<A: SocketAddress, const N: usize>(
     submission.0.len = 1;
 }
 
-pub(crate) struct SendOp<B>(PhantomData<*const B>);
+pub(crate) struct SendOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 
-impl<B: Buf> sys::FdOp for SendOp<B> {
+impl<B: Buf, A: SocketAddress> sys::FdOp for SendOp<B, A> {
     type Output = usize;
-    type Resources = Buffer<B>;
+    type Resources = (B, A::Storage);
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        buf: &mut Self::Resources,
+        (buf, address): &mut Self::Resources,
         (send_op, flags): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
@@ -306,11 +306,14 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
         submission.0.fd = fd.fd();
-        let (ptr, length) = unsafe { buf.buf.parts() };
+        let (address, address_length) = unsafe { A::as_ptr(&address) };
+        submission.0.__bindgen_anon_1.addr2 = address as _;
+        let (ptr, length) = unsafe { buf.parts() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
         };
+        submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as _;
         submission.0.len = length;
     }
 
@@ -323,15 +326,15 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
     }
 }
 
-impl<B: Buf> FdOpExtract for SendOp<B> {
+impl<B: Buf, A: SocketAddress> FdOpExtract for SendOp<B, A> {
     type ExtractOutput = (B, usize);
 
     fn map_ok_extract<D: Descriptor>(
         _: &AsyncFd<D>,
-        buf: Self::Resources,
+        (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        (buf.buf, n as usize)
+        (buf, n as usize)
     }
 }
 
