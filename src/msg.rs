@@ -62,7 +62,7 @@ impl MsgListener {
                 Some(data) => Poll::Ready(Some(data)),
                 None => {
                     if !queued_op.waker.will_wake(ctx.waker()) {
-                        queued_op.waker = ctx.waker().clone();
+                        queued_op.waker.clone_from(ctx.waker());
                     }
                     Poll::Pending
                 }
