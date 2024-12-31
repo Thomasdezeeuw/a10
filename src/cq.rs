@@ -76,24 +76,29 @@ impl<I: Implementation> Queue<I> {
     // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
     #[allow(clippy::iter_with_drain, clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self) {
-        // TODO: check the actual amount of submissions slot available and limit
-        // the amount of
-        let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
-        if !blocked_futures.is_empty() {
-            let mut wakers = mem::take(&mut *blocked_futures);
-            drop(blocked_futures); // Unblock other threads.
-            for waker in wakers.drain(..) {
-                waker.wake();
-            }
+        let max = self.completions.queue_space(&self.shared.data);
+        if max == 0 {
+            return;
+        }
 
-            // Reuse allocation.
-            let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
-            mem::swap(&mut *blocked_futures, &mut wakers);
-            drop(blocked_futures);
-            // In case any wakers where added wake those as well.
-            for waker in wakers {
-                waker.wake();
-            }
+        let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
+        if blocked_futures.is_empty() {
+            return;
+        }
+
+        let mut wakers = mem::take(&mut *blocked_futures);
+        drop(blocked_futures); // Unblock other threads.
+        for waker in wakers.drain(..max) {
+            waker.wake();
+        }
+
+        // Reuse allocation.
+        let mut blocked_futures = self.shared.blocked_futures.lock().unwrap();
+        mem::swap(&mut *blocked_futures, &mut wakers);
+        drop(blocked_futures);
+        // In case any wakers where added wake those as well.
+        for waker in wakers {
+            waker.wake();
         }
     }
 
@@ -125,6 +130,12 @@ pub(crate) trait Completions: fmt::Debug {
         shared: &Self::Shared,
         timeout: Option<Duration>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>>;
+
+    /// Return the currently available queue space. May return `usize::MAX` is
+    /// there is no (practical) limit.
+    ///
+    /// This value may be outdated due to concurrent access.
+    fn queue_space(&mut self, shared: &Self::Shared) -> usize;
 }
 
 /// Completition event.
