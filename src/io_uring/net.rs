@@ -1,9 +1,9 @@
 use std::marker::PhantomData;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufId, BufMut, Buffer};
+use crate::io::{Buf, BufId, BufMut, Buffer, ReadBuf, ReadBufPool};
 use crate::net::{AddressStorage, SendCall, SocketAddress};
-use crate::op::FdOpExtract;
+use crate::op::{FdIter, FdOpExtract};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
@@ -95,6 +95,43 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
             buf.buf.buffer_init(BufId(buf_id), n);
         };
         buf.buf
+    }
+}
+
+pub(crate) struct MultishotRecvOp;
+
+impl sys::FdOp for MultishotRecvOp {
+    type Output = ReadBuf;
+    type Resources = ReadBufPool;
+    type Args = libc::c_int; // flags
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        buf_pool: &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_RECV as u8;
+        submission.0.flags = libc::IOSQE_BUFFER_SELECT;
+        submission.0.ioprio = libc::IORING_RECV_MULTISHOT as _;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+    }
+
+    fn map_ok(mut buf_pool: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+        MultishotRecvOp::map_next(&mut buf_pool, (buf_id, n))
+    }
+}
+
+impl FdIter for MultishotRecvOp {
+    fn map_next(buf_pool: &mut Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+        // SAFETY: the kernel initialised the buffers for us as part of the read
+        // call.
+        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
     }
 }
 
