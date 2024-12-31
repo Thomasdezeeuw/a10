@@ -271,3 +271,30 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
         *value
     }
 }
+
+pub(crate) struct ShutdownOp;
+
+impl sys::FdOp for ShutdownOp {
+    type Output = ();
+    type Resources = ();
+    type Args = std::net::Shutdown;
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (): &mut Self::Resources,
+        how: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_SHUTDOWN as u8;
+        submission.0.fd = fd.fd();
+        submission.0.len = match how {
+            std::net::Shutdown::Read => libc::SHUT_RD,
+            std::net::Shutdown::Write => libc::SHUT_WR,
+            std::net::Shutdown::Both => libc::SHUT_RDWR,
+        } as u32;
+    }
+
+    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
