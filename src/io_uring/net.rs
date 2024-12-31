@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
+use std::marker::{PhantomData, PhantomPinned};
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::ptr;
 
 use crate::fd::{AsyncFd, Descriptor};
-use crate::io::{Buf, BufId, BufMut, Buffer, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufId, BufMut, BufMutSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::net::{AddressStorage, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
 use crate::sys::{self, cq, libc, sq};
@@ -150,6 +150,50 @@ impl FdIter for MultishotRecvOp {
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
         unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
+    }
+}
+
+pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>, PhantomPinned);
+
+impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
+    type Output = (B, libc::c_int);
+    /// `IoMutSlice` holds the buffer references used by the kernel.
+    /// NOTE: we only need these in the submission, we don't have to keep around
+    /// during the operation. Because of this we don't heap allocate it like we
+    /// for other operations. This leaves a small duration between the
+    /// submission of the entry and the submission being read by the kernel in
+    /// which this future could be dropped and the kernel will read memory we
+    /// don't own. However because we wake the kernel after submitting the
+    /// timeout entry it's not really worth to heap allocation.
+    type Resources = (B, [crate::io::IoMutSlice; N], Box<libc::msghdr>);
+    type Args = libc::c_int; // flags
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (_, _, msg): &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr::from_mut(&mut **msg).addr() as _,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = 1;
+    }
+
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (mut bufs, _, msg): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        unsafe { bufs.set_init(n as usize) };
+        (bufs, msg.msg_flags)
     }
 }
 

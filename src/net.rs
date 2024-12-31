@@ -18,7 +18,7 @@ use std::{fmt, io, ptr, slice};
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{Buf, BufMut, Buffer, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf};
+use crate::io::{Buf, BufMut, BufMutSlice, Buffer, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf};
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -140,6 +140,28 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    /// Receives data on the socket from the remote address to which it is
+    /// connected, using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: libc::c_int,
+    ) -> RecvVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        // TODO: replace with `Box::new_zeroed` once `new_uninit` is stable.
+        // SAFETY: zeroed `msghdr` is valid.
+        let mut msg: Box<libc::msghdr> = unsafe { Box::new(mem::zeroed()) };
+        let mut iovecs = unsafe { bufs.as_iovecs_mut() };
+        // SAFETY: this cast is safe because `IoMutSlice` is
+        // `repr(transparent)`.
+        msg.msg_iov = iovecs.as_mut_ptr().cast();
+        msg.msg_iovlen = N;
+        RecvVectored(FdOperation::new(self, (bufs, iovecs, msg), flags))
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -249,6 +271,9 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::recv`].
     pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
+
+    /// [`Future`] behind [`AsyncFd::recv_vectored`].
+    pub struct RecvVectored<B: BufMutSlice<N>; const N: usize>(sys::net::RecvVectoredOp<B, N>) -> io::Result<(B, libc::c_int)>;
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
