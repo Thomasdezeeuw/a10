@@ -178,6 +178,7 @@ pub mod extract;
 pub mod fs;
 pub mod io;
 pub mod mem;
+pub mod msg;
 pub mod net;
 pub mod poll;
 pub mod process;
