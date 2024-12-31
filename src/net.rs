@@ -153,11 +153,10 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMutSlice<N>,
     {
-        // TODO: replace with `Box::new_zeroed` once `new_uninit` is stable.
         // SAFETY: zeroed `msghdr` is valid.
-        let msg = unsafe { Box::new(mem::zeroed()) };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        RecvVectored(FdOperation::new(self, (bufs, iovecs, msg), flags))
+        let resources = unsafe { Box::new((mem::zeroed(), iovecs)) };
+        RecvVectored(FdOperation::new(self, (bufs, resources), flags))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to

@@ -157,23 +157,16 @@ pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>, Phant
 
 impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
-    /// `IoMutSlice` holds the buffer references used by the kernel.
-    /// NOTE: we only need these in the submission, we don't have to keep around
-    /// during the operation. Because of this we don't heap allocate it like we
-    /// for other operations. This leaves a small duration between the
-    /// submission of the entry and the submission being read by the kernel in
-    /// which this future could be dropped and the kernel will read memory we
-    /// don't own. However because we wake the kernel after submitting the
-    /// timeout entry it's not really worth to heap allocation.
-    type Resources = (B, [crate::io::IoMutSlice; N], Box<libc::msghdr>);
+    type Resources = (B, Box<(libc::msghdr, [crate::io::IoMutSlice; N])>);
     type Args = libc::c_int; // flags
 
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        (_, iovecs, msg): &mut Self::Resources,
+        (_, resources): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        let (msg, iovecs) = &mut **resources;
         // SAFETY: this cast is safe because `IoMutSlice` is
         // `repr(transparent)`.
         msg.msg_iov = iovecs.as_mut_ptr().cast();
@@ -181,7 +174,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
         submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **msg).addr() as _,
+            addr: ptr::from_mut(&mut *msg).addr() as _,
         };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
@@ -191,13 +184,13 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
 
     fn map_ok<D: Descriptor>(
         _: &AsyncFd<D>,
-        (mut bufs, _, msg): Self::Resources,
+        (mut bufs, resources): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
-        (bufs, msg.msg_flags)
+        (bufs, resources.0.msg_flags)
     }
 }
 
