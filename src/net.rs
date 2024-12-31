@@ -170,6 +170,27 @@ impl<D: Descriptor> AsyncFd<D> {
         Accept(FdOperation::new(self, address, flags))
     }
 
+    /// Accept multiple socket streams.
+    ///
+    /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
+    /// uses a multishot operation, which means only a single operation is
+    /// created kernel side, making this more efficient.
+    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd, D> {
+        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
+        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+        // expected.
+        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        self.multishot_accept4(D::cloexec_flag())
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::multishot_accept`].
+    pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd, D> {
+        MultishotAccept(FdOperation::new(self, (), flags))
+    }
+
     /// Get socket option.
     ///
     /// At the time of writing this limited to the `SOL_SOCKET` level for
@@ -250,6 +271,9 @@ fd_operation! {
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
+
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
+    pub struct MultishotAccept(sys::net::MultishotAcceptOp<D>) -> io::Result<AsyncFd<D>>;
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
