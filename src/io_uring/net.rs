@@ -201,6 +201,51 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
     }
 }
 
+pub(crate) struct AcceptOp<A, D>(PhantomData<*const (A, D)>);
+
+impl<A: SocketAddress, D: Descriptor> sys::FdOp for AcceptOp<A, D> {
+    type Output = (AsyncFd<D>, A);
+    type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
+    type Args = libc::c_int; // flags
+
+    fn fill_submission<LD: Descriptor>(
+        fd: &AsyncFd<LD>,
+        resources: &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
+        let address_length = &mut (resources.0).1;
+        *address_length = length;
+        submission.0.opcode = libc::IORING_OP_ACCEPT as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: ptr::from_mut(address_length).addr() as _,
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as _,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            accept_flags: *flags as _,
+        };
+        submission.0.flags |= libc::IOSQE_ASYNC;
+        D::create_flags(submission);
+    }
+
+    fn map_ok<LD: Descriptor>(
+        lfd: &AsyncFd<LD>,
+        resources: Self::Resources,
+        (_, fd): cq::OpReturn,
+    ) -> Self::Output {
+        let sq = lfd.sq.clone();
+        // SAFETY: the accept operation ensures that `fd` is valid.
+        let socket = unsafe { AsyncFd::from_raw(fd as _, sq) };
+        // SAFETY: the kernel has written the address for us.
+        let address = unsafe { A::init((resources.0).0, (resources.0).1) };
+        (socket, address)
+    }
+}
+
 pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
 impl<T> sys::FdOp for SocketOptionOp<T> {

@@ -140,6 +140,36 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    /// Accept a new socket stream ([`AsyncFd`]).
+    ///
+    /// If an accepted stream is returned, the remote address of the peer is
+    /// returned along with it.
+    #[doc = man_link!(accept(2))]
+    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A, D>
+    where
+        A: SocketAddress,
+    {
+        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
+        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+        // expected.
+        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        self.accept4(D::cloexec_flag())
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::accept`].
+    #[doc = man_link!(accept4(2))]
+    pub fn accept4<'fd, A>(&'fd self, flags: libc::c_int) -> Accept<'fd, A, D>
+    where
+        A: SocketAddress,
+    {
+        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
+        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        Accept(FdOperation::new(self, address, flags))
+    }
+
     /// Get socket option.
     ///
     /// At the time of writing this limited to the `SOL_SOCKET` level for
@@ -202,6 +232,9 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::accept`].
+    pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A, D>) -> io::Result<(AsyncFd<D>, A)>;
 
     /// [`Future`] behind [`AsyncFd::socket_option`].
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
