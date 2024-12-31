@@ -9,6 +9,7 @@
 //! descriptors as it doesn't make much sense to poll a direct descriptor,
 //! instead start the I/O operation you want to perform.
 //!
+//! [`Future`]: std::future::Future
 //! [`AsyncIterator`]: std::async_iter::AsyncIterator
 
 use std::os::fd::{AsRawFd, BorrowedFd};
