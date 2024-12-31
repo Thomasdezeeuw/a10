@@ -235,6 +235,40 @@ impl<D: Descriptor> AsyncFd<D> {
         self.sendmsg(SendCall::ZeroCopy, bufs, NoAddress, flags)
     }
 
+    /// Sends all data in `bufs` on the socket to a connected peer, using
+    /// vectored I/O.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> SendAllVectored<'fd, B, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        SendAllVectored {
+            send: self.send_vectored(bufs, 0).extract(),
+            skip: 0,
+            send_op: SendCall::Normal,
+        }
+    }
+
+    /// Sends all data in `bufs` on the socket to a connected peer, using
+    /// vectored I/O.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all_vectored_zc<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> SendAllVectored<'fd, B, N, D>
+    where
+        B: BufSlice<N>,
+    {
+        SendAllVectored {
+            send: self.send_vectored(bufs, 0).extract(),
+            skip: 0,
+            send_op: SendCall::ZeroCopy,
+        }
+    }
+
     fn sendmsg<'fd, B, A, const N: usize>(
         &'fd self,
         send_op: SendCall,
@@ -549,6 +583,92 @@ impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for RecvNVect
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::send_all_vectored`] and [`AsyncFd::send_all_vectored_zc`].
+#[derive(Debug)]
+pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize, D: Descriptor = File> {
+    send: Extractor<SendMsg<'fd, B, NoAddress, N, D>>,
+    skip: u64,
+    send_op: SendCall,
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> SendAllVectored<'fd, B, N, D> {
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut send = unsafe { Pin::new_unchecked(&mut this.send) };
+        match send.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((bufs, n))) => {
+                this.skip += n as u64;
+
+                let mut iovecs = unsafe { bufs.as_iovecs() };
+                let mut skip = this.skip;
+                for iovec in &mut iovecs {
+                    if iovec.len() as u64 <= skip {
+                        // Skip entire buf.
+                        skip -= iovec.len() as u64;
+                        iovec.set_len(0);
+                    } else {
+                        iovec.set_len(skip as usize);
+                        break;
+                    }
+                }
+
+                if iovecs[N - 1].len() == 0 {
+                    // Send everything.
+                    return Poll::Ready(Ok(bufs));
+                }
+
+                // SAFETY: zeroed `msghdr` is valid.
+                let resources = unsafe { Box::new((mem::zeroed(), iovecs, NoAddress)) };
+                send.set(
+                    SendMsg(FdOperation::new(
+                        send.fut.0.fd(),
+                        (bufs, resources),
+                        (this.send_op, 0),
+                    ))
+                    .extract(),
+                );
+                unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Cancel for SendAllVectored<'fd, B, N, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.send.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        self.send.cancel()
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future for SendAllVectored<'fd, B, N, D> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.poll_inner(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Extract for SendAllVectored<'fd, B, N, D> {}
+
+impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future
+    for Extractor<SendAllVectored<'fd, B, N, D>>
+{
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
     }
 }
 
