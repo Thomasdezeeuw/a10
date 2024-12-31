@@ -417,11 +417,11 @@ fd_operation!(
 
     /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
     pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
-      with Extract -> io::Result<(B, usize)>;
+      impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
-      with Extract -> io::Result<(B, usize)>;
+      impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
     /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].

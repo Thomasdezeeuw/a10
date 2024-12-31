@@ -570,15 +570,15 @@ macro_rules! operation {
     (
         $(
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , with Extract -> $extract_output: ty )? ;
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
         )+
     ) => {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? (Operation($sys))
-              with Future -> $output,
-              $( with Extract -> $extract_output, )?
+              impl Future -> $output,
+              $( impl Extract -> $extract_output, )?
         );
         )+
     };
@@ -589,13 +589,15 @@ macro_rules! fd_operation {
     (
         $(
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , with Extract -> $extract_output: ty )? ;
+        $vis: vis struct $name: ident $( <$resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
         )+
     ) => {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name <'fd, $( $resources : $trait $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys)) -> $output $( , with Extract -> $extract_output )?
+            $vis struct $name <'fd, $( $resources : $trait $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys))
+              impl Future -> $output,
+              $( impl Extract -> $extract_output, )?
         );
         )+
     };
@@ -606,8 +608,8 @@ macro_rules! new_operation {
     (
         $(#[ $meta: meta ])*
         $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) )
-          $( with Future -> $future_output: ty , )?
-          $( with Extract -> $extract_output: ty , )?
+          $( impl Future -> $future_output: ty , )?
+          $( impl Extract -> $extract_output: ty , )?
     ) => {
         // NOTE: the weird meta ordering is required here.
         $(

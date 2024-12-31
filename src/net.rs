@@ -122,7 +122,7 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
-      with Extract -> io::Result<(B, usize)>;
+      impl Extract -> io::Result<(B, usize)>;
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
