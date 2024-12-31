@@ -807,7 +807,7 @@ macro_rules! new_operation {
         }
     };
     (
-        AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $( $trait: path )? $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+        AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident $( : $trait: path )? $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
     ) => {
         impl<$( $( $lifetime, )* $( $resources $( : $trait )?, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
             fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
@@ -826,7 +826,7 @@ macro_rules! new_operation {
         }
     };
     (
-        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $( $trait: path )? $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident $( : $trait: path )? $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
     ) => {
         impl<$( $( $lifetime, )* $( $resources $( : $trait )?, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::extract::Extract for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {}
 
