@@ -139,6 +139,26 @@ impl<D: Descriptor> AsyncFd<D> {
             },
         }
     }
+
+    /// Get socket option.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level for
+    /// io_uring.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(getsockopt(2))]
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option<'fd, T>(
+        &'fd self,
+        level: libc::c_int,
+        optname: libc::c_int,
+    ) -> SocketOption<'fd, T, D> {
+        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
+        let value = Box::new(MaybeUninit::uninit());
+        SocketOption(FdOperation::new(self, value, (level, optname)))
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -157,6 +177,9 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::socket_option`].
+    pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
 }
 
 fd_iter_operation! {
