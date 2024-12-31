@@ -4,7 +4,6 @@ use std::{io, ptr};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, FdOperation};
 use crate::sys::{self, cq, libc, sq};
-use crate::SubmissionQueue;
 
 /// Direct descriptors are io_uring private file descriptors.
 ///
@@ -65,7 +64,7 @@ impl AsyncFd<File> {
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
     pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
-        ToDirect(FdOperation::new(self, self.sq.clone(), ()))
+        ToDirect(FdOperation::new(self, (), ()))
     }
 }
 
@@ -82,7 +81,7 @@ impl AsyncFd<Direct> {
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
     pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
-        ToFd(FdOperation::new(self, self.sq.clone(), ()))
+        ToFd(FdOperation::new(self, (), ()))
     }
 }
 
@@ -98,13 +97,13 @@ struct ToDirectOp;
 
 impl sys::FdOp for ToDirectOp {
     type Output = AsyncFd<Direct>;
-    type Resources = SubmissionQueue;
+    type Resources = ();
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        _: &mut Self::Resources,
+        (): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
@@ -122,10 +121,11 @@ impl sys::FdOp for ToDirectOp {
     }
 
     fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        sq: Self::Resources,
+        ofd: &AsyncFd<D>,
+        (): Self::Resources,
         (_, dfd): cq::OpReturn,
     ) -> Self::Output {
+        let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `dfd` is valid.
         unsafe { AsyncFd::from_raw(dfd as _, sq) }
     }
@@ -135,12 +135,12 @@ struct ToFdOp;
 
 impl sys::FdOp for ToFdOp {
     type Output = AsyncFd<File>;
-    type Resources = SubmissionQueue;
+    type Resources = ();
     type Args = ();
 
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        _: &mut Self::Resources,
+        (): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
@@ -153,10 +153,11 @@ impl sys::FdOp for ToFdOp {
     }
 
     fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        sq: Self::Resources,
+        ofd: &AsyncFd<D>,
+        (): Self::Resources,
         (_, fd): cq::OpReturn,
     ) -> Self::Output {
+        let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as _, sq) }
     }
