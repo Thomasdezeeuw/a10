@@ -162,6 +162,26 @@ impl<D: Descriptor> AsyncFd<D> {
         RecvVectored(FdOperation::new(self, (bufs, iovecs, msg), flags))
     }
 
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected, using vectored I/O.
+    pub fn recv_n_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        n: usize,
+    ) -> RecvNVectored<'fd, B, N, D>
+    where
+        B: BufMutSlice<N>,
+    {
+        let bufs = ReadNBuf {
+            buf: bufs,
+            last_read: 0,
+        };
+        RecvNVectored {
+            recv: self.recv_vectored(bufs, 0),
+            left: n,
+        }
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -401,6 +421,53 @@ impl<'fd, B: Buf, D: Descriptor> Future for Extractor<SendAll<'fd, B, D>> {
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
         Pin::new(&mut self.fut).poll_inner(ctx)
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n_vectored`].
+#[derive(Debug)]
+pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor = File> {
+    recv: RecvVectored<'fd, ReadNBuf<B>, N, D>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Cancel for RecvNVectored<'fd, B, N, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.recv.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        self.recv.cancel()
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for RecvNVectored<'fd, B, N, D> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok((bufs, _))) => {
+                if bufs.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if bufs.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(bufs.buf));
+                }
+
+                this.left -= bufs.last_read;
+
+                recv.set(recv.0.fd().recv_vectored(bufs, 0));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 
