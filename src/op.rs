@@ -53,6 +53,20 @@ where
         )
     }
 
+    pub(crate) fn poll_next(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<Option<io::Result<O::Output>>>
+        where O: Iter,
+    {
+        // SAFETY: not moving `fd` or `state`.
+        let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
+        state.poll_next(
+            ctx,
+            sq,
+            O::fill_submission,
+            O::check_result,
+            O::map_next,
+        )
+    }
+
     pub(crate) fn poll_extract(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::ExtractOutput>>
         where O: OpExtract,
     {
@@ -176,6 +190,16 @@ pub(crate) trait OpExtract: Op {
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::ExtractOutput;
+}
+
+/// [`AsyncIterator`] implementation of a [`Operation`].
+pub(crate) trait Iter: Op {
+    /// Map the system call output to the future's output.
+    fn map_next(
+        sq: &SubmissionQueue,
+        resources: &mut Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::Output;
 }
 
 /// Generic [`Future`] that powers other I/O operation futures on a file
@@ -375,7 +399,7 @@ pub(crate) trait FdOpExtract: FdOp {
     ) -> Self::ExtractOutput;
 }
 
-/// Implementation of a [`FdOperation`].
+/// [`AsyncIterator`] implementation of a [`FdOperation`].
 pub(crate) trait FdIter: FdOp {
     /// Map the system call output to the future's output.
     fn map_next<D: Descriptor>(
@@ -719,6 +743,25 @@ macro_rules! operation {
     };
 }
 
+/// Create an [`AsyncIterator`] based on multishot [`Operation`]s.
+macro_rules! iter_operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? )+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
+        )+
+    ) => {
+        $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? (Operation($sys))
+              impl AsyncIter -> $output,
+              $( impl Extract -> $extract_output, )?
+        );
+        )+
+    };
+}
+
 /// Create a [`Future`] based on [`FdOperation`].
 macro_rules! fd_operation {
     (
@@ -855,4 +898,4 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
+pub(crate) use {fd_iter_operation, fd_operation, iter_operation, new_operation, operation};
