@@ -153,7 +153,11 @@ impl<T: FdOp> crate::op::FdOp for T {
         T::check_result(fd, resources, args)
     }
 
-    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        resources: Self::Resources,
+        output: Self::OperationOutput,
+    ) -> Self::Output {
         T::map_ok(resources, output)
     }
 }

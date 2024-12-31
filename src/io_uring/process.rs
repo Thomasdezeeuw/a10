@@ -64,7 +64,11 @@ impl sys::FdOp for ReceiveSignalOp {
         submission.set_async();
     }
 
-    fn map_ok(info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        info: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         info
     }

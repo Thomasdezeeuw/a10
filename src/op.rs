@@ -224,7 +224,7 @@ where
                 D::use_flags(submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
-            |_, resources, operation_output| O::map_ok(resources, operation_output),
+            |_, resources, operation_output| O::map_ok(fd, resources, operation_output),
         )
     }
 
@@ -241,7 +241,7 @@ where
                 D::use_flags(submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
-            |_, resources, operation_output| O::map_next(resources, operation_output),
+            |_, resources, operation_output| O::map_next(fd, resources, operation_output),
         )
     }
 
@@ -258,7 +258,7 @@ where
                 D::use_flags(submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
-            |_, resources, operation_output| O::map_ok_extract(resources, operation_output),
+            |_, resources, operation_output| O::map_ok_extract(fd, resources, operation_output),
         )
     }
 }
@@ -354,7 +354,11 @@ pub(crate) trait FdOp {
     ) -> OpResult<Self::OperationOutput>;
 
     /// Map the system call output to the future's output.
-    fn map_ok(resources: Self::Resources, operation_output: Self::OperationOutput) -> Self::Output;
+    fn map_ok<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        resources: Self::Resources,
+        operation_output: Self::OperationOutput,
+    ) -> Self::Output;
 }
 
 /// Extension of [`FdOp`] to extract the resources used in the operation. To
@@ -364,7 +368,8 @@ pub(crate) trait FdOpExtract: FdOp {
     type ExtractOutput;
 
     /// Map the system call output to the future's output.
-    fn map_ok_extract(
+    fn map_ok_extract<D: Descriptor>(
+        fd: &AsyncFd<D>,
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::ExtractOutput;
@@ -373,7 +378,8 @@ pub(crate) trait FdOpExtract: FdOp {
 /// Implementation of a [`FdOperation`].
 pub(crate) trait FdIter: FdOp {
     /// Map the system call output to the future's output.
-    fn map_next(
+    fn map_next<D: Descriptor>(
+        fd: &AsyncFd<D>,
         resources: &mut Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::Output;

@@ -200,7 +200,11 @@ impl sys::FdOp for SyncDataOp {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -233,7 +237,11 @@ impl sys::FdOp for StatOp {
         };
     }
 
-    fn map_ok(metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        metadata: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
         debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
         *metadata
@@ -263,7 +271,11 @@ impl sys::FdOp for AdviseOp {
         };
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -291,7 +303,11 @@ impl sys::FdOp for AllocateOp {
         submission.0.len = *mode as u32;
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -314,7 +330,11 @@ impl sys::FdOp for TruncateOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *length };
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

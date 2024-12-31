@@ -58,7 +58,11 @@ impl<A: SocketAddress> sys::FdOp for ConnectOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -91,7 +95,11 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
         }
     }
 
-    fn map_ok(mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        mut buf: Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -124,13 +132,21 @@ impl sys::FdOp for MultishotRecvOp {
         submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
     }
 
-    fn map_ok(mut buf_pool: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
-        MultishotRecvOp::map_next(&mut buf_pool, (buf_id, n))
+    fn map_ok<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        mut buf_pool: Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
+        MultishotRecvOp::map_next(fd, &mut buf_pool, (buf_id, n))
     }
 }
 
 impl FdIter for MultishotRecvOp {
-    fn map_next(buf_pool: &mut Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+    fn map_next<D: Descriptor>(
+        _: &AsyncFd<D>,
+        buf_pool: &mut Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
         unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
@@ -164,7 +180,11 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
         submission.0.len = length;
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         n as usize
     }
 }
@@ -172,7 +192,11 @@ impl<B: Buf> sys::FdOp for SendOp<B> {
 impl<B: Buf> FdOpExtract for SendOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract(buf: Self::Resources, (_, n): Self::OperationOutput) -> Self::ExtractOutput {
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
+        buf: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
         (buf.buf, n as usize)
     }
 }
@@ -212,7 +236,11 @@ impl<T> sys::FdOp for SocketOptionOp<T> {
         };
     }
 
-    fn map_ok(value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        value: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == (size_of::<T>() as _));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -255,7 +283,11 @@ impl<T> sys::FdOp for SetSocketOptionOp<T> {
         };
     }
 
-    fn map_ok(_: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -263,7 +295,8 @@ impl<T> sys::FdOp for SetSocketOptionOp<T> {
 impl<T> FdOpExtract for SetSocketOptionOp<T> {
     type ExtractOutput = T;
 
-    fn map_ok_extract(
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
         value: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -294,7 +327,11 @@ impl sys::FdOp for ShutdownOp {
         } as u32;
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

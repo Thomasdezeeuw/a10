@@ -29,7 +29,11 @@ impl sys::FdOp for CancelAllOp {
         };
     }
 
-    fn map_ok((): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
         n as usize
     }
 }

@@ -121,7 +121,11 @@ impl sys::FdOp for ToDirectOp {
         submission.0.len = 1;
     }
 
-    fn map_ok(sq: Self::Resources, (_, dfd): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        sq: Self::Resources,
+        (_, dfd): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: the kernel ensures that `dfd` is valid.
         unsafe { AsyncFd::from_raw(dfd as _, sq) }
     }
@@ -148,7 +152,11 @@ impl sys::FdOp for ToFdOp {
         };
     }
 
-    fn map_ok(sq: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        sq: Self::Resources,
+        (_, fd): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as _, sq) }
     }
