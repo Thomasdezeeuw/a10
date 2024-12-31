@@ -859,7 +859,11 @@ macro_rules! new_operation {
         AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
     ) => {
         impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
-            fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
+            /// This is the same as the [`AsyncIterator::poll_next`] function, but
+            /// then available on stable Rust.
+            ///
+            /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
+            pub fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
                 // SAFETY: not moving `self.0` (`s.0`), directly called `poll_next` on it.
                 unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll_next(ctx)
             }
