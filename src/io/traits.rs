@@ -143,7 +143,7 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
 pub struct IoMutSlice(crate::sys::io::IoMutSlice);
 
 impl IoMutSlice {
-    fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
+    pub(crate) fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
         IoMutSlice(crate::sys::io::IoMutSlice::new(buf))
     }
 }

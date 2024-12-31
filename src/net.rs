@@ -18,7 +18,9 @@ use std::{fmt, io, ptr, slice};
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{Buf, BufMut, BufMutSlice, Buffer, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf};
+use crate::io::{
+    Buf, BufMut, BufMutSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
+};
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -153,7 +155,7 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         // TODO: replace with `Box::new_zeroed` once `new_uninit` is stable.
         // SAFETY: zeroed `msghdr` is valid.
-        let msg: Box<libc::msghdr> = unsafe { Box::new(mem::zeroed()) };
+        let msg = unsafe { Box::new(mem::zeroed()) };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         RecvVectored(FdOperation::new(self, (bufs, iovecs, msg), flags))
     }
@@ -176,6 +178,19 @@ impl<D: Descriptor> AsyncFd<D> {
             recv: self.recv_vectored(bufs, 0),
             left: n,
         }
+    }
+
+    /// Receives data on the socket and returns the source address.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_from<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A, D>
+    where
+        B: BufMut,
+        A: SocketAddress,
+    {
+        // SAFETY: zeroed `msghdr` is valid.
+        let iovec = IoMutSlice::new(&mut buf);
+        let resources = Box::new((unsafe { mem::zeroed() }, iovec, MaybeUninit::uninit()));
+        RecvFrom(FdOperation::new(self, (buf, resources), flags))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
@@ -290,6 +305,9 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::recv_vectored`].
     pub struct RecvVectored<B: BufMutSlice<N>; const N: usize>(sys::net::RecvVectoredOp<B, N>) -> io::Result<(B, libc::c_int)>;
+
+    /// [`Future`] behind [`AsyncFd::recv_from`].
+    pub struct RecvFrom<B: BufMut, A: SocketAddress>(sys::net::RecvFromOp<B, A>) -> io::Result<(B, A, libc::c_int)>;
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
