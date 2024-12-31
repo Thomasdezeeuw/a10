@@ -729,10 +729,11 @@ unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
 }
 
 /// Wrapper around a buffer `B` to skip a number of bytes.
+// Also used in the `net` module.
 #[derive(Debug)]
-struct SkipBuf<B> {
-    buf: B,
-    skip: u32,
+pub(crate) struct SkipBuf<B> {
+    pub(crate) buf: B,
+    pub(crate) skip: u32,
 }
 
 unsafe impl<B: Buf> Buf for SkipBuf<B> {

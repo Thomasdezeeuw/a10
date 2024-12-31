@@ -16,8 +16,9 @@ use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
+use crate::extract::{Extract, Extractor};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{Buf, BufMut, Buffer, ReadBuf, ReadBufPool, ReadNBuf};
+use crate::io::{Buf, BufMut, Buffer, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf};
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
@@ -123,6 +124,21 @@ impl<D: Descriptor> AsyncFd<D> {
         let buf = Buffer { buf };
         Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
     }
+
+    /// Sends all data in `buf` on the socket to a connected peer.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub const fn send_all<'fd, B>(&'fd self, buf: B) -> SendAll<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            // TODO: once `Extract` is a constant trait use that.
+            send: Extractor {
+                fut: self.send(buf, 0),
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -192,6 +208,62 @@ impl<'fd, B: BufMut, D: Descriptor> Future for RecvN<'fd, B, D> {
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::send_all`].
+#[derive(Debug)]
+pub struct SendAll<'fd, B: Buf, D: Descriptor = File> {
+    send: Extractor<Send<'fd, SkipBuf<B>, D>>,
+}
+
+impl<'fd, B: Buf, D: Descriptor> SendAll<'fd, B, D> {
+    fn poll_inner(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        match Pin::new(&mut self.send).poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((mut buf, n))) => {
+                buf.skip += n as u32;
+
+                if let (_, 0) = unsafe { buf.parts() } {
+                    // Send everything.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                // Send some more.
+                self.send = self.send.fut.0.fd().send(buf, 0).extract();
+                self.poll_inner(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B: Buf, D: Descriptor> Cancel for SendAll<'fd, B, D> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.send.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        self.send.cancel()
+    }
+}
+
+impl<'fd, B: Buf, D: Descriptor> Future for SendAll<'fd, B, D> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.poll_inner(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: Buf, D: Descriptor> Extract for SendAll<'fd, B, D> {}
+
+impl<'fd, B: Buf, D: Descriptor> Future for Extractor<SendAll<'fd, B, D>> {
+    type Output = io::Result<B>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.fut).poll_inner(ctx)
     }
 }
 
