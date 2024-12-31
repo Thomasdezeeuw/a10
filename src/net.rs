@@ -17,8 +17,8 @@ use std::{fmt, io, ptr, slice};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::fd::{AsyncFd, Descriptor, File};
-use crate::io::{Buf, BufMut, Buffer, ReadNBuf};
-use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::io::{Buf, BufMut, Buffer, ReadBuf, ReadBufPool, ReadNBuf};
+use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, SubmissionQueue};
 
 /// Creates a new socket.
@@ -61,6 +61,24 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         let buf = Buffer { buf };
         Recv(FdOperation::new(self, buf, flags))
+    }
+
+    /// Continuously receive data on the socket from the remote address to which
+    /// it is connected.
+    ///
+    /// # Notes
+    ///
+    /// This will return `ENOBUFS` if no buffer is available in the `pool` to
+    /// read into.
+    ///
+    /// Be careful when using this as a peer sending a lot data might take up
+    /// all your buffers from your pool!
+    pub const fn multishot_recv<'fd>(
+        &'fd self,
+        pool: ReadBufPool,
+        flags: libc::c_int,
+    ) -> MultishotRecv<'fd, D> {
+        MultishotRecv(FdOperation::new(self, pool, flags))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
@@ -123,6 +141,11 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
+}
+
+fd_iter_operation! {
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
+    pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
