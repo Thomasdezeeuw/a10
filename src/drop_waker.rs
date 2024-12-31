@@ -8,7 +8,6 @@ use std::{ptr, task};
 
 use crate::io::{Buffer, ReadBufPool};
 use crate::net::AddressStorage;
-use crate::{sq, SubmissionQueue};
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
@@ -67,18 +66,6 @@ impl DropWake for CString {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         drop(CString::from_raw(data.cast_mut().cast()));
-    }
-}
-
-impl DropWake for SubmissionQueue {
-    fn into_waker_data(self) -> *const () {
-        unsafe { sq::Queue::into_raw(self.inner) }
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(SubmissionQueue {
-            inner: sq::Queue::from_raw(data),
-        });
     }
 }
 
