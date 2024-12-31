@@ -576,7 +576,9 @@ macro_rules! operation {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? (Operation($sys)) -> $output $( , with Extract -> $extract_output )?
+            $vis struct $name $( <$resources : $trait $(; const $const_generic : $const_ty )?> )? (Operation($sys))
+              with Future -> $output,
+              $( with Extract -> $extract_output, )?
         );
         )+
     };
@@ -603,22 +605,20 @@ macro_rules! fd_operation {
 macro_rules! new_operation {
     (
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) ) -> $output: ty $( , with Extract -> $extract_output: ty )?
+        $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) )
+          $( with Future -> $future_output: ty , )?
+          $( with Extract -> $extract_output: ty , )?
     ) => {
-        $(#[ $meta ])*
+        // NOTE: the weird meta ordering is required here.
+        $(
+        $crate::op::new_operation!(ignore $future_output);
         #[doc = "\n\n[`Future`]: std::future::Future"]
         #[must_use = "`Future`s do nothing unless polled"]
+        )?
+        $(#[ $meta ])*
         $vis struct $name<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait = $gen_default )? )?>($crate::op::$op_type<$( $( $lifetime, )* )? $sys $( $(, $gen )? )? >);
 
-        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
-            type Output = $output;
-
-            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
-                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
-            }
-        }
-
+        $crate::op::new_operation!(Future for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $future_output )?);
         $crate::op::new_operation!(Extract for $name $( <$( $lifetime, )* $( $resources: $trait $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?);
 
         impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::cancel::Cancel for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
@@ -638,6 +638,18 @@ macro_rules! new_operation {
         }
     };
     (
+        Future for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+    ) => {
+        impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {
+            type Output = $output;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving `self.0` (`s.0`), directly called `Future::poll` on it.
+                unsafe { ::std::pin::Pin::map_unchecked_mut(self, |s| &mut s.0) }.poll(ctx)
+            }
+        }
+    };
+    (
         Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
     ) => {
         impl<$( $( $lifetime, )* $( $resources: $trait, $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::extract::Extract for $name<$( $( $lifetime, )* $( $resources, $( $const_generic, )? )? $( $gen )? )?> {}
@@ -652,9 +664,12 @@ macro_rules! new_operation {
         }
     };
     (
-        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? ->
+        $trait_name: ident for $name: ident $( < $( $lifetime: lifetime, )* $( $resources: ident : $trait: path $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? ->
     ) => {
-        // No `Extract` implementation.
+        // No `$trait_name` implementation.
+    };
+    (ignore $( $tt: tt )*) => {
+        // Ignore.
     };
 }
 

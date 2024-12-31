@@ -49,7 +49,7 @@ impl sys::Op for CancelOperationOp {
         cancel::operation(*op_id, submission);
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
