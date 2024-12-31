@@ -179,6 +179,7 @@ pub mod fs;
 pub mod io;
 pub mod mem;
 pub mod net;
+pub mod poll;
 pub mod process;
 
 #[doc(no_inline)]
