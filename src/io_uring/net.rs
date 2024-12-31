@@ -170,10 +170,14 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
 
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        (_, _, msg): &mut Self::Resources,
+        (_, iovecs, msg): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        // SAFETY: this cast is safe because `IoMutSlice` is
+        // `repr(transparent)`.
+        msg.msg_iov = iovecs.as_mut_ptr().cast();
+        msg.msg_iovlen = N;
         submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {

@@ -153,12 +153,8 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         // TODO: replace with `Box::new_zeroed` once `new_uninit` is stable.
         // SAFETY: zeroed `msghdr` is valid.
-        let mut msg: Box<libc::msghdr> = unsafe { Box::new(mem::zeroed()) };
-        let mut iovecs = unsafe { bufs.as_iovecs_mut() };
-        // SAFETY: this cast is safe because `IoMutSlice` is
-        // `repr(transparent)`.
-        msg.msg_iov = iovecs.as_mut_ptr().cast();
-        msg.msg_iovlen = N;
+        let msg: Box<libc::msghdr> = unsafe { Box::new(mem::zeroed()) };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
         RecvVectored(FdOperation::new(self, (bufs, iovecs, msg), flags))
     }
 
