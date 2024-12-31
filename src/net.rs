@@ -192,6 +192,23 @@ impl<D: Descriptor> AsyncFd<D> {
         RecvFrom(FdOperation::new(self, (buf, resources), flags))
     }
 
+    /// Receives data on the socket and the source address using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_from_vectored<'fd, B, A, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: libc::c_int,
+    ) -> RecvFromVectored<'fd, B, A, N, D>
+    where
+        B: BufMutSlice<N>,
+        A: SocketAddress,
+    {
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        // SAFETY: zeroed `msghdr` is valid.
+        let resources = Box::new((unsafe { mem::zeroed() }, iovecs, MaybeUninit::uninit()));
+        RecvFromVectored(FdOperation::new(self, (bufs, resources), flags))
+    }
+
     /// Accept a new socket stream ([`AsyncFd`]).
     ///
     /// If an accepted stream is returned, the remote address of the peer is
@@ -307,6 +324,9 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::recv_from`].
     pub struct RecvFrom<B: BufMut, A: SocketAddress>(sys::net::RecvFromOp<B, A>) -> io::Result<(B, A, libc::c_int)>;
+
+    /// [`Future`] behind [`AsyncFd::recv_from_vectored`].
+    pub struct RecvFromVectored<B: BufMutSlice<N>, A: SocketAddress; const N: usize>(sys::net::RecvFromVectoredOp<B, A, N>) -> io::Result<(B, A, libc::c_int)>;
 
     /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,

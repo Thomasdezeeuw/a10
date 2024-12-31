@@ -245,6 +245,66 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
     }
 }
 
+pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(
+    PhantomData<*const (B, A)>,
+    PhantomPinned,
+);
+
+impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
+    for RecvFromVectoredOp<B, A, N>
+{
+    type Output = (B, A, libc::c_int);
+    type Resources = (
+        B,
+        // These types need a stable address for the duration of the operation.
+        Box<(
+            libc::msghdr,
+            [crate::io::IoMutSlice; N],
+            MaybeUninit<A::Storage>,
+        )>,
+    );
+    type Args = libc::c_int; // flags
+
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        (_, resources): &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (msg, iovecs, address) = &mut **resources;
+        let (ptr, length) = unsafe { A::as_mut_ptr(address) };
+        msg.msg_name = ptr.cast();
+        msg.msg_namelen = length;
+        // SAFETY: this cast is safe because `IoMutSlice` is
+        // `repr(transparent)`.
+        msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
+        msg.msg_iovlen = N;
+
+        submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr::from_mut(&mut *msg).addr() as _,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = 1;
+    }
+
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        (mut bufs, resources): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        unsafe { bufs.set_init(n as usize) };
+        // SAFETY: kernel initialised the address for us.
+        let address = unsafe { A::init(resources.2, resources.0.msg_namelen) };
+        (bufs, address, resources.0.msg_flags)
+    }
+}
+
 pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
 impl<B: Buf> sys::FdOp for SendOp<B> {
