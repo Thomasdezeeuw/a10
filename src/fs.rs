@@ -222,19 +222,19 @@ pub(crate) enum RemoveFlag {
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
     pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>,
-      with Extract -> io::Result<PathBuf>;
+      impl Extract -> io::Result<PathBuf>;
 
     /// [`Future`] behind [`create_dir`].
     pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>,
-      with Extract -> io::Result<PathBuf>;
+      impl Extract -> io::Result<PathBuf>;
 
     /// [`Future`] behind [`rename`].
     pub struct Rename(sys::fs::RenameOp) -> io::Result<()>,
-      with Extract -> io::Result<(PathBuf, PathBuf)>;
+      impl Extract -> io::Result<(PathBuf, PathBuf)>;
 
     /// [`Future`] behind [`remove_file`] and [`remove_dir`].
     pub struct Delete(sys::fs::DeleteOp) -> io::Result<()>,
-      with Extract -> io::Result<PathBuf>;
+      impl Extract -> io::Result<PathBuf>;
 );
 
 /// File(system) related system calls.
