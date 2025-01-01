@@ -623,9 +623,11 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> WriteAllVectored<'fd, B
                     if iovec.len() as u64 <= skip {
                         // Skip entire buf.
                         skip -= iovec.len() as u64;
-                        iovec.set_len(0);
+                        // SAFETY: setting it to zero is always valid.
+                        unsafe { iovec.set_len(0) };
                     } else {
-                        iovec.set_len(skip as usize);
+                        // SAFETY: checked above that the length > skip.
+                        unsafe { iovec.set_len(skip as usize) };
                         break;
                     }
                 }

@@ -143,8 +143,23 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
 pub struct IoMutSlice(crate::sys::io::IoMutSlice);
 
 impl IoMutSlice {
-    pub(crate) fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
+    /// Create a new `IoMutSlice` from `buf`.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `buf` outlives the returned `IoMutSlice`.
+    pub unsafe fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
         IoMutSlice(crate::sys::io::IoMutSlice::new(buf))
+    }
+
+    #[doc(hidden)] // Used by testing.
+    pub const fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    #[doc(hidden)] // Used by testing.
+    pub unsafe fn set_len(&mut self, new_len: usize) {
+        self.0.set_len(new_len);
     }
 }
 
@@ -303,7 +318,13 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
 pub struct IoSlice(crate::sys::io::IoSlice);
 
 impl IoSlice {
-    fn new<B: Buf>(buf: &B) -> IoSlice {
+    /// Create a new `IoSlice` from `buf`.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that `buf` outlives the returned `IoSlice`.
+    #[doc(hidden)] // Used in testing.
+    pub unsafe fn new<B: Buf>(buf: &B) -> IoSlice {
         IoSlice(crate::sys::io::IoSlice::new(buf))
     }
 
@@ -311,7 +332,7 @@ impl IoSlice {
         self.0.len()
     }
 
-    pub(crate) fn set_len(&mut self, new_len: usize) {
+    pub(crate) unsafe fn set_len(&mut self, new_len: usize) {
         self.0.set_len(new_len);
     }
 }

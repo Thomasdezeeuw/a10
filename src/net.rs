@@ -141,8 +141,9 @@ impl<D: Descriptor> AsyncFd<D> {
         B: BufMut,
         A: SocketAddress,
     {
+        // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
+        let iovec = unsafe { IoMutSlice::new(&mut buf) };
         // SAFETY: zeroed `msghdr` is valid.
-        let iovec = IoMutSlice::new(&mut buf);
         let resources = Box::new((unsafe { mem::zeroed() }, iovec, MaybeUninit::uninit()));
         RecvFrom(FdOperation::new(self, (buf, resources), flags))
     }
@@ -710,9 +711,11 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> SendAllVectored<'fd, B,
                     if iovec.len() as u64 <= skip {
                         // Skip entire buf.
                         skip -= iovec.len() as u64;
-                        iovec.set_len(0);
+                        // SAFETY: setting it to zero is always valid.
+                        unsafe { iovec.set_len(0) };
                     } else {
-                        iovec.set_len(skip as usize);
+                        // SAFETY: checked above that the length > skip.
+                        unsafe { iovec.set_len(skip as usize) };
                         break;
                     }
                 }

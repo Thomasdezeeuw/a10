@@ -19,6 +19,10 @@ impl IoMutSlice {
     pub(crate) const fn len(&self) -> usize {
         self.0.iov_len
     }
+
+    pub(crate) fn set_len(&mut self, new_len: usize) {
+        self.0.iov_len = new_len;
+    }
 }
 
 // SAFETY: `libc::iovec` is `!Sync`, but it's just a point to some bytes, so
