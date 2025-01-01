@@ -197,7 +197,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub const fn send_all<'fd, B>(&'fd self, buf: B) -> SendAll<'fd, B, D>
+    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B, D>
     where
         B: Buf,
     {
@@ -205,8 +205,27 @@ impl<D: Descriptor> AsyncFd<D> {
         SendAll {
             // TODO: once `Extract` is a constant trait use that.
             send: Extractor {
-                fut: self.send(buf, 0),
+                fut: self.send(buf, flags),
             },
+            send_op: SendCall::Normal,
+            flags,
+        }
+    }
+
+    /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
+    /// copies of `buf`.
+    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B, D>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            // TODO: once `Extract` is a constant trait use that.
+            send: Extractor {
+                fut: self.send(buf, flags),
+            },
+            send_op: SendCall::ZeroCopy,
+            flags,
         }
     }
 
@@ -560,6 +579,8 @@ impl<'fd, B: BufMut, D: Descriptor> Future for RecvN<'fd, B, D> {
 #[derive(Debug)]
 pub struct SendAll<'fd, B: Buf, D: Descriptor = File> {
     send: Extractor<Send<'fd, SkipBuf<B>, D>>,
+    send_op: SendCall,
+    flags: libc::c_int,
 }
 
 impl<'fd, B: Buf, D: Descriptor> SendAll<'fd, B, D> {
@@ -575,7 +596,11 @@ impl<'fd, B: Buf, D: Descriptor> SendAll<'fd, B, D> {
                 }
 
                 // Send some more.
-                self.send = self.send.fut.0.fd().send(buf, 0).extract();
+                self.send = match self.send_op {
+                    SendCall::Normal => self.send.fut.0.fd().send(buf, self.flags),
+                    SendCall::ZeroCopy => self.send.fut.0.fd().send_zc(buf, self.flags),
+                }
+                .extract();
                 self.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
