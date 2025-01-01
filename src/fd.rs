@@ -142,6 +142,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         {
             let result = self.sq.inner.submit_no_completion(|submission| {
                 crate::sys::fd::fill_close_submission(&*self, submission);
+                D::use_flags(submission);
             });
             match result {
                 Ok(()) => return,

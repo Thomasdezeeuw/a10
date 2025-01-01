@@ -169,5 +169,4 @@ pub(crate) fn fill_close_submission<D: Descriptor>(
 ) {
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
     submission.0.fd = fd.fd();
-    D::use_flags(submission);
 }
