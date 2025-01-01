@@ -5,10 +5,10 @@ use std::env::temp_dir;
 use std::future::Future;
 use std::io;
 use std::ops::Bound;
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, RawFd};
+use std::os::fd::{AsFd, FromRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 
-use a10::fd::{AsyncFd, Descriptor, File};
+use a10::fd::{AsyncFd, Descriptor, Direct, File};
 use a10::fs::{Open, OpenOptions};
 use a10::io::{
     stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Splice,
@@ -792,13 +792,7 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        .block_on(file.splice_to_at(
-            10,
-            w.as_fd().as_raw_fd(),
-            NO_OFFSET,
-            expected.len() as u32,
-            0,
-        ))
+        .block_on(file.splice_to_at(10, w.as_fd(), NO_OFFSET, expected.len() as u32, 0))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);
 
@@ -832,13 +826,7 @@ fn splice_from() {
         .expect("failed to write all");
 
     let n = waker
-        .block_on(file.splice_from_at(
-            10,
-            r.as_fd().as_raw_fd(),
-            NO_OFFSET,
-            expected.len() as u32,
-            0,
-        ))
+        .block_on(file.splice_from_at(10, r.as_fd(), NO_OFFSET, expected.len() as u32, 0))
         .expect("failed to splice");
     assert_eq!(n, expected.len());
 
@@ -853,8 +841,10 @@ fn close_socket_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Close>();
-    is_sync::<Close>();
+    is_send::<Close<File>>();
+    is_sync::<Close<File>>();
+    is_send::<Close<Direct>>();
+    is_sync::<Close<Direct>>();
 
     let socket = waker.block_on(tcp_ipv4_socket(sq));
     waker.block_on(socket.close()).expect("failed to close fd");
