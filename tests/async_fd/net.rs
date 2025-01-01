@@ -11,6 +11,7 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
+use a10::fd::{Direct, File};
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
@@ -33,8 +34,8 @@ fn accept() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Accept<libc::sockaddr_storage>>();
-    is_sync::<Accept<libc::sockaddr_storage>>();
+    is_send::<Accept<SocketAddr>>();
+    is_sync::<Accept<SocketAddr>>();
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
@@ -42,9 +43,8 @@ fn accept() {
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).expect("failed to connect");
-    let accept = listener.accept::<libc::sockaddr_in>();
-    let (client, addr) = waker.block_on(accept).expect("failed to accept connection");
-    let address = from_storage(addr);
+    let accept = listener.accept::<SocketAddr>();
+    let (client, address) = waker.block_on(accept).expect("failed to accept connection");
     assert_eq!(stream.peer_addr().unwrap(), local_addr);
     assert_eq!(stream.local_addr().unwrap(), address.into());
 
@@ -76,8 +76,8 @@ fn accept_no_address() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Accept<libc::sockaddr_storage>>();
-    is_sync::<Accept<libc::sockaddr_storage>>();
+    is_send::<Accept<SocketAddr>>();
+    is_sync::<Accept<SocketAddr>>();
 
     // Bind a socket.
     let listener = waker.block_on(tcp_ipv4_socket(sq));
@@ -138,7 +138,7 @@ fn try_cancel_accept_before_poll() {
     let listener = waker.block_on(tcp_ipv4_socket(sq));
     bind_and_listen_ipv4(&listener);
 
-    let mut accept = listener.accept::<libc::sockaddr_storage>();
+    let mut accept = listener.accept::<SocketAddr>();
 
     // Before we accept we cancel the accept call.
     if !matches!(accept.try_cancel(), CancelResult::NotStarted) {
@@ -350,21 +350,19 @@ fn connect() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Socket>();
-    is_sync::<Socket>();
+    is_send::<Socket<File>>();
+    is_sync::<Socket<File>>();
+    is_send::<Socket<Direct>>();
+    is_sync::<Socket<Direct>>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -437,16 +435,12 @@ fn recv() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -479,15 +473,11 @@ fn recv_read_buf_pool() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+    block_on(&mut ring, stream.connect(local_addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -516,15 +506,11 @@ fn recv_read_buf_pool_send_read_buf() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+    block_on(&mut ring, stream.connect(local_addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -565,15 +551,11 @@ fn multishot_recv() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+    block_on(&mut ring, stream.connect(local_addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -612,15 +594,11 @@ fn multishot_recv_large_send() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+    block_on(&mut ring, stream.connect(local_addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -662,15 +640,11 @@ fn multishot_recv_all_buffers_used() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = block_on(&mut ring, tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    block_on(&mut ring, stream.connect(addr)).expect("failed to connect");
+    block_on(&mut ring, stream.connect(local_addr)).expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
@@ -711,16 +685,12 @@ fn recv_n() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -747,16 +717,12 @@ fn recv_vectored() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -796,15 +762,11 @@ fn recv_vectored_truncated() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(socket.connect(addr))
+        .block_on(socket.connect(local_addr))
         .expect("failed to connect");
 
     let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
@@ -827,21 +789,17 @@ fn recv_n_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<RecvNVectored<Vec<u8>, 1>>();
-    is_sync::<RecvNVectored<Vec<u8>, 1>>();
+    is_send::<RecvNVectored<[Vec<u8>; 2], 2>>();
+    is_sync::<RecvNVectored<[Vec<u8>; 2], 2>>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -868,16 +826,13 @@ fn recv_n_vectored() {
 }
 
 #[test]
-fn recvfrom() {
+fn recv_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
     bind_ipv4(&socket);
@@ -889,16 +844,15 @@ fn recvfrom() {
 
     // Receive some data.
     let (buf, address, flags) = waker
-        .block_on(socket.recvfrom(Vec::with_capacity(DATA1.len() + 1), 0))
+        .block_on(socket.recv_from(Vec::with_capacity(DATA1.len() + 1), 0))
         .expect("failed to receive");
     assert_eq!(buf, DATA1);
-    let address = from_storage(address);
     assert_eq!(address, local_addr);
     assert_eq!(flags, 0);
 }
 
 #[test]
-fn recvfrom_read_buf_pool() {
+fn recv_from_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
     require_kernel!(5, 19);
@@ -910,10 +864,7 @@ fn recvfrom_read_buf_pool() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = block_on(&mut ring, udp_ipv4_socket(sq));
     bind_ipv4(&socket);
@@ -925,24 +876,20 @@ fn recvfrom_read_buf_pool() {
 
     // Receive some data.
     let (buf, address, flags) =
-        block_on(&mut ring, socket.recvfrom(buf_pool.get(), 0)).expect("failed to receive");
+        block_on(&mut ring, socket.recv_from(buf_pool.get(), 0)).expect("failed to receive");
     assert_eq!(&*buf, DATA1);
-    let address = from_storage(address);
     assert_eq!(address, local_addr);
     assert_eq!(flags, 0);
 }
 
 #[test]
-fn recvfrom_vectored() {
+fn recv_from_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
     bind_ipv4(&socket);
@@ -959,12 +906,11 @@ fn recvfrom_vectored() {
         Vec::with_capacity(7),
     ];
     let (bufs, address, flags) = waker
-        .block_on(socket.recvfrom_vectored(bufs, 0))
+        .block_on(socket.recv_from_vectored(bufs, 0))
         .expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");
     assert_eq!(&bufs[2], b"World!");
-    let address = from_storage(address);
     assert_eq!(address, local_addr);
     assert_eq!(flags, 0);
 }
@@ -979,16 +925,12 @@ fn send() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1012,16 +954,12 @@ fn send_zc() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1043,16 +981,12 @@ fn send_extractor() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1077,16 +1011,12 @@ fn send_zc_extractor() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1112,16 +1042,12 @@ fn send_all() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1131,7 +1057,7 @@ fn send_all() {
         calls: Cell::new(0),
     };
     waker
-        .block_on(stream.send_all(buf))
+        .block_on(stream.send_all(buf, 0))
         .expect("failed to send");
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
@@ -1147,16 +1073,12 @@ fn send_all_extract() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1166,7 +1088,7 @@ fn send_all_extract() {
         calls: Cell::new(0),
     };
     let buf = waker
-        .block_on(stream.send_all(buf).extract())
+        .block_on(stream.send_all(buf, 0).extract())
         .expect("failed to send");
     assert_eq!(buf.calls.get(), 6);
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
@@ -1186,16 +1108,12 @@ fn send_vectored() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1223,16 +1141,12 @@ fn send_vectored_zc() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1255,16 +1169,12 @@ fn send_vectored_extractor() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1290,16 +1200,12 @@ fn send_vectored_zc_extractor() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1321,21 +1227,17 @@ fn send_all_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<SendAllVectored<Vec<u8>, 1>>();
-    is_sync::<SendAllVectored<Vec<u8>, 1>>();
+    is_send::<SendAllVectored<[Vec<u8>; 2], 2>>();
+    is_sync::<SendAllVectored<[Vec<u8>; 2], 2>>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1362,16 +1264,12 @@ fn send_all_vectored_extract() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1395,29 +1293,25 @@ fn send_all_vectored_extract() {
 }
 
 #[test]
-fn sendto() {
+fn send_to() {
     require_kernel!(6, 0);
 
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<SendTo<Vec<u8>, ()>>();
-    is_sync::<SendTo<Vec<u8>, ()>>();
+    is_send::<SendTo<Vec<u8>, SocketAddr>>();
+    is_sync::<SendTo<Vec<u8>, SocketAddr>>();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
-    let addr = addr_storage(&local_addr);
     let n = waker
-        .block_on(socket.sendto(DATA1, addr, 0))
-        .expect("failed to sendto");
+        .block_on(socket.send_to(DATA1, local_addr, 0))
+        .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1427,7 +1321,7 @@ fn sendto() {
 }
 
 #[test]
-fn sendto_zc() {
+fn send_to_zc() {
     require_kernel!(6, 0);
 
     let sq = test_queue();
@@ -1435,18 +1329,14 @@ fn sendto_zc() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
-    let addr = addr_storage(&local_addr);
     let n = waker
-        .block_on(socket.sendto_zc(DATA1, addr, 0))
-        .expect("failed to sendto");
+        .block_on(socket.send_to_zc(DATA1, local_addr, 0))
+        .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1456,7 +1346,7 @@ fn sendto_zc() {
 }
 
 #[test]
-fn sendto_extractor() {
+fn send_to_extractor() {
     require_kernel!(6, 0);
 
     let sq = test_queue();
@@ -1464,18 +1354,14 @@ fn sendto_extractor() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
-    let addr = addr_storage(&local_addr);
     let (buf, n) = waker
-        .block_on(socket.sendto(DATA1, addr.clone(), 0).extract())
-        .expect("failed to sendto");
+        .block_on(socket.send_to(DATA1, local_addr, 0).extract())
+        .expect("failed to send_to");
     assert!(buf == DATA1);
     assert_eq!(n, DATA1.len());
 
@@ -1486,7 +1372,7 @@ fn sendto_extractor() {
 }
 
 #[test]
-fn sendto_zc_extractor() {
+fn send_to_zc_extractor() {
     require_kernel!(6, 0);
 
     let sq = test_queue();
@@ -1494,18 +1380,14 @@ fn sendto_zc_extractor() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
-    let addr = addr_storage(&local_addr);
     let (buf, n) = waker
-        .block_on(socket.sendto_zc(DATA1, addr.clone(), 0).extract())
-        .expect("failed to sendto");
+        .block_on(socket.send_to_zc(DATA1, local_addr, 0).extract())
+        .expect("failed to send_to");
     assert!(buf == DATA1);
     assert_eq!(n, DATA1.len());
 
@@ -1516,28 +1398,24 @@ fn sendto_zc_extractor() {
 }
 
 #[test]
-fn sendto_vectored() {
+fn send_to_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<SendTo<Vec<u8>, ()>>();
-    is_sync::<SendTo<Vec<u8>, ()>>();
+    is_send::<SendTo<Vec<u8>, SocketAddr>>();
+    is_sync::<SendTo<Vec<u8>, SocketAddr>>();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
-    let addr = addr_storage(&local_addr);
     let n = waker
-        .block_on(socket.sendto_vectored(bufs, addr, 0))
-        .expect("failed to sendto");
+        .block_on(socket.send_to_vectored(bufs, local_addr, 0))
+        .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1547,7 +1425,7 @@ fn sendto_vectored() {
 }
 
 #[test]
-fn sendto_vectored_zc() {
+fn send_to_vectored_zc() {
     require_kernel!(6, 1);
 
     let sq = test_queue();
@@ -1555,19 +1433,15 @@ fn sendto_vectored_zc() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
-    let addr = addr_storage(&local_addr);
     let n = waker
-        .block_on(socket.sendto_vectored_zc(bufs, addr, 0))
-        .expect("failed to sendto");
+        .block_on(socket.send_to_vectored_zc(bufs, local_addr, 0))
+        .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1577,25 +1451,21 @@ fn sendto_vectored_zc() {
 }
 
 #[test]
-fn sendto_vectored_extractor() {
+fn send_to_vectored_extractor() {
     let sq = test_queue();
     let waker = Waker::new();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
-    let addr = addr_storage(&local_addr);
     let (buf, n) = waker
-        .block_on(socket.sendto_vectored(bufs, addr.clone(), 0).extract())
-        .expect("failed to sendto");
+        .block_on(socket.send_to_vectored(bufs, local_addr, 0).extract())
+        .expect("failed to send_to");
     assert!(buf[2] == "Mars!");
     assert_eq!(n, DATA2.len());
 
@@ -1606,7 +1476,7 @@ fn sendto_vectored_extractor() {
 }
 
 #[test]
-fn sendto_vectored_zc_extractor() {
+fn send_to_vectored_zc_extractor() {
     require_kernel!(6, 1);
 
     let sq = test_queue();
@@ -1614,19 +1484,15 @@ fn sendto_vectored_zc_extractor() {
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
 
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
-    let addr = addr_storage(&local_addr);
     let (bufs, n) = waker
-        .block_on(socket.sendto_vectored_zc(bufs, addr.clone(), 0).extract())
-        .expect("failed to sendto");
+        .block_on(socket.send_to_vectored_zc(bufs, local_addr, 0).extract())
+        .expect("failed to send_to");
     assert!(bufs[0] == "Hello");
     assert_eq!(n, DATA2.len());
 
@@ -1646,16 +1512,12 @@ fn shutdown() {
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
+    let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
     let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
     waker
-        .block_on(stream.connect(addr))
+        .block_on(stream.connect(local_addr))
         .expect("failed to connect");
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
@@ -1752,24 +1614,6 @@ fn set_socket_option() {
         .unwrap();
     assert_eq!(linger.l_onoff, got_linger.l_onoff);
     assert_eq!(linger.l_linger, got_linger.l_linger);
-}
-
-fn addr_storage(address: &SocketAddrV4) -> libc::sockaddr_in {
-    // SAFETY: a `sockaddr_in` of all zeros is valid.
-    let mut storage: libc::sockaddr_in = unsafe { mem::zeroed() };
-    storage.sin_family = libc::AF_INET as libc::sa_family_t;
-    storage.sin_port = address.port().to_be();
-    storage.sin_addr = libc::in_addr {
-        s_addr: u32::from_ne_bytes(address.ip().octets()),
-    };
-    storage
-}
-
-fn from_storage(addr: libc::sockaddr_in) -> SocketAddrV4 {
-    assert!(addr.sin_family as libc::c_int == libc::AF_INET);
-    let ip = Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes());
-    let port = u16::from_be(addr.sin_port);
-    SocketAddrV4::new(ip, port)
 }
 
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
