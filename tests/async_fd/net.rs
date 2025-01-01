@@ -806,7 +806,7 @@ fn recv_from() {
         .expect("failed to send data");
 
     // Receive some data.
-    let (buf, address, flags) = waker
+    let (buf, address, flags): (_, SocketAddr, _) = waker
         .block_on(socket.recv_from(Vec::with_capacity(DATA1.len() + 1), 0))
         .expect("failed to receive");
     assert_eq!(buf, DATA1);
@@ -838,7 +838,7 @@ fn recv_from_read_buf_pool() {
         .expect("failed to send data");
 
     // Receive some data.
-    let (buf, address, flags) =
+    let (buf, address, flags): (_, SocketAddr, _) =
         block_on(&mut ring, socket.recv_from(buf_pool.get(), 0)).expect("failed to receive");
     assert_eq!(&*buf, DATA1);
     assert_eq!(address, local_addr);
@@ -868,7 +868,7 @@ fn recv_from_vectored() {
         Vec::with_capacity(2),
         Vec::with_capacity(7),
     ];
-    let (bufs, address, flags) = waker
+    let (bufs, address, flags): (_, SocketAddr, _) = waker
         .block_on(socket.recv_from_vectored(bufs, 0))
         .expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
@@ -1215,9 +1215,9 @@ fn send_all_vectored() {
     let n = client.read(&mut buf).unwrap();
     assert_eq!(n, 30);
     buf.resize(n, 0);
-    assert_eq!(buf[..10], BadBufSlice::DATA1);
-    assert_eq!(buf[10..20], BadBufSlice::DATA2);
-    assert_eq!(buf[20..], BadBufSlice::DATA3);
+    assert_eq!(&buf[..10], BadBufSlice::DATA1);
+    assert_eq!(&buf[10..20], BadBufSlice::DATA2);
+    assert_eq!(&buf[20..], BadBufSlice::DATA3);
 }
 
 #[test]
@@ -1250,9 +1250,9 @@ fn send_all_vectored_extract() {
     let n = client.read(&mut buf).unwrap();
     assert_eq!(n, 30);
     buf.resize(n, 0);
-    assert_eq!(buf[..10], BadBufSlice::DATA1);
-    assert_eq!(buf[10..20], BadBufSlice::DATA2);
-    assert_eq!(buf[20..], BadBufSlice::DATA3);
+    assert_eq!(&buf[..10], BadBufSlice::DATA1);
+    assert_eq!(&buf[10..20], BadBufSlice::DATA2);
+    assert_eq!(&buf[20..], BadBufSlice::DATA3);
 }
 
 #[test]
