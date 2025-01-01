@@ -10,6 +10,8 @@ use crate::op::{FdIter, FdOpExtract};
 use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
+pub(crate) use crate::unix::MsgHeader;
+
 pub(crate) struct SocketOp<D>(PhantomData<*const D>);
 
 impl<D: Descriptor> sys::Op for SocketOp<D> {
@@ -158,7 +160,7 @@ pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
-    type Resources = (B, Box<(libc::msghdr, [crate::io::IoMutSlice; N])>);
+    type Resources = (B, Box<(MsgHeader, [crate::io::IoMutSlice; N])>);
     type Args = libc::c_int; // flags
 
     fn fill_submission<D: Descriptor>(
@@ -180,7 +182,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
-        (bufs, resources.0.msg_flags)
+        (bufs, resources.0.flags())
     }
 }
 
@@ -191,7 +193,7 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
     type Resources = (
         B,
         // These types need a stable address for the duration of the operation.
-        Box<(libc::msghdr, crate::io::IoMutSlice, MaybeUninit<A::Storage>)>,
+        Box<(MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>)>,
     );
     type Args = libc::c_int; // flags
 
@@ -215,8 +217,8 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
         // recvmsg call.
         unsafe { buf.set_init(n as usize) };
         // SAFETY: kernel initialised the address for us.
-        let address = unsafe { A::init(resources.2, resources.0.msg_namelen) };
-        (buf, address, resources.0.msg_flags)
+        let address = unsafe { A::init(resources.2, resources.0.address_len()) };
+        (buf, address, resources.0.flags())
     }
 }
 
@@ -230,7 +232,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         B,
         // These types need a stable address for the duration of the operation.
         Box<(
-            libc::msghdr,
+            MsgHeader,
             [crate::io::IoMutSlice; N],
             MaybeUninit<A::Storage>,
         )>,
@@ -256,25 +258,21 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
         // SAFETY: kernel initialised the address for us.
-        let address = unsafe { A::init(resources.2, resources.0.msg_namelen) };
-        (bufs, address, resources.0.msg_flags)
+        let address = unsafe { A::init(resources.2, resources.0.address_len()) };
+        (bufs, address, resources.0.flags())
     }
 }
 
 fn fill_recvmsg_submission<A: SocketAddress, const N: usize>(
     fd: RawFd,
-    msg: &mut libc::msghdr,
+    msg: &mut MsgHeader,
     iovecs: &mut [crate::io::IoMutSlice; N],
     address: &mut MaybeUninit<A::Storage>,
     flags: libc::c_int,
     submission: &mut sq::Submission,
 ) {
-    let (ptr, length) = unsafe { A::as_mut_ptr(address) };
-    msg.msg_name = ptr.cast();
-    msg.msg_namelen = length;
-    // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
-    msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
-    msg.msg_iovlen = N;
+    // SAFETY: `address` and `iovecs` outlive `msg`.
+    unsafe { msg.init_recv::<A>(address, iovecs) };
 
     submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
     submission.0.fd = fd;
@@ -345,7 +343,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> sys::FdOp for SendMsgOp<B
     type Resources = (
         B,
         // These types need a stable address for the duration of the operation.
-        Box<(libc::msghdr, [crate::io::IoSlice; N], A::Storage)>,
+        Box<(MsgHeader, [crate::io::IoSlice; N], A::Storage)>,
     );
     type Args = (SendCall, libc::c_int); // send_op, flags
 
@@ -357,12 +355,8 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> sys::FdOp for SendMsgOp<B
         submission: &mut sq::Submission,
     ) {
         let (msg, iovecs, address) = &mut **resources;
-        let (ptr, length) = unsafe { A::as_ptr(address) };
-        msg.msg_name = ptr.cast_mut().cast();
-        msg.msg_namelen = length;
-        // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
-        msg.msg_iov = ptr::from_mut(&mut *iovecs).cast();
-        msg.msg_iovlen = N;
+        // SAFETY: `address` and `iovecs` outlive `msg`.
+        unsafe { msg.init_send::<A>(address, iovecs) };
 
         submission.0.opcode = match *send_op {
             SendCall::Normal => libc::IORING_OP_SENDMSG as u8,

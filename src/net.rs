@@ -22,6 +22,7 @@ use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
+use crate::sys::net::MsgHeader;
 use crate::{man_link, sys, SubmissionQueue};
 
 /// Creates a new socket.
@@ -108,9 +109,8 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMutSlice<N>,
     {
-        // SAFETY: zeroed `msghdr` is valid.
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let resources = unsafe { Box::new((mem::zeroed(), iovecs)) };
+        let resources = Box::new((MsgHeader::empty(), iovecs));
         RecvVectored(FdOperation::new(self, (bufs, resources), flags))
     }
 
@@ -143,8 +143,7 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
-        // SAFETY: zeroed `msghdr` is valid.
-        let resources = Box::new((unsafe { mem::zeroed() }, iovec, MaybeUninit::uninit()));
+        let resources = Box::new((MsgHeader::empty(), iovec, MaybeUninit::uninit()));
         RecvFrom(FdOperation::new(self, (buf, resources), flags))
     }
 
@@ -160,8 +159,7 @@ impl<D: Descriptor> AsyncFd<D> {
         A: SocketAddress,
     {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        // SAFETY: zeroed `msghdr` is valid.
-        let resources = Box::new((unsafe { mem::zeroed() }, iovecs, MaybeUninit::uninit()));
+        let resources = Box::new((MsgHeader::empty(), iovecs, MaybeUninit::uninit()));
         RecvFromVectored(FdOperation::new(self, (bufs, resources), flags))
     }
 
@@ -369,8 +367,7 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         let iovecs = unsafe { bufs.as_iovecs() };
         let address = address.into_storage();
-        // SAFETY: zeroed `msghdr` is valid.
-        let resources = unsafe { Box::new((mem::zeroed(), iovecs, address)) };
+        let resources = Box::new((MsgHeader::empty(), iovecs, address));
         SendMsg(FdOperation::new(self, (bufs, resources), (send_op, flags)))
     }
 
@@ -725,8 +722,7 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> SendAllVectored<'fd, B,
                     return Poll::Ready(Ok(bufs));
                 }
 
-                // SAFETY: zeroed `msghdr` is valid.
-                let resources = unsafe { Box::new((mem::zeroed(), iovecs, NoAddress)) };
+                let resources = Box::new((MsgHeader::empty(), iovecs, NoAddress));
                 send.set(
                     SendMsg(FdOperation::new(
                         send.fut.0.fd(),
@@ -1031,7 +1027,9 @@ impl private::SocketAddress for NoAddress {
         (ptr::null_mut(), 0)
     }
 
-    unsafe fn as_mut_ptr(_: &mut MaybeUninit<Self>) -> (*mut libc::sockaddr, libc::socklen_t) {
+    unsafe fn as_mut_ptr(
+        _: &mut MaybeUninit<Self::Storage>,
+    ) -> (*mut libc::sockaddr, libc::socklen_t) {
         // NOTE: this goes against the requirements of `as_mut_ptr`.
         (ptr::null_mut(), 0)
     }
