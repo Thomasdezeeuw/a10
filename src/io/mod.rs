@@ -163,7 +163,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufMutSlice<N>,
     {
-        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let iovecs = Box::new(unsafe { bufs.as_iovecs_mut() });
         ReadVectored(FdOperation::new(self, (bufs, iovecs), offset))
     }
 
@@ -266,7 +266,7 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: BufSlice<N>,
     {
-        let iovecs = unsafe { bufs.as_iovecs() };
+        let iovecs = Box::new(unsafe { bufs.as_iovecs() });
         WriteVectored(FdOperation::new(self, (bufs, iovecs), offset))
     }
 
@@ -638,7 +638,7 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> WriteAllVectored<'fd, B
                 write.set(
                     WriteVectored(FdOperation::new(
                         write.fut.0.fd(),
-                        (bufs, iovecs),
+                        (bufs, Box::new(iovecs)),
                         this.offset,
                     ))
                     .extract(),
