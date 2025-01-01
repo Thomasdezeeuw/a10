@@ -153,6 +153,7 @@ impl IoMutSlice {
     }
 
     #[doc(hidden)] // Used by testing.
+    #[allow(clippy::len_without_is_empty)]
     pub const fn len(&self) -> usize {
         self.0.len()
     }
