@@ -63,8 +63,12 @@ impl AsyncFd<File> {
     /// [`with_direct_descriptors`]: crate::Config::with_direct_descriptors
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
-    pub const fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
-        ToDirect(FdOperation::new(self, (), ()))
+    pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
+        // The `fd` needs to be valid until the operation is complete, so we
+        // need to heap allocate it so we can delay it's allocation in case of
+        // an early drop.
+        let fd = Box::new(self.fd());
+        ToDirect(FdOperation::new(self, fd, ()))
     }
 }
 
@@ -97,13 +101,13 @@ struct ToDirectOp;
 
 impl sys::FdOp for ToDirectOp {
     type Output = AsyncFd<Direct>;
-    type Resources = ();
+    type Resources = Box<RawFd>;
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
-        (): &mut Self::Resources,
+        _: &AsyncFd<D>,
+        fd: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
@@ -113,21 +117,20 @@ impl sys::FdOp for ToDirectOp {
             off: libc::IORING_FILE_INDEX_ALLOC as _,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            // SAFETY: this is safe because OwnedFd has `repr(transparent)` and
-            // is safe to use in FFI per it's docs.
-            addr: ptr::from_ref(fd.fd_ref()).addr() as _,
+            addr: ptr::from_ref(&**fd).addr() as _,
         };
         submission.0.len = 1;
     }
 
     fn map_ok<D: Descriptor>(
         ofd: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, dfd): cq::OpReturn,
+        fd: Self::Resources,
+        (_, n): cq::OpReturn,
     ) -> Self::Output {
+        debug_assert!(n == 1);
         let sq = ofd.sq.clone();
-        // SAFETY: the kernel ensures that `dfd` is valid.
-        unsafe { AsyncFd::from_raw(dfd as _, sq) }
+        // SAFETY: the kernel ensures that `fd` is valid.
+        unsafe { AsyncFd::from_raw(*fd, sq) }
     }
 }
 

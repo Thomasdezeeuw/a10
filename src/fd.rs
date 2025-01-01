@@ -108,11 +108,6 @@ impl<D: Descriptor> AsyncFd<D> {
         self.fd.as_raw_fd()
     }
 
-    /// Returns a reference to the `OwnedFd`.
-    pub(crate) fn fd_ref(&self) -> &OwnedFd {
-        &self.fd
-    }
-
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
     pub(crate) const fn sq(&self) -> &SubmissionQueue {
         &self.sq
