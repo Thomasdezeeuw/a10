@@ -57,7 +57,7 @@ impl IoSlice {
     }
 
     pub(crate) fn set_len(&mut self, new_len: usize) {
-        debug_assert!(self.0.iov_len <= new_len);
+        debug_assert!(self.0.iov_len >= new_len);
         self.0.iov_len = new_len;
     }
 }
