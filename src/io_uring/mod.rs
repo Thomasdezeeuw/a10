@@ -69,16 +69,9 @@ pub(crate) struct Shared {
     /// Used by [`Completions`] to determine the number of submissions to
     /// submit.
     pending_tail: AtomicU32,
-
-    // NOTE: the following two fields are constant.
-    /// Number of entries in the queue.
-    len: u32,
-    /// Mask used to index into the `sqes` queue.
-    ring_mask: u32,
     /// True if we're using a kernel thread to do submission polling, i.e. if
     /// `IORING_SETUP_SQPOLL` is enabled.
     kernel_thread: bool,
-
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic/synchronised access.
     /// Flags set by the kernel to communicate state information.
@@ -91,6 +84,10 @@ pub(crate) struct Shared {
     ///
     /// This pointer is also used in the `unmmap` call.
     entries: *mut sq::Submission,
+    /// Number of `entries`.
+    entries_len: u32,
+    /// Mask used to index into the `entries` queue.
+    entries_mask: u32,
     /// Variable used to get an index into `array`. The lock must be held while
     /// writing into `array` to prevent race conditions with other threads.
     array_index: Mutex<u32>,
@@ -105,11 +102,6 @@ pub(crate) struct Shared {
 
 impl Shared {
     pub(crate) fn new(rfd: OwnedFd, parameters: &libc::io_uring_params) -> io::Result<Shared> {
-        /// Load a `u32` using relaxed ordering from `ptr`.
-        unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-            (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed)
-        }
-
         let submission_queue_size =
             parameters.sq_off.array + parameters.sq_entries * (size_of::<libc::__u32>() as u32);
         let submission_queue = mmap(
@@ -131,6 +123,14 @@ impl Shared {
             _ = munmap(submission_queue, submission_queue_size as usize); // Can't handle two errors.
         })?;
 
+        let entries_len = unsafe {
+            load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize))
+        };
+        debug_assert!(entries_len == parameters.sq_entries);
+        let entries_mask =
+            unsafe { load_atomic_u32(submission_queue.add(parameters.sq_off.ring_mask as usize)) };
+        debug_assert!(entries_mask == parameters.sq_entries - 1);
+
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
         // ensures all of this stuff is set up for us with the mmap calls above.
         #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
@@ -139,21 +139,16 @@ impl Shared {
                 rfd,
                 ptr: submission_queue,
                 size: submission_queue_size,
-
                 pending_tail: AtomicU32::new(0),
-                // Fields are constant, so we load them once.
-                len: load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize)),
-                ring_mask: load_atomic_u32(
-                    submission_queue.add(parameters.sq_off.ring_mask as usize),
-                ),
                 kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
                 // Fields are shared with the kernel.
                 kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
                 flags: submission_queue
                     .add(parameters.sq_off.flags as usize)
                     .cast(),
-
                 entries: submission_queue_entries.cast(),
+                entries_len,
+                entries_mask,
                 array_index: Mutex::new(0),
                 array: submission_queue
                     .add(parameters.sq_off.array as usize)
@@ -241,7 +236,7 @@ unsafe impl Sync for Shared {}
 impl Drop for Shared {
     fn drop(&mut self) {
         let ptr = self.entries.cast();
-        let size = self.len as usize * size_of::<sq::Submission>();
+        let size = self.entries_len as usize * size_of::<sq::Submission>();
         if let Err(err) = munmap(ptr, size) {
             log::warn!(ptr:? = ptr, size = size; "error unmapping io_uring entries: {err}");
         }
@@ -400,4 +395,9 @@ pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<(
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
+}
+
+/// Load a `u32` using relaxed ordering from `ptr`.
+unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
+    (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed)
 }

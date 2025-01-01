@@ -6,7 +6,7 @@ use std::{fmt, io, ptr};
 
 use crate::msg::MsgData;
 use crate::op::OpResult;
-use crate::sys::{self, libc, mmap, munmap, Shared};
+use crate::sys::{self, libc, load_atomic_u32, mmap, munmap, Shared};
 use crate::{syscall, OperationId};
 
 #[derive(Debug)]
@@ -24,6 +24,10 @@ pub(crate) struct Completions {
     /// Array of `len` completion entries shared with the kernel. The kernel
     /// modifies this array, we're only reading from it.
     entries: *const Completion,
+    /// Number of `entries`.
+    entries_len: u32,
+    /// Mask used to index into the `entries` queue.
+    entries_mask: u32,
 }
 
 impl Completions {
@@ -41,6 +45,14 @@ impl Completions {
             libc::off_t::from(libc::IORING_OFF_CQ_RING),
         )?;
 
+        let entries_len = unsafe {
+            load_atomic_u32(completion_queue.add(parameters.cq_off.ring_entries as usize))
+        };
+        debug_assert!(entries_len == parameters.cq_entries);
+        let entries_mask =
+            unsafe { load_atomic_u32(completion_queue.add(parameters.cq_off.ring_mask as usize)) };
+        debug_assert!(entries_mask == parameters.cq_entries - 1);
+
         unsafe {
             Ok(Completions {
                 ptr: completion_queue,
@@ -49,6 +61,8 @@ impl Completions {
                 head: completion_queue.add(parameters.cq_off.head as usize).cast(),
                 tail: completion_queue.add(parameters.cq_off.tail as usize).cast(),
                 entries: completion_queue.add(parameters.cq_off.cqes as usize).cast(),
+                entries_len,
+                entries_mask,
             })
         }
     }
@@ -138,7 +152,7 @@ impl crate::cq::Completions for Completions {
             local_head: head,
             head: self.head,
             tail,
-            ring_mask: shared.ring_mask,
+            mask: self.entries_mask,
             _lifetime: PhantomData,
         })
     }
@@ -150,7 +164,7 @@ impl crate::cq::Completions for Completions {
         // be outdated.
         let kernel_read = unsafe { (*shared.kernel_read).load(Ordering::Relaxed) };
         let pending_tail = shared.pending_tail.load(Ordering::Relaxed);
-        (shared.len - (pending_tail - kernel_read)) as usize
+        (self.entries_len - (pending_tail - kernel_read)) as usize
     }
 }
 
@@ -178,8 +192,8 @@ struct CompletionsIter<'a> {
     head: *mut AtomicU32,
     /// Tail of `entries`, i.e. number of completions the kernel wrote.
     tail: u32,
-    /// Same as [`Completions.ring_mask`].
-    ring_mask: u32,
+    /// Same as [`Completions.entries_mask`].
+    mask: u32,
     /// We're depend on the lifetime of [`sys::Shared`].
     _lifetime: PhantomData<&'a sys::Shared>,
 }
@@ -188,14 +202,12 @@ impl<'a> Iterator for CompletionsIter<'a> {
     type Item = &'a Completion;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let head = self.local_head;
-        let tail = self.tail;
-        if head < tail {
-            // SAFETY: the `ring_mask` ensures we can never get an `idx` larger
-            // then the size of the queue. We checked above that the kernel has
+        if self.local_head < self.tail {
+            // SAFETY: the `mask` ensures we can never get an `idx` larger then
+            // the size of the queue. We checked above that the kernel has
             // written the struct (and isn't writing to now) os we can safely
             // read from it.
-            let idx = (head & self.ring_mask) as usize;
+            let idx = (self.local_head & self.mask) as usize;
             let completion = unsafe { &*self.entries.add(idx) };
             self.local_head += 1;
             Some(completion)
@@ -270,7 +282,7 @@ impl crate::cq::Event for Completion {
             // Zero copy completed, we can now mark ourselves as done.
             OperationState::Single { .. } if self.is_notification() => true,
             OperationState::Single { result } => {
-                debug_assert!(result.result == -1);
+                debug_assert!(result.result == i32::MIN);
                 debug_assert!(result.flags == u16::MAX);
                 *result = completion;
                 // For zero copy this may be false, in which case we get a
@@ -319,7 +331,7 @@ impl crate::cq::OperationState for OperationState {
         OperationState::Single {
             result: CompletionResult {
                 flags: u16::MAX,
-                result: -1,
+                result: i32::MIN,
             },
         }
     }

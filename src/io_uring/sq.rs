@@ -38,7 +38,7 @@ impl crate::sq::Submissions for Submissions {
         let tail = shared
             .pending_tail
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                if tail - kernel_read < shared.len {
+                if tail - kernel_read < shared.entries_len {
                     // Still an entry available.
                     Some(tail.wrapping_add(1))
                 } else {
@@ -55,7 +55,7 @@ impl crate::sq::Submissions for Submissions {
         // SAFETY: the `ring_mask` ensures we can never get an index larger
         // then the size of the queue. Above we've already ensured that
         // we're the only thread  with mutable access to the entry.
-        let submission_index = tail & shared.ring_mask;
+        let submission_index = tail & shared.entries_mask;
         let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
 
         // Let the caller fill the `submission`.
@@ -91,7 +91,7 @@ impl crate::sq::Submissions for Submissions {
             //                                    | `shared.tail.fetch_add` to 2.
 
             let mut array_index = shared.array_index.lock().unwrap();
-            let idx = (*array_index & shared.ring_mask) as usize;
+            let idx = (*array_index & shared.entries_mask) as usize;
             // SAFETY: `idx` is masked above to be within the correct bounds.
             unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
             // SAFETY: we filled the array above.
