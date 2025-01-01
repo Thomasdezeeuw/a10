@@ -11,8 +11,8 @@ use std::panic::{self, AssertUnwindSafe};
 use a10::fd::{AsyncFd, Descriptor, Direct, File};
 use a10::fs::{Open, OpenOptions};
 use a10::io::{
-    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, ReadBuf, ReadBufPool, Splice,
-    Stderr, Stdout,
+    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, IoMutSlice, IoSlice, ReadBuf,
+    ReadBufPool, Splice, Stderr, Stdout,
 };
 use a10::{Extract, Ring, SubmissionQueue};
 
@@ -497,9 +497,9 @@ fn write_all_vectored() {
     waker.block_on(w.write_all_vectored(buf)).unwrap();
 
     let buf = waker.block_on(r.read(Vec::with_capacity(31))).unwrap();
-    assert_eq!(buf[..10], BadBufSlice::DATA1);
-    assert_eq!(buf[10..20], BadBufSlice::DATA2);
-    assert_eq!(buf[20..], BadBufSlice::DATA3);
+    assert_eq!(buf[..10], *BadBufSlice::DATA1);
+    assert_eq!(buf[10..20], *BadBufSlice::DATA2);
+    assert_eq!(buf[20..], *BadBufSlice::DATA3);
 }
 
 #[test]
@@ -528,9 +528,9 @@ fn write_all_vectored_at_extract() {
     waker.block_on(file.write_all_vectored_at(buf, 5)).unwrap();
 
     let got = std::fs::read(&path).unwrap();
-    expected.extend_from_slice(BadBufSlice::DATA1.as_slice());
-    expected.extend_from_slice(BadBufSlice::DATA2.as_slice());
-    expected.extend_from_slice(BadBufSlice::DATA3.as_slice());
+    expected.extend_from_slice(BadBufSlice::DATA1);
+    expected.extend_from_slice(BadBufSlice::DATA2);
+    expected.extend_from_slice(BadBufSlice::DATA3);
     assert!(got == expected, "file can't be read back");
 }
 
@@ -542,33 +542,20 @@ pub(crate) struct BadBufSlice {
 }
 
 impl BadBufSlice {
-    pub(crate) const DATA1: [u8; 10] = [123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
-    pub(crate) const DATA2: [u8; 10] = [200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
-    pub(crate) const DATA3: [u8; 10] = [255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+    pub(crate) const DATA1: &'static [u8] = &[123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
+    pub(crate) const DATA2: &'static [u8] = &[200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
+    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
 }
 
 unsafe impl BufSlice<3> for BadBufSlice {
-    unsafe fn as_iovecs(&self) -> [libc::iovec; 3] {
+    unsafe fn as_iovecs(&self) -> [IoSlice; 3] {
         let calls = self.calls.get();
         self.calls.set(calls + 1);
-
-        fn cast(ptr: &[u8]) -> *mut libc::c_void {
-            ptr.as_ptr().cast_mut().cast()
-        }
-
+        let max_length = if calls == 0 { 5 } else { 10 };
         [
-            libc::iovec {
-                iov_base: cast(BadBufSlice::DATA1.as_slice()),
-                iov_len: 10,
-            },
-            libc::iovec {
-                iov_base: cast(BadBufSlice::DATA2.as_slice()),
-                iov_len: 10,
-            },
-            libc::iovec {
-                iov_base: cast(BadBufSlice::DATA3.as_slice()),
-                iov_len: if calls == 0 { 5 } else { 10 },
-            },
+            IoSlice::new(&Self::DATA1),
+            IoSlice::new(&Self::DATA2),
+            IoSlice::new(&&Self::DATA3[0..max_length]),
         ]
     }
 }
@@ -658,11 +645,11 @@ pub(crate) struct BadReadBufSlice {
 }
 
 unsafe impl BufMutSlice<2> for BadReadBufSlice {
-    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; 2] {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
         let mut iovecs = self.data.as_iovecs_mut();
-        if iovecs[0].iov_len >= 10 {
-            iovecs[0].iov_len = 10;
-            iovecs[1].iov_len = 5;
+        if iovecs[0].len() >= 10 {
+            iovecs[0].set_len(10);
+            iovecs[1].set_len(5);
         }
         iovecs
     }
@@ -672,7 +659,7 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
             return;
         }
 
-        if self.as_iovecs_mut()[0].iov_len == 10 {
+        if self.as_iovecs_mut()[0].len() == 10 {
             self.data[0].set_init(10);
             self.data[1].set_init(n - 10);
         } else {
@@ -712,7 +699,7 @@ struct GrowingBufSlice {
 }
 
 unsafe impl BufMutSlice<2> for GrowingBufSlice {
-    unsafe fn as_iovecs_mut(&mut self) -> [libc::iovec; 2] {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
         self.data.as_iovecs_mut()
     }
 
