@@ -1,5 +1,5 @@
-use std::net::{SocketAddr, SocketAddrV4};
-use std::{env, io, mem, str};
+use std::net::SocketAddr;
+use std::{env, io, str};
 
 use a10::net::socket;
 use a10::{AsyncFd, Ring, SubmissionQueue};
@@ -22,13 +22,8 @@ fn main() -> io::Result<()> {
 
     // Get an IPv4 address for the domain (using blocking I/O).
     let address = std::net::ToSocketAddrs::to_socket_addrs(&addr_host)?
-        .filter(SocketAddr::is_ipv4)
         .next()
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to lookup ip"))?;
-    let address = match address {
-        SocketAddr::V4(address) => address,
-        SocketAddr::V6(_) => unreachable!(),
-    };
 
     // Create our future that makes the request.
     let request_future = request(ring.submission_queue().clone(), &host, address);
@@ -50,7 +45,7 @@ fn main() -> io::Result<()> {
 }
 
 /// Make a HTTP GET request to `address`.
-async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::Result<Vec<u8>> {
+async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Result<Vec<u8>> {
     // Create a new TCP, IPv4 socket.
     let domain = libc::AF_INET;
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
@@ -59,14 +54,13 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     let socket: AsyncFd = socket(sq, domain, r#type, protocol, flags).await?;
 
     // Connect.
-    let addr = to_sockaddr_storage(address);
-    socket.connect(addr).await?;
+    socket.connect(address).await?;
 
     // Send a HTTP GET / request to the socket.
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
     let version = env!("CARGO_PKG_VERSION");
     let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
-    socket.send(request, 0).await?;
+    socket.send_all(request, 0).await?;
 
     // Receiving the response.
     let recv_buf = socket.recv(Vec::with_capacity(8192), 0).await?;
@@ -76,15 +70,4 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddrV4) -> io::
     socket.close().await?;
 
     Ok(recv_buf)
-}
-
-fn to_sockaddr_storage(addr: SocketAddrV4) -> libc::sockaddr_in {
-    // SAFETY: a `sockaddr_in` of all zeros is valid.
-    let mut storage: libc::sockaddr_in = unsafe { mem::zeroed() };
-    storage.sin_family = libc::AF_INET as _;
-    storage.sin_port = addr.port().to_be();
-    storage.sin_addr = libc::in_addr {
-        s_addr: u32::from_ne_bytes(addr.ip().octets()),
-    };
-    storage
 }
