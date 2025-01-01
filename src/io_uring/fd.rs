@@ -16,12 +16,12 @@ pub enum Direct {}
 impl Descriptor for Direct {}
 
 impl crate::fd::private::Descriptor for Direct {
-    fn use_flags(submission: &mut sys::sq::Submission) {
+    fn use_flags(submission: &mut sq::Submission) {
         submission.0.flags |= libc::IOSQE_FIXED_FILE;
     }
 
     #[allow(clippy::cast_sign_loss)]
-    fn create_flags(submission: &mut sys::sq::Submission) {
+    fn create_flags(submission: &mut sq::Submission) {
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             file_index: libc::IORING_FILE_INDEX_ALLOC as _,
         };
@@ -37,6 +37,13 @@ impl crate::fd::private::Descriptor for Direct {
 
     fn fmt_dbg() -> &'static str {
         "direct descriptor"
+    }
+
+    fn close_flags(fd: RawFd, submission: &mut sq::Submission) {
+        submission.0.opcode = libc::IORING_OP_CLOSE as u8;
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            file_index: fd as _,
+        };
     }
 
     fn close(fd: RawFd) -> io::Result<()> {
@@ -164,12 +171,4 @@ impl sys::FdOp for ToFdOp {
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as _, sq) }
     }
-}
-
-pub(crate) fn fill_close_submission<D: Descriptor>(
-    fd: &AsyncFd<D>,
-    submission: &mut sys::sq::Submission,
-) {
-    submission.0.opcode = libc::IORING_OP_CLOSE as u8;
-    submission.0.fd = fd.fd();
 }
