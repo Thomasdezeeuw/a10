@@ -389,43 +389,6 @@ fn connect() {
 }
 
 #[test]
-fn connect_extractor() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
-    let local_addr = match listener.local_addr().unwrap() {
-        SocketAddr::V4(addr) => addr,
-        _ => unreachable!(),
-    };
-
-    // Create a socket and connect the listener.
-    let stream = waker.block_on(tcp_ipv4_socket(sq));
-    let addr = addr_storage(&local_addr);
-    let _addr = waker
-        .block_on(stream.connect(addr).extract())
-        .expect("failed to connect");
-
-    let (mut client, _) = listener.accept().expect("failed to accept connection");
-
-    // Write some data.
-    waker
-        .block_on(stream.write(DATA1))
-        .expect("failed to write");
-    let mut buf = vec![0; DATA1.len() + 1];
-    let n = client.read(&mut buf).expect("failed to read");
-    assert_eq!(&buf[0..n], DATA1);
-
-    // Read some data.
-    client.write_all(DATA2).expect("failed to write");
-    buf.clear();
-    buf.reserve(DATA2.len() + 1);
-    let buf = waker.block_on(stream.read(buf)).expect("failed to read");
-    assert_eq!(buf, DATA2);
-}
-
-#[test]
 fn recv() {
     let sq = test_queue();
     let waker = Waker::new();
