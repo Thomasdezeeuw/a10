@@ -1,5 +1,6 @@
 //! Completion Queue.
 
+use std::cmp::min;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -76,8 +77,8 @@ impl<I: Implementation> Queue<I> {
     // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
     #[allow(clippy::iter_with_drain, clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self) {
-        let max = self.completions.queue_space(&self.shared.data);
-        if max == 0 {
+        let queue_space = self.completions.queue_space(&self.shared.data);
+        if queue_space == 0 {
             return;
         }
 
@@ -88,7 +89,7 @@ impl<I: Implementation> Queue<I> {
 
         let mut wakers = mem::take(&mut *blocked_futures);
         drop(blocked_futures); // Unblock other threads.
-        for waker in wakers.drain(..max) {
+        for waker in wakers.drain(..min(queue_space, wakers.len())) {
             waker.wake();
         }
 
