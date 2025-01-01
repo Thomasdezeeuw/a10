@@ -283,7 +283,7 @@ fn message_sending() {
     // Send some messages.
     try_send_msg(&sq, msg_token, DATA1).unwrap();
     waker
-        .block_on(pin!(send_msg(&sq, msg_token, DATA2)))
+        .block_on(pin!(send_msg(sq, msg_token, DATA2)))
         .unwrap();
 
     assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA1));
@@ -302,8 +302,8 @@ fn test_oneshot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let sender_write = pin!(oneshot_poll(&sq, sender.as_fd(), libc::POLLOUT as _));
-    let receiver_read = pin!(oneshot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
+    let sender_write = pin!(oneshot_poll(sq.clone(), sender.as_fd(), libc::POLLOUT as _));
+    let receiver_read = pin!(oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _));
 
     let event = waker.block_on(sender_write).unwrap();
     assert!(event.is_writable());
@@ -323,7 +323,7 @@ fn drop_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = oneshot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
 
     start_op(&mut receiver_read);
 
@@ -339,7 +339,7 @@ fn cancel_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = oneshot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
 
     cancel(&waker, &mut receiver_read, start_op);
     expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
@@ -356,7 +356,7 @@ fn test_multishot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _));
+    let mut receiver_read = pin!(multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _));
     start_mulitshot_op(&mut receiver_read);
 
     let mut buf = vec![0; DATA.len() + 1];
@@ -382,7 +382,7 @@ fn cancel_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
 
     cancel(&waker, &mut receiver_read, start_mulitshot_op);
     assert!(waker.block_on(next(receiver_read)).is_none());
@@ -395,7 +395,7 @@ fn drop_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = multishot_poll(&sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
 
     start_mulitshot_op(&mut receiver_read);
 
