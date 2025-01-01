@@ -507,14 +507,17 @@ impl<D: Descriptor> sys::Op for CloseOp<D> {
         fd: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        submission.0.opcode = libc::IORING_OP_CLOSE as u8;
-        submission.0.fd = *fd;
-        D::use_flags(submission);
+        D::close_flags(*fd, submission);
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
+}
+
+pub(crate) fn close_file_fd(fd: RawFd, submission: &mut sys::sq::Submission) {
+    submission.0.opcode = libc::IORING_OP_CLOSE as u8;
+    submission.0.fd = fd;
 }
 
 /// Size of a single page, often 4096.
