@@ -206,8 +206,8 @@ fn read_vectored_array() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<ReadVectored<Vec<u8>, 2>>();
-    is_sync::<ReadVectored<Vec<u8>, 1>>();
+    is_send::<ReadVectored<[Vec<u8>; 2], 2>>();
+    is_sync::<ReadVectored<[Vec<u8>; 2], 2>>();
 
     let test_file = &LOREM_IPSUM_50;
     let path = test_file.path.into();
@@ -344,8 +344,8 @@ fn write_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<WriteVectored<Vec<u8>, 1>>();
-    is_sync::<WriteVectored<Vec<u8>, 1>>();
+    is_send::<WriteVectored<[Vec<u8>; 2], 2>>();
+    is_sync::<WriteVectored<[Vec<u8>; 2], 2>>();
 
     let mut path = temp_dir();
     path.push("write_vectored");
