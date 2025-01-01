@@ -41,15 +41,17 @@ impl<D: Descriptor> sys::Op for OpenOp<D> {
 }
 
 impl<D: Descriptor> OpExtract for OpenOp<D> {
-    type ExtractOutput = PathBuf;
+    type ExtractOutput = (AsyncFd<D>, PathBuf);
 
     fn map_ok_extract(
-        _: &SubmissionQueue,
+        sq: &SubmissionQueue,
         path: Self::Resources,
-        (_, n): Self::OperationOutput,
+        (_, fd): Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        debug_assert!(n == 0);
-        path_from_cstring(path)
+        // SAFETY: kernel ensures that `fd` is valid.
+        let fd = unsafe { AsyncFd::from_raw(fd as _, sq.clone()) };
+        let path = path_from_cstring(path);
+        (fd, path)
     }
 }
 
