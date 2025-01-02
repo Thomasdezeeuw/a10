@@ -171,7 +171,6 @@ fd_operation!(
     pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<Box<libc::signalfd_siginfo>>;
 );
 
-
 /// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
 #[repr(transparent)]
 struct SignalSet(libc::sigset_t);
