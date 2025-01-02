@@ -285,11 +285,61 @@ fn fill_recvmsg_submission<A: SocketAddress, const N: usize>(
     submission.0.len = 1;
 }
 
-pub(crate) struct SendOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
+pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
-impl<B: Buf, A: SocketAddress> sys::FdOp for SendOp<B, A> {
+impl<B: Buf> sys::FdOp for SendOp<B> {
     type Output = usize;
-    type Resources = (B, A::Storage);
+    type Resources = Buffer<B>;
+    type Args = (SendCall, libc::c_int); // send_op, flags
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        buf: &mut Self::Resources,
+        (send_op, flags): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = match *send_op {
+            SendCall::Normal => libc::IORING_OP_SEND as u8,
+            SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
+        };
+        let (buf_ptr, buf_length) = unsafe { buf.buf.parts() };
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: buf_ptr.addr() as u64,
+        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            msg_flags: *flags as _,
+        };
+        submission.0.len = buf_length;
+    }
+
+    fn map_ok<D: Descriptor>(
+        _: &AsyncFd<D>,
+        _: Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        n as usize
+    }
+}
+
+impl<B: Buf> FdOpExtract for SendOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract<D: Descriptor>(
+        _: &AsyncFd<D>,
+        buf: Self::Resources,
+        (_, n): Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (buf.buf, n as usize)
+    }
+}
+
+pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
+
+impl<B: Buf, A: SocketAddress> sys::FdOp for SendToOp<B, A> {
+    type Output = usize;
+    type Resources = (B, Box<A::Storage>);
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     #[allow(clippy::cast_sign_loss)]
@@ -303,16 +353,18 @@ impl<B: Buf, A: SocketAddress> sys::FdOp for SendOp<B, A> {
             SendCall::Normal => libc::IORING_OP_SEND as u8,
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
+        let (buf_ptr, buf_length) = unsafe { buf.parts() };
+        let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         submission.0.fd = fd.fd();
-        let (address, address_length) = unsafe { A::as_ptr(address) };
-        submission.0.__bindgen_anon_1.addr2 = address as _;
-        let (ptr, length) = unsafe { buf.parts() };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
+        submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: buf_ptr.addr() as u64,
+        };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
         };
-        submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as _;
-        submission.0.len = length;
+        submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as u16;
+        submission.0.len = buf_length;
     }
 
     fn map_ok<D: Descriptor>(
@@ -324,7 +376,7 @@ impl<B: Buf, A: SocketAddress> sys::FdOp for SendOp<B, A> {
     }
 }
 
-impl<B: Buf, A: SocketAddress> FdOpExtract for SendOp<B, A> {
+impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
     type ExtractOutput = (B, usize);
 
     fn map_ok_extract<D: Descriptor>(
