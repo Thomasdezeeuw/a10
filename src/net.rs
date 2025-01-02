@@ -169,8 +169,8 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
-        let resources = (buf, NoAddress);
-        Send(FdOperation::new(self, resources, (SendCall::Normal, flags)))
+        let buf = Buffer { buf };
+        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
     }
 
     /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
@@ -189,9 +189,8 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         B: Buf,
     {
-        let resources = (buf, NoAddress);
-        let args = (SendCall::ZeroCopy, flags);
-        Send(FdOperation::new(self, resources, args))
+        let buf = Buffer { buf };
+        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
@@ -300,7 +299,7 @@ impl<D: Descriptor> AsyncFd<D> {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, address.into_storage());
+        let resources = (buf, Box::new(address.into_storage()));
         let args = (SendCall::Normal, flags);
         SendTo(FdOperation::new(self, resources, args))
     }
@@ -319,7 +318,7 @@ impl<D: Descriptor> AsyncFd<D> {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, address.into_storage());
+        let resources = (buf, Box::new(address.into_storage()));
         let args = (SendCall::ZeroCopy, flags);
         SendTo(FdOperation::new(self, resources, args))
     }
@@ -495,7 +494,7 @@ fd_operation! {
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::send_to`] and [`AsyncFd::send_to_zc`].
-    pub struct SendTo<B: Buf, A: SocketAddress>(sys::net::SendOp<B, A>) -> io::Result<usize>,
+    pub struct SendTo<B: Buf, A: SocketAddress>(sys::net::SendToOp<B, A>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::send_vectored`],
