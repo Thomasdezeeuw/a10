@@ -124,7 +124,7 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncFd")
             .field("fd", &self.fd())
-            .field("sq", &self.sq())
+            .field("sq", &"SubmissionQueue")
             .field("kind", &D::fmt_dbg())
             .finish()
     }
