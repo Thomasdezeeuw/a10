@@ -124,7 +124,7 @@ impl sys::FdOp for ToDirectOp {
             off: libc::IORING_FILE_INDEX_ALLOC as _,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_ref(&**fd).addr() as _,
+            addr: ptr::from_mut(&mut **fd).addr() as _,
         };
         submission.0.len = 1;
     }
