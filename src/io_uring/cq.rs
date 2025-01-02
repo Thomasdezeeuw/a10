@@ -280,7 +280,7 @@ impl crate::cq::Event for Completion {
         };
         match state {
             // Zero copy completed, we can now mark ourselves as done.
-            OperationState::Single { .. } if self.is_notification() => true,
+            OperationState::Single { .. } if self.is_notification() => false,
             OperationState::Single { result } => {
                 debug_assert!(result.result == i32::MIN);
                 debug_assert!(result.flags == u16::MAX);
