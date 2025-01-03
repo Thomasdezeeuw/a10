@@ -55,7 +55,7 @@ impl<I: Implementation> Queue<I> {
             log::trace!(id = id; "updating operation");
             let more_events = completion.update_state(&mut op.state);
             op.done = !more_events;
-            if op.dropped && !more_events {
+            if op.dropped && op.done {
                 // The Future was previously dropped so no one is waiting on the
                 // result. We can make the slot avaiable again.
                 *queued_op = None;
