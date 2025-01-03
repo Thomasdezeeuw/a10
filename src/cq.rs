@@ -33,26 +33,26 @@ impl<I: Implementation> Queue<I> {
         };
 
         for completion in completions {
-            log::trace!(completion:? = completion; "dequeued completion event");
             let id = completion.id();
+            log::trace!(id = id, completion:? = completion; "dequeued completion");
             let Some(queued_op) = self.shared.queued_ops.get(id) else {
                 if id == WAKE_ID {
                     /* Wake up only. */
                 } else if id == NO_COMPLETION_ID {
-                    log::warn!(completion:? = completion; "operation without completion failed");
+                    log::warn!(id = id; "operation without completion failed");
                 } else {
-                    log::trace!(completion:? = completion; "got completion for unknown operation");
+                    log::trace!(id = id; "got completion for unknown operation");
                 }
                 continue;
             };
 
             let mut queued_op = queued_op.lock().unwrap();
             let Some(op) = &mut *queued_op else {
-                log::debug!(completion:? = completion; "operation gone, but got completion event");
+                log::debug!(id = id; "operation gone, but got completion event");
                 continue;
             };
 
-            log::trace!(completion:? = completion; "updating operation");
+            log::trace!(id = id; "updating operation");
             let more_events = completion.update_state(&mut op.state);
             op.done = !more_events;
             if op.dropped && !more_events {
@@ -63,7 +63,7 @@ impl<I: Implementation> Queue<I> {
                 log::trace!(id = id; "marking slot as available");
                 self.shared.op_ids.make_available(id);
             } else {
-                log::trace!(completion:? = completion; "waking future");
+                log::trace!(id = id; "waking future");
                 op.waker.wake_by_ref();
             }
         }

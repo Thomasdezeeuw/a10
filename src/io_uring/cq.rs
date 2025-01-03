@@ -7,7 +7,7 @@ use std::{fmt, io, ptr};
 use crate::msg::MsgData;
 use crate::op::OpResult;
 use crate::sys::{self, libc, load_atomic_u32, mmap, munmap, Shared};
-use crate::{syscall, OperationId};
+use crate::{debug_detail, syscall, OperationId};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -251,10 +251,6 @@ impl Completion {
         self.0.flags & libc::IORING_CQE_F_BUFFER != 0
     }
 
-    const fn flags(&self) -> u16 {
-        (self.0.flags & ((1 << libc::IORING_CQE_BUFFER_SHIFT) - 1)) as u16
-    }
-
     /// Returns the operation flags that need to be passed to
     /// [`QueuedOperation`].
     const fn operation_flags(&self) -> u16 {
@@ -300,12 +296,21 @@ impl crate::cq::Event for Completion {
 
 impl fmt::Debug for Completion {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        debug_detail!(
+            bitset CompletionFlags(u32),
+            libc::IORING_CQE_F_BUFFER,
+            libc::IORING_CQE_F_MORE,
+            libc::IORING_CQE_F_SOCK_NONEMPTY,
+            libc::IORING_CQE_F_NOTIF,
+            libc::IORING_CQE_F_BUF_MORE,
+        );
+
         f.debug_struct("io_uring::Completion")
             .field("user_data", &self.0.user_data)
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.0.res)
-            .field("flags", &self.flags())
+            .field("flags", &CompletionFlags(self.0.flags))
             .field("operation_flags", &self.operation_flags())
             .finish()
     }
