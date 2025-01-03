@@ -231,30 +231,10 @@ impl<'a> Drop for CompletionsIter<'a> {
 pub(crate) struct Completion(libc::io_uring_cqe);
 
 impl Completion {
-    /// Returns the result of the operation.
-    const fn result(&self) -> i32 {
-        self.0.res
-    }
-
-    /// Return `true` if `IORING_CQE_F_MORE` is set.
-    const fn is_in_progress(&self) -> bool {
-        self.0.flags & libc::IORING_CQE_F_MORE != 0
-    }
-
-    /// Return `true` if `IORING_CQE_F_NOTIF` is set.
-    const fn is_notification(&self) -> bool {
-        self.0.flags & libc::IORING_CQE_F_NOTIF != 0
-    }
-
-    /// Return `true` if `IORING_CQE_F_BUFFER` is set.
-    const fn is_buffer_select(&self) -> bool {
-        self.0.flags & libc::IORING_CQE_F_BUFFER != 0
-    }
-
     /// Returns the operation flags that need to be passed to
     /// [`QueuedOperation`].
     const fn operation_flags(&self) -> u16 {
-        if self.is_buffer_select() {
+        if self.0.flags & libc::IORING_CQE_F_BUFFER != 0 {
             (self.0.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16
         } else {
             0
@@ -271,11 +251,11 @@ impl crate::cq::Event for Completion {
 
     fn update_state(&self, state: &mut Self::State) -> bool {
         let completion = CompletionResult {
-            result: self.result(),
+            result: self.0.res,
             flags: self.operation_flags(),
         };
         match state {
-            OperationState::Single { .. } if self.is_notification() => {
+            OperationState::Single { .. } if self.0.flags & libc::IORING_CQE_F_NOTIF != 0 => {
                 // Zero copy completed, we can now mark ourselves as done, not
                 // overwriting result.
             }
@@ -288,7 +268,9 @@ impl crate::cq::Event for Completion {
                 results.push(completion);
             }
         }
-        self.is_in_progress()
+        // IORING_CQE_F_MORE indicates that more completions are coming for this
+        // operation.
+        self.0.flags & libc::IORING_CQE_F_MORE != 0
     }
 }
 
