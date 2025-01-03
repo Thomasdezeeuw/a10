@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
-use std::{array, ptr};
+use std::{ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
@@ -171,7 +171,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
     ) {
         let (msg, iovecs) = &mut **resources;
         let address = &mut MaybeUninit::new(NoAddress);
-        fill_recvmsg_submission::<NoAddress, N>(fd.fd(), msg, iovecs, address, *flags, submission);
+        fill_recvmsg_submission::<NoAddress>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -204,8 +204,8 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
         submission: &mut sq::Submission,
     ) {
         let (msg, iovec, address) = &mut **resources;
-        let iovecs = array::from_mut(iovec);
-        fill_recvmsg_submission::<A, 1>(fd.fd(), msg, iovecs, address, *flags, submission);
+        let iovecs = slice::from_mut(&mut *iovec);
+        fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -246,7 +246,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
         submission: &mut sq::Submission,
     ) {
         let (msg, iovecs, address) = &mut **resources;
-        fill_recvmsg_submission::<A, N>(fd.fd(), msg, iovecs, address, *flags, submission);
+        fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok<D: Descriptor>(
@@ -263,10 +263,10 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
     }
 }
 
-fn fill_recvmsg_submission<A: SocketAddress, const N: usize>(
+fn fill_recvmsg_submission<A: SocketAddress>(
     fd: RawFd,
     msg: &mut MsgHeader,
-    iovecs: &mut [crate::io::IoMutSlice; N],
+    iovecs: &mut [crate::io::IoMutSlice],
     address: &mut MaybeUninit<A::Storage>,
     flags: libc::c_int,
     submission: &mut sq::Submission,
