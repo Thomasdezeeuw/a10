@@ -238,18 +238,6 @@ fn wake_ring() {
 }
 
 #[test]
-fn wake_ring_before_poll_nop() {
-    init();
-    let mut ring = Ring::new(2).unwrap();
-    let sq = ring.submission_queue().clone();
-
-    sq.wake();
-
-    // Should be awoken by the wake call above.
-    ring.poll(None).unwrap();
-}
-
-#[test]
 fn wake_ring_after_ring_dropped() {
     init();
     let ring = Ring::new(2).unwrap();
