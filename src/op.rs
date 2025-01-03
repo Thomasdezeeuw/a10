@@ -84,7 +84,7 @@ where
 
 impl<O: Op> Cancel for Operation<O> {
     fn try_cancel(&mut self) -> CancelResult {
-        if let Some(op_id) = self.state.op_id() {
+        if let Some(op_id) = self.state.cancel() {
             let result = self.sq.inner.submit_no_completion(|submission| {
                 sys::cancel::operation(op_id, submission);
             });
@@ -98,7 +98,7 @@ impl<O: Op> Cancel for Operation<O> {
     }
 
     fn cancel(&mut self) -> CancelOperation {
-        CancelOperation::new(self.sq.clone(), self.state.op_id())
+        CancelOperation::new(self.sq.clone(), self.state.cancel())
     }
 }
 
@@ -289,7 +289,7 @@ where
 
 impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
     fn try_cancel(&mut self) -> CancelResult {
-        if let Some(op_id) = self.state.op_id() {
+        if let Some(op_id) = self.state.cancel() {
             let result = self.fd.sq.inner.submit_no_completion(|submission| {
                 sys::cancel::operation(op_id, submission);
             });
@@ -303,7 +303,7 @@ impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
     }
 
     fn cancel(&mut self) -> CancelOperation {
-        CancelOperation::new(self.fd.sq.clone(), self.state.op_id())
+        CancelOperation::new(self.fd.sq.clone(), self.state.cancel())
     }
 }
 
@@ -423,6 +423,8 @@ enum State<R, A> {
         args: A,
         op_id: OperationId,
     },
+    /// Operation was cancelled.
+    Cancelled,
     /// Operation is done, don't poll again.
     Done,
 }
@@ -523,6 +525,7 @@ impl<R, A> State<R, A> {
                     }
                 }
             }
+            State::Cancelled => Poll::Ready(Err(io::Error::from_raw_os_error(libc::ECANCELED))),
             State::Done => unreachable!("Future polled after completion"),
         }
     }
@@ -624,15 +627,23 @@ impl<R, A> State<R, A> {
                     }
                 }
             }
+            State::Cancelled => {
+                Poll::Ready(Some(Err(io::Error::from_raw_os_error(libc::ECANCELED))))
+            }
             State::Done => Poll::Ready(None),
         }
     }
 
-    /// Returnt the operation id, if the operation is running.
-    const fn op_id(&self) -> Option<OperationId> {
+    /// Cancel the operation, returning the operation id if the operation is
+    /// running.
+    fn cancel(&mut self) -> Option<OperationId> {
         match self {
+            State::NotStarted { .. } => {
+                *self = State::Cancelled;
+                None
+            }
             State::Running { op_id, .. } => Some(*op_id),
-            _ => None,
+            State::Cancelled | State::Done => None,
         }
     }
 
@@ -647,7 +658,7 @@ impl<R, A> State<R, A> {
             | State::Running {
                 resources, args, ..
             } => (resources, args),
-            State::Done => unreachable!(),
+            State::Cancelled | State::Done => unreachable!(),
         };
         *self = State::NotStarted { resources, args }
     }
@@ -663,7 +674,7 @@ impl<R, A> State<R, A> {
             | State::Running {
                 resources, args, ..
             } => (resources, args),
-            State::Done => unreachable!(),
+            State::Cancelled | State::Done => unreachable!(),
         };
         *self = State::Running {
             resources,
@@ -680,7 +691,7 @@ impl<R, A> State<R, A> {
     fn done(&mut self) -> R {
         match mem::replace(self, State::Done) {
             State::NotStarted { resources, .. } | State::Running { resources, .. } => resources,
-            State::Done => unreachable!(),
+            State::Cancelled | State::Done => unreachable!(),
         }
         .into_inner()
     }
@@ -702,6 +713,7 @@ impl<R, A> fmt::Debug for State<R, A> {
                 .debug_struct("State::Running")
                 .field("op_id", &op_id)
                 .finish(),
+            State::Cancelled { .. } => f.debug_struct("State::Cancelled").finish(),
             State::Done { .. } => f.debug_struct("State::Done").finish(),
         }
     }
