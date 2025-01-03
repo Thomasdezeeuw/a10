@@ -84,11 +84,11 @@ impl MsgHeader {
         address: &mut MaybeUninit<A::Storage>,
         iovecs: &mut [crate::io::IoMutSlice],
     ) {
-        let (ptr, length) = unsafe { A::as_mut_ptr(address) };
-        self.0.msg_name = ptr.cast();
-        self.0.msg_namelen = length;
+        let (address_ptr, address_length) = unsafe { A::as_mut_ptr(address) };
+        self.0.msg_name = address_ptr.cast();
+        self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
-        self.0.msg_iov = ptr::from_mut(&mut *iovecs).cast();
+        self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len();
     }
 
@@ -100,11 +100,11 @@ impl MsgHeader {
         address: &mut A::Storage,
         iovecs: &mut [crate::io::IoSlice],
     ) {
-        let (ptr, length) = unsafe { A::as_ptr(address) };
-        self.0.msg_name = ptr.cast_mut().cast();
-        self.0.msg_namelen = length;
+        let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
+        self.0.msg_name = address_ptr.cast_mut().cast();
+        self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
-        self.0.msg_iov = ptr::from_mut(&mut *iovecs).cast();
+        self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len();
     }
 
