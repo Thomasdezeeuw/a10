@@ -275,22 +275,20 @@ impl crate::cq::Event for Completion {
             flags: self.operation_flags(),
         };
         match state {
-            // Zero copy completed, we can now mark ourselves as done.
-            OperationState::Single { .. } if self.is_notification() => false,
+            OperationState::Single { .. } if self.is_notification() => {
+                // Zero copy completed, we can now mark ourselves as done, not
+                // overwriting result.
+            }
             OperationState::Single { result } => {
                 debug_assert!(result.result == i32::MIN);
                 debug_assert!(result.flags == u16::MAX);
                 *result = completion;
-                // For zero copy this may be false, in which case we get a
-                // notification (see above) in a future completion event.
-                self.is_in_progress()
             }
             OperationState::Multishot { results } => {
                 results.push(completion);
-                // Multishot stops on the first error.
-                self.result().is_negative()
             }
         }
+        self.is_in_progress()
     }
 }
 
