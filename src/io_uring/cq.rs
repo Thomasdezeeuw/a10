@@ -292,7 +292,7 @@ impl crate::cq::Event for Completion {
             OperationState::Multishot { results } => {
                 results.push(completion);
                 // Multishot stops on the first error.
-                !self.result().is_negative()
+                self.result().is_negative()
             }
         }
     }
