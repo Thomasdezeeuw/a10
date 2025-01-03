@@ -327,7 +327,7 @@ fn cancel_multishot_accept_before_poll() {
 
     let mut accept_stream = listener.multishot_accept();
 
-    expect_io_errno(waker.block_on(accept_stream.cancel()), libc::ENOENT)
+    waker.block_on(accept_stream.cancel()).unwrap();
 }
 
 #[test]
