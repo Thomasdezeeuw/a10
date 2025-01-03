@@ -199,23 +199,27 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
 
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
-        (_, resources): &mut Self::Resources,
+        (buf, resources): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         let (msg, iovec, address) = &mut **resources;
         let iovecs = slice::from_mut(&mut *iovec);
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
+        if let Some(buf_group) = buf.buffer_group() {
+            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
+            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        }
     }
 
     fn map_ok<D: Descriptor>(
         _: &AsyncFd<D>,
         (mut buf, resources): Self::Resources,
-        (_, n): cq::OpReturn,
+        (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
-        unsafe { buf.set_init(n as usize) };
+        unsafe { buf.buffer_init(BufId(buf_id), n) };
         // SAFETY: kernel initialised the address for us.
         let address = unsafe { A::init(resources.2, resources.0.address_len()) };
         (buf, address, resources.0.flags())
