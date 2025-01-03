@@ -48,7 +48,7 @@ pub enum WaitOn {
 
 operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
-    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<libc::signalfd_siginfo>>;
+    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<libc::siginfo_t>>;
 );
 
 /// Notification of process signals.

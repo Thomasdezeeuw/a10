@@ -9,8 +9,8 @@ use crate::SubmissionQueue;
 pub(crate) struct WaitIdOp;
 
 impl sys::Op for WaitIdOp {
-    type Output = Box<libc::signalfd_siginfo>;
-    type Resources = Box<libc::signalfd_siginfo>;
+    type Output = Box<libc::siginfo_t>;
+    type Resources = Box<libc::siginfo_t>;
     type Args = (WaitOn, libc::c_int); // options.
 
     #[allow(clippy::cast_sign_loss)]
