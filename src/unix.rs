@@ -1,7 +1,6 @@
 //! Types shared across Unix-like implementations.
 
 use std::mem::{self, MaybeUninit};
-use std::ptr;
 
 use crate::io::{Buf, BufMut};
 use crate::net::SocketAddress;
