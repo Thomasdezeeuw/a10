@@ -4,11 +4,13 @@
 //! documentation of [`Signals`].
 
 use std::mem::{self, ManuallyDrop, MaybeUninit};
+use std::pin::Pin;
 use std::process::Child;
+use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
 use crate::fd::{AsyncFd, Descriptor, Direct, File};
-use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::op::{self, fd_operation, operation, FdIter, FdOp, FdOperation, Operation};
 use crate::{man_link, sys, syscall, SubmissionQueue};
 
 /// Wait on the child `process`.
@@ -170,6 +172,20 @@ impl<D: Descriptor> Signals<D> {
         let info = unsafe { Box::new(mem::zeroed()) };
         ReceiveSignal(FdOperation::new(&self.fd, info, ()))
     }
+
+    /// Receive multiple signals.
+    ///
+    /// This is an combined, owned version of `Signals` and [`ReceiveSignal`]
+    /// (the future behind `Signals::receive`). This is useful if you don't want
+    /// to deal with the `'fd` lifetime.
+    pub fn receive_signals(self) -> ReceiveSignals<D> {
+        // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
+        let resources = unsafe { Box::new(mem::zeroed()) };
+        ReceiveSignals {
+            signals: self,
+            state: op::State::new(resources, ()),
+        }
+    }
 }
 
 impl<D: Descriptor> fmt::Debug for Signals<D> {
@@ -199,6 +215,69 @@ fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
     pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<libc::signalfd_siginfo>;
 );
+
+/// [`AsyncIterator`] behind [`Signals::receive_signals`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[must_use = "`AsyncIterator`s do nothing unless polled"]
+#[derive(Debug)]
+pub struct ReceiveSignals<D: Descriptor = File> {
+    signals: Signals<D>,
+    state: op::State<Box<libc::signalfd_siginfo>, ()>,
+}
+
+impl<D: Descriptor> ReceiveSignals<D> {
+    /// This is the same as the [`AsyncIterator::poll_next`] function, but
+    /// then available on stable Rust.
+    ///
+    /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
+    pub fn poll_next(
+        self: Pin<&mut Self>,
+        ctx: &mut task::Context<'_>,
+    ) -> Poll<Option<io::Result<libc::signalfd_siginfo>>> {
+        // SAFETY: not moving `signals` or `state`.
+        let ReceiveSignals { signals, state } = unsafe { self.get_unchecked_mut() };
+        let fd = &signals.fd;
+        let mut reset = None;
+        // NOTE: not using `poll_next` as it's not a multishot operation.
+        let result = state.poll(
+            ctx,
+            fd.sq(),
+            |resources, args, submission| {
+                sys::process::ReceiveSignalOp::fill_submission(fd, resources, args, submission);
+                D::use_flags(submission);
+            },
+            |resources, args, state| {
+                sys::process::ReceiveSignalOp::check_result(fd, resources, args, state)
+            },
+            |_, mut resources, output| {
+                let info = sys::process::ReceiveSignalOp::map_next(fd, &mut resources, output);
+                reset = Some(resources);
+                info
+            },
+        );
+        if let Some(resources) = reset {
+            *state = op::State::new(resources, ());
+        }
+        result.map(Some)
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<D: Descriptor> std::async_iter::AsyncIterator for ReceiveSignals<D> {
+    type Item = io::Result<libc::signalfd_siginfo>;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_next(ctx)
+    }
+}
+
+impl<D: Descriptor> Drop for ReceiveSignals<D> {
+    fn drop(&mut self) {
+        // SAFETY: we're in the `Drop` implementation.
+        unsafe { self.state.drop(self.signals.fd.sq()) }
+    }
+}
 
 /// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
 #[repr(transparent)]

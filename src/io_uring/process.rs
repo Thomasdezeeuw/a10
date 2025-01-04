@@ -4,6 +4,7 @@ use std::ptr;
 use crate::fd::{AsyncFd, Descriptor, Direct, File};
 use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
+use crate::op::FdIter;
 use crate::process::{Signals, WaitOn};
 use crate::SubmissionQueue;
 
@@ -102,9 +103,19 @@ impl io_uring::FdOp for ReceiveSignalOp {
     }
 
     fn map_ok<D: Descriptor>(
+        fd: &AsyncFd<D>,
+        mut info: Self::Resources,
+        ok: cq::OpReturn,
+    ) -> Self::Output {
+        ReceiveSignalOp::map_next(fd, &mut info, ok)
+    }
+}
+
+impl FdIter for ReceiveSignalOp {
+    fn map_next<D: Descriptor>(
         _: &AsyncFd<D>,
-        info: Self::Resources,
-        (_, n): cq::OpReturn,
+        info: &mut Self::Resources,
+        (_, n): Self::OperationOutput,
     ) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         **info
