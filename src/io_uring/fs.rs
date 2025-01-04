@@ -5,13 +5,13 @@ use std::ptr;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
-use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 pub(crate) struct OpenOp<D>(PhantomData<*const D>);
 
-impl<D: Descriptor> sys::Op for OpenOp<D> {
+impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     type Output = AsyncFd<D>;
     type Resources = CString; // path.
     type Args = (libc::c_int, libc::mode_t); // flags, mode.
@@ -57,7 +57,7 @@ impl<D: Descriptor> OpExtract for OpenOp<D> {
 
 pub(crate) struct CreateDirOp;
 
-impl sys::Op for CreateDirOp {
+impl io_uring::Op for CreateDirOp {
     type Output = ();
     type Resources = CString; // path.
     type Args = ();
@@ -95,7 +95,7 @@ impl OpExtract for CreateDirOp {
 
 pub(crate) struct RenameOp;
 
-impl sys::Op for RenameOp {
+impl io_uring::Op for RenameOp {
     type Output = ();
     type Resources = (CString, CString); // from path, to path
     type Args = ();
@@ -137,7 +137,7 @@ impl OpExtract for RenameOp {
 
 pub(crate) struct DeleteOp;
 
-impl sys::Op for DeleteOp {
+impl io_uring::Op for DeleteOp {
     type Output = ();
     type Resources = CString; // path
     type Args = RemoveFlag;
@@ -182,7 +182,7 @@ impl OpExtract for DeleteOp {
 
 pub(crate) struct SyncDataOp;
 
-impl sys::FdOp for SyncDataOp {
+impl io_uring::FdOp for SyncDataOp {
     type Output = ();
     type Resources = ();
     type Args = SyncDataFlag;
@@ -213,7 +213,7 @@ impl sys::FdOp for SyncDataOp {
 
 pub(crate) struct StatOp;
 
-impl sys::FdOp for StatOp {
+impl io_uring::FdOp for StatOp {
     type Output = Metadata;
     type Resources = Box<Metadata>;
     type Args = ();
@@ -252,7 +252,7 @@ impl sys::FdOp for StatOp {
 
 pub(crate) struct AdviseOp;
 
-impl sys::FdOp for AdviseOp {
+impl io_uring::FdOp for AdviseOp {
     type Output = ();
     type Resources = ();
     type Args = (u64, u32, libc::c_int); // offset, length, advice
@@ -284,7 +284,7 @@ impl sys::FdOp for AdviseOp {
 
 pub(crate) struct AllocateOp;
 
-impl sys::FdOp for AllocateOp {
+impl io_uring::FdOp for AllocateOp {
     type Output = ();
     type Resources = ();
     type Args = (u64, u32, libc::c_int); // offset, length, mode
@@ -316,7 +316,7 @@ impl sys::FdOp for AllocateOp {
 
 pub(crate) struct TruncateOp;
 
-impl sys::FdOp for TruncateOp {
+impl io_uring::FdOp for TruncateOp {
     type Output = ();
     type Resources = ();
     type Args = u64; // length

@@ -1,7 +1,7 @@
 use std::os::fd::AsRawFd;
 
+use crate::io_uring::{cq, libc, sq};
 use crate::msg::MsgData;
-use crate::sys::{cq, libc, sq};
 use crate::{OperationId, SubmissionQueue};
 
 pub(crate) fn next(state: &mut cq::OperationState) -> Option<MsgData> {

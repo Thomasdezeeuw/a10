@@ -9,8 +9,8 @@ use std::{io, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
-use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -278,7 +278,7 @@ fn alloc_layout_ring(pool_size: u16, page_size: usize) -> io::Result<alloc::Layo
 
 pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> sys::FdOp for ReadOp<B> {
+impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
     type Output = B;
     type Resources = Buffer<B>;
     type Args = u64; // Offset.
@@ -316,7 +316,7 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
 
 pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> {
     type Output = B;
     type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
     type Args = u64; // Offset.
@@ -349,7 +349,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
 
 pub(crate) struct WriteOp<B>(PhantomData<*const B>);
 
-impl<B: Buf> sys::FdOp for WriteOp<B> {
+impl<B: Buf> io_uring::FdOp for WriteOp<B> {
     type Output = usize;
     type Resources = Buffer<B>;
     type Args = u64; // Offset.
@@ -391,7 +391,7 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
 
 pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufSlice<N>, const N: usize> sys::FdOp for WriteVectoredOp<B, N> {
+impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
     type Output = usize;
     type Resources = (B, Box<[crate::io::IoSlice; N]>);
     type Args = u64; // Offset.
@@ -434,7 +434,7 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
 
 pub(crate) struct SpliceOp;
 
-impl sys::FdOp for SpliceOp {
+impl io_uring::FdOp for SpliceOp {
     type Output = usize;
     type Resources = ();
     type Args = (RawFd, SpliceDirection, u64, u64, u32, libc::c_int); // target, direction, off_in, off_out, len, flags
@@ -476,7 +476,7 @@ impl sys::FdOp for SpliceOp {
 
 pub(crate) struct CloseOp<D>(PhantomData<*const D>);
 
-impl<D: Descriptor> sys::Op for CloseOp<D> {
+impl<D: Descriptor> io_uring::Op for CloseOp<D> {
     type Output = ();
     type Resources = ();
     type Args = RawFd;
@@ -495,7 +495,7 @@ impl<D: Descriptor> sys::Op for CloseOp<D> {
     }
 }
 
-pub(crate) fn close_file_fd(fd: RawFd, submission: &mut sys::sq::Submission) {
+pub(crate) fn close_file_fd(fd: RawFd, submission: &mut io_uring::sq::Submission) {
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
     submission.0.fd = fd;
 }

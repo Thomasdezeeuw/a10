@@ -1,9 +1,9 @@
-use crate::sys::{self, cq, libc, sq};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 pub(crate) struct AdviseOp;
 
-impl sys::Op for AdviseOp {
+impl io_uring::Op for AdviseOp {
     type Output = ();
     type Resources = ();
     type Args = (*mut (), u32, libc::c_int); // address, length, advice.

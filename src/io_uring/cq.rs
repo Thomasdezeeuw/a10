@@ -4,9 +4,9 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
+use crate::io_uring::{self, libc, load_atomic_u32, mmap, munmap, Shared};
 use crate::msg::MsgData;
 use crate::op::OpResult;
-use crate::sys::{self, libc, load_atomic_u32, mmap, munmap, Shared};
 use crate::{debug_detail, syscall, OperationId};
 
 #[derive(Debug)]
@@ -69,7 +69,7 @@ impl Completions {
 
     /// Make the `io_uring_enter` system call.
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn enter(&mut self, shared: &sys::Shared, timeout: Option<Duration>) -> io::Result<()> {
+    fn enter(&mut self, shared: &io_uring::Shared, timeout: Option<Duration>) -> io::Result<()> {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
@@ -194,8 +194,8 @@ struct CompletionsIter<'a> {
     tail: u32,
     /// Same as [`Completions.entries_mask`].
     mask: u32,
-    /// We're depend on the lifetime of [`sys::Shared`].
-    _lifetime: PhantomData<&'a sys::Shared>,
+    /// We're depend on the lifetime of [`io_uring::Shared`].
+    _lifetime: PhantomData<&'a io_uring::Shared>,
 }
 
 impl<'a> Iterator for CompletionsIter<'a> {

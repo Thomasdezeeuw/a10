@@ -5,7 +5,7 @@ use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
 use std::{io, ptr};
 
-use crate::sys::{self, libc, Completions, Shared, Submissions};
+use crate::io_uring::{self, libc, Completions, Shared, Submissions};
 use crate::{syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
@@ -298,9 +298,9 @@ impl<'r> crate::Config<'r> {
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED); // No need for fixed files.
 
-        let shared = sys::Shared::new(rfd, &parameters)?;
-        let submissions = sys::Submissions::new();
-        let completions = sys::Completions::new(shared.rfd.as_fd(), &parameters)?;
+        let shared = io_uring::Shared::new(rfd, &parameters)?;
+        let submissions = io_uring::Submissions::new();
+        let completions = io_uring::Completions::new(shared.rfd.as_fd(), &parameters)?;
 
         if let Some(size) = self.sys.direct_descriptors {
             let register = libc::io_uring_rsrc_register {

@@ -2,13 +2,13 @@ use std::ptr;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::NO_OFFSET;
+use crate::io_uring::{self, cq, libc, sq};
 use crate::process::WaitOn;
-use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 pub(crate) struct WaitIdOp;
 
-impl sys::Op for WaitIdOp {
+impl io_uring::Op for WaitIdOp {
     type Output = Box<libc::siginfo_t>;
     type Resources = Box<libc::siginfo_t>;
     type Args = (WaitOn, libc::c_int); // options.
@@ -43,7 +43,7 @@ impl sys::Op for WaitIdOp {
 
 pub(crate) struct ReceiveSignalOp;
 
-impl sys::FdOp for ReceiveSignalOp {
+impl io_uring::FdOp for ReceiveSignalOp {
     type Output = Box<libc::signalfd_siginfo>;
     type Resources = Box<libc::signalfd_siginfo>;
     type Args = ();
