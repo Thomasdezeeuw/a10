@@ -177,7 +177,6 @@ impl std::fmt::Debug for IoMutSlice {
 // `B`.
 unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
-        // TODO: replace with `MaybeUninit::uninit_array` once stable.
         // SAFETY: an uninitialised `MaybeUninit` is valid.
         let mut iovecs =
             unsafe { MaybeUninit::<[MaybeUninit<IoMutSlice>; N]>::uninit().assume_init() };
@@ -188,7 +187,6 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
             );
             iovec.write(IoMutSlice::new(buf));
         }
-        // TODO: replace with `MaybeUninit::array_assume_init` once stable.
         // SAFETY: `MaybeUninit<IoMutSlice>` and `IoMutSlice` have the same
         // layout as guaranteed by `MaybeUninit`.
         unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
@@ -348,14 +346,12 @@ impl std::fmt::Debug for IoSlice {
 // implements `Buf` it's safe to implement `BufSlice` for an array of `B`.
 unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     unsafe fn as_iovecs(&self) -> [IoSlice; N] {
-        // TODO: replace with `MaybeUninit::uninit_array` once stable.
         // SAFETY: an uninitialised `MaybeUninit` is valid.
         let mut iovecs =
             unsafe { MaybeUninit::<[MaybeUninit<IoSlice>; N]>::uninit().assume_init() };
         for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
             iovec.write(IoSlice::new(buf));
         }
-        // TODO: replace with `MaybeUninit::array_assume_init` once stable.
         // SAFETY: `MaybeUninit<IoSlice>` and `IoSlice` have the same layout as
         // guaranteed by `MaybeUninit`.
         unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }

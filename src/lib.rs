@@ -445,7 +445,6 @@ impl<T> QueuedOperation<T> {
 /// Used to relate completion events to submission events and operations. Also
 /// used as index into [`SharedState::queued_ops`], created by
 /// [`SharedState::op_ids`].
-// TODO: reduce this to a `u32`. Could shrink some types.
 type OperationId = usize;
 
 /// Id to use for internal wake ups.

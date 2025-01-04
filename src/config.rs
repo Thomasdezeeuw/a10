@@ -21,7 +21,7 @@ impl<'r> Config<'r> {
     #[doc(alias = "io_uring_setup")]
     pub fn build(self) -> io::Result<Ring> {
         // NOTE: defined in the implementation specific configuration code.
-        let queued_operations = self.queued_operations; // TODO: add option for # queued operations.
+        let queued_operations = self.queued_operations;
         let (submissions, shared, completions) = self.build_sys()?;
         let ring = Ring::build(submissions, shared, completions, queued_operations);
         Ok(ring)
