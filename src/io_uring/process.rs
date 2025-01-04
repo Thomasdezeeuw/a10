@@ -1,9 +1,10 @@
+use std::os::fd::RawFd;
 use std::ptr;
 
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{AsyncFd, Descriptor, Direct, File};
 use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
-use crate::process::WaitOn;
+use crate::process::{Signals, WaitOn};
 use crate::SubmissionQueue;
 
 pub(crate) struct WaitIdOp;
@@ -38,6 +39,42 @@ impl io_uring::Op for WaitIdOp {
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
         info
+    }
+}
+
+pub(crate) struct ToSignalsDirectOp;
+
+impl io_uring::Op for ToSignalsDirectOp {
+    type Output = Signals<Direct>;
+    type Resources = (Signals<File>, Box<RawFd>);
+    type Args = ();
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        (_, fd): &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
+        submission.0.fd = -1;
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: libc::IORING_FILE_INDEX_ALLOC as _,
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr::from_mut(&mut **fd).addr() as _,
+        };
+        submission.0.len = 1;
+    }
+
+    fn map_ok(
+        sq: &SubmissionQueue,
+        (signals, dfd): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        debug_assert!(n == 1);
+        // SAFETY: the kernel ensures that `dfd` is valid.
+        let dfd = unsafe { AsyncFd::from_raw(*dfd, sq.clone()) };
+        unsafe { signals.change_fd(dfd) }
     }
 }
 

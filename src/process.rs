@@ -3,11 +3,11 @@
 //! In this module process signal handling is also supported. For that See the
 //! documentation of [`Signals`].
 
-use std::mem::{self, MaybeUninit};
+use std::mem::{self, ManuallyDrop, MaybeUninit};
 use std::process::Child;
 use std::{fmt, io, ptr};
 
-use crate::fd::{AsyncFd, Descriptor, File};
+use crate::fd::{AsyncFd, Descriptor, Direct, File};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
 use crate::{man_link, sys, syscall, SubmissionQueue};
 
@@ -137,6 +137,30 @@ impl Signals {
         let set = unsafe { set.assume_init() };
         Signals::from_set(sq, set)
     }
+
+    /// Convert `Signals` from using a regular file descriptor to using a direct
+    /// descriptor.
+    ///
+    /// See [`AsyncFd::to_direct_descriptor`].
+    pub fn to_direct_descriptor(self) -> ToSignalsDirect {
+        let sq = self.fd.sq().clone();
+        let fd = self.fd.fd();
+        ToSignalsDirect(Operation::new(sq, (self, Box::new(fd)), ()))
+    }
+
+    /// Change the file descriptor on the `Signals`.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `fd` is a signalfd valid descriptor.
+    pub(crate) unsafe fn change_fd<D: Descriptor>(self, fd: AsyncFd<D>) -> Signals<D> {
+        let Signals { fd: _, signals: _ } = &self;
+        // SAFETY: reading or dropping all fields of `Signals`.
+        let mut signals = ManuallyDrop::new(self);
+        unsafe { ptr::drop_in_place(&mut signals.fd) }
+        let signals = unsafe { ptr::read(&mut signals.signals) };
+        Signals { fd, signals }
+    }
 }
 
 impl<D: Descriptor> Signals<D> {
@@ -165,6 +189,11 @@ impl<D: Descriptor> Drop for Signals<D> {
         }
     }
 }
+
+operation!(
+    /// [`Future`] behind [`Signals::to_direct_descriptor`].
+    pub struct ToSignalsDirect(sys::process::ToSignalsDirectOp) -> io::Result<Signals<Direct>>;
+);
 
 fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
