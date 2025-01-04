@@ -12,16 +12,17 @@ permissions:
   contents: read
 
 jobs:
-  Test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    steps:
-    - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@stable
-    - name: Run Tests
-      run: cargo test
-    - name: Run Tests (release build)
-      run: cargo test --release
+  # TODO: enable CI on stable again #148
+  #Test:
+  #  runs-on: ubuntu-24.04
+  #  timeout-minutes: 5
+  #  steps:
+  #  - uses: actions/checkout@v4
+  #  - uses: dtolnay/rust-toolchain@1.84
+  #  - name: Run Tests
+  #    run: cargo test
+  #  - name: Run Tests (release build)
+  #    run: cargo test --release
   Nightly:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
