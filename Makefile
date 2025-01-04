@@ -34,9 +34,7 @@ check:
 # * `redundant-pub-crate`: useless lint.
 # * `single-match-else`: prefer match statements over if statements.
 # * `use-self`: strongly disagree.
-# TODO: resolve `cast-possible-truncation` errors.
-# TODO: resolve `manual-c-str-listerals`, `ref-as-ptr` and `inspect_err` once
-# the related features are a little older (1.77, 1.76 and 1.75).
+# TODO: resolve the lints after the empty line.
 lint: clippy
 clippy:
 	cargo clippy --all-features --workspace -- \
@@ -65,7 +63,7 @@ clippy:
 		--allow clippy::cast-sign-loss \
 
 doc:
-	cargo doc
+	cargo doc --all-features
 
 doc_private:
 	cargo doc --document-private-items
