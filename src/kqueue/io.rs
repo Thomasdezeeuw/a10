@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{BufMut, BufMutSlice, NO_OFFSET};
 use crate::op::OpResult;
-use crate::{sys, syscall};
+use crate::{kqueue, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -13,13 +13,13 @@ pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 
 pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> sys::FdOp for ReadOp<B> {
+impl<B: BufMut> kqueue::FdOp for ReadOp<B> {
     type Output = B;
     type Resources = B;
     type Args = u64; // Offset.
     type OperationOutput = usize;
 
-    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut sys::Event) {
+    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut kqueue::Event) {
         kevent.0.ident = fd.fd() as _;
         kevent.0.filter = libc::EVFILT_READ;
     }
@@ -54,13 +54,13 @@ impl<B: BufMut> sys::FdOp for ReadOp<B> {
 
 pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for ReadVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> kqueue::FdOp for ReadVectoredOp<B, N> {
     type Output = B;
     type Resources = (B, [crate::io::IoMutSlice; N]);
     type Args = u64; // Offset.
     type OperationOutput = usize;
 
-    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut sys::Event) {
+    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut kqueue::Event) {
         kevent.0.ident = fd.fd() as _;
         kevent.0.filter = libc::EVFILT_READ;
     }

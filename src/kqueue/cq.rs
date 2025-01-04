@@ -2,11 +2,11 @@ use std::os::fd::AsRawFd;
 use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
-use crate::{sys, syscall};
+use crate::{kqueue, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
-    events: Vec<sys::Event>,
+    events: Vec<kqueue::Event>,
 }
 
 impl Completions {
@@ -17,8 +17,8 @@ impl Completions {
 }
 
 impl crate::cq::Completions for Completions {
-    type Shared = sys::Shared;
-    type Event = sys::Event;
+    type Shared = kqueue::Shared;
+    type Event = kqueue::Event;
 
     fn poll<'a>(
         &'a mut self,
