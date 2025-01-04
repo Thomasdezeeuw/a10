@@ -10,7 +10,7 @@ use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::drop_waker::DropWake;
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
-use crate::{cq, sq, sys, OperationId, SubmissionQueue};
+use crate::{cq, sq, sys, OperationId, QueuedOperation, SubmissionQueue};
 
 /// Generic [`Future`] that powers other I/O operation futures.
 pub(crate) struct Operation<O: Op> {
@@ -480,7 +480,10 @@ impl<R, A> State<R, A> {
                 let result = match queued_op_slot.as_mut() {
                     // Only map the result if the operation is marked as done.
                     // Otherwise we wait for another event.
-                    Some(queued_op) if !queued_op.done => return Poll::Pending,
+                    Some(queued_op) if !queued_op.done => {
+                        queued_op.update_waker(ctx.waker());
+                        return Poll::Pending;
+                    }
                     Some(queued_op) => {
                         check_result(resources.get_mut(), args, &mut queued_op.state)
                     }
@@ -498,6 +501,7 @@ impl<R, A> State<R, A> {
                     }
                     OpResult::Again(resubmit) => {
                         // Operation wasn't completed, need to try again.
+                        update_waker(queued_op_slot.as_mut(), ctx.waker());
                         drop(queued_op_slot); // Unlock.
                         if resubmit {
                             // SAFETY: we've ensured that we own the `op_id`.
@@ -591,10 +595,12 @@ impl<R, A> State<R, A> {
                     }
                     OpResult::Again(false) => {
                         // We'll be awoken once the operation is ready again.
+                        update_waker(queued_op_slot.as_mut(), ctx.waker());
                         Poll::Pending
                     }
                     OpResult::Again(true) => {
                         // Operation wasn't completed, need to try again.
+                        update_waker(queued_op_slot.as_mut(), ctx.waker());
                         drop(queued_op_slot); // Unlock.
 
                         // SAFETY: we've ensured that we own the `op_id`.
@@ -692,6 +698,12 @@ impl<R, A> State<R, A> {
             State::Cancelled | State::Done => unreachable!(),
         }
         .into_inner()
+    }
+}
+
+fn update_waker<T>(queued_op_slot: Option<&mut QueuedOperation<T>>, waker: &task::Waker) {
+    if let Some(queued_op) = queued_op_slot {
+        queued_op.update_waker(waker)
     }
 }
 
