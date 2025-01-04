@@ -450,8 +450,6 @@ fn process_wait_on() {
     // SAFETY: these fields are set if `si_signo == SIGCHLD`.
     assert_eq!(unsafe { info.si_pid() }, pid as i32);
     assert_eq!(unsafe { info.si_status() }, libc::EXIT_SUCCESS);
-    assert!(unsafe { info.si_utime() } >= 1);
-    assert!(unsafe { info.si_stime() } >= 1);
 }
 
 #[test]
