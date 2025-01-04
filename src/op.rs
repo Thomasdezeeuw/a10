@@ -627,9 +627,7 @@ impl<R, A> State<R, A> {
                     }
                 }
             }
-            State::Cancelled => {
-                Poll::Ready(Some(Err(io::Error::from_raw_os_error(libc::ECANCELED))))
-            }
+            State::Cancelled => Poll::Ready(None),
             State::Done => Poll::Ready(None),
         }
     }
