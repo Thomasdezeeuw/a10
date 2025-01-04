@@ -1,5 +1,5 @@
 use std::os::fd::AsRawFd;
-use std::sync::atomic::{self, Ordering};
+use std::sync::atomic::{self, AtomicBool, Ordering};
 use std::{fmt, io, ptr};
 
 use crate::sq::{Cancelled, QueueFull};
@@ -23,7 +23,12 @@ impl crate::sq::Submissions for Submissions {
     type Submission = Submission;
 
     #[allow(clippy::mutex_integer)]
-    fn add<F>(&self, shared: &Self::Shared, submit: F) -> Result<(), QueueFull>
+    fn add<F>(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        submit: F,
+    ) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission),
     {
@@ -106,12 +111,17 @@ impl crate::sq::Submissions for Submissions {
         // When we're not using the kernel polling thread we might have to
         // submit the event ourselves to ensure we can make progress while the
         // (user space) polling thread is calling `Ring::poll`.
-        shared.maybe_submit_event();
+        shared.maybe_submit_event(is_polling);
         Ok(())
     }
 
-    fn cancel(&self, shared: &Self::Shared, op_id: OperationId) -> Cancelled {
-        let result = self.add(shared, |submission| {
+    fn cancel(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        op_id: OperationId,
+    ) -> Cancelled {
+        let result = self.add(shared, is_polling, |submission| {
             use crate::sq::Submission;
             submission.set_id(op_id);
             // We'll get a canceled completion event if we succeeded, which is
@@ -159,10 +169,10 @@ impl crate::sq::Submissions for Submissions {
     }
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
-        // We ignore the queue full error as it means that is *very* unlikely
-        // that the Ring is currently being polling if the submission queue is
-        // filled. More likely the Ring hasn't been polled in a while.
-        let _: Result<(), QueueFull> = self.add(shared, |submission| {
+        // This is only called if we're not polling, so we can set `is_polling`
+        // to false and we ignore the queue full error.
+        let is_polling = AtomicBool::new(false);
+        let _: Result<(), QueueFull> = self.add(shared, &is_polling, |submission| {
             submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
             submission.0.fd = shared.rfd.as_raw_fd();
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {

@@ -1,6 +1,6 @@
 //! Submission Queue.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, MutexGuard};
 use std::{fmt, io, mem, task};
 
@@ -134,10 +134,12 @@ impl<I: Implementation> Queue<I> {
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
         let shared = &*self.shared;
-        let result = shared.submissions.add(&shared.data, |submission| {
-            fill(submission);
-            submission.set_id(op_id);
-        });
+        let result = shared
+            .submissions
+            .add(&shared.data, &shared.is_polling, |submission| {
+                fill(submission);
+                submission.set_id(op_id);
+            });
         match result {
             Ok(()) => Ok(()),
             Err(QueueFull) => {
@@ -177,7 +179,10 @@ impl<I: Implementation> Queue<I> {
 
         // Harder path, the operation is not done, but the Future holding the
         // resource is about to be dropped, so we need to cancel the operation.
-        match shared.submissions.cancel(&shared.data, op_id) {
+        match shared
+            .submissions
+            .cancel(&shared.data, &shared.is_polling, op_id)
+        {
             Cancelled::Immediate => {
                 // Operation has been cancelled, we can drop the resources and
                 // make the slot available.
@@ -289,11 +294,13 @@ impl Queue<crate::sys::Implementation> {
         F: FnOnce(&mut crate::sys::Submission),
     {
         let shared = &*self.shared;
-        shared.submissions.add(&shared.data, |submission| {
-            fill(submission);
-            submission.no_completion_event();
-            submission.set_id(crate::NO_COMPLETION_ID);
-        })
+        shared
+            .submissions
+            .add(&shared.data, &shared.is_polling, |submission| {
+                fill(submission);
+                submission.no_completion_event();
+                submission.set_id(crate::NO_COMPLETION_ID);
+            })
     }
 }
 
@@ -326,12 +333,22 @@ pub(crate) trait Submissions: fmt::Debug {
     type Submission: Submission;
 
     /// Try to add a new submission.
-    fn add<F>(&self, shared: &Self::Shared, submit: F) -> Result<(), QueueFull>
+    fn add<F>(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        submit: F,
+    ) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission);
 
     /// Try to cancel an operation.
-    fn cancel(&self, shared: &Self::Shared, op_id: OperationId) -> Cancelled;
+    fn cancel(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        op_id: OperationId,
+    ) -> Cancelled;
 
     /// Wake a polling thread.
     fn wake(&self, shared: &Self::Shared) -> io::Result<()>;
