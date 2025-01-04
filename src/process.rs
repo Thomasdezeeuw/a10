@@ -160,7 +160,7 @@ impl Signals {
         // SAFETY: reading or dropping all fields of `Signals`.
         let mut signals = ManuallyDrop::new(self);
         unsafe { ptr::drop_in_place(&mut signals.fd) }
-        let signals = unsafe { ptr::read(&mut signals.signals) };
+        let signals = unsafe { ptr::read(&signals.signals) };
         Signals { fd, signals }
     }
 }
