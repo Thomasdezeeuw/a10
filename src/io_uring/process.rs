@@ -81,7 +81,7 @@ impl io_uring::Op for ToSignalsDirectOp {
 pub(crate) struct ReceiveSignalOp;
 
 impl io_uring::FdOp for ReceiveSignalOp {
-    type Output = Box<libc::signalfd_siginfo>;
+    type Output = libc::signalfd_siginfo;
     type Resources = Box<libc::signalfd_siginfo>;
     type Args = ();
 
@@ -107,6 +107,6 @@ impl io_uring::FdOp for ReceiveSignalOp {
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        info
+        **info
     }
 }

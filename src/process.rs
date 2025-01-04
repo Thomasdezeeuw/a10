@@ -197,7 +197,7 @@ operation!(
 
 fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
-    pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<Box<libc::signalfd_siginfo>>;
+    pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<libc::signalfd_siginfo>;
 );
 
 /// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
