@@ -2,7 +2,7 @@ use std::os::fd::AsRawFd;
 use std::{io, mem, ptr};
 
 use crate::sq::QueueFull;
-use crate::{sys, syscall, WAKE_ID};
+use crate::{kqueue, syscall, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
@@ -21,8 +21,8 @@ impl Submissions {
 }
 
 impl crate::sq::Submissions for Submissions {
-    type Shared = sys::Shared;
-    type Submission = sys::Event;
+    type Shared = kqueue::Shared;
+    type Submission = kqueue::Event;
 
     fn add<F>(
         &self,

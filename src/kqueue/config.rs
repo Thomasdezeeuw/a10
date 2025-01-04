@@ -5,7 +5,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::Mutex;
 use std::{io, mem, ptr};
 
-use crate::sys::{self, Completions, Shared, Submissions};
+use crate::kqueue::{self, Completions, Shared, Submissions};
 use crate::{syscall, WAKE_ID};
 
 #[derive(Debug, Clone)]
@@ -81,10 +81,10 @@ impl<'r> crate::Config<'r> {
             return Err(io::Error::from_raw_os_error(kevent.data as i32));
         }
 
-        let submissions = sys::Submissions::new(max_change_list_size);
+        let submissions = kqueue::Submissions::new(max_change_list_size);
         let change_list = Mutex::new(Vec::new());
-        let shared = sys::Shared { kq, change_list };
-        let completions = sys::Completions::new(max_events);
+        let shared = kqueue::Shared { kq, change_list };
+        let completions = kqueue::Completions::new(max_events);
         Ok((submissions, shared, completions))
     }
 }
