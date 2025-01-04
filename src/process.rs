@@ -261,6 +261,19 @@ impl<D: Descriptor> ReceiveSignals<D> {
         }
         result.map(Some)
     }
+
+    /// Returns the underlying [`Signals`].
+    pub fn into_inner(self) -> Signals<D> {
+        let mut this = ManuallyDrop::new(self);
+        // SAFETY: not using `state` any more.
+        unsafe {
+            let ReceiveSignals { signals, state } = &mut *this;
+            state.drop(signals.fd.sq());
+        }
+        // SAFETY: we're not dropping `self`/ (due to the the `ManuallyDrop`, so
+        // `this.signals` is safe to return.
+        unsafe { ptr::read(&this.signals) }
+    }
 }
 
 #[cfg(feature = "nightly")]
