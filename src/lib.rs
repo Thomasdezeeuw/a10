@@ -434,8 +434,8 @@ impl<T> QueuedOperation<T> {
 
     /// Update the waker to `waker`, if it's different.
     fn update_waker(&mut self, waker: &task::Waker) {
-        if !self.waker.will_wake(&waker) {
-            self.waker = waker.clone()
+        if !self.waker.will_wake(waker) {
+            self.waker.clone_from(waker);
         }
     }
 }

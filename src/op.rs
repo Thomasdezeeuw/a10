@@ -633,8 +633,7 @@ impl<R, A> State<R, A> {
                     }
                 }
             }
-            State::Cancelled => Poll::Ready(None),
-            State::Done => Poll::Ready(None),
+            State::Cancelled | State::Done => Poll::Ready(None),
         }
     }
 
@@ -703,7 +702,7 @@ impl<R, A> State<R, A> {
 
 fn update_waker<T>(queued_op_slot: Option<&mut QueuedOperation<T>>, waker: &task::Waker) {
     if let Some(queued_op) = queued_op_slot {
-        queued_op.update_waker(waker)
+        queued_op.update_waker(waker);
     }
 }
 
