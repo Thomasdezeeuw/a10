@@ -1,3 +1,19 @@
+# v0.3.0 (unreleased)
+
+* Complete rewrite of the internals in an attempt to make it easier to port.
+* The methods on `Config` are now implementation specific.
+* Removed the `AsFd` implementation for `Ring` as that might not always be
+  possible to provide.
+* The `net::SocketAddress` is now implemented for the socket address types for
+  in the standard library, not in libc.
+* `net::Connect` no longer implements `Extract` as all socket address types in
+  the library are `Copy`.
+* The `BufSlice` and `BufMutSlice` types now use `IoSlice` and `IoMutSlice` as
+  wrapper around `libc::iovec`.
+* The `msg` module now uses the `MsgData` type as type for message data, instead
+  of `u32` (though `MsgData` is also `u32`).
+* `process::ReceiveSignals` is now a proper `AsyncIter`.
+
 # v0.2.2
 
 * Fix possible overflow in ReadBuf::release
