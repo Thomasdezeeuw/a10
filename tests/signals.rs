@@ -251,7 +251,7 @@ impl<D: Descriptor> TestHarness<D> {
 
                 // Check if the signals can be received.
                 let signal_info = loop {
-                    match receive_signal.poll_signal(&mut task_ctx) {
+                    match Pin::new(&mut receive_signal).poll_next(&mut task_ctx) {
                         Poll::Ready(result) => break result.unwrap().unwrap(),
                         Poll::Pending => self.ring.poll(None).unwrap(),
                     }
