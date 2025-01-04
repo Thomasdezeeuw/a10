@@ -120,6 +120,8 @@ impl AsFd for AsyncFd<File> {
     }
 }
 
+impl<D: Descriptor> Unpin for AsyncFd<D> {}
+
 impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncFd")
