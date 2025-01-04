@@ -2,8 +2,8 @@ use std::os::fd::AsRawFd;
 use std::sync::atomic::{self, AtomicBool, Ordering};
 use std::{fmt, io, ptr};
 
+use crate::io_uring::{cancel, libc, Shared};
 use crate::sq::{Cancelled, QueueFull};
-use crate::sys::{cancel, libc, Shared};
 use crate::{OperationId, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].

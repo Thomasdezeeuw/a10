@@ -1,5 +1,5 @@
 use crate::fd::{AsyncFd, Descriptor};
-use crate::sys::{self, cancel, cq, libc, sq};
+use crate::io_uring::{self, cancel, cq, libc, sq};
 use crate::{OperationId, SubmissionQueue};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
@@ -9,7 +9,7 @@ pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
 
 pub(crate) struct CancelAllOp;
 
-impl sys::FdOp for CancelAllOp {
+impl io_uring::FdOp for CancelAllOp {
     type Output = usize;
     type Resources = ();
     type Args = ();
@@ -40,7 +40,7 @@ impl sys::FdOp for CancelAllOp {
 
 pub(crate) struct CancelOperationOp;
 
-impl sys::Op for CancelOperationOp {
+impl io_uring::Op for CancelOperationOp {
     type Output = ();
     type Resources = ();
     type Args = OperationId;

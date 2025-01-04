@@ -1,13 +1,13 @@
 use std::os::fd::RawFd;
 
+use crate::io_uring::{self, cq, libc, sq};
 use crate::op::Iter;
 use crate::poll::PollEvent;
-use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 pub(crate) struct OneshotPollOp;
 
-impl sys::Op for OneshotPollOp {
+impl io_uring::Op for OneshotPollOp {
     type Output = PollEvent;
     type Resources = ();
     type Args = (RawFd, libc::c_int); // mask;
@@ -31,7 +31,7 @@ impl sys::Op for OneshotPollOp {
 
 pub(crate) struct MultishotPollOp;
 
-impl sys::Op for MultishotPollOp {
+impl io_uring::Op for MultishotPollOp {
     type Output = PollEvent;
     type Resources = ();
     type Args = (RawFd, libc::c_int); // mask;

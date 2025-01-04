@@ -5,16 +5,16 @@ use std::{ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
-use crate::sys::{self, cq, libc, sq};
 use crate::SubmissionQueue;
 
 pub(crate) use crate::unix::MsgHeader;
 
 pub(crate) struct SocketOp<D>(PhantomData<*const D>);
 
-impl<D: Descriptor> sys::Op for SocketOp<D> {
+impl<D: Descriptor> io_uring::Op for SocketOp<D> {
     type Output = AsyncFd<D>;
     type Resources = ();
     type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol, flags
@@ -41,7 +41,7 @@ impl<D: Descriptor> sys::Op for SocketOp<D> {
 
 pub(crate) struct ConnectOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress> sys::FdOp for ConnectOp<A> {
+impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
     type Output = ();
     type Resources = AddressStorage<Box<A::Storage>>;
     type Args = ();
@@ -72,7 +72,7 @@ impl<A: SocketAddress> sys::FdOp for ConnectOp<A> {
 
 pub(crate) struct RecvOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> sys::FdOp for RecvOp<B> {
+impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     type Output = B;
     type Resources = Buffer<B>;
     type Args = libc::c_int; // flags
@@ -113,7 +113,7 @@ impl<B: BufMut> sys::FdOp for RecvOp<B> {
 
 pub(crate) struct MultishotRecvOp;
 
-impl sys::FdOp for MultishotRecvOp {
+impl io_uring::FdOp for MultishotRecvOp {
     type Output = ReadBuf;
     type Resources = ReadBufPool;
     type Args = libc::c_int; // flags
@@ -158,7 +158,7 @@ impl FdIter for MultishotRecvOp {
 
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
     type Resources = (B, Box<(MsgHeader, [crate::io::IoMutSlice; N])>);
     type Args = libc::c_int; // flags
@@ -188,7 +188,7 @@ impl<B: BufMutSlice<N>, const N: usize> sys::FdOp for RecvVectoredOp<B, N> {
 
 pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
 
-impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
+impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
     type Output = (B, A, libc::c_int);
     type Resources = (
         B,
@@ -228,7 +228,7 @@ impl<B: BufMut, A: SocketAddress> sys::FdOp for RecvFromOp<B, A> {
 
 pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
-impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> sys::FdOp
+impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
     for RecvFromVectoredOp<B, A, N>
 {
     type Output = (B, A, libc::c_int);
@@ -291,7 +291,7 @@ fn fill_recvmsg_submission<A: SocketAddress>(
 
 pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
-impl<B: Buf> sys::FdOp for SendOp<B> {
+impl<B: Buf> io_uring::FdOp for SendOp<B> {
     type Output = usize;
     type Resources = Buffer<B>;
     type Args = (SendCall, libc::c_int); // send_op, flags
@@ -341,7 +341,7 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
 
 pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 
-impl<B: Buf, A: SocketAddress> sys::FdOp for SendToOp<B, A> {
+impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
     type Output = usize;
     type Resources = (B, Box<A::Storage>);
     type Args = (SendCall, libc::c_int); // send_op, flags
@@ -394,7 +394,7 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
 
 pub(crate) struct SendMsgOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
-impl<B: BufSlice<N>, A: SocketAddress, const N: usize> sys::FdOp for SendMsgOp<B, A, N> {
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMsgOp<B, A, N> {
     type Output = usize;
     type Resources = (
         B,
@@ -451,7 +451,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
 
 pub(crate) struct AcceptOp<A, D>(PhantomData<*const (A, D)>);
 
-impl<A: SocketAddress, D: Descriptor> sys::FdOp for AcceptOp<A, D> {
+impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     type Output = (AsyncFd<D>, A);
     type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
     type Args = libc::c_int; // flags
@@ -496,7 +496,7 @@ impl<A: SocketAddress, D: Descriptor> sys::FdOp for AcceptOp<A, D> {
 
 pub(crate) struct MultishotAcceptOp<D>(PhantomData<*const D>);
 
-impl<D: Descriptor> sys::FdOp for MultishotAcceptOp<D> {
+impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
     type Output = AsyncFd<D>;
     type Resources = ();
     type Args = libc::c_int; // flags
@@ -540,7 +540,7 @@ impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
 
 pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T> sys::FdOp for SocketOptionOp<T> {
+impl<T> io_uring::FdOp for SocketOptionOp<T> {
     type Output = T;
     type Resources = Box<MaybeUninit<T>>;
     type Args = (libc::c_int, libc::c_int); // level, optname.
@@ -587,7 +587,7 @@ impl<T> sys::FdOp for SocketOptionOp<T> {
 
 pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T> sys::FdOp for SetSocketOptionOp<T> {
+impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = Box<T>;
     type Args = (libc::c_int, libc::c_int); // level, optname.
@@ -644,7 +644,7 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
 
 pub(crate) struct ShutdownOp;
 
-impl sys::FdOp for ShutdownOp {
+impl io_uring::FdOp for ShutdownOp {
     type Output = ();
     type Resources = ();
     type Args = std::net::Shutdown;

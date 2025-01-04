@@ -2,8 +2,8 @@ use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::fd::{AsyncFd, Descriptor, File};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
-use crate::sys::{self, cq, libc, sq};
 
 /// Direct descriptors are io_uring private file descriptors.
 ///
@@ -106,7 +106,7 @@ fd_operation!(
 
 struct ToDirectOp;
 
-impl sys::FdOp for ToDirectOp {
+impl io_uring::FdOp for ToDirectOp {
     type Output = AsyncFd<Direct>;
     type Resources = Box<RawFd>;
     type Args = ();
@@ -143,7 +143,7 @@ impl sys::FdOp for ToDirectOp {
 
 struct ToFdOp;
 
-impl sys::FdOp for ToFdOp {
+impl io_uring::FdOp for ToFdOp {
     type Output = AsyncFd<File>;
     type Resources = ();
     type Args = ();
