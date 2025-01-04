@@ -61,9 +61,7 @@ impl MsgListener {
             Some(queued_op) => match sys::msg::next(&mut queued_op.state) {
                 Some(data) => Poll::Ready(Some(data)),
                 None => {
-                    if !queued_op.waker.will_wake(ctx.waker()) {
-                        queued_op.waker.clone_from(ctx.waker());
-                    }
+                    queued_op.update_waker(ctx.waker());
                     Poll::Pending
                 }
             },
