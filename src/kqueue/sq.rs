@@ -38,8 +38,6 @@ impl crate::sq::Submissions for Submissions {
         let mut event = unsafe { mem::zeroed() };
         submit(&mut event);
         event.0.flags = libc::EV_ADD | libc::EV_RECEIPT | libc::EV_ONESHOT;
-        // TODO: see if we can replace `EV_ONESHOT` with `EV_DISPATCH`, might be
-        // a cheaper operation.
 
         // Add the event to the list of waiting events.
         let mut change_list = shared.change_list.lock().unwrap();

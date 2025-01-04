@@ -201,7 +201,6 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         let buf = SkipBuf { buf, skip: 0 };
         SendAll {
-            // TODO: once `Extract` is a constant trait use that.
             send: Extractor {
                 fut: self.send(buf, flags),
             },
@@ -218,7 +217,6 @@ impl<D: Descriptor> AsyncFd<D> {
     {
         let buf = SkipBuf { buf, skip: 0 };
         SendAll {
-            // TODO: once `Extract` is a constant trait use that.
             send: Extractor {
                 fut: self.send(buf, flags),
             },
@@ -395,7 +393,6 @@ impl<D: Descriptor> AsyncFd<D> {
     where
         A: SocketAddress,
     {
-        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
         let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
         Accept(FdOperation::new(self, address, flags))
     }
@@ -436,7 +433,6 @@ impl<D: Descriptor> AsyncFd<D> {
         level: libc::c_int,
         optname: libc::c_int,
     ) -> SocketOption<'fd, T, D> {
-        // TODO: replace with `Box::new_uninit` once `new_uninit` is stable.
         let value = Box::new(MaybeUninit::uninit());
         SocketOption(FdOperation::new(self, value, (level, optname)))
     }

@@ -159,8 +159,6 @@ impl ReadBufPool {
         // of our buffer, and `bufs_addr`, which points to the start of the
         // pool, by calculating the difference and dividing it by the buffer
         // size.
-        // TODO: use `sub_ptr` once stable:
-        // `ptr_sub_ptr` <https://github.com/rust-lang/rust/issues/95892>.
         let buf_id = unsafe {
             usize::try_from(ptr.as_ptr().cast::<u8>().offset_from(self.bufs_addr))
                 .unwrap_unchecked()
