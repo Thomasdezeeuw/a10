@@ -2,7 +2,7 @@
 
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::ptr;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use crate::drop_waker::DropWake;
@@ -190,10 +190,8 @@ impl Shared {
 
     /// Submit the event to the kernel when not using a kernel polling thread
     /// and another thread is currently [`Ring::poll`]ing.
-    fn maybe_submit_event(&self) {
-        // FIXME: need access to `is_polling` from the root `Shared` here.
-        // Add `&& self.is_polling.load(Ordering::Relaxed)`
-        if !self.kernel_thread {
+    fn maybe_submit_event(&self, is_polling: &AtomicBool) {
+        if !self.kernel_thread && is_polling.load(Ordering::Relaxed) {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");
             let rfd = self.rfd.as_raw_fd();
             let res = syscall!(io_uring_enter2(rfd, 1, 0, 0, ptr::null(), 0));

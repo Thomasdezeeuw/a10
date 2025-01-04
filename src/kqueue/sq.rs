@@ -24,7 +24,12 @@ impl crate::sq::Submissions for Submissions {
     type Shared = sys::Shared;
     type Submission = sys::Event;
 
-    fn add<F>(&self, shared: &Self::Shared, submit: F) -> Result<(), QueueFull>
+    fn add<F>(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        submit: F,
+    ) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Self::Submission),
     {
@@ -39,8 +44,9 @@ impl crate::sq::Submissions for Submissions {
         // Add the event to the list of waiting events.
         let mut change_list = shared.change_list.lock().unwrap();
         change_list.push(event);
-        // If we haven't collected enough events yet we're done quickly.
-        if change_list.len() < self.max_change_list_size {
+        // If we haven't collected enough events yet and we're not polling,
+        // we're done quickly.
+        if change_list.len() < self.max_change_list_size && !is_polling.load(Ordering::Relaxed) {
             drop(change_list); // Unlock first.
             return Ok(());
         }
