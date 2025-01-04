@@ -380,7 +380,7 @@ pub(crate) trait FdIter: FdOp {
 /// Generics:
 ///  * `R` is [`Op::Resources`] or [`FdOp::Resources`].
 ///  * `A` is [`Op::Args`] or [`FdOp::Args`].
-enum State<R, A> {
+pub(crate) enum State<R, A> {
     /// Operation has not started yet. First has to be submitted.
     NotStarted { resources: UnsafeCell<R>, args: A },
     /// Operation has been submitted and is running.
@@ -396,7 +396,7 @@ enum State<R, A> {
 }
 
 impl<R, A> State<R, A> {
-    const fn new(resources: R, args: A) -> State<R, A> {
+    pub(crate) const fn new(resources: R, args: A) -> State<R, A> {
         State::NotStarted {
             resources: UnsafeCell::new(resources),
             args,
@@ -406,7 +406,7 @@ impl<R, A> State<R, A> {
     /// Poll the state of this operation.
     ///
     /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
-    fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
+    pub(crate) fn poll<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
         &mut self,
         ctx: &task::Context<'_>,
         sq: &SubmissionQueue,
@@ -670,7 +670,7 @@ impl<R, A> State<R, A> {
     /// # Safety
     ///
     /// Only call this in the `Drop` implementation.
-    unsafe fn drop(&mut self, sq: &SubmissionQueue)
+    pub(crate) unsafe fn drop(&mut self, sq: &SubmissionQueue)
     where
         R: DropWake,
     {
