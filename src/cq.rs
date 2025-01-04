@@ -24,13 +24,9 @@ impl<I: Implementation> Queue<I> {
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.shared.is_polling.store(true, Ordering::Release);
-        let completions = match self.completions.poll(&self.shared.data, timeout) {
-            Ok(completions) => completions,
-            Err(err) => {
-                self.shared.is_polling.store(false, Ordering::Release);
-                return Err(err);
-            }
-        };
+        let result = self.completions.poll(&self.shared.data, timeout);
+        self.shared.is_polling.store(false, Ordering::Release);
+        let completions = result?;
 
         for completion in completions {
             let id = completion.id();
@@ -69,7 +65,6 @@ impl<I: Implementation> Queue<I> {
         }
 
         self.wake_blocked_futures();
-        self.shared.is_polling.store(false, Ordering::Release);
         Ok(())
     }
 
