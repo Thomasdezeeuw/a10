@@ -9,7 +9,7 @@ use std::os::fd::{AsFd, FromRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 
 use a10::fd::{AsyncFd, Descriptor, Direct, File};
-use a10::fs::{Open, OpenOptions};
+use a10::fs::{self, Open, OpenOptions};
 use a10::io::{
     stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, IoMutSlice, IoSlice, ReadBuf,
     ReadBufPool, Splice, Stderr, Stdout,
@@ -983,9 +983,9 @@ where
 async fn open_file(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
     let tmp_path = tmp_path();
     std::fs::write(&tmp_path, expected).expect("failed to write to file");
-    // TODO: use a10 to open the file.
-    let file = std::fs::File::open(tmp_path).expect("failed to open file");
-    AsyncFd::new(file.into(), sq)
+    fs::open_file(sq, tmp_path)
+        .await
+        .expect("failed to open file")
 }
 
 async fn open_read_pipe(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
