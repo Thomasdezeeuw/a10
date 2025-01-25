@@ -45,6 +45,12 @@ fn try_clone() {
 }
 
 #[test]
+fn read_buf_pool_size_assertion() {
+    assert_eq!(std::mem::size_of::<ReadBufPool>(), 8);
+    assert_eq!(std::mem::size_of::<ReadBuf>(), 24);
+}
+
+#[test]
 fn read_read_buf_pool() {
     require_kernel!(5, 19);
     init();
