@@ -24,7 +24,7 @@ pub(crate) fn send(
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
         addr: u64::from(libc::IORING_MSG_DATA),
     };
-    submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: op_id as _ };
+    submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: op_id as u64 };
     submission.0.len = data;
     submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_ring_flags: 0 };
 }

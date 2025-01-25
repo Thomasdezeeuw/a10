@@ -246,7 +246,7 @@ impl crate::cq::Event for Completion {
     type State = OperationState;
 
     fn id(&self) -> OperationId {
-        self.0.user_data as _
+        self.0.user_data as OperationId
     }
 
     fn update_state(&self, state: &mut Self::State) -> bool {

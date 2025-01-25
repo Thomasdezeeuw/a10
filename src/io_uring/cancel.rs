@@ -4,7 +4,7 @@ use crate::{OperationId, SubmissionQueue};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
     submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
-    submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: op_id as _ };
+    submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: op_id as u64 };
 }
 
 pub(crate) struct CancelAllOp;

@@ -20,12 +20,12 @@ impl io_uring::Op for OneshotPollOp {
         submission.0.opcode = libc::IORING_OP_POLL_ADD as u8;
         submission.0.fd = *fd;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            poll32_events: *mask as _,
+            poll32_events: *mask as u32,
         };
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, events): cq::OpReturn) -> Self::Output {
-        PollEvent(events as _)
+        PollEvent(events as libc::c_int)
     }
 }
 
@@ -56,6 +56,6 @@ impl Iter for MultishotPollOp {
         (): &mut Self::Resources,
         (_, events): cq::OpReturn,
     ) -> Self::Output {
-        PollEvent(events as _)
+        PollEvent(events as libc::c_int)
     }
 }

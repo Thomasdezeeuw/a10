@@ -178,7 +178,9 @@ impl crate::sq::Submissions for Submissions {
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
                 addr: u64::from(libc::IORING_MSG_DATA),
             };
-            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: WAKE_ID as _ };
+            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+                off: WAKE_ID as u64,
+            };
             submission.no_completion_event();
         });
         Ok(())
@@ -224,7 +226,7 @@ impl Submission {
 
 impl crate::sq::Submission for Submission {
     fn set_id(&mut self, id: OperationId) {
-        self.0.user_data = id as _;
+        self.0.user_data = id as u64;
     }
 }
 

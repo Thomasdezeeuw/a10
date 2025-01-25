@@ -1,5 +1,6 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
+use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
@@ -29,14 +30,14 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
         };
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            open_flags: *flags as _,
+            open_flags: *flags as u32,
         };
         D::create_flags(submission);
     }
 
     fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as _, sq.clone()) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) }
     }
 }
 
@@ -49,7 +50,7 @@ impl<D: Descriptor> OpExtract for OpenOp<D> {
         (_, fd): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         // SAFETY: kernel ensures that `fd` is valid.
-        let fd = unsafe { AsyncFd::from_raw(fd as _, sq.clone()) };
+        let fd = unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) };
         let path = path_from_cstring(path);
         (fd, path)
     }
@@ -114,7 +115,7 @@ impl io_uring::Op for RenameOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: from.as_ptr().addr() as u64,
         };
-        submission.0.len = libc::AT_FDCWD as _;
+        submission.0.len = libc::AT_FDCWD as u32;
     }
 
     fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
@@ -158,7 +159,7 @@ impl io_uring::Op for DeleteOp {
             RemoveFlag::Directory => libc::AT_REMOVEDIR,
         };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            unlink_flags: flags as _,
+            unlink_flags: flags as u32,
         };
     }
 
@@ -235,7 +236,7 @@ impl io_uring::FdOp for StatOp {
         };
         submission.0.len = METADATA_FLAGS;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            statx_flags: libc::AT_EMPTY_PATH as _,
+            statx_flags: libc::AT_EMPTY_PATH as u32,
         };
     }
 
@@ -269,7 +270,7 @@ impl io_uring::FdOp for AdviseOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            fadvise_advice: *advice as _,
+            fadvise_advice: *advice as u32,
         };
     }
 

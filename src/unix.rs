@@ -13,7 +13,7 @@ impl IoMutSlice {
         let (ptr, len) = unsafe { buf.parts_mut() };
         IoMutSlice(libc::iovec {
             iov_base: ptr.cast(),
-            iov_len: len as _,
+            iov_len: len as libc::size_t,
         })
     }
 
@@ -41,7 +41,7 @@ impl IoSlice {
         let (ptr, len) = unsafe { buf.parts() };
         IoSlice(libc::iovec {
             iov_base: ptr.cast_mut().cast(),
-            iov_len: len as _,
+            iov_len: len as libc::size_t,
         })
     }
 
