@@ -433,7 +433,7 @@ impl<D: Descriptor> AsyncFd<D> {
         level: libc::c_int,
         optname: libc::c_int,
     ) -> SocketOption<'fd, T, D> {
-        let value = Box::new(MaybeUninit::uninit());
+        let value = Box::new_uninit();
         SocketOption(FdOperation::new(self, value, (level, optname)))
     }
 
