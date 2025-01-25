@@ -149,7 +149,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         }
 
         // Fall back to synchronously closing the descriptor.
-        if let Err(err) = D::close(self.fd()) {
+        if let Err(err) = D::close(self.fd(), &self.sq) {
             log::warn!("error closing a10::AsyncFd: {err}");
         }
     }
@@ -162,6 +162,8 @@ pub trait Descriptor: private::Descriptor {}
 pub(crate) mod private {
     use std::io;
     use std::os::fd::RawFd;
+
+    use crate::SubmissionQueue;
 
     pub(crate) trait Descriptor {
         /// Set any additional flags in `submission` when using the descriptor.
@@ -184,7 +186,7 @@ pub(crate) mod private {
         fn close_flags(fd: RawFd, submission: &mut crate::sys::Submission);
 
         /// Synchronously close the file descriptor.
-        fn close(fd: RawFd) -> io::Result<()>;
+        fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()>;
     }
 }
 
@@ -219,7 +221,7 @@ impl private::Descriptor for File {
         crate::sys::io::close_file_fd(fd, submission);
     }
 
-    fn close(fd: RawFd) -> io::Result<()> {
+    fn close(fd: RawFd, _: &SubmissionQueue) -> io::Result<()> {
         syscall!(close(fd))?;
         Ok(())
     }
