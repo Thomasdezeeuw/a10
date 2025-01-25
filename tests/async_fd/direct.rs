@@ -58,4 +58,7 @@ fn check_fs_fd(waker: Arc<Waker>, regular_fd: AsyncFd<File>, direct_fd: AsyncFd<
         buf == &LOREM_IPSUM_5.content[..buf.len()],
         "read content is different"
     );
+
+    waker.block_on(regular_fd.close()).unwrap();
+    waker.block_on(direct_fd.close()).unwrap();
 }
