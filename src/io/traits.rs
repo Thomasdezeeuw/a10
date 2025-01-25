@@ -177,13 +177,11 @@ impl std::fmt::Debug for IoMutSlice {
 // `B`.
 unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
-        // SAFETY: an uninitialised `MaybeUninit` is valid.
-        let mut iovecs =
-            unsafe { MaybeUninit::<[MaybeUninit<IoMutSlice>; N]>::uninit().assume_init() };
+        let mut iovecs = [const { MaybeUninit::uninit() }; N];
         for (buf, iovec) in self.iter_mut().zip(iovecs.iter_mut()) {
             debug_assert!(
                 buf.buffer_group().is_none(),
-                "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
+                "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O",
             );
             iovec.write(IoMutSlice::new(buf));
         }
@@ -346,9 +344,7 @@ impl std::fmt::Debug for IoSlice {
 // implements `Buf` it's safe to implement `BufSlice` for an array of `B`.
 unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     unsafe fn as_iovecs(&self) -> [IoSlice; N] {
-        // SAFETY: an uninitialised `MaybeUninit` is valid.
-        let mut iovecs =
-            unsafe { MaybeUninit::<[MaybeUninit<IoSlice>; N]>::uninit().assume_init() };
+        let mut iovecs = [const { MaybeUninit::uninit() }; N];
         for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
             iovec.write(IoSlice::new(buf));
         }
