@@ -117,7 +117,7 @@ impl<T, U, V> DropWake for (T, U, V) {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<(T, U)>::drop_from_waker_data(data);
+        Box::<(T, U, V)>::drop_from_waker_data(data);
     }
 }
 
