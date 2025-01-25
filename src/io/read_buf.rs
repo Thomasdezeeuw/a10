@@ -294,9 +294,7 @@ impl ReadBuf {
 
 /// Changes the size of `slice` to `new_len`.
 const fn change_size<T>(slice: NonNull<[T]>, new_len: usize) -> NonNull<[T]> {
-    // SAFETY: `ptr` is `NonNull`, thus not NULL.
-    let ptr = unsafe { NonNull::new_unchecked(slice.as_ptr().cast()) };
-    NonNull::slice_from_raw_parts(ptr, new_len)
+    NonNull::slice_from_raw_parts(slice.cast(), new_len)
 }
 
 /// The implementation for `ReadBuf` is a special one as we don't actually pass
