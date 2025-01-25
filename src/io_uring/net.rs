@@ -58,7 +58,9 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             off: u64::from(length),
         };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
     }
 
     fn map_ok<D: Descriptor>(
@@ -87,7 +89,9 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
         submission.0.fd = fd.fd();
         let (ptr, length) = unsafe { buf.buf.parts_mut() };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             msg_flags: *flags as _,
         };
