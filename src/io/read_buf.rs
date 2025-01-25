@@ -318,7 +318,7 @@ unsafe impl BufMut for ReadBuf {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         if let Some(ptr) = self.owned {
             let len = (self.capacity() - ptr.len()) as u32;
-            (ptr.as_ptr().cast::<u8>().add(ptr.len()), len)
+            (ptr.cast::<u8>().add(ptr.len()).as_ptr(), len)
         } else {
             (ptr::null_mut(), self.capacity() as u32)
         }
