@@ -77,111 +77,116 @@ impl fmt::Debug for AtomicBitMap {
     }
 }
 
-#[test]
-fn setting_and_unsetting_one() {
-    setting_and_unsetting(64)
-}
-
-#[test]
-fn setting_and_unsetting_two() {
-    setting_and_unsetting(128)
-}
-
-#[test]
-fn setting_and_unsetting_three() {
-    setting_and_unsetting(192)
-}
-
-#[test]
-fn setting_and_unsetting_four() {
-    setting_and_unsetting(256)
-}
-
-#[test]
-fn setting_and_unsetting_eight() {
-    setting_and_unsetting(512)
-}
-
-#[test]
-fn setting_and_unsetting_sixteen() {
-    setting_and_unsetting(1024)
-}
-
 #[cfg(test)]
-fn setting_and_unsetting(entries: usize) {
-    let map = AtomicBitMap::new(entries);
-    assert_eq!(map.capacity(), entries);
+mod tests {
+    use super::*;
 
-    // Ask for all indices.
-    for n in 0..entries {
-        assert!(matches!(map.next_available(), Some(i) if i == n));
+    #[test]
+    fn setting_and_unsetting_one() {
+        setting_and_unsetting(64)
     }
-    // All bits should be set.
-    for data in &map.data {
-        assert!(data.load(Ordering::Relaxed) == usize::MAX);
+
+    #[test]
+    fn setting_and_unsetting_two() {
+        setting_and_unsetting(128)
     }
-    // No more indices left.
-    assert!(matches!(map.next_available(), None));
 
-    // Test unsetting an index not in order.
-    map.make_available(63);
-    map.make_available(0);
-    assert!(matches!(map.next_available(), Some(i) if i == 0));
-    assert!(matches!(map.next_available(), Some(i) if i == 63));
-
-    // Unset all indices again.
-    for n in (0..entries).into_iter().rev() {
-        map.make_available(n);
+    #[test]
+    fn setting_and_unsetting_three() {
+        setting_and_unsetting(192)
     }
-    // Bitmap should be zeroed.
-    for data in &map.data {
-        assert!(data.load(Ordering::Relaxed) == 0);
+
+    #[test]
+    fn setting_and_unsetting_four() {
+        setting_and_unsetting(256)
     }
-    // Next avaiable index should be 0 again.
-    assert!(matches!(map.next_available(), Some(i) if i == 0));
-}
 
-#[test]
-fn setting_and_unsetting_concurrent() {
-    use std::sync::{Arc, Barrier};
-    use std::thread;
+    #[test]
+    fn setting_and_unsetting_eight() {
+        setting_and_unsetting(512)
+    }
 
-    const N: usize = 4;
-    const M: usize = 1024;
+    #[test]
+    fn setting_and_unsetting_sixteen() {
+        setting_and_unsetting(1024)
+    }
 
-    let bitmap = Arc::new(AtomicBitMap::new(N * M));
-    let barrier = Arc::new(Barrier::new(N + 1));
-    let handles = (0..N)
-        .map(|i| {
-            let bitmap = bitmap.clone();
-            let barrier = barrier.clone();
-            thread::spawn(move || {
-                let mut indices = Vec::with_capacity(M);
-                barrier.wait();
+    #[cfg(test)]
+    fn setting_and_unsetting(entries: usize) {
+        let map = AtomicBitMap::new(entries);
+        assert_eq!(map.capacity(), entries);
 
-                if i % 2 == 0 {
-                    for _ in 0..M {
-                        let idx = bitmap.next_available().expect("failed to get index");
-                        indices.push(idx);
+        // Ask for all indices.
+        for n in 0..entries {
+            assert!(matches!(map.next_available(), Some(i) if i == n));
+        }
+        // All bits should be set.
+        for data in &map.data {
+            assert!(data.load(Ordering::Relaxed) == usize::MAX);
+        }
+        // No more indices left.
+        assert!(matches!(map.next_available(), None));
+
+        // Test unsetting an index not in order.
+        map.make_available(63);
+        map.make_available(0);
+        assert!(matches!(map.next_available(), Some(i) if i == 0));
+        assert!(matches!(map.next_available(), Some(i) if i == 63));
+
+        // Unset all indices again.
+        for n in (0..entries).into_iter().rev() {
+            map.make_available(n);
+        }
+        // Bitmap should be zeroed.
+        for data in &map.data {
+            assert!(data.load(Ordering::Relaxed) == 0);
+        }
+        // Next avaiable index should be 0 again.
+        assert!(matches!(map.next_available(), Some(i) if i == 0));
+    }
+
+    #[test]
+    fn setting_and_unsetting_concurrent() {
+        use std::sync::{Arc, Barrier};
+        use std::thread;
+
+        const N: usize = 4;
+        const M: usize = 1024;
+
+        let bitmap = Arc::new(AtomicBitMap::new(N * M));
+        let barrier = Arc::new(Barrier::new(N + 1));
+        let handles = (0..N)
+            .map(|i| {
+                let bitmap = bitmap.clone();
+                let barrier = barrier.clone();
+                thread::spawn(move || {
+                    let mut indices = Vec::with_capacity(M);
+                    barrier.wait();
+
+                    if i % 2 == 0 {
+                        for _ in 0..M {
+                            let idx = bitmap.next_available().expect("failed to get index");
+                            indices.push(idx);
+                        }
+
+                        for idx in indices {
+                            bitmap.make_available(idx);
+                        }
+                    } else {
+                        for _ in 0..M {
+                            let idx = bitmap.next_available().expect("failed to get index");
+                            bitmap.make_available(idx);
+                        }
                     }
-
-                    for idx in indices {
-                        bitmap.make_available(idx);
-                    }
-                } else {
-                    for _ in 0..M {
-                        let idx = bitmap.next_available().expect("failed to get index");
-                        bitmap.make_available(idx);
-                    }
-                }
+                })
             })
-        })
-        .collect::<Vec<_>>();
+            .collect::<Vec<_>>();
 
-    barrier.wait();
-    handles
-        .into_iter()
-        .map(|handle| handle.join())
-        .collect::<thread::Result<()>>()
-        .unwrap();
+        barrier.wait();
+        handles
+            .into_iter()
+            .map(|handle| handle.join())
+            .collect::<thread::Result<()>>()
+            .unwrap();
+    }
 }
