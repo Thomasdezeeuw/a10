@@ -45,6 +45,14 @@ fn try_clone() {
 }
 
 #[test]
+fn read_buf_pool_is_send_and_sync() {
+    is_send::<ReadBufPool>();
+    is_sync::<ReadBufPool>();
+    is_send::<ReadBuf>();
+    is_sync::<ReadBuf>();
+}
+
+#[test]
 fn read_buf_pool_size_assertion() {
     assert_eq!(std::mem::size_of::<ReadBufPool>(), 8);
     assert_eq!(std::mem::size_of::<ReadBuf>(), 24);
@@ -57,11 +65,6 @@ fn read_read_buf_pool() {
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
     let sq = ring.submission_queue().clone();
-
-    is_send::<ReadBufPool>();
-    is_sync::<ReadBufPool>();
-    is_send::<ReadBuf>();
-    is_sync::<ReadBuf>();
 
     let test_file = &LOREM_IPSUM_50;
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
