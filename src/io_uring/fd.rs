@@ -47,10 +47,19 @@ impl crate::fd::private::Descriptor for Direct {
         };
     }
 
-    fn close(fd: RawFd, _: &SubmissionQueue) -> io::Result<()> {
-        // TODO: don't leak the the fd.
-        log::warn!(fd = fd; "leaking direct descriptor");
-        Ok(())
+    fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
+        let shared = sq.inner.shared_data();
+        let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
+        let update = libc::io_uring_files_update {
+            offset: fd as _, // The fd is also the index/offset into the set.
+            resv: 0,
+            fds: ptr::from_ref(fd_updates).addr() as _,
+        };
+        shared.register(
+            libc::IORING_REGISTER_FILES_UPDATE,
+            ptr::from_ref(&update).cast(),
+            1,
+        )
     }
 }
 
