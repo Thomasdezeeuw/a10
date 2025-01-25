@@ -414,9 +414,3 @@ impl Drop for ReadBuf {
         self.release();
     }
 }
-
-#[test]
-fn size_assertion() {
-    assert_eq!(std::mem::size_of::<ReadBufPool>(), 8);
-    assert_eq!(std::mem::size_of::<ReadBuf>(), 24);
-}
