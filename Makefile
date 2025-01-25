@@ -27,6 +27,7 @@ check:
 # Disabled lints:
 # * `doc-markdown`: has some annoying false positives.
 # * `equatable-if-let`: strongly disagree with this lint.
+# * `missing-const-for-fn`: has false positives.
 # * `missing-errors-doc`, `missing-panics-doc`: not worth it.
 # * `must-use-candidate`: too many bad suggestions.
 # * `needless-lifetimes`: lifetimes are additional docs.
@@ -48,6 +49,7 @@ clippy:
 		--deny clippy::cargo \
 		--allow clippy::doc-markdown \
 		--allow clippy::equatable-if-let \
+		--allow clippy::missing-const-for-fn \
 		--allow clippy::missing-errors-doc \
 		--allow clippy::missing-panics-doc \
 		--allow clippy::must-use-candidate \
