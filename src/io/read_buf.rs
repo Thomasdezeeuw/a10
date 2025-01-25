@@ -245,13 +245,13 @@ impl ReadBuf {
             }
 
             // SAFETY: the source, destination and len are all valid.
-            // NOTE: we can't use `copy_from_nonoverlapping` as we can't
-            // guarantee that `self` and `other` are not overlapping.
+            // We can use `copy_from_nonoverlapping` because we mutable borrow
+            // `self`, ensuring that `other` is pointing different memory.
             unsafe {
-                ptr.as_ptr()
-                    .cast::<u8>()
+                ptr.cast::<u8>()
                     .add(ptr.len())
-                    .copy_from(other.as_ptr(), other.len());
+                    .as_ptr()
+                    .copy_from_nonoverlapping(other.as_ptr(), other.len());
             }
             self.owned = Some(change_size(ptr, new_len));
             Ok(())
