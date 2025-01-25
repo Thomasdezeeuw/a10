@@ -227,8 +227,8 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                O::fill_submission(fd, resources, args, submission);
                 D::use_flags(submission);
+                O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
             |_, resources, operation_output| O::map_ok(fd, resources, operation_output),
@@ -244,8 +244,8 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                O::fill_submission(fd, resources, args, submission);
                 D::use_flags(submission);
+                O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
             |_, resources, operation_output| O::map_next(fd, resources, operation_output),
@@ -261,8 +261,8 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                O::fill_submission(fd, resources, args, submission);
                 D::use_flags(submission);
+                O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
             |_, resources, operation_output| O::map_ok_extract(fd, resources, operation_output),
