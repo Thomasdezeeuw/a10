@@ -24,7 +24,7 @@ impl crate::fd::private::Descriptor for Direct {
     #[allow(clippy::cast_sign_loss)]
     fn create_flags(submission: &mut sq::Submission) {
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: libc::IORING_FILE_INDEX_ALLOC as _,
+            file_index: libc::IORING_FILE_INDEX_ALLOC as u32,
         };
     }
 
@@ -43,7 +43,7 @@ impl crate::fd::private::Descriptor for Direct {
     fn close_flags(fd: RawFd, submission: &mut sq::Submission) {
         submission.0.opcode = libc::IORING_OP_CLOSE as u8;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: fd as _,
+            file_index: fd as u32,
         };
     }
 
@@ -51,9 +51,9 @@ impl crate::fd::private::Descriptor for Direct {
         let shared = sq.inner.shared_data();
         let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
         let update = libc::io_uring_files_update {
-            offset: fd as _, // The fd is also the index/offset into the set.
+            offset: fd as u32, // The fd is also the index/offset into the set.
             resv: 0,
-            fds: ptr::from_ref(fd_updates).addr() as _,
+            fds: ptr::from_ref(fd_updates).addr() as u64,
         };
         shared.register(
             libc::IORING_REGISTER_FILES_UPDATE,
@@ -131,10 +131,10 @@ impl io_uring::FdOp for ToDirectOp {
         submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
         submission.0.fd = -1;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: libc::IORING_FILE_INDEX_ALLOC as _,
+            off: libc::IORING_FILE_INDEX_ALLOC as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **fd).addr() as _,
+            addr: ptr::from_mut(&mut **fd).addr() as u64,
         };
         submission.0.len = 1;
     }
@@ -179,6 +179,6 @@ impl io_uring::FdOp for ToFdOp {
     ) -> Self::Output {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as _, sq) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, sq) }
     }
 }

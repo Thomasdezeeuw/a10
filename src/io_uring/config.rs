@@ -312,7 +312,7 @@ impl<'r> crate::Config<'r> {
             };
             let arg = ptr::from_ref(&register).cast();
             let size = size_of::<libc::io_uring_rsrc_register>();
-            shared.register(libc::IORING_REGISTER_FILES2, arg, size as _)?;
+            shared.register(libc::IORING_REGISTER_FILES2, arg, size as u32)?;
         }
 
         Ok((submissions, shared, completions))

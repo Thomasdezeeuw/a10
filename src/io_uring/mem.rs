@@ -17,11 +17,11 @@ impl io_uring::Op for AdviseOp {
         submission.0.opcode = libc::IORING_OP_MADVISE as u8;
         submission.0.fd = -1;
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: *address as _,
+            addr: address.addr() as u64,
         };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            fadvise_advice: *advice as _,
+            fadvise_advice: *advice as u32,
         };
     }
 

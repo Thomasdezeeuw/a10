@@ -847,7 +847,10 @@ impl private::SocketAddress for SocketAddr {
     unsafe fn as_mut_ptr(
         storage: &mut MaybeUninit<Self::Storage>,
     ) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (storage.as_mut_ptr().cast(), size_of::<Self::Storage>() as _)
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as libc::socklen_t,
+        )
     }
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {
@@ -880,17 +883,20 @@ impl private::SocketAddress for SocketAddrV4 {
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
         let ptr = ptr::from_ref(storage).cast();
-        (ptr, size_of::<Self::Storage>() as _)
+        (ptr, size_of::<Self::Storage>() as libc::socklen_t)
     }
 
     unsafe fn as_mut_ptr(
         storage: &mut MaybeUninit<Self::Storage>,
     ) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (storage.as_mut_ptr().cast(), size_of::<Self::Storage>() as _)
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as libc::socklen_t,
+        )
     }
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {
-        debug_assert!(length == size_of::<Self::Storage>() as _);
+        debug_assert!(length == size_of::<Self::Storage>() as libc::socklen_t);
         // SAFETY: caller must initialise the address.
         let storage = unsafe { storage.assume_init() };
         debug_assert!(<libc::c_int>::from(storage.sin_family) == libc::AF_INET);
@@ -919,17 +925,20 @@ impl private::SocketAddress for SocketAddrV6 {
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
         let ptr = ptr::from_ref(storage).cast();
-        (ptr, size_of::<Self::Storage>() as _)
+        (ptr, size_of::<Self::Storage>() as libc::socklen_t)
     }
 
     unsafe fn as_mut_ptr(
         storage: &mut MaybeUninit<Self::Storage>,
     ) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (storage.as_mut_ptr().cast(), size_of::<Self::Storage>() as _)
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as libc::socklen_t,
+        )
     }
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {
-        debug_assert!(length == size_of::<Self::Storage>() as _);
+        debug_assert!(length == size_of::<Self::Storage>() as libc::socklen_t);
         // SAFETY: caller must initialise the address.
         let storage = unsafe { storage.assume_init() };
         debug_assert!(<libc::c_int>::from(storage.sin6_family) == libc::AF_INET6);
@@ -970,13 +979,16 @@ impl private::SocketAddress for unix::net::SocketAddr {
 
     unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t) {
         let ptr = ptr::from_ref(storage).cast();
-        (ptr, size_of::<Self::Storage>() as _)
+        (ptr, size_of::<Self::Storage>() as libc::socklen_t)
     }
 
     unsafe fn as_mut_ptr(
         storage: &mut MaybeUninit<Self::Storage>,
     ) -> (*mut libc::sockaddr, libc::socklen_t) {
-        (storage.as_mut_ptr().cast(), size_of::<Self::Storage>() as _)
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as libc::socklen_t,
+        )
     }
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {

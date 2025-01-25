@@ -291,7 +291,9 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
         submission.0.opcode = libc::IORING_OP_READ as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as _ };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
         submission.0.len = len;
         if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
@@ -329,7 +331,7 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: iovecs.as_mut_ptr().addr() as _,
+            addr: iovecs.as_mut_ptr().addr() as u64,
         };
         submission.0.len = iovecs.len() as u32;
     }
@@ -404,9 +406,9 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: iovecs.as_ptr().addr() as _,
+            addr: iovecs.as_ptr().addr() as u64,
         };
-        submission.0.len = iovecs.len() as _;
+        submission.0.len = iovecs.len() as u32;
     }
 
     fn map_ok<D: Descriptor>(
@@ -456,7 +458,7 @@ impl io_uring::FdOp for SpliceOp {
         };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            splice_flags: *flags as _,
+            splice_flags: *flags as u32,
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             splice_fd_in: fd_in,

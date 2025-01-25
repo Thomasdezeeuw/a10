@@ -27,13 +27,13 @@ impl io_uring::Op for WaitIdOp {
             WaitOn::All => (libc::P_ALL, 0), // NOTE: id is ignored.
         };
         submission.0.opcode = libc::IORING_OP_WAITID as u8;
-        submission.0.fd = pid as _;
+        submission.0.fd = pid as RawFd;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            addr2: ptr::from_mut(&mut **info).addr() as _,
+            addr2: ptr::from_mut(&mut **info).addr() as u64,
         };
         submission.0.len = id_type;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: *options as _,
+            file_index: *options as u32,
         };
     }
 
@@ -59,10 +59,10 @@ impl io_uring::Op for ToSignalsDirectOp {
         submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
         submission.0.fd = -1;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: libc::IORING_FILE_INDEX_ALLOC as _,
+            off: libc::IORING_FILE_INDEX_ALLOC as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **fd).addr() as _,
+            addr: ptr::from_mut(&mut **fd).addr() as u64,
         };
         submission.0.len = 1;
     }
@@ -96,7 +96,7 @@ impl io_uring::FdOp for ReceiveSignalOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **info).addr() as _,
+            addr: ptr::from_mut(&mut **info).addr() as u64,
         };
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
