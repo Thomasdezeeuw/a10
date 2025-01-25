@@ -25,7 +25,7 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
         submission.0.opcode = libc::IORING_OP_OPENAT as u8;
         submission.0.fd = libc::AT_FDCWD;
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: path.as_ptr() as _,
+            addr: path.as_ptr().addr() as u64,
         };
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
@@ -70,7 +70,7 @@ impl io_uring::Op for CreateDirOp {
         submission.0.opcode = libc::IORING_OP_MKDIRAT as u8;
         submission.0.fd = libc::AT_FDCWD;
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: path.as_ptr() as _,
+            addr: path.as_ptr().addr() as u64,
         };
         submission.0.len = 0o777; // Same as used by the standard library.
     }
@@ -109,10 +109,10 @@ impl io_uring::Op for RenameOp {
         submission.0.opcode = libc::IORING_OP_RENAMEAT as u8;
         submission.0.fd = libc::AT_FDCWD;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: to.as_ptr() as _,
+            off: to.as_ptr().addr() as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: from.as_ptr() as _,
+            addr: from.as_ptr().addr() as u64,
         };
         submission.0.len = libc::AT_FDCWD as _;
     }
@@ -151,7 +151,7 @@ impl io_uring::Op for DeleteOp {
         submission.0.opcode = libc::IORING_OP_UNLINKAT as u8;
         submission.0.fd = libc::AT_FDCWD;
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: path.as_ptr() as _,
+            addr: path.as_ptr().addr() as u64,
         };
         let flags = match flags {
             RemoveFlag::File => 0,
@@ -228,10 +228,10 @@ impl io_uring::FdOp for StatOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             // SAFETY: this is safe because `Metadata` is transparent.
-            off: ptr::from_mut(&mut **metadata).addr() as _,
+            off: ptr::from_mut(&mut **metadata).addr() as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: c"".as_ptr() as _, // Not using a path.
+            addr: c"".as_ptr().addr() as u64, // Not using a path.
         };
         submission.0.len = METADATA_FLAGS;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
