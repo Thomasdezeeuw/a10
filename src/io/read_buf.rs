@@ -206,13 +206,12 @@ impl ReadBuf {
             }
 
             // We start copy where the remove range ends.
-            let start_ptr = unsafe { ptr.as_ptr().cast::<u8>().add(end) };
+            let start_ptr = unsafe { ptr.cast::<u8>().add(end) };
             let to_copy = new_len - start;
+            // NOTE: can't use `copy_from_nonoverlapping` as we're using the
+            // same slice and thus overlapping.
             unsafe {
-                ptr.as_ptr()
-                    .cast::<u8>()
-                    .add(start)
-                    .copy_from(start_ptr, to_copy);
+                ptr.cast::<u8>().add(start).copy_from(start_ptr, to_copy);
             }
         } else if start != 0 && end != 0 {
             panic!("attempting to remove range from empty buffer");
