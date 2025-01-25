@@ -485,6 +485,8 @@ impl<D: Descriptor> io_uring::Op for CloseOp<D> {
         fd: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        // Don't set `IOSQE_FIXED_FILE`, will result it EBADF.
+        submission.0.flags &= !libc::IOSQE_FIXED_FILE;
         D::close_flags(*fd, submission);
     }
 
