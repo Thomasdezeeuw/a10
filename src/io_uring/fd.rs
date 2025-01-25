@@ -4,6 +4,7 @@ use std::{io, ptr};
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
+use crate::SubmissionQueue;
 
 /// Direct descriptors are io_uring private file descriptors.
 ///
@@ -46,7 +47,7 @@ impl crate::fd::private::Descriptor for Direct {
         };
     }
 
-    fn close(fd: RawFd) -> io::Result<()> {
+    fn close(fd: RawFd, _: &SubmissionQueue) -> io::Result<()> {
         // TODO: don't leak the the fd.
         log::warn!(fd = fd; "leaking direct descriptor");
         Ok(())
