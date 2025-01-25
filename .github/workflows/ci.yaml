@@ -15,9 +15,10 @@ jobs:
   Test:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    if: false # Enable once Rust 1.85 is released.
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.84
+    - uses: dtolnay/rust-toolchain@1.85
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)
