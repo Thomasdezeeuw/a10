@@ -83,7 +83,7 @@ impl Completions {
         if let Some(timeout) = timeout {
             timespec.tv_sec = timeout.as_secs().try_into().unwrap_or(i64::MAX);
             timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
-            args.ts = ptr::addr_of!(timespec) as u64;
+            args.ts = ptr::from_ref(&timespec).addr() as u64;
         }
 
         let submissions = if shared.kernel_thread {
@@ -101,7 +101,7 @@ impl Completions {
             submissions,
             1, // Wait for at least one completion.
             enter_flags,
-            ptr::addr_of!(args).cast(),
+            ptr::from_ref(&args).cast(),
             size_of::<libc::io_uring_getevents_arg>(),
         ));
         match result {

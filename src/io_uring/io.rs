@@ -80,7 +80,7 @@ impl ReadBufPool {
 
         let result = sq.inner.shared_data().register(
             libc::IORING_REGISTER_PBUF_RING,
-            ptr::addr_of!(buf_register).cast(),
+            ptr::from_ref(&buf_register).cast(),
             1,
         );
         if let Err(err) = result {
@@ -217,7 +217,7 @@ impl Drop for ReadBufPool {
         };
         let result = self.sq.inner.shared_data().register(
             libc::IORING_UNREGISTER_PBUF_RING,
-            ptr::addr_of!(buf_register).cast(),
+            ptr::from_ref(&buf_register).cast(),
             1,
         );
         if let Err(err) = result {
