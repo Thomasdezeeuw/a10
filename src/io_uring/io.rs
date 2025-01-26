@@ -180,7 +180,7 @@ impl ReadBufPool {
         };
         log::trace!(buffer_group = self.id.0, buffer = buf_id, addr:? = ptr; "reregistering buffer");
         ring_buf.write(libc::io_uring_buf {
-            addr: ptr.as_ptr().cast::<u8>() as u64,
+            addr: ptr.cast::<u8>().as_ptr().addr() as u64,
             len: self.buf_size,
             bid: buf_id,
             resv: 0,
@@ -364,7 +364,9 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
         submission.0.opcode = libc::IORING_OP_WRITE as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: ptr as u64 };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
         submission.0.len = length;
     }
 
