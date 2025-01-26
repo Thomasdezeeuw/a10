@@ -52,7 +52,7 @@ impl ReadBufPool {
         debug_assert!(pool_size.is_power_of_two());
 
         let ring_fd = sq.inner.shared_data().rfd.as_raw_fd();
-        let id = ID.fetch_add(1, Ordering::SeqCst);
+        let id = ID.fetch_add(1, Ordering::AcqRel);
 
         // These allocations must be page aligned.
         let page_size = page_size();
@@ -182,7 +182,7 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
-        ring_tail.store(tail.wrapping_add(1), Ordering::SeqCst);
+        ring_tail.store(tail.wrapping_add(1), Ordering::Release);
         drop(guard);
     }
 

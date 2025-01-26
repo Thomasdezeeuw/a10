@@ -38,7 +38,7 @@ impl AtomicBitMap {
             let mut i = value.trailing_ones();
             while i < usize::BITS {
                 // Attempt to set the bit, claiming the slot.
-                value = data.fetch_or(1 << i, Ordering::SeqCst);
+                value = data.fetch_or(1 << i, Ordering::AcqRel);
                 // Another thread could have attempted to set the same bit we're
                 // setting, so we need to make sure we actually set the bit
                 // (i.e. check if was unset in the previous state).
@@ -55,7 +55,7 @@ impl AtomicBitMap {
     pub(crate) fn make_available(&self, index: usize) {
         let idx = index / usize::BITS as usize;
         let n = index % usize::BITS as usize;
-        let old_value = self.data[idx].fetch_and(!(1 << n), Ordering::SeqCst);
+        let old_value = self.data[idx].fetch_and(!(1 << n), Ordering::AcqRel);
         debug_assert!(!is_unset(old_value, n));
     }
 }
