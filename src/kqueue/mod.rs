@@ -237,6 +237,10 @@ impl crate::sq::Submission for Event {
     fn set_id(&mut self, id: OperationId) {
         self.0.udata = id as _;
     }
+
+    fn no_completion_event(&mut self) {
+        // Nothing we can do here.
+    }
 }
 
 // SAFETY: `libc::kevent` is thread safe.
