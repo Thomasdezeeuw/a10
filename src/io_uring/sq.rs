@@ -173,6 +173,8 @@ impl crate::sq::Submissions for Submissions {
         // to false and we ignore the queue full error.
         let is_polling = AtomicBool::new(false);
         let _: Result<(), QueueFull> = self.add(shared, &is_polling, |submission| {
+            use crate::sq::Submission;
+            submission.no_completion_event();
             submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
             submission.0.fd = shared.rfd.as_raw_fd();
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
@@ -181,7 +183,6 @@ impl crate::sq::Submissions for Submissions {
             submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
                 off: WAKE_ID as u64,
             };
-            submission.no_completion_event();
         });
         Ok(())
     }
@@ -202,11 +203,6 @@ impl Submission {
     fn reset(&mut self) {
         debug_assert!(libc::IORING_OP_NOP == 0);
         unsafe { ptr::addr_of_mut!(self.0).write_bytes(0, 1) };
-    }
-
-    /// Don't return a completion event for this submission.
-    pub(crate) fn no_completion_event(&mut self) {
-        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 
     /// Returns `true` if the submission is unchanged after a [`reset`].
@@ -230,7 +226,7 @@ impl crate::sq::Submission for Submission {
     }
 
     fn no_completion_event(&mut self) {
-        self.no_completion_event()
+        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 }
 
