@@ -10,6 +10,7 @@ use std::os::fd::OwnedFd;
 use std::sync::Mutex;
 use std::{fmt, mem};
 
+use crate::drop_waker::DropWake;
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::{debug_detail, OperationId};
@@ -62,7 +63,7 @@ impl Shared {
 /// kqueue specific [`crate::op::Op`] trait.
 pub(crate) trait Op {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
     type OperationOutput;
 
@@ -112,7 +113,7 @@ impl<T: Op> crate::op::Op for T {
 /// kqueue specific [`crate::op::FdOp`] trait.
 pub(crate) trait FdOp {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
     type OperationOutput;
 
