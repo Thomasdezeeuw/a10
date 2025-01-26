@@ -154,6 +154,24 @@ impl<I: Implementation> Queue<I> {
         }
     }
 
+    /// Add a new submission, without waiting for a result.
+    ///
+    /// This marks the submission to not generate a completion event (as it will
+    /// be discarded any way).
+    pub(crate) fn submit_no_completion<F>(&self, fill: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+    {
+        let shared = &*self.shared;
+        shared
+            .submissions
+            .add(&shared.data, &shared.is_polling, |submission| {
+                submission.set_id(crate::NO_COMPLETION_ID);
+                submission.no_completion_event();
+                fill(submission);
+            })
+    }
+
     /// Cancel an operation with `op_id`.
     ///
     /// # Safety
@@ -283,27 +301,6 @@ impl<I: Implementation> Queue<I> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-impl Queue<crate::sys::Implementation> {
-    /// Add a new submission, without waiting for a result.
-    ///
-    /// This marks the submission to not generate a completion event (as it will
-    /// be discarded any way).
-    pub(crate) fn submit_no_completion<F>(&self, fill: F) -> Result<(), QueueFull>
-    where
-        F: FnOnce(&mut crate::sys::Submission),
-    {
-        let shared = &*self.shared;
-        shared
-            .submissions
-            .add(&shared.data, &shared.is_polling, |submission| {
-                fill(submission);
-                submission.no_completion_event();
-                submission.set_id(crate::NO_COMPLETION_ID);
-            })
-    }
-}
-
 impl<I: Implementation> Clone for Queue<I> {
     fn clone(&self) -> Self {
         Queue {
@@ -371,6 +368,9 @@ pub(crate) trait Submission: fmt::Debug {
     /// This must cause the relevant [`cq::Event::id`] of the completion event
     /// to return `id`.
     fn set_id(&mut self, id: OperationId);
+
+    /// Don't return a completion event for this submission.
+    fn no_completion_event(&mut self);
 }
 
 /// Submission queue is full.

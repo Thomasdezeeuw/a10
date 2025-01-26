@@ -123,10 +123,10 @@ impl crate::sq::Submissions for Submissions {
     ) -> Cancelled {
         let result = self.add(shared, is_polling, |submission| {
             use crate::sq::Submission;
-            submission.set_id(op_id);
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
             submission.no_completion_event();
+            submission.set_id(op_id);
             cancel::operation(op_id, submission);
         });
         if let Ok(()) = result {
@@ -227,6 +227,10 @@ impl Submission {
 impl crate::sq::Submission for Submission {
     fn set_id(&mut self, id: OperationId) {
         self.0.user_data = id as u64;
+    }
+
+    fn no_completion_event(&mut self) {
+        self.no_completion_event()
     }
 }
 
