@@ -1,5 +1,6 @@
 use std::io;
 use std::marker::PhantomData;
+use std::os::fd::RawFd;
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{BufMut, BufMutSlice, NO_OFFSET};
@@ -95,4 +96,12 @@ impl<B: BufMutSlice<N>, const N: usize> kqueue::FdOp for ReadVectoredOp<B, N> {
         unsafe { bufs.set_init(n) };
         bufs
     }
+}
+
+pub(crate) fn close_file_fd(fd: RawFd, kevent: &mut kqueue::Event) {
+    // Since we don't need an event to close an fd we trigger the submission
+    // using a user event.
+    kevent.0.filter = libc::EVFILT_USER;
+    kevent.0.flags = libc::EV_ADD | libc::EV_RECEIPT;
+    kevent.0.fflags = libc::NOTE_TRIGGER;
 }
