@@ -1048,6 +1048,8 @@ impl private::SocketAddress for NoAddress {
 }
 
 /// Implement [`fmt::Debug`] for [`SocketAddress::Storage`].
+///
+/// [`SocketAddress::Storage`]: private::SocketAddress::Storage
 pub(crate) struct AddressStorage<A>(pub(crate) A);
 
 impl<A> fmt::Debug for AddressStorage<A> {

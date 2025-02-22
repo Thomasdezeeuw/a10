@@ -354,12 +354,12 @@ struct SharedState<I: Implementation> {
     data: I::Shared,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
-    /// Bitmap which can be used to create [`OperationIds`], used as index into
+    /// Bitmap which can be used to create [`OperationId`]s, used as index into
     /// `queued_ops`.
     op_ids: Box<AtomicBitMap>,
     /// State of queued operations.
     ///
-    /// Indexed by a [`OperationIds`], created by `op_ids`.
+    /// Indexed by a [`OperationId`]s, created by `op_ids`.
     #[rustfmt::skip]
     #[allow(clippy::type_complexity)]
     queued_ops: Box<[Mutex<Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>>]>,

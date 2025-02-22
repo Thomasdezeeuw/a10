@@ -88,12 +88,16 @@ impl ReadBufPool {
 
     /// Converts the queue into a raw pointer, used by the [`DropWake`]
     /// implementation.
+    ///
+    /// [`DropWake`]: crate::drop_waker::DropWake
     pub(crate) unsafe fn into_raw(self) -> *const () {
         Arc::into_raw(self.shared).cast()
     }
 
     /// Converts the queue into a raw pointer, used by the [`DropWake`]
     /// implementation.
+    ///
+    /// [`DropWake`]: crate::drop_waker::DropWake
     pub(crate) unsafe fn from_raw(ptr: *const ()) -> ReadBufPool {
         ReadBufPool {
             shared: Arc::from_raw(ptr.cast_mut().cast()),

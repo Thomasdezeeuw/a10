@@ -190,6 +190,8 @@ impl Shared {
 
     /// Submit the event to the kernel when not using a kernel polling thread
     /// and another thread is currently [`Ring::poll`]ing.
+    ///
+    /// [`Ring::poll`]: crate::Ring::poll
     fn maybe_submit_event(&self, is_polling: &AtomicBool) {
         if !self.kernel_thread && is_polling.load(Ordering::Relaxed) {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");

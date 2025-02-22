@@ -233,6 +233,8 @@ pub(crate) struct Completion(libc::io_uring_cqe);
 impl Completion {
     /// Returns the operation flags that need to be passed to
     /// [`QueuedOperation`].
+    ///
+    /// [`QueuedOperation`]: crate::QueuedOperation
     const fn operation_flags(&self) -> u16 {
         if self.0.flags & libc::IORING_CQE_F_BUFFER != 0 {
             (self.0.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16

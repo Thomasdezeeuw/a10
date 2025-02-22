@@ -36,6 +36,8 @@ pub(crate) struct ReadBufPool {
     tail_mask: u16,
     /// Lock used reregister [`ReadBuf`]s after usage, see the `Drop` implementation
     /// of `ReadBuf`.
+    ///
+    /// [`ReadBuf`]: crate::io::ReadBuf
     reregister_lock: Mutex<()>,
 }
 

@@ -1,4 +1,6 @@
 //! Module with [`Operation`] and [`FdOperation`] [`Future`]s.
+//!
+//! [`Future`]: std::future::Future
 
 use std::cell::UnsafeCell;
 use std::panic::RefUnwindSafe;
@@ -13,6 +15,8 @@ use crate::sq::QueueFull;
 use crate::{cq, sq, sys, OperationId, QueuedOperation, SubmissionQueue};
 
 /// Generic [`Future`] that powers other I/O operation futures.
+///
+/// [`Future`]: std::future::Future
 pub(crate) struct Operation<O: Op> {
     sq: SubmissionQueue,
     state: State<O::Resources, O::Args>,
@@ -163,6 +167,8 @@ pub(crate) trait Op {
 
 /// Extension of [`Op`] to extract the resources used in the operation. To
 /// support the [`Extract`] trait.
+///
+/// [`Extract`]: crate::extract::Extract
 pub(crate) trait OpExtract: Op {
     /// Output of the operation.
     type ExtractOutput;
@@ -176,6 +182,8 @@ pub(crate) trait OpExtract: Op {
 }
 
 /// [`AsyncIterator`] implementation of a [`Operation`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 pub(crate) trait Iter: Op {
     /// Map the system call output to the future's output.
     fn map_next(
@@ -187,6 +195,8 @@ pub(crate) trait Iter: Op {
 
 /// Generic [`Future`] that powers other I/O operation futures on a file
 /// descriptor.
+///
+/// [`Future`]: std::future::Future
 pub(crate) struct FdOperation<'fd, O: FdOp, D: Descriptor = File> {
     fd: &'fd AsyncFd<D>,
     state: State<O::Resources, O::Args>,
@@ -353,6 +363,8 @@ pub(crate) trait FdOp {
 
 /// Extension of [`FdOp`] to extract the resources used in the operation. To
 /// support the [`Extract`] trait.
+///
+/// [`Extract`]: crate::extract::Extract
 pub(crate) trait FdOpExtract: FdOp {
     /// Output of the operation.
     type ExtractOutput;
@@ -366,6 +378,8 @@ pub(crate) trait FdOpExtract: FdOp {
 }
 
 /// [`AsyncIterator`] implementation of a [`FdOperation`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 pub(crate) trait FdIter: FdOp {
     /// Map the system call output to the future's output.
     fn map_next<D: Descriptor>(
@@ -738,6 +752,8 @@ pub(crate) enum OpResult<T> {
 }
 
 /// Create a [`Future`] based on [`Operation`].
+///
+/// [`Future`]: std::future::Future
 macro_rules! operation {
     (
         $(
@@ -757,6 +773,8 @@ macro_rules! operation {
 }
 
 /// Create an [`AsyncIterator`] based on multishot [`Operation`]s.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 macro_rules! iter_operation {
     (
         $(
@@ -776,6 +794,8 @@ macro_rules! iter_operation {
 }
 
 /// Create a [`Future`] based on [`FdOperation`].
+///
+/// [`Future`]: std::future::Future
 macro_rules! fd_operation {
     (
         $(
@@ -795,6 +815,8 @@ macro_rules! fd_operation {
 }
 
 /// Create an [`AsyncIterator`] based on multishot [`FdOperation`]s.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 macro_rules! fd_iter_operation {
     (
         $(
@@ -814,6 +836,8 @@ macro_rules! fd_iter_operation {
 }
 
 /// Helper macro for [`operation`] and [`fd_operation`], use those instead.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
 macro_rules! new_operation {
     (
         $(#[ $meta: meta ])*

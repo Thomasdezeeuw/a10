@@ -84,11 +84,15 @@ pub unsafe trait BufMut: 'static {
     }
 }
 
-/// Id for a [`BufPool`].
+/// Id for a [`ReadBufPool`].
+///
+/// [`ReadBufPool`]: crate::io::ReadBufPool
 #[derive(Copy, Clone, Debug)]
 pub struct BufGroupId(pub(crate) u16);
 
-/// Index for a [`BufPool`].
+/// Index for a [`ReadBufPool`].
+///
+/// [`ReadBufPool`]: crate::io::ReadBufPool
 #[derive(Copy, Clone, Debug)]
 pub struct BufId(pub(crate) u16);
 
