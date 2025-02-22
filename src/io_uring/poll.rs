@@ -25,6 +25,7 @@ impl io_uring::Op for OneshotPollOp {
         };
     }
 
+    #[allow(clippy::cast_possible_wrap)] // For events as i32.
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, events): cq::OpReturn) -> Self::Output {
         PollEvent(events as libc::c_int)
     }
@@ -52,6 +53,7 @@ impl io_uring::Op for MultishotPollOp {
 }
 
 impl Iter for MultishotPollOp {
+    #[allow(clippy::cast_possible_wrap)] // For events as i32.
     fn map_next(
         _: &SubmissionQueue,
         (): &mut Self::Resources,
