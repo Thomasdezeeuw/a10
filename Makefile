@@ -62,7 +62,6 @@ clippy:
 		\
 		--allow clippy::cast-possible-truncation \
 		--allow clippy::cast-possible-wrap \
-		--allow clippy::cast-sign-loss \
 
 doc:
 	cargo doc --all-features

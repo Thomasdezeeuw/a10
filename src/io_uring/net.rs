@@ -273,6 +273,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
     }
 }
 
+#[allow(clippy::cast_sign_loss)] // For flags as u32.
 fn fill_recvmsg_submission<A: SocketAddress>(
     fd: RawFd,
     msg: &mut MsgHeader,
@@ -462,6 +463,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
     type Args = libc::c_int; // flags
 
+    #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission<LD: Descriptor>(
         fd: &AsyncFd<LD>,
         resources: &mut Self::Resources,
@@ -507,6 +509,7 @@ impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
     type Resources = ();
     type Args = libc::c_int; // flags
 
+    #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission<LD: Descriptor>(
         fd: &AsyncFd<LD>,
         (): &mut Self::Resources,
@@ -551,6 +554,7 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
     type Resources = Box<MaybeUninit<T>>;
     type Args = (libc::c_int, libc::c_int); // level, optname.
 
+    #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         value: &mut Self::Resources,
@@ -598,6 +602,7 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
     type Resources = Box<T>;
     type Args = (libc::c_int, libc::c_int); // level, optname.
 
+    #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         value: &mut Self::Resources,
@@ -655,6 +660,7 @@ impl io_uring::FdOp for ShutdownOp {
     type Resources = ();
     type Args = std::net::Shutdown;
 
+    #[allow(clippy::cast_sign_loss)] // For shutdown as u32.
     fn fill_submission<D: Descriptor>(
         fd: &AsyncFd<D>,
         (): &mut Self::Resources,

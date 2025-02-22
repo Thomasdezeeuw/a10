@@ -12,6 +12,7 @@ impl io_uring::Op for OneshotPollOp {
     type Resources = ();
     type Args = (RawFd, libc::c_int); // mask;
 
+    #[allow(clippy::cast_sign_loss)] // For mask as u32.
     fn fill_submission(
         (): &mut Self::Resources,
         (fd, mask): &mut Self::Args,

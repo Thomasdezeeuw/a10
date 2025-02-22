@@ -152,6 +152,7 @@ impl ReadBufPool {
         NonNull::slice_from_raw_parts(addr, n as usize)
     }
 
+    #[allow(clippy::cast_sign_loss)] // For the pointer `offset_from`.
     pub(crate) unsafe fn release(&self, ptr: NonNull<[u8]>) {
         let ring_tail = self.ring_tail();
 
