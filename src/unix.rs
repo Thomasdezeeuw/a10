@@ -3,7 +3,9 @@
 use std::mem::{self, MaybeUninit};
 
 use crate::io::{Buf, BufMut};
+/* TODO(port).
 use crate::net::SocketAddress;
+*/
 
 #[repr(transparent)] // Needed for I/O.
 pub(crate) struct IoMutSlice(libc::iovec);
@@ -66,6 +68,7 @@ impl IoSlice {
 unsafe impl Send for IoSlice {}
 unsafe impl Sync for IoSlice {}
 
+/* TODO(port).
 #[repr(transparent)] // Needed for system calls.
 pub(crate) struct MsgHeader(libc::msghdr);
 
@@ -120,3 +123,4 @@ impl MsgHeader {
 // `iovecs` (`IoMutSlice`/`IoSlice`) are `Send` and `Sync`.
 unsafe impl Send for MsgHeader {}
 unsafe impl Sync for MsgHeader {}
+*/

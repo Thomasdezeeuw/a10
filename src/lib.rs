@@ -1,3 +1,5 @@
+#![allow(unused_variables, unused_imports, unused_macros, dead_code)]
+
 //! The [A10] io_uring library.
 //!
 //! This library is meant as a low-level library safely exposing the io_uring
@@ -185,13 +187,15 @@ use kqueue as sys;
 
 pub mod cancel;
 pub mod extract;
-pub mod fs;
 pub mod io;
+/* TODO(port).
+pub mod fs;
+pub mod net;
 pub mod mem;
 pub mod msg;
-pub mod net;
 pub mod poll;
 pub mod process;
+*/
 
 #[doc(no_inline)]
 pub use cancel::Cancel;

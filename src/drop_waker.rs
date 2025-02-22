@@ -7,7 +7,9 @@ use std::ffi::CString;
 use std::{ptr, task};
 
 use crate::io::{Buffer, ReadBufPool};
+/* TODO(port).
 use crate::net::AddressStorage;
+*/
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
@@ -69,6 +71,7 @@ impl DropWake for CString {
     }
 }
 
+/*
 impl<A> DropWake for AddressStorage<Box<A>> {
     fn into_waker_data(self) -> *const () {
         self.0.into_waker_data()
@@ -78,6 +81,7 @@ impl<A> DropWake for AddressStorage<Box<A>> {
         Box::<A>::drop_from_waker_data(data);
     }
 }
+*/
 
 impl DropWake for ReadBufPool {
     fn into_waker_data(self) -> *const () {
