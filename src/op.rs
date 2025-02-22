@@ -718,8 +718,8 @@ impl<R, A> fmt::Debug for State<R, A> {
                 .debug_struct("State::Running")
                 .field("op_id", &op_id)
                 .finish(),
-            State::Cancelled { .. } => f.debug_struct("State::Cancelled").finish(),
-            State::Done { .. } => f.debug_struct("State::Done").finish(),
+            State::Cancelled => f.debug_struct("State::Cancelled").finish(),
+            State::Done => f.debug_struct("State::Done").finish(),
         }
     }
 }
