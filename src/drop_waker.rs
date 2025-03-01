@@ -45,7 +45,7 @@ impl<T: DropWake> DropWake for UnsafeCell<T> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        T::drop_from_waker_data(data);
+        unsafe { T::drop_from_waker_data(data) };
     }
 }
 
@@ -55,7 +55,7 @@ impl<T> DropWake for Box<T> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(Box::<T>::from_raw(data.cast_mut().cast()));
+        drop(unsafe { Box::<T>::from_raw(data.cast_mut().cast()) });
     }
 }
 
@@ -65,7 +65,7 @@ impl DropWake for CString {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(CString::from_raw(data.cast_mut().cast()));
+        drop(unsafe { CString::from_raw(data.cast_mut().cast()) });
     }
 }
 
@@ -75,7 +75,7 @@ impl<A> DropWake for AddressStorage<Box<A>> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<A>::drop_from_waker_data(data);
+        unsafe { Box::<A>::drop_from_waker_data(data) };
     }
 }
 
@@ -85,7 +85,7 @@ impl DropWake for ReadBufPool {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        drop(ReadBufPool::from_raw(data));
+        drop(unsafe { ReadBufPool::from_raw(data) });
     }
 }
 
@@ -107,7 +107,7 @@ impl<T, U> DropWake for (T, U) {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<(T, U)>::drop_from_waker_data(data);
+        unsafe { Box::<(T, U)>::drop_from_waker_data(data) };
     }
 }
 
@@ -117,7 +117,7 @@ impl<T, U, V> DropWake for (T, U, V) {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<(T, U, V)>::drop_from_waker_data(data);
+        unsafe { Box::<(T, U, V)>::drop_from_waker_data(data) };
     }
 }
 
@@ -127,6 +127,6 @@ impl<B> DropWake for Buffer<B> {
     }
 
     unsafe fn drop_from_waker_data(data: *const ()) {
-        Box::<B>::drop_from_waker_data(data);
+        unsafe { Box::<B>::drop_from_waker_data(data) };
     }
 }
