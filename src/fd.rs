@@ -69,7 +69,8 @@ impl AsyncFd<File> {
     /// The caller must ensure that `fd` is valid and that it's no longer used
     /// by anything other than the returned `AsyncFd`.
     pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd::new(OwnedFd::from_raw_fd(fd), sq)
+        // SAFETY: caller must ensure that `fd` is valid.
+        AsyncFd::new(unsafe { OwnedFd::from_raw_fd(fd) }, sq)
     }
 
     /// Creates a new independently owned `AsyncFd` that shares the same
@@ -95,7 +96,8 @@ impl<D: Descriptor> AsyncFd<D> {
     /// on `D`.
     pub(crate) unsafe fn from_raw(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
         AsyncFd {
-            fd: ManuallyDrop::new(OwnedFd::from_raw_fd(fd)),
+            // SAFETY: caller must ensure that `fd` is valid.
+            fd: ManuallyDrop::new(unsafe { OwnedFd::from_raw_fd(fd) }),
             sq,
             kind: PhantomData,
         }

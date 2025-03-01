@@ -78,7 +78,7 @@ impl ReadBufPool {
             // buffer.
             None
         } else {
-            Some(self.shared.init_buffer(id, n))
+            Some(unsafe { self.shared.init_buffer(id, n) })
         };
         ReadBuf {
             shared: self.shared.clone(),
@@ -100,7 +100,7 @@ impl ReadBufPool {
     /// [`DropWake`]: crate::drop_waker::DropWake
     pub(crate) unsafe fn from_raw(ptr: *const ()) -> ReadBufPool {
         ReadBufPool {
-            shared: Arc::from_raw(ptr.cast_mut().cast()),
+            shared: unsafe { Arc::from_raw(ptr.cast_mut().cast()) },
         }
     }
 }
@@ -322,7 +322,7 @@ unsafe impl BufMut for ReadBuf {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         if let Some(ptr) = self.owned {
             let len = (self.capacity() - ptr.len()) as u32;
-            (ptr.cast::<u8>().add(ptr.len()).as_ptr(), len)
+            unsafe { (ptr.cast::<u8>().add(ptr.len()).as_ptr(), len) }
         } else {
             (ptr::null_mut(), self.capacity() as u32)
         }
@@ -348,7 +348,7 @@ unsafe impl BufMut for ReadBuf {
             debug_assert!(id.0 == 0);
             self.owned = Some(change_size(ptr, ptr.len() + n as usize));
         } else {
-            self.owned = Some(self.shared.init_buffer(id, n));
+            self.owned = Some(unsafe { self.shared.init_buffer(id, n) });
         }
     }
 }

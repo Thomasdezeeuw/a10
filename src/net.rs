@@ -857,10 +857,10 @@ impl private::SocketAddress for SocketAddr {
         debug_assert!(length as usize >= size_of::<libc::sa_family_t>());
         let family = unsafe { ptr::addr_of!((*storage.as_ptr()).sin6_family).read() };
         if family == libc::AF_INET as libc::sa_family_t {
-            let storage = storage.as_ptr().cast::<libc::sockaddr_in>().read();
-            SocketAddrV4::init(MaybeUninit::new(storage), length).into()
+            let storage = unsafe { storage.as_ptr().cast::<libc::sockaddr_in>().read() };
+            unsafe { SocketAddrV4::init(MaybeUninit::new(storage), length).into() }
         } else {
-            SocketAddrV6::init(storage, length).into()
+            unsafe { SocketAddrV6::init(storage, length).into() }
         }
     }
 }
@@ -995,7 +995,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
         debug_assert!(length as usize >= size_of::<libc::sa_family_t>());
         let family = unsafe { ptr::addr_of!((*storage.as_ptr()).sun_family).read() };
         debug_assert!(family == libc::AF_UNIX as libc::sa_family_t);
-        let path_ptr = ptr::addr_of!((*storage.as_ptr()).sun_path);
+        let path_ptr = unsafe { ptr::addr_of!((*storage.as_ptr()).sun_path) };
         let length = length as usize - (storage.as_ptr().addr() - path_ptr.addr());
         // SAFETY: the kernel ensures that at least `length` bytes are
         // initialised.

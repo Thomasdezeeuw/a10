@@ -80,7 +80,7 @@ pub unsafe trait BufMut: 'static {
     #[allow(private_interfaces)]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         debug_assert!(id.0 == 0);
-        self.set_init(n as usize);
+        unsafe { self.set_init(n as usize) };
     }
 }
 
@@ -108,7 +108,7 @@ unsafe impl BufMut for Vec<u8> {
     }
 
     unsafe fn set_init(&mut self, n: usize) {
-        self.set_len(self.len() + n);
+        unsafe { self.set_len(self.len() + n) };
     }
 }
 
@@ -187,7 +187,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
                 buf.buffer_group().is_none(),
                 "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O",
             );
-            iovec.write(IoMutSlice::new(buf));
+            iovec.write(unsafe { IoMutSlice::new(buf) });
         }
         // SAFETY: `MaybeUninit<IoMutSlice>` and `IoMutSlice` have the same
         // layout as guaranteed by `MaybeUninit`.
@@ -197,15 +197,15 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn set_init(&mut self, n: usize) {
         let mut left = n;
         for buf in self {
-            let (_, len) = buf.parts_mut();
+            let (_, len) = unsafe { buf.parts_mut() };
             let len = len as usize;
             if len < left {
                 // Fully initialised the buffer.
-                buf.set_init(len);
+                unsafe { buf.set_init(len) };
                 left -= len;
             } else {
                 // Partially initialised the buffer.
-                buf.set_init(left);
+                unsafe { buf.set_init(left) };
                 return;
             }
         }
@@ -350,7 +350,7 @@ unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     unsafe fn as_iovecs(&self) -> [IoSlice; N] {
         let mut iovecs = [const { MaybeUninit::uninit() }; N];
         for (buf, iovec) in self.iter().zip(iovecs.iter_mut()) {
-            iovec.write(IoSlice::new(buf));
+            iovec.write(unsafe { IoSlice::new(buf) });
         }
         // SAFETY: `MaybeUninit<IoSlice>` and `IoSlice` have the same layout as
         // guaranteed by `MaybeUninit`.
@@ -376,7 +376,7 @@ macro_rules! buf_slice_for_tuple {
                             self.$index.buffer_group().is_none(),
                             "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
                         );
-                        IoMutSlice::new(&mut self.$index)
+                        unsafe { IoMutSlice::new(&mut self.$index) }
                     }),+
                 ]
             }
@@ -384,15 +384,15 @@ macro_rules! buf_slice_for_tuple {
             unsafe fn set_init(&mut self, n: usize) {
                 let mut left = n;
                 $({
-                    let (_, len) = self.$index.parts_mut();
+                    let (_, len) = unsafe { self.$index.parts_mut() };
                     let len = len as usize;
                     if len < left {
                         // Fully initialised the buffer.
-                        self.$index.set_init(len);
+                        unsafe { self.$index.set_init(len) };
                         left -= len;
                     } else {
                         // Partially initialised the buffer.
-                        self.$index.set_init(left);
+                        unsafe { self.$index.set_init(left) };
                         return;
                     }
                 })+
@@ -410,7 +410,7 @@ macro_rules! buf_slice_for_tuple {
             unsafe fn as_iovecs(&self) -> [IoSlice; $N] {
                 [
                     $({
-                        IoSlice::new(&self.$index)
+                        unsafe { IoSlice::new(&self.$index) }
                     }),+
                 ]
             }

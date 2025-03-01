@@ -147,7 +147,7 @@ impl ReadBufPool {
     }
 
     pub(crate) unsafe fn init_buffer(&self, id: BufId, n: u32) -> NonNull<[u8]> {
-        let addr = self.bufs_addr.add(id.0 as usize * self.buf_size());
+        let addr = unsafe { self.bufs_addr.add(id.0 as usize * self.buf_size()) };
         log::trace!(buffer_group = self.id.0, buffer = id.0, addr:? = addr, len = n; "initialised buffer");
         // SAFETY: `bufs_addr` is not NULL.
         let addr = unsafe { NonNull::new_unchecked(addr) };
@@ -162,8 +162,10 @@ impl ReadBufPool {
         // of our buffer, and `bufs_addr`, which points to the start of the
         // pool, by calculating the difference and dividing it by the buffer
         // size.
-        let buf_id = ((ptr.as_ptr().cast::<u8>().offset_from(self.bufs_addr) as usize)
-            / (self.buf_size as usize)) as u16;
+        let buf_id = unsafe {
+            ((ptr.as_ptr().cast::<u8>().offset_from(self.bufs_addr) as usize)
+                / (self.buf_size as usize)) as u16
+        };
 
         // Because we need to fill the `ring_buf` and then atomatically update
         // the `ring_tail` we do it while holding a lock.

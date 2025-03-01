@@ -701,12 +701,12 @@ pub(crate) struct ReadNBuf<B> {
 
 unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
-        self.buf.parts_mut()
+        unsafe { self.buf.parts_mut() }
     }
 
     unsafe fn set_init(&mut self, n: usize) {
         self.last_read = n;
-        self.buf.set_init(n);
+        unsafe { self.buf.set_init(n) };
     }
 
     fn buffer_group(&self) -> Option<BufGroupId> {
@@ -715,18 +715,18 @@ unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
 
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         self.last_read = n as usize;
-        self.buf.buffer_init(id, n);
+        unsafe { self.buf.buffer_init(id, n) };
     }
 }
 
 unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
-        self.buf.as_iovecs_mut()
+        unsafe { self.buf.as_iovecs_mut() }
     }
 
     unsafe fn set_init(&mut self, n: usize) {
         self.last_read = n;
-        self.buf.set_init(n);
+        unsafe { self.buf.set_init(n) };
     }
 }
 
@@ -740,11 +740,11 @@ pub(crate) struct SkipBuf<B> {
 
 unsafe impl<B: Buf> Buf for SkipBuf<B> {
     unsafe fn parts(&self) -> (*const u8, u32) {
-        let (ptr, size) = self.buf.parts();
+        let (ptr, size) = unsafe { self.buf.parts() };
         if self.skip >= size {
             (ptr, 0)
         } else {
-            (ptr.add(self.skip as usize), size - self.skip)
+            (unsafe { ptr.add(self.skip as usize) }, size - self.skip)
         }
     }
 }

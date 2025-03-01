@@ -117,7 +117,7 @@ impl<I: Implementation> Queue<I> {
     where
         F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
     {
-        self.submit_with_id(op_id, fill)
+        unsafe { self.submit_with_id(op_id, fill) }
     }
 
     /// Add a new submission using an existing operation `id`.
