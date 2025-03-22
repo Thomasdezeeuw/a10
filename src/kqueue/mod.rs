@@ -80,6 +80,17 @@ pub(crate) trait Op {
         resources: Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output;
+
+    const SYNC_OPERATION: bool = false;
+
+    fn sync_operation(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        assert!(!Self::SYNC_OPERATION);
+        unreachable!("sync_operation called incorrectly");
+    }
 }
 
 impl<T: Op> crate::op::Op for T {
@@ -109,7 +120,47 @@ impl<T: Op> crate::op::Op for T {
     ) -> Self::Output {
         T::map_ok(sq, resources, output)
     }
+
+    const SYNC_OPERATION: bool = T::SYNC_OPERATION;
+
+    fn sync_operation(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        T::sync_operation(sq, resources, args)
+    }
 }
+
+/// Changed an [`Op`] implementation to a sync operation.
+macro_rules! sync_op_impl {
+    () => {
+        type OperationOutput = ();
+
+        fn fill_submission(_: &mut crate::kqueue::Event) {
+            unreachable!("fill_submission called incorrectly")
+        }
+
+        fn check_result(
+            _: &mut Self::Resources,
+            _: &mut Self::Args,
+        ) -> OpResult<Self::OperationOutput> {
+            unreachable!("check_result called incorrectly")
+        }
+
+        fn map_ok(
+            _: &crate::SubmissionQueue,
+            _: Self::Resources,
+            _: Self::OperationOutput,
+        ) -> Self::Output {
+            unreachable!("map_ok called incorrectly")
+        }
+
+        const SYNC_OPERATION: bool = true;
+    };
+}
+
+pub(crate) use sync_op_impl;
 
 /// kqueue specific [`crate::op::FdOp`] trait.
 pub(crate) trait FdOp {
