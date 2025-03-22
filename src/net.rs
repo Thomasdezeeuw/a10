@@ -32,6 +32,7 @@ pub const fn socket<D: Descriptor>(
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
+    // TODO: the flags are io_uring specific, change that.
     flags: libc::c_int,
 ) -> Socket<D> {
     Socket(Operation::new(sq, (), (domain, r#type, protocol, flags)))
