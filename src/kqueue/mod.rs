@@ -10,13 +10,16 @@ use std::os::fd::OwnedFd;
 use std::sync::Mutex;
 use std::{fmt, mem};
 
+use crate::drop_waker::DropWake;
 use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
 use crate::{debug_detail, OperationId};
 
+pub(crate) mod cancel;
 pub(crate) mod config;
 mod cq;
 pub(crate) mod io;
+pub(crate) mod net;
 mod sq;
 
 pub(crate) use config::Config;
@@ -62,7 +65,7 @@ impl Shared {
 /// kqueue specific [`crate::op::Op`] trait.
 pub(crate) trait Op {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
     type OperationOutput;
 
@@ -78,6 +81,17 @@ pub(crate) trait Op {
         resources: Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output;
+
+    const SYNC_OPERATION: bool = false;
+
+    fn sync_operation(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        assert!(!Self::SYNC_OPERATION);
+        unreachable!("sync_operation called incorrectly");
+    }
 }
 
 impl<T: Op> crate::op::Op for T {
@@ -107,12 +121,52 @@ impl<T: Op> crate::op::Op for T {
     ) -> Self::Output {
         T::map_ok(sq, resources, output)
     }
+
+    const SYNC_OPERATION: bool = T::SYNC_OPERATION;
+
+    fn sync_operation(
+        sq: &crate::SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        T::sync_operation(sq, resources, args)
+    }
 }
+
+/// Changed an [`Op`] implementation to a sync operation.
+macro_rules! sync_op_impl {
+    () => {
+        type OperationOutput = ();
+
+        fn fill_submission(_: &mut crate::kqueue::Event) {
+            unreachable!("fill_submission called incorrectly")
+        }
+
+        fn check_result(
+            _: &mut Self::Resources,
+            _: &mut Self::Args,
+        ) -> OpResult<Self::OperationOutput> {
+            unreachable!("check_result called incorrectly")
+        }
+
+        fn map_ok(
+            _: &crate::SubmissionQueue,
+            _: Self::Resources,
+            _: Self::OperationOutput,
+        ) -> Self::Output {
+            unreachable!("map_ok called incorrectly")
+        }
+
+        const SYNC_OPERATION: bool = true;
+    };
+}
+
+pub(crate) use sync_op_impl;
 
 /// kqueue specific [`crate::op::FdOp`] trait.
 pub(crate) trait FdOp {
     type Output;
-    type Resources;
+    type Resources: DropWake;
     type Args;
     type OperationOutput;
 
@@ -234,6 +288,10 @@ impl crate::cq::OperationState for OperationState {
 impl crate::sq::Submission for Event {
     fn set_id(&mut self, id: OperationId) {
         self.0.udata = id as _;
+    }
+
+    fn no_completion_event(&mut self) {
+        // Nothing we can do here.
     }
 }
 

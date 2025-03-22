@@ -48,13 +48,17 @@ where
     pub(crate) fn poll(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::Output>> {
         // SAFETY: not moving `fd` or `state`.
         let Operation { sq, state } = unsafe { self.get_unchecked_mut() };
-        state.poll(
-            ctx,
-            sq,
-            O::fill_submission,
-            O::check_result,
-            O::map_ok,
-        )
+        if O::SYNC_OPERATION {
+            state.poll_sync(ctx, sq, O::sync_operation)
+        } else {
+            state.poll(
+                ctx,
+                sq,
+                O::fill_submission,
+                O::check_result,
+                O::map_ok,
+            )
+        }
     }
 
     pub(crate) fn poll_next(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<Option<io::Result<O::Output>>>
@@ -163,6 +167,23 @@ pub(crate) trait Op {
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::Output;
+
+    /// If true `sync_operation` will be called instead of the methods above.
+    const SYNC_OPERATION: bool = false;
+
+    /// Do the operation synchrnonously.
+    ///
+    /// # Notes
+    ///
+    /// Only implemeneted if `SYNC_OPERATION` is true.
+    fn sync_operation(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        assert!(!Self::SYNC_OPERATION);
+        unreachable!("sync_operation called incorrectly");
+    }
 }
 
 /// Extension of [`Op`] to extract the resources used in the operation. To
@@ -512,6 +533,31 @@ impl<R, A> State<R, A> {
             State::Cancelled => Poll::Ready(Err(io::Error::from_raw_os_error(libc::ECANCELED))),
             State::Done => unreachable!("Future polled after completion"),
         }
+    }
+
+    /// Poll the state of this operation using a synchronous operation.
+    ///
+    /// NOTE: that the sync_operation match that of the [`FdOp`] and [`Op`] traits.
+    pub(crate) fn poll_sync<SyncOperation, Output>(
+        &mut self,
+        ctx: &task::Context<'_>,
+        sq: &SubmissionQueue,
+        sync_operation: SyncOperation,
+    ) -> Poll<io::Result<Output>>
+    where
+        SyncOperation: FnOnce(&SubmissionQueue, R, A) -> io::Result<Output>,
+    {
+        let (resources, args) = match mem::replace(self, State::Done) {
+            State::NotStarted { resources, args } => (resources, args),
+            State::Running {
+                resources, args, ..
+            } => (resources, args),
+            State::Cancelled => {
+                return Poll::Ready(Err(io::Error::from_raw_os_error(libc::ECANCELED)))
+            }
+            State::Done => unreachable!("Future polled after completion"),
+        };
+        Poll::Ready(sync_operation(sq, resources.into_inner(), args))
     }
 
     /// Poll the next item from the state of this operation.

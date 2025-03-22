@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::os::linux::net::SocketAddrExt;
+
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
@@ -32,6 +32,7 @@ pub const fn socket<D: Descriptor>(
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
+    // TODO: the flags are io_uring specific, change that.
     flags: libc::c_int,
 ) -> Socket<D> {
     Socket(Operation::new(sq, (), (domain, r#type, protocol, flags)))
@@ -878,6 +879,7 @@ impl private::SocketAddress for SocketAddrV4 {
                 s_addr: u32::from_ne_bytes(self.ip().octets()),
             },
             sin_zero: [0; 8],
+            ..unsafe { std::mem::zeroed() }
         }
     }
 
@@ -920,6 +922,7 @@ impl private::SocketAddress for SocketAddrV6 {
                 s6_addr: self.ip().octets(),
             },
             sin6_scope_id: self.scope_id(),
+            ..unsafe { std::mem::zeroed() }
         }
     }
 
@@ -966,14 +969,18 @@ impl private::SocketAddress for unix::net::SocketAddr {
                 storage.sun_path.len(),
             )
         };
+
         if let Some(pathname) = self.as_pathname() {
             let bytes = pathname.as_os_str().as_bytes();
             path[..bytes.len()].copy_from_slice(bytes);
-        } else if let Some(bytes) = self.as_abstract_name() {
-            path[1..][..bytes.len()].copy_from_slice(bytes);
-        } else {
-            // Unnamed address, we'll leave it all zero.
         }
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        if let Some(bytes) = self.as_abstract_name() {
+            use std::os::linux::net::SocketAddrExt;
+            path[1..][..bytes.len()].copy_from_slice(bytes);
+        }
+        // For an unnamed address, we'll leave it all zero.
+
         storage
     }
 
@@ -1000,14 +1007,19 @@ impl private::SocketAddress for unix::net::SocketAddr {
         // SAFETY: the kernel ensures that at least `length` bytes are
         // initialised.
         let path = unsafe { slice::from_raw_parts::<u8>(path_ptr.cast(), length) };
+
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(0) = path.first() {
+            use std::os::linux::net::SocketAddrExt;
             // NOTE: `from_abstract_name` adds a starting null byte.
-            unix::net::SocketAddr::from_abstract_name(&path[1..])
-        } else {
-            unix::net::SocketAddr::from_pathname(Path::new(OsStr::from_bytes(path)))
+            if let Ok(addr) = unix::net::SocketAddr::from_abstract_name(&path[1..]) {
+                return Ok(addr);
+            }
         }
-        // Fallback to an unnamed address.
-        .unwrap_or_else(|_| unix::net::SocketAddr::from_pathname("").unwrap())
+
+        unix::net::SocketAddr::from_pathname(Path::new(OsStr::from_bytes(path)))
+            // Fallback to an unnamed address.
+            .unwrap_or_else(|_| unix::net::SocketAddr::from_pathname("").unwrap())
     }
 }
 

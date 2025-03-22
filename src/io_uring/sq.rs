@@ -123,10 +123,10 @@ impl crate::sq::Submissions for Submissions {
     ) -> Cancelled {
         let result = self.add(shared, is_polling, |submission| {
             use crate::sq::Submission;
-            submission.set_id(op_id);
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
             submission.no_completion_event();
+            submission.set_id(op_id);
             cancel::operation(op_id, submission);
         });
         if let Ok(()) = result {
@@ -173,6 +173,8 @@ impl crate::sq::Submissions for Submissions {
         // to false and we ignore the queue full error.
         let is_polling = AtomicBool::new(false);
         let _: Result<(), QueueFull> = self.add(shared, &is_polling, |submission| {
+            use crate::sq::Submission;
+            submission.no_completion_event();
             submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
             submission.0.fd = shared.rfd.as_raw_fd();
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
@@ -181,7 +183,6 @@ impl crate::sq::Submissions for Submissions {
             submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
                 off: WAKE_ID as u64,
             };
-            submission.no_completion_event();
         });
         Ok(())
     }
@@ -204,11 +205,6 @@ impl Submission {
         unsafe { ptr::addr_of_mut!(self.0).write_bytes(0, 1) };
     }
 
-    /// Don't return a completion event for this submission.
-    pub(crate) fn no_completion_event(&mut self) {
-        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
-    }
-
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
@@ -227,6 +223,10 @@ impl Submission {
 impl crate::sq::Submission for Submission {
     fn set_id(&mut self, id: OperationId) {
         self.0.user_data = id as u64;
+    }
+
+    fn no_completion_event(&mut self) {
+        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 }
 

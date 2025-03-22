@@ -1,8 +1,9 @@
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, mem, ptr};
 
-use crate::sq::QueueFull;
-use crate::{kqueue, syscall, WAKE_ID};
+use crate::sq::{Cancelled, QueueFull};
+use crate::{kqueue, syscall, OperationId, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
@@ -97,6 +98,16 @@ impl crate::sq::Submissions for Submissions {
         changes.clear();
         shared.merge_change_list(changes);
         Ok(())
+    }
+
+    fn cancel(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        op_id: OperationId,
+    ) -> Cancelled {
+        // TODO(port): implement.
+        todo!("Submissions::cancel")
     }
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
