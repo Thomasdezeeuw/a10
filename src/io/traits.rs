@@ -477,6 +477,12 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
     /// This has the same safety requirements as [`Buf::parts`], but then for
     /// all buffers used.
     unsafe fn as_iovecs(&self) -> [IoSlice; N];
+
+    /// Returns the total length of all buffers in bytes.
+    fn total_len(&self) -> usize {
+        // SAFETY: `as_iovecs` requires the returned iovec to be valid.
+        unsafe { self.as_iovecs().iter().map(|iovec| iovec.len()).sum() }
+    }
 }
 
 /// Wrapper around [`libc::iovec`] to perform immutable vectored I/O operations,
