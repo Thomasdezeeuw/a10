@@ -4,8 +4,8 @@
 //! and [`BufSlice`].
 
 use std::cmp::min;
-use std::fmt;
 use std::mem::MaybeUninit;
+use std::{fmt, slice};
 
 /// Trait that defines the behaviour of buffers used in reading, which requires
 /// mutable access.
@@ -391,6 +391,21 @@ pub unsafe trait Buf: 'static {
         // SAFETY: not using the pointer. The implementation of `Buf::parts`
         // must ensure the length is correct.
         unsafe { self.parts() }.1 as usize
+    }
+
+    /// Returns itself as slice of bytes.
+    ///
+    /// # Implementation
+    ///
+    /// This calls [`Buf::parts`] and converts that into a slice.
+    fn as_slice(&self) -> &[u8] {
+        // SAFETY: the `Buf::parts` implementation ensures that the `ptr` and
+        // `len` are valid, as well as the memory allocation they point to. So
+        // creating a slice from it is safe.
+        unsafe {
+            let (ptr, len) = self.parts();
+            slice::from_raw_parts(ptr, len as usize)
+        }
     }
 }
 
