@@ -268,7 +268,7 @@ impl<'r> crate::Config<'r> {
 
         let mut first_err = None;
         let rfd = loop {
-            match syscall!(io_uring_setup(submission_entries, &mut parameters)) {
+            match syscall!(io_uring_setup(submission_entries, &raw mut parameters)) {
                 // SAFETY: just created the fd (and checked the error).
                 Ok(rfd) => break unsafe { OwnedFd::from_raw_fd(rfd) },
                 Err(err) => {
