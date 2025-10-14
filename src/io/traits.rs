@@ -426,6 +426,18 @@ unsafe impl Buf for Vec<u8> {
         let slice = self.as_slice();
         (slice.as_ptr().cast(), slice.len() as u32)
     }
+
+    fn len(&self) -> usize {
+        Vec::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        Vec::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self
+    }
 }
 
 // SAFETY: `Box<[u8]>` manages the allocation of the bytes, so as long as it's
@@ -434,6 +446,18 @@ unsafe impl Buf for Vec<u8> {
 unsafe impl Buf for Box<[u8]> {
     unsafe fn parts(&self) -> (*const u8, u32) {
         (self.as_ptr().cast(), self.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        <[u8]>::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        <[u8]>::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
@@ -444,6 +468,18 @@ unsafe impl Buf for String {
         let slice = self.as_bytes();
         (slice.as_ptr().cast(), slice.len() as u32)
     }
+
+    fn len(&self) -> usize {
+        String::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        String::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
+    }
 }
 
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
@@ -452,6 +488,18 @@ unsafe impl Buf for &'static [u8] {
     unsafe fn parts(&self) -> (*const u8, u32) {
         (self.as_ptr(), self.len() as u32)
     }
+
+    fn len(&self) -> usize {
+        <[u8]>::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        <[u8]>::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self
+    }
 }
 
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
@@ -459,6 +507,18 @@ unsafe impl Buf for &'static [u8] {
 unsafe impl Buf for &'static str {
     unsafe fn parts(&self) -> (*const u8, u32) {
         (self.as_bytes().as_ptr(), self.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        str::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        str::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
     }
 }
 
