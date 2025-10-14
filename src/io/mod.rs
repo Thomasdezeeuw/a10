@@ -397,7 +397,7 @@ impl<D: Descriptor> AsyncFd<D> {
         // SAFETY: this is safe because we're ensure the pointers are valid and
         // not touching `this` after reading the fields.
         let fd = this.fd();
-        let sq = unsafe { ptr::read(&this.sq) };
+        let sq = unsafe { ptr::read(&raw const this.sq) };
         Close(Operation::new(sq, (), fd))
     }
 }

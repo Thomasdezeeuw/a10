@@ -114,7 +114,7 @@ impl Signals {
     pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
         let signals = SignalSet(signals);
         log::trace!(signals:? = signals; "setting up signal handling");
-        let fd = syscall!(signalfd(-1, &signals.0, libc::SFD_CLOEXEC))?;
+        let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
         // Block all `signals` as we're going to read them from the signalfd.
@@ -159,8 +159,8 @@ impl Signals {
         let Signals { fd: _, signals: _ } = &self;
         // SAFETY: reading or dropping all fields of `Signals`.
         let mut signals = ManuallyDrop::new(self);
-        unsafe { ptr::drop_in_place(&mut signals.fd) }
-        let signals = unsafe { ptr::read(&signals.signals) };
+        unsafe { ptr::drop_in_place(&raw mut signals.fd) }
+        let signals = unsafe { ptr::read(&raw const signals.signals) };
         Signals { fd, signals }
     }
 }
@@ -304,7 +304,7 @@ fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<
     // SAFETY: initialised the set in the call to `sigemptyset`.
     let mut set = unsafe { set.assume_init() };
     for signal in signals {
-        syscall!(sigaddset(&mut set, signal))?;
+        syscall!(sigaddset(&raw mut set, signal))?;
     }
     Ok(set)
 }
@@ -351,7 +351,7 @@ impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let signals = KNOWN_SIGNALS.into_iter().filter_map(|(signal, name)| {
             // SAFETY: we ensure the pointer to the signal set is valid.
-            (unsafe { libc::sigismember(&self.0, signal) } == 1).then_some(name)
+            (unsafe { libc::sigismember(&raw const self.0, signal) } == 1).then_some(name)
         });
         f.debug_set().entries(signals).finish()
     }
