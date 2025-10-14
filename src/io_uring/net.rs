@@ -35,6 +35,7 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
         D::create_flags(submission);
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn map_ok(sq: &SubmissionQueue, (): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) }
@@ -488,6 +489,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
         D::create_flags(submission);
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn map_ok<LD: Descriptor>(
         lfd: &AsyncFd<LD>,
         resources: Self::Resources,
@@ -536,6 +538,7 @@ impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
 }
 
 impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
+    #[allow(clippy::cast_possible_wrap)]
     fn map_next<LD: Descriptor>(
         lfd: &AsyncFd<LD>,
         (): &mut Self::Resources,

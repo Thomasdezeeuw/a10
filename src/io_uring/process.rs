@@ -16,6 +16,7 @@ impl io_uring::Op for WaitIdOp {
     type Args = (WaitOn, libc::c_int); // options.
 
     #[allow(clippy::cast_sign_loss)]
+    #[allow(clippy::cast_possible_wrap)]
     fn fill_submission(
         info: &mut Self::Resources,
         (wait, options): &mut Self::Args,
