@@ -194,8 +194,8 @@ impl ReadBufPool {
     /// Returns the tail of buffer ring.
     fn ring_tail(&self) -> &AtomicU16 {
         unsafe {
-            &*(ptr::addr_of!(((*self.ring_addr).__bindgen_anon_1.__bindgen_anon_1.tail))
-                .cast::<AtomicU16>())
+            let buf = &(*self.ring_addr).__bindgen_anon_1.__bindgen_anon_1;
+            AtomicU16::from_ptr((&raw const buf.tail).cast_mut())
         }
     }
 }
