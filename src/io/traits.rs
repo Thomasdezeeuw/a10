@@ -386,11 +386,20 @@ pub unsafe trait Buf: 'static {
     ///
     /// # Implementation
     ///
-    /// This cals [`Buf::parts`] and returns the second part.
+    /// This calls [`Buf::parts`] and returns the second part.
     fn len(&self) -> usize {
         // SAFETY: not using the pointer. The implementation of `Buf::parts`
         // must ensure the length is correct.
         unsafe { self.parts() }.1 as usize
+    }
+
+    /// Returns true if the buffer is empty.
+    ///
+    /// # Implementation
+    ///
+    /// This calls [`Buf::len`] and compares it to zero.
+    fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     /// Returns itself as slice of bytes.
