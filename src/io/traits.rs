@@ -381,6 +381,17 @@ pub unsafe trait Buf: 'static {
     /// Most Rust API use a `usize` for length, but io_uring uses `u32`, hence
     /// we do also.
     unsafe fn parts(&self) -> (*const u8, u32);
+
+    /// Length of the buffer in bytes.
+    ///
+    /// # Implementation
+    ///
+    /// This cals [`Buf::parts`] and returns the second part.
+    fn len(&self) -> usize {
+        // SAFETY: not using the pointer. The implementation of `Buf::parts`
+        // must ensure the length is correct.
+        unsafe { self.parts() }.1 as usize
+    }
 }
 
 // SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
