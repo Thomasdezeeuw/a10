@@ -322,6 +322,7 @@ impl SubmissionQueue {
         &self,
         op_id: OperationId,
     ) -> MutexGuard<
+        '_,
         Option<QueuedOperation<<<<sys::Implementation as Implementation>::Completions as cq::Completions>::Event as cq::Event>::State>>,
     >{
         unsafe { self.inner.get_op(op_id) }
@@ -333,8 +334,9 @@ impl SubmissionQueue {
         &self,
         op_id: OperationId,
         op: MutexGuard<
+        '_,
         Option<QueuedOperation<<<<sys::Implementation as Implementation>::Completions as cq::Completions>::Event as cq::Event>::State>>,
-    >,
+        >,
     ) {
         unsafe { self.inner.make_op_available(op_id, op) };
     }

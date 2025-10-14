@@ -247,6 +247,7 @@ impl<I: Implementation> Queue<I> {
         &self,
         op_id: OperationId,
     ) -> MutexGuard<
+        '_,
         Option<QueuedOperation<<<I::Completions as cq::Completions>::Event as cq::Event>::State>>,
     > {
         // SAFETY: we don't poison locks.
