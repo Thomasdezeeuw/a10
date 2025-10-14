@@ -527,6 +527,10 @@ unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
         // guaranteed by `MaybeUninit`.
         unsafe { std::mem::transmute_copy(&std::mem::ManuallyDrop::new(iovecs)) }
     }
+
+    fn total_len(&self) -> usize {
+        self.iter().map(|buf| buf.len()).sum()
+    }
 }
 
 macro_rules! buf_slice_for_tuple {
@@ -584,6 +588,11 @@ macro_rules! buf_slice_for_tuple {
                         unsafe { IoSlice::new(&self.$index) }
                     }),+
                 ]
+            }
+
+            fn total_len(&self) -> usize {
+                0
+                $( + self.$index.len() )+
             }
         }
     };
