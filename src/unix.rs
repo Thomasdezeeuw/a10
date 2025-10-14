@@ -17,6 +17,10 @@ impl IoMutSlice {
         })
     }
 
+    pub(crate) unsafe fn parts_mut(&mut self) -> (*mut u8, usize) {
+        (self.0.iov_base.cast(), self.0.iov_len)
+    }
+
     // NOTE: can't implement `as_bytes` as we don't know if the bytes are
     // initialised. `len` will have to do.
     pub(crate) const fn len(&self) -> usize {

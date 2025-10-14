@@ -3,6 +3,7 @@
 //! See [`BufMut`] and [`Buf`], and their vectored counterparts [`BufMutSlice`]
 //! and [`BufSlice`].
 
+use std::cmp::min;
 use std::fmt;
 use std::mem::MaybeUninit;
 
@@ -82,6 +83,59 @@ pub unsafe trait BufMut: 'static {
         debug_assert!(id.0 == 0);
         unsafe { self.set_init(n as usize) };
     }
+
+    /// Extend the buffer with `bytes`, returns the number of bytes copied.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use a10::io::BufMut;
+    /// let mut buf = Vec::with_capacity(10);
+    /// assert_eq!(write_hello(&mut buf), 5);
+    /// assert_eq!(buf, b"hello");
+    ///
+    /// fn write_hello<B: BufMut>(buf: &mut B) -> usize {
+    ///   buf.extend_from_slice(b"hello")
+    /// }
+    /// ```
+    ///
+    /// Short write.
+    ///
+    /// ```
+    /// # use a10::io::BufMut;
+    /// let mut buf = Vec::with_capacity(2);
+    /// assert_eq!(write_hello(&mut buf), 2);
+    /// assert_eq!(buf, b"he");
+    ///
+    /// fn write_hello<B: BufMut>(buf: &mut B) -> usize {
+    ///   buf.extend_from_slice(b"hello")
+    /// }
+    /// ```
+    fn extend_from_slice(&mut self, bytes: &[u8]) -> usize {
+        let (ptr, capacity) = unsafe { self.parts_mut() };
+        // SAFETY: `parts_mut` requirements are the same for `copy_bytes`.
+        let written = unsafe { copy_bytes(ptr, capacity as usize, bytes) };
+        // SAFETY: just written the bytes in the call above.
+        unsafe { self.set_init(written) };
+        written
+    }
+}
+
+/// Copies bytes from `src` to `dst`, copies up to `min(dst_len, src.len())`,
+/// i.e. it won't write beyond `dst` or read beyond `src` bounds. Returns the
+/// number of bytes copied.
+///
+/// # Safety
+///
+/// Caller must ensure that `dst` and `dst_len` are valid for writing.
+unsafe fn copy_bytes(dst: *mut u8, dst_len: usize, src: &[u8]) -> usize {
+    let len = min(src.len(), dst_len);
+    // SAFETY: since we have mutable access to `self` we know that `bytes`
+    // can point to (part of) the same buffer as that would be UB already.
+    // Furthermore we checked that the length doesn't overrun the buffer and
+    // `parts_mut` impl must ensure that the `ptr` is valid.
+    unsafe { dst.copy_from_nonoverlapping(src.as_ptr(), len) };
+    len
 }
 
 /// Id for a [`ReadBufPool`].
@@ -140,6 +194,53 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
     /// buffers of size `8` the implementation should initialise the first
     /// buffer with `n = 8` and the second with `n = 10 - 8 = 2`.
     unsafe fn set_init(&mut self, n: usize);
+
+    /// Extend the buffer with `bytes`, returns the total number of bytes
+    /// copied.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use a10::io::BufMutSlice;
+    /// let mut bufs = (Vec::with_capacity(10), Vec::with_capacity(10));
+    /// assert_eq!(write_hello(&mut bufs), 5);
+    /// assert_eq!(bufs.0, b"hello");
+    /// assert_eq!(bufs.1, b"");
+    ///
+    /// fn write_hello<B: BufMutSlice<N>, const N: usize>(bufs: &mut B) -> usize {
+    ///   bufs.extend_from_slice(b"hello")
+    /// }
+    /// ```
+    ///
+    /// Split over multiple buffers.
+    ///
+    /// ```
+    /// # use a10::io::BufMutSlice;
+    /// let mut bufs = (Vec::with_capacity(2), Vec::with_capacity(10));
+    /// assert_eq!(write_hello(&mut bufs), 5);
+    /// assert_eq!(bufs.0, b"he");
+    /// assert_eq!(bufs.1, b"llo");
+    ///
+    /// fn write_hello<B: BufMutSlice<N>, const N: usize>(bufs: &mut B) -> usize {
+    ///   bufs.extend_from_slice(b"hello")
+    /// }
+    /// ```
+    fn extend_from_slice(&mut self, bytes: &[u8]) -> usize {
+        let mut left = bytes;
+        for mut iovec in unsafe { self.as_iovecs_mut() } {
+            let (ptr, capacity) = unsafe { iovec.0.parts_mut() };
+            // SAFETY: `as_iovecs_mut` requirements are the same for `copy_bytes`.
+            let n = unsafe { copy_bytes(ptr, capacity, left) };
+            left = &left[n..];
+            if left.is_empty() {
+                break;
+            }
+        }
+        let written = bytes.len() - left.len();
+        // SAFETY: just written the bytes above.
+        unsafe { self.set_init(written) };
+        written
+    }
 }
 
 /// Wrapper around [`libc::iovec`] to perform mutable vectored I/O operations,
