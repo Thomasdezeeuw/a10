@@ -174,6 +174,7 @@ impl io_uring::FdOp for ToFdOp {
         };
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn map_ok<D: Descriptor>(
         ofd: &AsyncFd<D>,
         (): Self::Resources,

@@ -35,6 +35,7 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
         D::create_flags(submission);
     }
 
+    #[allow(clippy::cast_possible_wrap)]
     fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) }
@@ -44,6 +45,7 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
 impl<D: Descriptor> OpExtract for OpenOp<D> {
     type ExtractOutput = (AsyncFd<D>, PathBuf);
 
+    #[allow(clippy::cast_possible_wrap)]
     fn map_ok_extract(
         sq: &SubmissionQueue,
         path: Self::Resources,
