@@ -150,8 +150,37 @@ pub struct BufGroupId(pub(crate) u16);
 #[derive(Copy, Clone, Debug)]
 pub struct BufId(pub(crate) u16);
 
-/// The implementation for `Vec<u8>` only uses the unused capacity, so any bytes
-/// already in the buffer will be untouched.
+/// The implementation for `Vec<u8>` only uses the uninitialised capacity of the
+/// vector. In other words the bytes currently in the vector remain untouched.
+///
+/// # Examples
+///
+/// The following example shows that the bytes already in the vector remain
+/// untouched.
+///
+/// ```
+/// use a10::io::BufMut;
+///
+/// let mut buf = Vec::with_capacity(100);
+/// buf.extend(b"Hello world!");
+///
+/// write_bytes(b" Hello mars!", &mut buf);
+///
+/// assert_eq!(&*buf, b"Hello world! Hello mars!");
+///
+/// fn write_bytes<B: BufMut>(src: &[u8], buf: &mut B) {
+///     // Writes `src` to `buf`.
+/// #   let (dst, len) = unsafe { buf.parts_mut() };
+/// #   let len = std::cmp::min(src.len(), len as usize);
+/// #   // SAFETY: both the src and dst pointers are good. And we've ensured
+/// #   // that the length is correct, not overwriting data we don't own or
+/// #   // reading data we don't own.
+/// #   unsafe {
+/// #       std::ptr::copy_nonoverlapping(src.as_ptr(), dst, len as usize);
+/// #       buf.set_init(len);
+/// #   }
+/// }
+/// ```
 // SAFETY: `Vec<u8>` manages the allocation of the bytes, so as long as it's
 // alive, so is the slice of bytes. When the `Vec`tor is leaked the allocation
 // will also be leaked.
