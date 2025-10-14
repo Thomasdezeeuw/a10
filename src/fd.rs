@@ -17,9 +17,9 @@ pub use crate::sys::fd::{Direct, ToDirect, ToFd};
 /// All functions on `AsyncFd` are asynchronous and return a [`Future`].
 ///
 /// `AsyncFd` comes on in of two kinds:
-///  * `AsyncFd<`[`File`]`>`: regular file descriptor which can be used as a
+///  * <code>AsyncFd<[File]></code>: regular file descriptor which can be used as a
 ///    regular file descriptor outside of io_uring.
-///  * `AsyncFd<`[`Direct`]`>`: direct descriptor which can be only be used with
+///  * <code>AsyncFd<[Direct]></code>: direct descriptor which can be only be used with
 ///    io_uring.
 ///
 /// Direct descriptors can be faster, but their usage is limited to them being
