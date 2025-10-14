@@ -541,7 +541,7 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
     /// Returns the total length of all buffers in bytes.
     fn total_len(&self) -> usize {
         // SAFETY: `as_iovecs` requires the returned iovec to be valid.
-        unsafe { self.as_iovecs().iter().map(|iovec| iovec.len()).sum() }
+        unsafe { self.as_iovecs().iter().map(IoSlice::len).sum() }
     }
 }
 
@@ -589,7 +589,7 @@ unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     }
 
     fn total_len(&self) -> usize {
-        self.iter().map(|buf| buf.len()).sum()
+        self.iter().map(Buf::len).sum()
     }
 }
 
