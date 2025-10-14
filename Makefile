@@ -61,6 +61,7 @@ clippy:
 		--allow clippy::use-self \
 		\
 		--allow clippy::cast-possible-truncation \
+		--allow clippy::elidable-lifetime-names \
 
 doc:
 	cargo doc --all-features
