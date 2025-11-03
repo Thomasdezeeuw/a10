@@ -37,14 +37,6 @@ impl crate::fd::private::Descriptor for Direct {
     }
 
     #[allow(clippy::cast_sign_loss)] // For fd as u32.
-    fn close_flags(fd: RawFd, submission: &mut sq::Submission) {
-        submission.0.opcode = libc::IORING_OP_CLOSE as u8;
-        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: fd as u32,
-        };
-    }
-
-    #[allow(clippy::cast_sign_loss)] // For fd as u32.
     fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
         let shared = sq.inner.shared_data();
         let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
