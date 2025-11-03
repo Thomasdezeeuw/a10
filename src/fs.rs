@@ -10,7 +10,7 @@ use std::{fmt, io, mem, str};
 
 use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{man_link, sys, SubmissionQueue};
+use crate::{fd, man_link, sys, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -27,6 +27,7 @@ pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
 pub struct OpenOptions {
     flags: libc::c_int,
     mode: libc::mode_t,
+    kind: fd::Kind,
 }
 
 impl OpenOptions {
@@ -35,6 +36,7 @@ impl OpenOptions {
         OpenOptions {
             flags: libc::O_RDONLY, // NOTE: `O_RDONLY` is 0.
             mode: 0o666,           // Same as in std lib.
+            kind: fd::Kind::File,
         }
     }
 
@@ -172,7 +174,7 @@ impl OpenOptions {
     #[doc = man_link!(openat(2))]
     #[doc(alias = "openat")]
     pub fn open<D: Descriptor>(self, sq: SubmissionQueue, path: PathBuf) -> Open<D> {
-        let args = (self.flags | D::kind().cloexec_flag(), self.mode);
+        let args = (self.flags | self.kind.cloexec_flag(), self.mode, self.kind);
         Open(Operation::new(sq, path_to_cstring(path), args))
     }
 }
