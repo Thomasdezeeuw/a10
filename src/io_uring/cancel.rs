@@ -22,10 +22,15 @@ impl io_uring::FdOp for CancelAllOp {
     ) {
         submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
         submission.0.fd = fd.fd();
+        let cancel_flags = if fd.is_direct() {
+            libc::IORING_ASYNC_CANCEL_FD_FIXED
+        } else {
+            0
+        };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            cancel_flags: libc::IORING_ASYNC_CANCEL_ALL
-                | libc::IORING_ASYNC_CANCEL_FD
-                | D::cancel_flag(),
+            cancel_flags: cancel_flags
+                | libc::IORING_ASYNC_CANCEL_ALL
+                | libc::IORING_ASYNC_CANCEL_FD,
         };
     }
 

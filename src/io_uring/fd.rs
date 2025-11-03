@@ -36,10 +36,6 @@ impl crate::fd::private::Descriptor for Direct {
         Kind::Direct
     }
 
-    fn cancel_flag() -> u32 {
-        libc::IORING_ASYNC_CANCEL_FD_FIXED
-    }
-
     fn fmt_dbg() -> &'static str {
         "direct descriptor"
     }

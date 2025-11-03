@@ -111,7 +111,7 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
-    fn is_direct(&self) -> bool {
+    pub(crate) fn is_direct(&self) -> bool {
         D::is_direct()
     }
 
@@ -205,10 +205,6 @@ pub(crate) mod private {
 
         fn kind() -> Kind;
 
-        /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
-        /// descriptor.
-        fn cancel_flag() -> u32;
-
         /// Debug representation of the descriptor.
         fn fmt_dbg() -> &'static str;
 
@@ -229,10 +225,6 @@ impl Descriptor for File {}
 impl private::Descriptor for File {
     fn kind() -> Kind {
         Kind::File
-    }
-
-    fn cancel_flag() -> u32 {
-        0
     }
 
     fn fmt_dbg() -> &'static str {
