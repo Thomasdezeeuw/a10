@@ -99,20 +99,16 @@ impl<D: Descriptor> AsyncFd<D> {
 
     pub(crate) fn use_flags(&self, submission: &mut Submission) {
         #[cfg(any(target_os = "android", target_os = "linux"))]
-        if self.is_direct() {
+        if let Kind::Direct = self.kind() {
             crate::sys::fd::use_direct_flags(submission)
         }
     }
 
     pub(crate) fn create_flags(&self, submission: &mut Submission) {
         #[cfg(any(target_os = "android", target_os = "linux"))]
-        if self.is_direct() {
+        if let Kind::Direct = self.kind() {
             crate::sys::fd::create_direct_flags(submission)
         }
-    }
-
-    pub(crate) fn is_direct(&self) -> bool {
-        D::is_direct()
     }
 
     /// Returns the kind of descriptor.
@@ -199,10 +195,6 @@ pub(crate) mod private {
     use crate::fd::Kind;
 
     pub(crate) trait Descriptor {
-        fn is_direct() -> bool {
-            false
-        }
-
         fn kind() -> Kind;
     }
 }

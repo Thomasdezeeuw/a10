@@ -4,9 +4,9 @@ use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{self, AsyncFd, Descriptor};
 use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
-use crate::io_uring::{self, cq, libc, sq, fd};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
 use crate::SubmissionQueue;
 
@@ -32,8 +32,8 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             open_flags: *flags as u32,
         };
-        if D::is_direct() {
-            fd::create_direct_flags(submission)
+        if let fd::Kind::Direct = D::kind() {
+            io_uring::fd::create_direct_flags(submission)
         }
     }
 

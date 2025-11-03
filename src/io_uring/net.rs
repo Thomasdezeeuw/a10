@@ -3,9 +3,9 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
-use crate::io_uring::{self, cq, fd, libc, sq};
+use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
 use crate::SubmissionQueue;
@@ -32,8 +32,8 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
         };
         submission.0.len = *protocol as u32;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: *flags };
-        if D::is_direct() {
-            fd::create_direct_flags(submission)
+        if let fd::Kind::Direct = D::kind() {
+            io_uring::fd::create_direct_flags(submission)
         }
     }
 

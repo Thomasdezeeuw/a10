@@ -27,10 +27,6 @@ pub enum Direct {}
 impl Descriptor for Direct {}
 
 impl crate::fd::private::Descriptor for Direct {
-    fn is_direct() -> bool {
-        true
-    }
-
     fn kind() -> Kind {
         Kind::Direct
     }
