@@ -157,6 +157,14 @@ impl OpenOptions {
         self
     }
 
+    /// Set the kind of descriptor to use.
+    ///
+    /// Defaults to a regular [`fd::Kind::File`] descriptor.
+    pub const fn kind(mut self, kind: fd::Kind) -> Self {
+        self.kind = kind;
+        self
+    }
+
     /// Create an unnamed temporary regular file. The `dir` argument specifies a
     /// directory; an unnamed inode will be created in that directory's
     /// filesystem. Anything written to the resulting file will be lost when the
