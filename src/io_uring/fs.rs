@@ -15,12 +15,12 @@ pub(crate) struct OpenOp<D>(PhantomData<*const D>);
 impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     type Output = AsyncFd<D>;
     type Resources = CString; // path.
-    type Args = (libc::c_int, libc::mode_t); // flags, mode.
+    type Args = (libc::c_int, libc::mode_t, fd::Kind); // flags, mode, fd::Kind.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         path: &mut Self::Resources,
-        (flags, mode): &mut Self::Args,
+        (flags, mode, fd_kind): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_OPENAT as u8;
@@ -32,7 +32,7 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             open_flags: *flags as u32,
         };
-        if let fd::Kind::Direct = D::kind() {
+        if let fd::Kind::Direct = fd_kind {
             io_uring::fd::create_direct_flags(submission)
         }
     }
