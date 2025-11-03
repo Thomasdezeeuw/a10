@@ -3,8 +3,7 @@
 //! See [`AsyncFd`].
 
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
 use crate::{syscall, SubmissionQueue};
@@ -38,11 +37,7 @@ pub use crate::sys::fd::{Direct, ToDirect, ToFd};
 /// [`fs::OpenOptions`]: crate::fs::OpenOptions
 #[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd<D: Descriptor = File> {
-    /// # Notes
-    ///
-    /// We use `ManuallyDrop` because we drop the fd using an asynchronous
-    /// operation, not a blocking `close(2)` system call.
-    fd: ManuallyDrop<OwnedFd>,
+    fd: RawFd,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
     kind: PhantomData<D>,
@@ -54,12 +49,9 @@ pub struct AsyncFd<D: Descriptor = File> {
 /// Operations only available on regular file descriptors.
 impl AsyncFd<File> {
     /// Create a new `AsyncFd`.
-    pub const fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd {
-            fd: ManuallyDrop::new(fd),
-            sq,
-            kind: PhantomData,
-        }
+    pub fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
+        // SAFETY: OwnedFd ensure that `fd` is valid.
+        unsafe { AsyncFd::from_raw(fd.into_raw_fd(), sq) }
     }
 
     /// Create a new `AsyncFd` from a `RawFd`.
@@ -69,8 +61,7 @@ impl AsyncFd<File> {
     /// The caller must ensure that `fd` is valid and that it's no longer used
     /// by anything other than the returned `AsyncFd`.
     pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        // SAFETY: caller must ensure that `fd` is valid.
-        AsyncFd::new(unsafe { OwnedFd::from_raw_fd(fd) }, sq)
+        unsafe { AsyncFd::from_raw(fd, sq) }
     }
 
     /// Creates a new independently owned `AsyncFd` that shares the same
@@ -80,7 +71,7 @@ impl AsyncFd<File> {
     #[doc(alias = "F_DUPFD")]
     #[doc(alias = "F_DUPFD_CLOEXEC")]
     pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        let fd = self.fd.try_clone()?;
+        let fd = self.as_fd().try_clone_to_owned()?;
         Ok(AsyncFd::new(fd, self.sq.clone()))
     }
 }
@@ -95,9 +86,9 @@ impl<D: Descriptor> AsyncFd<D> {
     /// caller must ensure the descriptor is file or direct descriptor depending
     /// on `D`.
     pub(crate) unsafe fn from_raw(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
+        // SAFETY: caller must ensure that `fd` is valid.
         AsyncFd {
-            // SAFETY: caller must ensure that `fd` is valid.
-            fd: ManuallyDrop::new(unsafe { OwnedFd::from_raw_fd(fd) }),
+            fd,
             sq,
             kind: PhantomData,
         }
@@ -107,7 +98,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// The file descriptor can be a regular or direct descriptor.
     pub(crate) fn fd(&self) -> RawFd {
-        self.fd.as_raw_fd()
+        self.fd
     }
 
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
@@ -118,7 +109,8 @@ impl<D: Descriptor> AsyncFd<D> {
 
 impl AsFd for AsyncFd<File> {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        self.fd.as_fd()
+        // SAFETY: we're ensured that `fd` is valid.
+        unsafe { BorrowedFd::borrow_raw(self.fd()) }
     }
 }
 
