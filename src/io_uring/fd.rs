@@ -1,7 +1,7 @@
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
-use crate::fd::{AsyncFd, Descriptor, File};
+use crate::fd::{AsyncFd, Descriptor, File, Kind};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
 use crate::SubmissionQueue;
@@ -30,6 +30,10 @@ impl Descriptor for Direct {}
 impl crate::fd::private::Descriptor for Direct {
     fn is_direct() -> bool {
         true
+    }
+
+    fn kind() -> Kind {
+        Kind::Direct
     }
 
     fn cancel_flag() -> u32 {
