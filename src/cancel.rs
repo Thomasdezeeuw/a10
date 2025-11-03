@@ -8,13 +8,12 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::fd::{AsyncFd, Descriptor};
 use crate::op::{fd_operation, FdOperation, Operation};
-use crate::{sys, OperationId, SubmissionQueue};
+use crate::{sys, AsyncFd, OperationId, SubmissionQueue};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
 /// operations.
-impl<D: Descriptor> AsyncFd<D> {
+impl AsyncFd {
     /// Attempt to cancel all in progress operations on this fd.
     ///
     /// If the I/O operations were succesfully canceled this returns `Ok(n)`,
@@ -35,7 +34,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// first poll.
     ///
     /// [`Future`]: std::future::Future
-    pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd, D> {
+    pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd> {
         CancelAll(FdOperation::new(self, (), ()))
     }
 }

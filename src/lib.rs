@@ -36,7 +36,6 @@
 //! use std::future::Future;
 //! use std::io;
 //!
-//! use a10::fd::File;
 //! use a10::{Extract, Ring, SubmissionQueue};
 //!
 //! # fn main() -> io::Result<()> {
@@ -63,7 +62,7 @@
 //!     // case of opening a file it means we need ownership of the file name.
 //!     let filename = PathBuf::from(filename);
 //!     // Open a file for reading.
-//!     let file = a10::fs::OpenOptions::new().open::<File>(sq.clone(), filename).await?;
+//!     let file = a10::fs::OpenOptions::new().open(sq.clone(), filename).await?;
 //!
 //!     // Next we'll read from the from the file.
 //!     // Here we need ownership of the buffer, same reason as discussed above.

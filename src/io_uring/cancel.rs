@@ -1,6 +1,5 @@
-use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io_uring::{self, cancel, cq, libc, sq};
-use crate::{OperationId, SubmissionQueue};
+use crate::{fd, AsyncFd, OperationId, SubmissionQueue};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
     submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
@@ -14,8 +13,8 @@ impl io_uring::FdOp for CancelAllOp {
     type Resources = ();
     type Args = ();
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -34,11 +33,7 @@ impl io_uring::FdOp for CancelAllOp {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }

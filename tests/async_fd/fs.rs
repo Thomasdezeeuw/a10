@@ -4,11 +4,9 @@ use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 use std::{panic, str};
 
-use a10::fd::File;
-use a10::fd::{self, Direct};
 use a10::fs::{self, Advise, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
-use a10::{Extract, SubmissionQueue};
+use a10::{fd, Extract, SubmissionQueue};
 
 use crate::util::{
     defer, is_send, is_sync, page_size, remove_test_dir, remove_test_file, require_kernel,
@@ -25,7 +23,7 @@ fn open_extractor() {
     is_send::<OpenOptions>();
     is_sync::<OpenOptions>();
 
-    let open_file: Open<File> = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
+    let open_file: Open = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
 
     // Extract the file path.
     let open_file = open_file.extract();
@@ -46,7 +44,7 @@ fn open_direct_io() {
     let path = PathBuf::from("target/tmp_test.open_direct.txt");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .read()
         .write()
         .create_new()
@@ -80,7 +78,7 @@ fn open_direct_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open<Direct> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .kind(fd::Kind::Direct)
         .open(sq, LOREM_IPSUM_5.path.into());
 
@@ -98,7 +96,7 @@ fn create_temp_file() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open<File> = OpenOptions::new().write().open_temp_file(sq, "/tmp".into());
+    let open_file: Open = OpenOptions::new().write().open_temp_file(sq, "/tmp".into());
     let file = waker.block_on(open_file).expect("failed to open temp file");
 
     let expected = LOREM_IPSUM_5.content;
@@ -147,7 +145,7 @@ fn test_read(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize) {
     is_sync::<Read<Vec<u8>>>();
 
     let path = test_file.path.into();
-    let open_file: Open<File> = OpenOptions::new().open(sq, path);
+    let open_file: Open = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
@@ -197,7 +195,7 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
     let waker = Waker::new();
 
     let path = test_file.path.into();
-    let open_file: Open<File> = OpenOptions::new().open(sq, path);
+    let open_file: Open = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let mut buf = Vec::with_capacity(buf_size);
@@ -230,7 +228,7 @@ fn read_vectored_array() {
 
     let test_file = &LOREM_IPSUM_50;
     let path = test_file.path.into();
-    let open_file: Open<File> = OpenOptions::new().open(sq, path);
+    let open_file: Open = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let bufs = [
@@ -260,7 +258,7 @@ fn read_vectored_tuple() {
 
     let test_file = &LOREM_IPSUM_50;
     let path = test_file.path.into();
-    let open_file: Open<File> = OpenOptions::new().open(sq, path);
+    let open_file: Open = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let bufs = (
@@ -337,7 +335,7 @@ fn test_write(name: &str, sq: SubmissionQueue, bufs: Vec<Vec<u8>>) {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -370,7 +368,7 @@ fn write_vectored() {
     path.push("write_vectored");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -396,7 +394,7 @@ fn write_vectored_extractor() {
     path.push("write_vectored_extractor");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -429,7 +427,7 @@ fn sync_all() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -457,7 +455,7 @@ fn sync_data() {
 
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -492,7 +490,7 @@ fn test_metadata(test_file: &TestFile) {
     is_send::<fs::Stat>();
     is_sync::<fs::Stat>();
 
-    let open_file: Open<File> = OpenOptions::new().open(sq, test_file.path.into());
+    let open_file: Open = OpenOptions::new().open(sq, test_file.path.into());
     let file = waker.block_on(open_file).unwrap();
 
     let metadata = waker.block_on(file.metadata()).unwrap();
@@ -526,7 +524,7 @@ fn fadvise() {
 
     let test_file = &LOREM_IPSUM_50;
 
-    let open_file: Open<File> = OpenOptions::new().open(sq, test_file.path.into());
+    let open_file: Open = OpenOptions::new().open(sq, test_file.path.into());
     let file = waker.block_on(open_file).unwrap();
 
     let advice = libc::POSIX_FADV_WILLNEED | libc::POSIX_FADV_SEQUENTIAL;
@@ -555,7 +553,7 @@ fn ftruncate() {
     path.push("ftruncate");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -591,7 +589,7 @@ fn fallocate() {
     path.push("fallocate");
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open<File> = OpenOptions::new()
+    let open_file: Open = OpenOptions::new()
         .write()
         .create()
         .truncate()

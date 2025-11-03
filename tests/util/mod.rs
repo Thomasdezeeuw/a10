@@ -20,7 +20,6 @@ use std::{fmt, mem, panic, process, ptr, str};
 
 use getrandom::getrandom;
 
-use a10::fd::Descriptor;
 use a10::net::socket;
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
@@ -248,9 +247,9 @@ where
 /// using `start_op`, before canceling them again. Looping until we get the
 /// expected number of canceled operations.
 #[track_caller]
-pub(crate) fn cancel_all<D: Descriptor, F: FnMut()>(
+pub(crate) fn cancel_all<F: FnMut()>(
     waker: &Arc<Waker>,
-    fd: &AsyncFd<D>,
+    fd: &AsyncFd,
     mut start_op: F,
     expected: usize,
 ) {

@@ -46,13 +46,12 @@ use crate::cancel::{Cancel, CancelOperation, CancelResult};
 /// use std::io;
 /// use std::path::PathBuf;
 ///
-/// use a10::fd::File;
 /// use a10::fs::OpenOptions;
 /// use a10::{SubmissionQueue, Extract};
 ///
 /// async fn write_all_to_file(sq: SubmissionQueue, path: PathBuf, buf: Vec<u8>) -> io::Result<(PathBuf, Vec<u8>)> {
 ///     // This `Future` returns just the opened file.
-///     let open_file_future = OpenOptions::new().open::<File>(sq, path);
+///     let open_file_future = OpenOptions::new().open(sq, path);
 ///     // Calling `extract` and awaiting that will return both the file and
 ///     // the path buffer.
 ///     let (file, path) = open_file_future.extract().await?;

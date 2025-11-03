@@ -3,19 +3,18 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
-use crate::SubmissionQueue;
+use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) use crate::unix::MsgHeader;
 
-pub(crate) struct SocketOp<D>(PhantomData<*const D>);
+pub(crate) struct SocketOp;
 
-impl<D: Descriptor> io_uring::Op for SocketOp<D> {
-    type Output = AsyncFd<D>;
+impl io_uring::Op for SocketOp {
+    type Output = AsyncFd;
     type Resources = fd::Kind;
     type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol, flags.
 
@@ -55,8 +54,8 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
     type Resources = AddressStorage<Box<A::Storage>>;
     type Args = ();
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         address: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -72,11 +71,7 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -89,8 +84,8 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     type Args = libc::c_int; // flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         buf: &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -111,11 +106,7 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
         }
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        mut buf: Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -132,8 +123,8 @@ impl io_uring::FdOp for MultishotRecvOp {
     type Args = libc::c_int; // flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         buf_pool: &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -148,8 +139,8 @@ impl io_uring::FdOp for MultishotRecvOp {
         submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
     }
 
-    fn map_ok<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn map_ok(
+        fd: &AsyncFd,
         mut buf_pool: Self::Resources,
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
@@ -158,8 +149,8 @@ impl io_uring::FdOp for MultishotRecvOp {
 }
 
 impl FdIter for MultishotRecvOp {
-    fn map_next<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_next(
+        _: &AsyncFd,
         buf_pool: &mut Self::Resources,
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
@@ -176,8 +167,8 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> 
     type Resources = (B, Box<(MsgHeader, [crate::io::IoMutSlice; N])>);
     type Args = libc::c_int; // flags
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (_, resources): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -187,8 +178,8 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> 
         fill_recvmsg_submission::<NoAddress>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok(
+        _: &AsyncFd,
         (mut bufs, resources): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
@@ -210,8 +201,8 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
     );
     type Args = libc::c_int; // flags
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (buf, resources): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -225,8 +216,8 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
         }
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok(
+        _: &AsyncFd,
         (mut buf, resources): Self::Resources,
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
@@ -256,8 +247,8 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
     );
     type Args = libc::c_int; // flags
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (_, resources): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -266,8 +257,8 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok(
+        _: &AsyncFd,
         (mut bufs, resources): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
@@ -311,8 +302,8 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         buf: &mut Self::Resources,
         (send_op, flags): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -332,11 +323,7 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
         submission.0.len = buf_length;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -344,8 +331,8 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
 impl<B: Buf> FdOpExtract for SendOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         buf: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -361,8 +348,8 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (buf, address): &mut Self::Resources,
         (send_op, flags): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -385,11 +372,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         submission.0.len = buf_length;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -397,8 +380,8 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
 impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -418,8 +401,8 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
     type Args = (SendCall, libc::c_int); // send_op, flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (_, resources): &mut Self::Resources,
         (send_op, flags): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -442,11 +425,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
         submission.0.len = 1;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -454,8 +433,8 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
 impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp<B, A, N> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -463,16 +442,16 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
     }
 }
 
-pub(crate) struct AcceptOp<A, D>(PhantomData<*const (A, D)>);
+pub(crate) struct AcceptOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
-    type Output = (AsyncFd<D>, A);
+impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
+    type Output = (AsyncFd, A);
     type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
     type Args = libc::c_int; // flags
 
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
-    fn fill_submission<LD: Descriptor>(
-        fd: &AsyncFd<LD>,
+    fn fill_submission(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -496,11 +475,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok<LD: Descriptor>(
-        lfd: &AsyncFd<LD>,
-        resources: Self::Resources,
-        (_, fd): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
@@ -510,16 +485,16 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     }
 }
 
-pub(crate) struct MultishotAcceptOp<D>(PhantomData<*const D>);
+pub(crate) struct MultishotAcceptOp;
 
-impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
-    type Output = AsyncFd<D>;
+impl io_uring::FdOp for MultishotAcceptOp {
+    type Output = AsyncFd;
     type Resources = ();
     type Args = libc::c_int; // flags
 
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
-    fn fill_submission<LD: Descriptor>(
-        fd: &AsyncFd<LD>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -534,22 +509,14 @@ impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
         fd.create_flags(submission);
     }
 
-    fn map_ok<LD: Descriptor>(
-        lfd: &AsyncFd<LD>,
-        (): Self::Resources,
-        ok: cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(lfd: &AsyncFd, (): Self::Resources, ok: cq::OpReturn) -> Self::Output {
         MultishotAcceptOp::map_next(lfd, &mut (), ok)
     }
 }
 
-impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
+impl FdIter for MultishotAcceptOp {
     #[allow(clippy::cast_possible_wrap)]
-    fn map_next<LD: Descriptor>(
-        lfd: &AsyncFd<LD>,
-        (): &mut Self::Resources,
-        (_, fd): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_next(lfd: &AsyncFd, (): &mut Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) }
@@ -564,8 +531,8 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
     type Args = (libc::c_int, libc::c_int); // level, optname.
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         value: &mut Self::Resources,
         (level, optname): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -592,11 +559,7 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        value: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == (size_of::<T>() as u32));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -612,8 +575,8 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
     type Args = (libc::c_int, libc::c_int); // level, optname.
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         value: &mut Self::Resources,
         (level, optname): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -640,11 +603,7 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -652,8 +611,8 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
 impl<T> FdOpExtract for SetSocketOptionOp<T> {
     type ExtractOutput = T;
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         value: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -670,8 +629,8 @@ impl io_uring::FdOp for ShutdownOp {
     type Args = std::net::Shutdown;
 
     #[allow(clippy::cast_sign_loss)] // For shutdown as u32.
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         how: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -685,11 +644,7 @@ impl io_uring::FdOp for ShutdownOp {
         } as u32;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

@@ -9,9 +9,8 @@ use std::process::Child;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::fd::{self, AsyncFd, Descriptor, Direct, File};
 use crate::op::{self, fd_operation, operation, FdIter, FdOp, FdOperation, Operation};
-use crate::{man_link, sys, syscall, SubmissionQueue};
+use crate::{fd, man_link, sys, syscall, AsyncFd, SubmissionQueue};
 
 /// Wait on the child `process`.
 ///
@@ -102,9 +101,9 @@ operation!(
 /// }
 /// # }
 /// ```
-pub struct Signals<D: Descriptor = File> {
+pub struct Signals {
     /// `signalfd(2)` file descriptor.
-    fd: AsyncFd<D>,
+    fd: AsyncFd,
     /// All signals this is listening for, used in resetting the signal handlers.
     signals: SignalSet,
 }
@@ -150,24 +149,8 @@ impl Signals {
         ToSignalsDirect(Operation::new(sq, (self, Box::new(fd)), ()))
     }
 
-    /// Change the file descriptor on the `Signals`.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure `fd` is a signalfd valid descriptor.
-    pub(crate) unsafe fn change_fd<D: Descriptor>(self, fd: AsyncFd<D>) -> Signals<D> {
-        let Signals { fd: _, signals: _ } = &self;
-        // SAFETY: reading or dropping all fields of `Signals`.
-        let mut signals = ManuallyDrop::new(self);
-        unsafe { ptr::drop_in_place(&raw mut signals.fd) }
-        let signals = unsafe { ptr::read(&raw const signals.signals) };
-        Signals { fd, signals }
-    }
-}
-
-impl<D: Descriptor> Signals<D> {
     /// Receive a signal.
-    pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd, D> {
+    pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
         // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
         let info = unsafe { Box::new(mem::zeroed()) };
         ReceiveSignal(FdOperation::new(&self.fd, info, ()))
@@ -178,7 +161,7 @@ impl<D: Descriptor> Signals<D> {
     /// This is an combined, owned version of `Signals` and [`ReceiveSignal`]
     /// (the future behind `Signals::receive`). This is useful if you don't want
     /// to deal with the `'fd` lifetime.
-    pub fn receive_signals(self) -> ReceiveSignals<D> {
+    pub fn receive_signals(self) -> ReceiveSignals {
         // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
         let resources = unsafe { Box::new(mem::zeroed()) };
         ReceiveSignals {
@@ -186,9 +169,23 @@ impl<D: Descriptor> Signals<D> {
             state: op::State::new(resources, ()),
         }
     }
+
+    /// Change the file descriptor on the `Signals`.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `fd` is a signalfd valid descriptor.
+    pub(crate) unsafe fn change_fd(self, fd: AsyncFd) -> Signals {
+        let Signals { fd: _, signals: _ } = &self;
+        // SAFETY: reading or dropping all fields of `Signals`.
+        let mut signals = ManuallyDrop::new(self);
+        unsafe { ptr::drop_in_place(&raw mut signals.fd) }
+        let signals = unsafe { ptr::read(&raw const signals.signals) };
+        Signals { fd, signals }
+    }
 }
 
-impl<D: Descriptor> fmt::Debug for Signals<D> {
+impl fmt::Debug for Signals {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Signals")
             .field("fd", &self.fd)
@@ -197,7 +194,7 @@ impl<D: Descriptor> fmt::Debug for Signals<D> {
     }
 }
 
-impl<D: Descriptor> Drop for Signals<D> {
+impl Drop for Signals {
     fn drop(&mut self) {
         // Reverse the blocking of signals.
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
@@ -208,7 +205,7 @@ impl<D: Descriptor> Drop for Signals<D> {
 
 operation!(
     /// [`Future`] behind [`Signals::to_direct_descriptor`].
-    pub struct ToSignalsDirect(sys::process::ToSignalsDirectOp) -> io::Result<Signals<Direct>>;
+    pub struct ToSignalsDirect(sys::process::ToSignalsDirectOp) -> io::Result<Signals>;
 );
 
 fd_operation!(
@@ -221,12 +218,12 @@ fd_operation!(
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[must_use = "`AsyncIterator`s do nothing unless polled"]
 #[derive(Debug)]
-pub struct ReceiveSignals<D: Descriptor = File> {
-    signals: Signals<D>,
+pub struct ReceiveSignals {
+    signals: Signals,
     state: op::State<Box<libc::signalfd_siginfo>, ()>,
 }
 
-impl<D: Descriptor> ReceiveSignals<D> {
+impl ReceiveSignals {
     /// This is the same as the [`AsyncIterator::poll_next`] function, but
     /// then available on stable Rust.
     ///
@@ -263,7 +260,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
     }
 
     /// Returns the underlying [`Signals`].
-    pub fn into_inner(self) -> Signals<D> {
+    pub fn into_inner(self) -> Signals {
         let mut this = ManuallyDrop::new(self);
         let ReceiveSignals { signals, state } = &mut *this;
         // SAFETY: not using `state` any more.
@@ -278,7 +275,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
 }
 
 #[cfg(feature = "nightly")]
-impl<D: Descriptor> std::async_iter::AsyncIterator for ReceiveSignals<D> {
+impl std::async_iter::AsyncIterator for ReceiveSignals {
     type Item = io::Result<libc::signalfd_siginfo>;
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
@@ -286,7 +283,7 @@ impl<D: Descriptor> std::async_iter::AsyncIterator for ReceiveSignals<D> {
     }
 }
 
-impl<D: Descriptor> Drop for ReceiveSignals<D> {
+impl Drop for ReceiveSignals {
     fn drop(&mut self) {
         // SAFETY: we're in the `Drop` implementation.
         unsafe { self.state.drop(self.signals.fd.sq()) }

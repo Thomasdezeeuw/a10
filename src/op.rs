@@ -10,9 +10,8 @@ use std::{fmt, io, mem};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::drop_waker::DropWake;
-use crate::fd::{AsyncFd, Descriptor, File};
 use crate::sq::QueueFull;
-use crate::{cq, sq, sys, OperationId, QueuedOperation, SubmissionQueue};
+use crate::{cq, sq, sys, AsyncFd, OperationId, QueuedOperation, SubmissionQueue};
 
 /// Generic [`Future`] that powers other I/O operation futures.
 ///
@@ -205,37 +204,36 @@ pub(crate) trait Iter: Op {
 /// descriptor.
 ///
 /// [`Future`]: std::future::Future
-pub(crate) struct FdOperation<'fd, O: FdOp, D: Descriptor = File> {
-    fd: &'fd AsyncFd<D>,
+pub(crate) struct FdOperation<'fd, O: FdOp> {
+    fd: &'fd AsyncFd,
     state: State<O::Resources, O::Args>,
 }
 
-impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
+impl<'fd, O: FdOp> FdOperation<'fd, O> {
     /// Create a new `FdOperation`.
     pub(crate) const fn new(
-        fd: &'fd AsyncFd<D>,
+        fd: &'fd AsyncFd,
         resources: O::Resources,
         args: O::Args,
-    ) -> FdOperation<'fd, O, D> {
+    ) -> FdOperation<'fd, O> {
         FdOperation {
             fd,
             state: State::new(resources, args),
         }
     }
 
-    pub(crate) const fn fd(&self) -> &'fd AsyncFd<D> {
+    pub(crate) const fn fd(&self) -> &'fd AsyncFd {
         self.fd
     }
 }
 
-impl<'fd, O, D> FdOperation<'fd, O, D>
+impl<'fd, O> FdOperation<'fd, O>
 where
     // TODO: this is silly.
     O: FdOp<
         Submission = <<sys::Implementation as crate::Implementation>::Submissions as sq::Submissions>::Submission,
         OperationState = <<<sys::Implementation as crate::Implementation>::Completions as cq::Completions>::Event as cq::Event>::State,
     >,
-    D: Descriptor,
     O::OperationOutput: fmt::Debug,
 {
     pub(crate) fn poll(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<io::Result<O::Output>> {
@@ -288,7 +286,7 @@ where
     }
 }
 
-impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
+impl<'fd, O: FdOp> Cancel for FdOperation<'fd, O> {
     fn try_cancel(&mut self) -> CancelResult {
         if let Some(op_id) = self.state.cancel() {
             let result = self.fd.sq.inner.submit_no_completion(|submission| {
@@ -309,9 +307,9 @@ impl<'fd, O: FdOp, D: Descriptor> Cancel for FdOperation<'fd, O, D> {
 }
 
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
-impl<'fd, O: FdOp + Unpin, D: Descriptor> Unpin for FdOperation<'fd, O, D> {}
+impl<'fd, O: FdOp + Unpin> Unpin for FdOperation<'fd, O> {}
 
-impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
+impl<'fd, O: FdOp> FdOperation<'fd, O> {
     pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct(name)
             .field("fd", &self.fd)
@@ -320,7 +318,7 @@ impl<'fd, O: FdOp, D: Descriptor> FdOperation<'fd, O, D> {
     }
 }
 
-impl<'fd, O: FdOp, D: Descriptor> Drop for FdOperation<'fd, O, D> {
+impl<'fd, O: FdOp> Drop for FdOperation<'fd, O> {
     fn drop(&mut self) {
         // SAFETY: we're in the `Drop` implementation.
         unsafe { self.state.drop(self.fd.sq()) };
@@ -345,8 +343,8 @@ pub(crate) trait FdOp {
     type OperationOutput;
 
     /// Fill a submission for the operation.
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         submission: &mut Self::Submission,
@@ -354,16 +352,16 @@ pub(crate) trait FdOp {
 
     /// Check the result of an operation based on the `QueuedOperation.state`
     /// (`Self::OperationState`).
-    fn check_result<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn check_result(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput>;
 
     /// Map the system call output to the future's output.
-    fn map_ok<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn map_ok(
+        fd: &AsyncFd,
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::Output;
@@ -378,8 +376,8 @@ pub(crate) trait FdOpExtract: FdOp {
     type ExtractOutput;
 
     /// Map the system call output to the future's output.
-    fn map_ok_extract<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn map_ok_extract(
+        fd: &AsyncFd,
         resources: Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::ExtractOutput;
@@ -390,8 +388,8 @@ pub(crate) trait FdOpExtract: FdOp {
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 pub(crate) trait FdIter: FdOp {
     /// Map the system call output to the future's output.
-    fn map_next<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn map_next(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         operation_output: Self::OperationOutput,
     ) -> Self::Output;
@@ -814,7 +812,7 @@ macro_rules! fd_operation {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys))
+            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > (FdOperation($sys))
               impl Future -> $output,
               $( impl Extract -> $extract_output, )?
         );
@@ -835,7 +833,7 @@ macro_rules! fd_iter_operation {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? ;; D: $crate::fd::Descriptor = $crate::fd::File> (FdOperation($sys))
+            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > (FdOperation($sys))
               impl AsyncIter -> $output,
               $( impl Extract -> $extract_output, )?
         );

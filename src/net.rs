@@ -17,23 +17,22 @@ use std::{fmt, io, ptr, slice};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::fd::{self, AsyncFd, Descriptor, File};
 use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::sys::net::MsgHeader;
-use crate::{man_link, sys, SubmissionQueue};
+use crate::{fd, man_link, sys, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
-pub const fn socket<D: Descriptor>(
+pub const fn socket(
     sq: SubmissionQueue,
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
     flags: libc::c_int,
-) -> Socket<D> {
+) -> Socket {
     let args = (domain, r#type, protocol, flags);
     Socket(Operation::new(sq, fd::Kind::File, args))
 }
@@ -42,10 +41,10 @@ operation!(
     /// [`Future`] behind [`socket`].
     ///
     /// If you're looking for a socket type, there is none, see [`AsyncFd`].
-    pub struct Socket<D: Descriptor>(sys::net::SocketOp<D>) -> io::Result<AsyncFd<D>>;
+    pub struct Socket(sys::net::SocketOp) -> io::Result<AsyncFd>;
 );
 
-impl<D: Descriptor> Socket<D> {
+impl Socket {
     /// Set the kind of descriptor to use.
     ///
     /// Defaults to a regular [`fd::Kind::File`] descriptor.
@@ -58,10 +57,10 @@ impl<D: Descriptor> Socket<D> {
 }
 
 /// Socket related system calls.
-impl<D: Descriptor> AsyncFd<D> {
+impl AsyncFd {
     /// Initiate a connection on this socket to the specified address.
     #[doc = man_link!(connect(2))]
-    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A, D>
+    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
     where
         A: SocketAddress,
     {
@@ -72,7 +71,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
-    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B, D>
+    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B>
     where
         B: BufMut,
     {
@@ -94,13 +93,13 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         pool: ReadBufPool,
         flags: libc::c_int,
-    ) -> MultishotRecv<'fd, D> {
+    ) -> MultishotRecv<'fd> {
         MultishotRecv(FdOperation::new(self, pool, flags))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected.
-    pub const fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B, D>
+    pub const fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
     where
         B: BufMut,
     {
@@ -118,7 +117,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         mut bufs: B,
         flags: libc::c_int,
-    ) -> RecvVectored<'fd, B, N, D>
+    ) -> RecvVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
@@ -133,7 +132,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> RecvNVectored<'fd, B, N, D>
+    ) -> RecvNVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
@@ -149,7 +148,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Receives data on the socket and returns the source address.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A, D>
+    pub fn recv_from<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A>
     where
         B: BufMut,
         A: SocketAddress,
@@ -166,7 +165,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         mut bufs: B,
         flags: libc::c_int,
-    ) -> RecvFromVectored<'fd, B, A, N, D>
+    ) -> RecvFromVectored<'fd, B, A, N>
     where
         B: BufMutSlice<N>,
         A: SocketAddress,
@@ -178,7 +177,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(send(2))]
-    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
         B: Buf,
     {
@@ -198,7 +197,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
-    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B, D>
+    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
     where
         B: Buf,
     {
@@ -208,7 +207,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B, D>
+    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -224,7 +223,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
     /// copies of `buf`.
-    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B, D>
+    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -244,7 +243,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         bufs: B,
         flags: libc::c_int,
-    ) -> SendMsg<'fd, B, NoAddress, N, D>
+    ) -> SendMsg<'fd, B, NoAddress, N>
     where
         B: BufSlice<N>,
     {
@@ -257,7 +256,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         bufs: B,
         flags: libc::c_int,
-    ) -> SendMsg<'fd, B, NoAddress, N, D>
+    ) -> SendMsg<'fd, B, NoAddress, N>
     where
         B: BufSlice<N>,
     {
@@ -270,7 +269,7 @@ impl<D: Descriptor> AsyncFd<D> {
     pub fn send_all_vectored<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> SendAllVectored<'fd, B, N, D>
+    ) -> SendAllVectored<'fd, B, N>
     where
         B: BufSlice<N>,
     {
@@ -287,7 +286,7 @@ impl<D: Descriptor> AsyncFd<D> {
     pub fn send_all_vectored_zc<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> SendAllVectored<'fd, B, N, D>
+    ) -> SendAllVectored<'fd, B, N>
     where
         B: BufSlice<N>,
     {
@@ -305,7 +304,7 @@ impl<D: Descriptor> AsyncFd<D> {
         buf: B,
         address: A,
         flags: libc::c_int,
-    ) -> SendTo<'fd, B, A, D>
+    ) -> SendTo<'fd, B, A>
     where
         B: Buf,
         A: SocketAddress,
@@ -324,7 +323,7 @@ impl<D: Descriptor> AsyncFd<D> {
         buf: B,
         address: A,
         flags: libc::c_int,
-    ) -> SendTo<'fd, B, A, D>
+    ) -> SendTo<'fd, B, A>
     where
         B: Buf,
         A: SocketAddress,
@@ -341,7 +340,7 @@ impl<D: Descriptor> AsyncFd<D> {
         bufs: B,
         address: A,
         flags: libc::c_int,
-    ) -> SendMsg<'fd, B, A, N, D>
+    ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
         A: SocketAddress,
@@ -356,7 +355,7 @@ impl<D: Descriptor> AsyncFd<D> {
         bufs: B,
         address: A,
         flags: libc::c_int,
-    ) -> SendMsg<'fd, B, A, N, D>
+    ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
         A: SocketAddress,
@@ -370,7 +369,7 @@ impl<D: Descriptor> AsyncFd<D> {
         bufs: B,
         address: A,
         flags: libc::c_int,
-    ) -> SendMsg<'fd, B, A, N, D>
+    ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
         A: SocketAddress,
@@ -386,7 +385,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
     #[doc = man_link!(accept(2))]
-    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A, D>
+    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A>
     where
         A: SocketAddress,
     {
@@ -402,7 +401,7 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// Also see [`AsyncFd::accept`].
     #[doc = man_link!(accept4(2))]
-    pub fn accept4<'fd, A>(&'fd self, flags: libc::c_int) -> Accept<'fd, A, D>
+    pub fn accept4<'fd, A>(&'fd self, flags: libc::c_int) -> Accept<'fd, A>
     where
         A: SocketAddress,
     {
@@ -415,7 +414,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
-    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd, D> {
+    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
         // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
@@ -427,7 +426,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// socket.
     ///
     /// Also see [`AsyncFd::multishot_accept`].
-    pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd, D> {
+    pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
         MultishotAccept(FdOperation::new(self, (), flags))
     }
 
@@ -445,7 +444,7 @@ impl<D: Descriptor> AsyncFd<D> {
         &'fd self,
         level: libc::c_int,
         optname: libc::c_int,
-    ) -> SocketOption<'fd, T, D> {
+    ) -> SocketOption<'fd, T> {
         let value = Box::new_uninit();
         SocketOption(FdOperation::new(self, value, (level, optname)))
     }
@@ -464,14 +463,14 @@ impl<D: Descriptor> AsyncFd<D> {
         level: libc::c_int,
         optname: libc::c_int,
         optvalue: T,
-    ) -> SetSocketOption<'fd, T, D> {
+    ) -> SetSocketOption<'fd, T> {
         let value = Box::new(optvalue);
         SetSocketOption(FdOperation::new(self, value, (level, optname)))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
     #[doc = man_link!(shutdown(2))]
-    pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd, D> {
+    pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
         Shutdown(FdOperation::new(self, (), how))
     }
 }
@@ -513,7 +512,7 @@ fd_operation! {
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::accept`].
-    pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A, D>) -> io::Result<(AsyncFd<D>, A)>;
+    pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A>) -> io::Result<(AsyncFd, A)>;
 
     /// [`Future`] behind [`AsyncFd::socket_option`].
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
@@ -531,18 +530,18 @@ fd_iter_operation! {
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
-    pub struct MultishotAccept(sys::net::MultishotAcceptOp<D>) -> io::Result<AsyncFd<D>>;
+    pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
 #[derive(Debug)]
-pub struct RecvN<'fd, B: BufMut, D: Descriptor = File> {
-    recv: Recv<'fd, ReadNBuf<B>, D>,
+pub struct RecvN<'fd, B: BufMut> {
+    recv: Recv<'fd, ReadNBuf<B>>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
 }
 
-impl<'fd, B: BufMut, D: Descriptor> Cancel for RecvN<'fd, B, D> {
+impl<'fd, B: BufMut> Cancel for RecvN<'fd, B> {
     fn try_cancel(&mut self) -> CancelResult {
         self.recv.try_cancel()
     }
@@ -552,7 +551,7 @@ impl<'fd, B: BufMut, D: Descriptor> Cancel for RecvN<'fd, B, D> {
     }
 }
 
-impl<'fd, B: BufMut, D: Descriptor> Future for RecvN<'fd, B, D> {
+impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -583,13 +582,13 @@ impl<'fd, B: BufMut, D: Descriptor> Future for RecvN<'fd, B, D> {
 
 /// [`Future`] behind [`AsyncFd::send_all`].
 #[derive(Debug)]
-pub struct SendAll<'fd, B: Buf, D: Descriptor = File> {
-    send: Extractor<Send<'fd, SkipBuf<B>, D>>,
+pub struct SendAll<'fd, B: Buf> {
+    send: Extractor<Send<'fd, SkipBuf<B>>>,
     send_op: SendCall,
     flags: libc::c_int,
 }
 
-impl<'fd, B: Buf, D: Descriptor> SendAll<'fd, B, D> {
+impl<'fd, B: Buf> SendAll<'fd, B> {
     fn poll_inner(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
         match Pin::new(&mut self.send).poll(ctx) {
             Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
@@ -615,7 +614,7 @@ impl<'fd, B: Buf, D: Descriptor> SendAll<'fd, B, D> {
     }
 }
 
-impl<'fd, B: Buf, D: Descriptor> Cancel for SendAll<'fd, B, D> {
+impl<'fd, B: Buf> Cancel for SendAll<'fd, B> {
     fn try_cancel(&mut self) -> CancelResult {
         self.send.try_cancel()
     }
@@ -625,7 +624,7 @@ impl<'fd, B: Buf, D: Descriptor> Cancel for SendAll<'fd, B, D> {
     }
 }
 
-impl<'fd, B: Buf, D: Descriptor> Future for SendAll<'fd, B, D> {
+impl<'fd, B: Buf> Future for SendAll<'fd, B> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -633,9 +632,9 @@ impl<'fd, B: Buf, D: Descriptor> Future for SendAll<'fd, B, D> {
     }
 }
 
-impl<'fd, B: Buf, D: Descriptor> Extract for SendAll<'fd, B, D> {}
+impl<'fd, B: Buf> Extract for SendAll<'fd, B> {}
 
-impl<'fd, B: Buf, D: Descriptor> Future for Extractor<SendAll<'fd, B, D>> {
+impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
     type Output = io::Result<B>;
 
     fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -645,13 +644,13 @@ impl<'fd, B: Buf, D: Descriptor> Future for Extractor<SendAll<'fd, B, D>> {
 
 /// [`Future`] behind [`AsyncFd::recv_n_vectored`].
 #[derive(Debug)]
-pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor = File> {
-    recv: RecvVectored<'fd, ReadNBuf<B>, N, D>,
+pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
+    recv: RecvVectored<'fd, ReadNBuf<B>, N>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
 }
 
-impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Cancel for RecvNVectored<'fd, B, N, D> {
+impl<'fd, B: BufMutSlice<N>, const N: usize> Cancel for RecvNVectored<'fd, B, N> {
     fn try_cancel(&mut self) -> CancelResult {
         self.recv.try_cancel()
     }
@@ -661,7 +660,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Cancel for RecvNVect
     }
 }
 
-impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for RecvNVectored<'fd, B, N, D> {
+impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -692,13 +691,13 @@ impl<'fd, B: BufMutSlice<N>, const N: usize, D: Descriptor> Future for RecvNVect
 
 /// [`Future`] behind [`AsyncFd::send_all_vectored`] and [`AsyncFd::send_all_vectored_zc`].
 #[derive(Debug)]
-pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize, D: Descriptor = File> {
-    send: Extractor<SendMsg<'fd, B, NoAddress, N, D>>,
+pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
+    send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
     skip: u64,
     send_op: SendCall,
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> SendAllVectored<'fd, B, N, D> {
+impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
     /// Poll implementation used by the [`Future`] implement for the naked type
     /// and the type wrapper in an [`Extractor`].
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
@@ -747,7 +746,7 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> SendAllVectored<'fd, B,
     }
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Cancel for SendAllVectored<'fd, B, N, D> {
+impl<'fd, B: BufSlice<N>, const N: usize> Cancel for SendAllVectored<'fd, B, N> {
     fn try_cancel(&mut self) -> CancelResult {
         self.send.try_cancel()
     }
@@ -757,7 +756,7 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Cancel for SendAllVecto
     }
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future for SendAllVectored<'fd, B, N, D> {
+impl<'fd, B: BufSlice<N>, const N: usize> Future for SendAllVectored<'fd, B, N> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
@@ -765,11 +764,9 @@ impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future for SendAllVecto
     }
 }
 
-impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Extract for SendAllVectored<'fd, B, N, D> {}
+impl<'fd, B: BufSlice<N>, const N: usize> Extract for SendAllVectored<'fd, B, N> {}
 
-impl<'fd, B: BufSlice<N>, const N: usize, D: Descriptor> Future
-    for Extractor<SendAllVectored<'fd, B, N, D>>
-{
+impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'fd, B, N>> {
     type Output = io::Result<B>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {

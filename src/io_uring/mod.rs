@@ -6,9 +6,8 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
 use crate::drop_waker::DropWake;
-use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
-use crate::syscall;
+use crate::{syscall, AsyncFd};
 
 pub(crate) mod cancel;
 pub(crate) mod config;
@@ -311,18 +310,14 @@ pub(crate) trait FdOp {
     type Resources: DropWake;
     type Args;
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         submission: &mut sq::Submission,
     );
 
-    fn map_ok<D: Descriptor>(
-        fd: &AsyncFd<D>,
-        resources: Self::Resources,
-        op_output: cq::OpReturn,
-    ) -> Self::Output;
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, op_output: cq::OpReturn) -> Self::Output;
 }
 
 impl<T: FdOp> crate::op::FdOp for T {
@@ -333,8 +328,8 @@ impl<T: FdOp> crate::op::FdOp for T {
     type OperationState = cq::OperationState;
     type OperationOutput = cq::OpReturn;
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         submission: &mut Self::Submission,
@@ -342,8 +337,8 @@ impl<T: FdOp> crate::op::FdOp for T {
         T::fill_submission(fd, resources, args, submission);
     }
 
-    fn check_result<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn check_result(
+        _: &AsyncFd,
         _: &mut Self::Resources,
         _: &mut Self::Args,
         state: &mut Self::OperationState,
@@ -357,8 +352,8 @@ impl<T: FdOp> crate::op::FdOp for T {
         }
     }
 
-    fn map_ok<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn map_ok(
+        fd: &AsyncFd,
         resources: Self::Resources,
         op_output: Self::OperationOutput,
     ) -> Self::Output {

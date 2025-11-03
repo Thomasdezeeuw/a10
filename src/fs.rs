@@ -8,9 +8,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use std::{fmt, io, mem, str};
 
-use crate::fd::{AsyncFd, Descriptor, File};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{fd, man_link, sys, SubmissionQueue};
+use crate::{fd, man_link, sys, AsyncFd, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -173,7 +172,7 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
-    pub fn open_temp_file<D: Descriptor>(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open<D> {
+    pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open {
         self.flags |= libc::O_TMPFILE;
         self.open(sq, dir)
     }
@@ -181,7 +180,7 @@ impl OpenOptions {
     /// Open `path`.
     #[doc = man_link!(openat(2))]
     #[doc(alias = "openat")]
-    pub fn open<D: Descriptor>(self, sq: SubmissionQueue, path: PathBuf) -> Open<D> {
+    pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open {
         let args = (self.flags | self.kind.cloexec_flag(), self.mode);
         Open(Operation::new(sq, (path_to_cstring(path), self.kind), args))
     }
@@ -189,7 +188,7 @@ impl OpenOptions {
 
 /// Open a file in read-only mode.
 #[doc = man_link!(openat(2))]
-pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open<File> {
+pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open {
     OpenOptions::new().read().open(sq, path)
 }
 
@@ -231,8 +230,8 @@ pub(crate) enum RemoveFlag {
 
 operation!(
     /// [`Future`] behind [`OpenOptions::open`] and [`open_file`].
-    pub struct Open<D: Descriptor>(sys::fs::OpenOp<D>) -> io::Result<AsyncFd<D>>,
-      impl Extract -> io::Result<(AsyncFd<D>, PathBuf)>;
+    pub struct Open(sys::fs::OpenOp) -> io::Result<AsyncFd>,
+      impl Extract -> io::Result<(AsyncFd, PathBuf)>;
 
     /// [`Future`] behind [`create_dir`].
     pub struct CreateDir(sys::fs::CreateDirOp) -> io::Result<()>,
@@ -248,7 +247,7 @@ operation!(
 );
 
 /// File(system) related system calls.
-impl<D: Descriptor> AsyncFd<D> {
+impl AsyncFd {
     /// Sync all OS-internal metadata to disk.
     ///
     /// # Notes
@@ -256,7 +255,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Any uncompleted writes may not be synced to disk.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fsync")]
-    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd, D> {
+    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
         SyncData(FdOperation::new(self, (), SyncDataFlag::All))
     }
 
@@ -274,14 +273,14 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Any uncompleted writes may not be synced to disk.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fdatasync")]
-    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd, D> {
+    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
         SyncData(FdOperation::new(self, (), SyncDataFlag::Data))
     }
 
     /// Retrieve metadata about the file.
     #[doc = man_link!(statx(2))]
     #[doc(alias = "statx")]
-    pub fn metadata<'fd>(&'fd self) -> Stat<'fd, D> {
+    pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
         // SAFETY: fully zeroed `libc::statx` is a valid value.
         let metadata = unsafe { Box::new(mem::zeroed()) };
         Stat(FdOperation::new(self, metadata, ()))
@@ -304,7 +303,7 @@ impl<D: Descriptor> AsyncFd<D> {
         offset: u64,
         length: u32,
         advice: libc::c_int,
-    ) -> Advise<'fd, D> {
+    ) -> Advise<'fd> {
         Advise(FdOperation::new(self, (), (offset, length, advice)))
     }
 
@@ -320,7 +319,7 @@ impl<D: Descriptor> AsyncFd<D> {
         offset: u64,
         length: u32,
         mode: libc::c_int,
-    ) -> Allocate<'fd, D> {
+    ) -> Allocate<'fd> {
         Allocate(FdOperation::new(self, (), (offset, length, mode)))
     }
 
@@ -331,7 +330,7 @@ impl<D: Descriptor> AsyncFd<D> {
     /// extended part reads as null bytes.
     #[doc = man_link!(ftruncate(2))]
     #[doc(alias = "ftruncate")]
-    pub const fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd, D> {
+    pub const fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd> {
         Truncate(FdOperation::new(self, (), length))
     }
 }

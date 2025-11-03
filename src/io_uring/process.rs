@@ -1,12 +1,11 @@
 use std::os::fd::RawFd;
 use std::ptr;
 
-use crate::fd::{self, AsyncFd, Descriptor, Direct, File};
 use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
 use crate::process::{Signals, WaitOn};
-use crate::SubmissionQueue;
+use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) struct WaitIdOp;
 
@@ -47,8 +46,8 @@ impl io_uring::Op for WaitIdOp {
 pub(crate) struct ToSignalsDirectOp;
 
 impl io_uring::Op for ToSignalsDirectOp {
-    type Output = Signals<Direct>;
-    type Resources = (Signals<File>, Box<RawFd>);
+    type Output = Signals;
+    type Resources = (Signals, Box<RawFd>);
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
@@ -87,8 +86,8 @@ impl io_uring::FdOp for ReceiveSignalOp {
     type Resources = Box<libc::signalfd_siginfo>;
     type Args = ();
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         info: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -103,18 +102,14 @@ impl io_uring::FdOp for ReceiveSignalOp {
         submission.set_async();
     }
 
-    fn map_ok<D: Descriptor>(
-        fd: &AsyncFd<D>,
-        mut info: Self::Resources,
-        ok: cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(fd: &AsyncFd, mut info: Self::Resources, ok: cq::OpReturn) -> Self::Output {
         ReceiveSignalOp::map_next(fd, &mut info, ok)
     }
 }
 
 impl FdIter for ReceiveSignalOp {
-    fn map_next<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_next(
+        _: &AsyncFd,
         info: &mut Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::Output {
