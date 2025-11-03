@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use std::{panic, str};
 
 use a10::fd::File;
+use a10::fd::{self, Direct};
 use a10::fs::{self, Advise, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
@@ -72,6 +73,24 @@ fn open_direct_io() {
 
     let got = std::fs::read(&path).expect("failed to read file");
     assert_eq!(got, content);
+}
+
+#[test]
+fn open_direct_fd() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file: Open<Direct> = OpenOptions::new()
+        .kind(fd::Kind::Direct)
+        .open(sq, LOREM_IPSUM_5.path.into());
+
+    // Extract the file path.
+    let open_file = open_file.extract();
+    let (_, path) = waker.block_on(open_file).unwrap();
+
+    let got: &Path = path.as_ref();
+    let expected: &Path = LOREM_IPSUM_5.path.as_ref();
+    assert_eq!(got, expected);
 }
 
 #[test]

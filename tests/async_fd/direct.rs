@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use a10::fd::{AsyncFd, Direct, File};
+use a10::fd::{self, AsyncFd, Direct, File};
 use a10::fs::OpenOptions;
 
 use crate::util::{require_kernel, test_queue, Waker, LOREM_IPSUM_5};
@@ -13,8 +13,8 @@ fn to_direct_descriptor() {
     let waker = Waker::new();
 
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
-    let regular_fd = waker.block_on(open_file).unwrap();
-    let direct_fd = waker.block_on(regular_fd.to_direct_descriptor()).unwrap();
+    let regular_fd: AsyncFd<File> = waker.block_on(open_file).unwrap();
+    let direct_fd: AsyncFd<Direct> = waker.block_on(regular_fd.to_direct_descriptor()).unwrap();
 
     check_fs_fd(waker, regular_fd, direct_fd);
 }
@@ -26,9 +26,11 @@ fn to_file_descriptor() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
-    let direct_fd = waker.block_on(open_file).unwrap();
-    let regular_fd = waker.block_on(direct_fd.to_file_descriptor()).unwrap();
+    let open_file = OpenOptions::new()
+        .kind(fd::Kind::Direct)
+        .open(sq, LOREM_IPSUM_5.path.into());
+    let direct_fd: AsyncFd<Direct> = waker.block_on(open_file).unwrap();
+    let regular_fd: AsyncFd<File> = waker.block_on(direct_fd.to_file_descriptor()).unwrap();
 
     check_fs_fd(waker, regular_fd, direct_fd);
 }
