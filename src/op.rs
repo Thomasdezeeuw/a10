@@ -237,7 +237,7 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                D::use_flags(submission);
+                fd.use_flags(submission);
                 O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
@@ -254,7 +254,7 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                D::use_flags(submission);
+                fd.use_flags(submission);
                 O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),
@@ -271,7 +271,7 @@ where
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                D::use_flags(submission);
+                fd.use_flags(submission);
                 O::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| O::check_result(fd, resources, args, state),

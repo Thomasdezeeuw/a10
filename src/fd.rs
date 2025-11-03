@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{syscall, SubmissionQueue};
+use crate::{syscall, Submission, SubmissionQueue};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{Direct, ToDirect, ToFd};
@@ -97,6 +97,13 @@ impl<D: Descriptor> AsyncFd<D> {
         &self.sq
     }
 
+    pub(crate) fn use_flags(&self, submission: &mut Submission) {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if self.is_direct() {
+            crate::sys::fd::use_direct_flags(submission)
+        }
+    }
+
     fn is_direct(&self) -> bool {
         D::is_direct()
     }
@@ -159,9 +166,6 @@ pub(crate) mod private {
             false
         }
 
-        /// Set any additional flags in `submission` when using the descriptor.
-        fn use_flags(submission: &mut crate::sys::Submission);
-
         /// Set any additional flags in `submission` when creating the descriptor.
         fn create_flags(submission: &mut crate::sys::Submission);
 
@@ -190,10 +194,6 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    fn use_flags(_: &mut crate::sys::Submission) {
-        // No additional flags needed.
-    }
-
     fn create_flags(_: &mut crate::sys::Submission) {
         // No additional flags needed.
     }
