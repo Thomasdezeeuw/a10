@@ -11,11 +11,11 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
-use a10::fd::{Direct, File};
+use a10::fd::{self, AsyncFd, Direct, File};
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
-    SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption,
+    socket, Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send,
+    SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption,
 };
 use a10::{Extract, Ring};
 
@@ -1577,6 +1577,49 @@ fn set_socket_option() {
         .unwrap();
     assert_eq!(linger.l_onoff, got_linger.l_onoff);
     assert_eq!(linger.l_linger, got_linger.l_linger);
+}
+
+#[test]
+fn direct_fd() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let local_addr = listener.local_addr().unwrap();
+
+    // Create a socket and connect the listener.
+    let stream: AsyncFd<Direct> = waker
+        .block_on(socket(sq, libc::AF_INET, libc::SOCK_STREAM, 0, 0).kind(fd::Kind::Direct))
+        .expect("failed to create socket");
+    waker
+        .block_on(stream.connect(local_addr))
+        .expect("failed to connect");
+
+    let (mut client, _) = listener.accept().expect("failed to accept connection");
+
+    // Send some data.
+    let n = waker
+        .block_on(stream.send(DATA2, 0))
+        .expect("failed to send");
+    assert_eq!(n, DATA2.len());
+    let mut buf = vec![0; DATA2.len() + 2];
+    let n = client.read(&mut buf).expect("failed to send data");
+    assert_eq!(&buf[0..n], DATA2);
+
+    // Receive some data.
+    let recv_future = stream.recv(Vec::with_capacity(DATA1.len() + 1), 0);
+    client.write_all(DATA1).expect("failed to send data");
+    let mut buf = waker.block_on(recv_future).expect("failed to receive");
+    assert_eq!(&buf, DATA1);
+
+    // We should detect the peer closing the stream.
+    drop(client);
+    buf.clear();
+    let buf = waker
+        .block_on(stream.recv(buf, 0))
+        .expect("failed to receive");
+    assert!(buf.is_empty());
 }
 
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
