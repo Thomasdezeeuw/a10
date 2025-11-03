@@ -1,9 +1,9 @@
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
-use crate::fd::{self, AsyncFd, Descriptor, File};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
+use crate::{fd, AsyncFd};
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
@@ -16,20 +16,8 @@ pub(crate) fn create_direct_flags(submission: &mut sq::Submission) {
     };
 }
 
-/// Direct descriptors are io_uring private file descriptors.
-///
-/// They avoid some of the overhead associated with thread shared file tables
-/// and can be used in any io_uring request that takes a file descriptor.
-/// However they cannot be used outside of io_uring.
-#[derive(Copy, Clone, Debug)]
-pub enum Direct {}
-
-impl Descriptor for Direct {}
-
-impl crate::fd::private::Descriptor for Direct {}
-
 /// io_uring specific methods.
-impl AsyncFd<File> {
+impl AsyncFd {
     /// Convert a regular file descriptor into a direct descriptor.
     ///
     /// The file descriptor can continued to be used and the lifetimes of the
@@ -45,7 +33,7 @@ impl AsyncFd<File> {
     /// [`with_direct_descriptors`]: crate::Config::with_direct_descriptors
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
-    pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd, File> {
+    pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd> {
         // The `fd` needs to be valid until the operation is complete, so we
         // need to heap allocate it so we can delay it's allocation in case of
         // an early drop.
@@ -55,7 +43,7 @@ impl AsyncFd<File> {
 }
 
 /// Operations only available on direct descriptors (io_uring only).
-impl AsyncFd<Direct> {
+impl AsyncFd {
     /// Convert a direct descriptor into a regular file descriptor.
     ///
     /// The direct descriptor can continued to be used and the lifetimes of the
@@ -66,29 +54,29 @@ impl AsyncFd<Direct> {
     ///
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub const fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd, Direct> {
+    pub const fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd> {
         ToFd(FdOperation::new(self, (), ()))
     }
 }
 
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::to_direct_descriptor`].
-    pub struct ToDirect(ToDirectOp) -> io::Result<AsyncFd<Direct>>;
+    pub struct ToDirect(ToDirectOp) -> io::Result<AsyncFd>;
 
     /// [`Future`] behind [`AsyncFd::to_file_descriptor`].
-    pub struct ToFd(ToFdOp) -> io::Result<AsyncFd<File>>;
+    pub struct ToFd(ToFdOp) -> io::Result<AsyncFd>;
 );
 
 struct ToDirectOp;
 
 impl io_uring::FdOp for ToDirectOp {
-    type Output = AsyncFd<Direct>;
+    type Output = AsyncFd;
     type Resources = Box<RawFd>;
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn fill_submission(
+        _: &AsyncFd,
         fd: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -104,11 +92,7 @@ impl io_uring::FdOp for ToDirectOp {
         submission.0.len = 1;
     }
 
-    fn map_ok<D: Descriptor>(
-        ofd: &AsyncFd<D>,
-        fd: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(ofd: &AsyncFd, fd: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 1);
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
@@ -119,12 +103,12 @@ impl io_uring::FdOp for ToDirectOp {
 struct ToFdOp;
 
 impl io_uring::FdOp for ToFdOp {
-    type Output = AsyncFd<File>;
+    type Output = AsyncFd;
     type Resources = ();
     type Args = ();
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -138,11 +122,7 @@ impl io_uring::FdOp for ToFdOp {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok<D: Descriptor>(
-        ofd: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, fd): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(ofd: &AsyncFd, (): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd::Kind::File, sq) }

@@ -10,9 +10,8 @@ use std::os::fd::OwnedFd;
 use std::sync::Mutex;
 use std::{fmt, mem};
 
-use crate::fd::{AsyncFd, Descriptor};
 use crate::op::OpResult;
-use crate::{debug_detail, OperationId};
+use crate::{debug_detail, AsyncFd, OperationId};
 
 pub(crate) mod config;
 mod cq;
@@ -116,10 +115,10 @@ pub(crate) trait FdOp {
     type Args;
     type OperationOutput;
 
-    fn fill_submission<D: Descriptor>(fd: &AsyncFd<D>, kevent: &mut Event);
+    fn fill_submission(fd: &AsyncFd, kevent: &mut Event);
 
-    fn check_result<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn check_result(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
     ) -> OpResult<Self::OperationOutput>;
@@ -135,8 +134,8 @@ impl<T: FdOp> crate::op::FdOp for T {
     type OperationState = OperationState;
     type OperationOutput = T::OperationOutput;
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         _: &mut Self::Resources,
         _: &mut Self::Args,
         kevent: &mut Self::Submission,
@@ -144,8 +143,8 @@ impl<T: FdOp> crate::op::FdOp for T {
         T::fill_submission(fd, kevent)
     }
 
-    fn check_result<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn check_result(
+        fd: &AsyncFd,
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         _: &mut Self::OperationState,
@@ -153,8 +152,8 @@ impl<T: FdOp> crate::op::FdOp for T {
         T::check_result(fd, resources, args)
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok(
+        _: &AsyncFd,
         resources: Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output {

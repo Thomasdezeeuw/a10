@@ -2,7 +2,7 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator))]
 
-use a10::fd::{AsyncFd, File};
+use a10::AsyncFd;
 
 mod util;
 use util::{is_send, is_sync};
@@ -16,15 +16,13 @@ mod async_fd {
 }
 
 #[test]
-fn async_fd_is_send_and_sync() {
-    is_send::<AsyncFd<File>>();
-    is_sync::<AsyncFd<File>>();
+fn async_fd_size() {
+    assert_eq!(std::mem::size_of::<AsyncFd>(), 16);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), 16);
 }
 
 #[test]
-#[cfg(any(target_os = "linux"))]
-fn async_direct_fd_is_send_and_sync() {
-    use a10::fd::Direct;
-    is_send::<AsyncFd<Direct>>();
-    is_sync::<AsyncFd<Direct>>();
+fn async_fd_is_send_and_sync() {
+    is_send::<AsyncFd>();
+    is_sync::<AsyncFd>();
 }

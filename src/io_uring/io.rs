@@ -7,11 +7,10 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
-use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
-use crate::SubmissionQueue;
+use crate::{fd, AsyncFd, SubmissionQueue};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -283,8 +282,8 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
     type Resources = Buffer<B>;
     type Args = u64; // Offset.
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         buf: &mut Self::Resources,
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -303,11 +302,7 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
         }
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        mut buf: Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -323,8 +318,8 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
     type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
     type Args = u64; // Offset.
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (_, iovecs): &mut Self::Resources,
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -338,11 +333,7 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (mut bufs, _): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (mut bufs, _): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
@@ -356,8 +347,8 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
     type Resources = Buffer<B>;
     type Args = u64; // Offset.
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         buf: &mut Self::Resources,
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -372,11 +363,7 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
         submission.0.len = length;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -384,8 +371,8 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
 impl<B: Buf> FdOpExtract for WriteOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         buf: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -400,8 +387,8 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
     type Resources = (B, Box<[crate::io::IoSlice; N]>);
     type Args = u64; // Offset.
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (_, iovecs): &mut Self::Resources,
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -415,11 +402,7 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        _: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
@@ -427,8 +410,8 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
 impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract<D: Descriptor>(
-        _: &AsyncFd<D>,
+    fn map_ok_extract(
+        _: &AsyncFd,
         (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
@@ -444,8 +427,8 @@ impl io_uring::FdOp for SpliceOp {
     type Args = (RawFd, SpliceDirection, u64, u64, u32, libc::c_int); // target, direction, off_in, off_out, len, flags
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         (target, direction, off_in, off_out, length, flags): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -469,18 +452,14 @@ impl io_uring::FdOp for SpliceOp {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         n as usize
     }
 }
 
-pub(crate) struct CloseOp<D>(PhantomData<*const D>);
+pub(crate) struct CloseOp;
 
-impl<D: Descriptor> io_uring::Op for CloseOp<D> {
+impl io_uring::Op for CloseOp {
     type Output = ();
     type Resources = ();
     type Args = (RawFd, fd::Kind);

@@ -1,19 +1,17 @@
 use std::ffi::CString;
-use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::fd::{self, AsyncFd, Descriptor};
 use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
-use crate::SubmissionQueue;
+use crate::{fd, AsyncFd, SubmissionQueue};
 
-pub(crate) struct OpenOp<D>(PhantomData<*const D>);
+pub(crate) struct OpenOp;
 
-impl<D: Descriptor> io_uring::Op for OpenOp<D> {
-    type Output = AsyncFd<D>;
+impl io_uring::Op for OpenOp {
+    type Output = AsyncFd;
     type Resources = (CString, fd::Kind); // path.
     type Args = (libc::c_int, libc::mode_t); // flags, mode.
 
@@ -38,14 +36,18 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(sq: &SubmissionQueue, (_, fd_kind): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_ok(
+        sq: &SubmissionQueue,
+        (_, fd_kind): Self::Resources,
+        (_, fd): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
     }
 }
 
-impl<D: Descriptor> OpExtract for OpenOp<D> {
-    type ExtractOutput = (AsyncFd<D>, PathBuf);
+impl OpExtract for OpenOp {
+    type ExtractOutput = (AsyncFd, PathBuf);
 
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok_extract(
@@ -192,8 +194,8 @@ impl io_uring::FdOp for SyncDataOp {
     type Resources = ();
     type Args = SyncDataFlag;
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -207,11 +209,7 @@ impl io_uring::FdOp for SyncDataOp {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -223,8 +221,8 @@ impl io_uring::FdOp for StatOp {
     type Resources = Box<Metadata>;
     type Args = ();
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         metadata: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -244,11 +242,7 @@ impl io_uring::FdOp for StatOp {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        metadata: Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
         debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
         *metadata
@@ -263,8 +257,8 @@ impl io_uring::FdOp for AdviseOp {
     type Args = (u64, u32, libc::c_int); // offset, length, advice
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         (offset, length, advice): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -278,11 +272,7 @@ impl io_uring::FdOp for AdviseOp {
         };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -295,8 +285,8 @@ impl io_uring::FdOp for AllocateOp {
     type Args = (u64, u32, libc::c_int); // offset, length, mode
 
     #[allow(clippy::cast_sign_loss)]
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         (offset, length, mode): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -310,11 +300,7 @@ impl io_uring::FdOp for AllocateOp {
         submission.0.len = *mode as u32;
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -326,8 +312,8 @@ impl io_uring::FdOp for TruncateOp {
     type Resources = ();
     type Args = u64; // length
 
-    fn fill_submission<D: Descriptor>(
-        fd: &AsyncFd<D>,
+    fn fill_submission(
+        fd: &AsyncFd,
         (): &mut Self::Resources,
         length: &mut Self::Args,
         submission: &mut sq::Submission,
@@ -337,11 +323,7 @@ impl io_uring::FdOp for TruncateOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *length };
     }
 
-    fn map_ok<D: Descriptor>(
-        _: &AsyncFd<D>,
-        (): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

@@ -11,13 +11,12 @@ use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
-use a10::fd::{self, AsyncFd, Direct, File};
 use a10::io::ReadBufPool;
 use a10::net::{
     socket, Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send,
     SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption,
 };
-use a10::{Extract, Ring};
+use a10::{fd, AsyncFd, Extract, Ring};
 
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
@@ -350,10 +349,8 @@ fn connect() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    is_send::<Socket<File>>();
-    is_sync::<Socket<File>>();
-    is_send::<Socket<Direct>>();
-    is_sync::<Socket<Direct>>();
+    is_send::<Socket>();
+    is_sync::<Socket>();
 
     // Bind a socket.
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
@@ -1589,7 +1586,7 @@ fn direct_fd() {
     let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
-    let stream: AsyncFd<Direct> = waker
+    let stream: AsyncFd = waker
         .block_on(socket(sq, libc::AF_INET, libc::SOCK_STREAM, 0, 0).kind(fd::Kind::Direct))
         .expect("failed to create socket");
     waker

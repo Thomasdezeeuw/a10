@@ -2,27 +2,25 @@
 //!
 //! See [`AsyncFd`].
 
-use std::marker::PhantomData;
 use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
 use crate::{syscall, Submission, SubmissionQueue};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-pub use crate::sys::fd::{Direct, ToDirect, ToFd};
+pub use crate::sys::fd::{ToDirect, ToFd};
 
 /// An open file descriptor.
 ///
 /// All functions on `AsyncFd` are asynchronous and return a [`Future`].
 ///
 /// `AsyncFd` comes on in of two kinds:
-///  * <code>AsyncFd<[File]></code>: regular file descriptor which can be used as a
-///    regular file descriptor outside of io_uring.
-///  * <code>AsyncFd<[Direct]></code>: direct descriptor which can be only be used with
-///    io_uring.
+///  * regular file descriptor which can be used outside of io_uring.
+///  * direct descriptor which can be only be used with io_uring.
 ///
 /// Direct descriptors can be faster, but their usage is limited to them being
-/// limited to io_uring operations.
+/// limited to io_uring operations. See [`AsyncFd::kind`] and [`Kind`] for more
+/// information.
 ///
 /// An `AsyncFd` can be created using some of the following methods:
 ///  * Sockets can be opened using [`socket`].
@@ -36,25 +34,31 @@ pub use crate::sys::fd::{Direct, ToDirect, ToFd};
 /// [`open_file`]: crate::fs::open_file
 /// [`fs::OpenOptions`]: crate::fs::OpenOptions
 #[allow(clippy::module_name_repetitions)]
-pub struct AsyncFd<D: Descriptor = File> {
+pub struct AsyncFd {
     fd: RawFd,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
-    kind: PhantomData<D>,
 }
 
 // NOTE: the implementations are split over the modules to give the `Future`
 // implementation types a reasonable place in the docs.
 
-/// Operations only available on regular file descriptors.
-impl AsyncFd<File> {
+impl AsyncFd {
     /// Create a new `AsyncFd`.
+    ///
+    /// # Notes
+    ///
+    /// `fd` is expected to be a regulat file descriptor.
     pub fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
         // SAFETY: OwnedFd ensure that `fd` is valid.
         unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
     }
 
     /// Create a new `AsyncFd` from a `RawFd`.
+    ///
+    /// # Notes
+    ///
+    /// `fd` is expected to be a regulat file descriptor.
     ///
     /// # Safety
     ///
@@ -64,39 +68,35 @@ impl AsyncFd<File> {
         AsyncFd::from_raw(fd, Kind::File, sq)
     }
 
-    /// Creates a new independently owned `AsyncFd` that shares the same
-    /// underlying file descriptor as the existing `AsyncFd`.
-    ///
-    /// # Notes
-    ///
-    /// Direct descriptors can not be cloned.
-    #[doc(alias = "dup")]
-    #[doc(alias = "dup2")]
-    #[doc(alias = "F_DUPFD")]
-    #[doc(alias = "F_DUPFD_CLOEXEC")]
-    pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        if let Kind::Direct = self.kind() {
-            return Err(io::ErrorKind::Unsupported.into());
-        }
-
-        let fd = self.as_fd().try_clone_to_owned()?;
-        Ok(AsyncFd::new(fd, self.sq.clone()))
-    }
-}
-
-impl<D: Descriptor> AsyncFd<D> {
-    pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd<D> {
+    pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         let fd = if let Kind::Direct = kind {
             fd | (1 << 31)
         } else {
             fd
         };
-        AsyncFd {
-            fd,
-            sq,
-            kind: PhantomData,
+        AsyncFd { fd, sq }
+    }
+
+    /// Creates a new independently owned `AsyncFd` that shares the same
+    /// underlying file descriptor as the existing `AsyncFd`.
+    ///
+    /// # Notes
+    ///
+    /// Direct descriptors can not be cloned and will always returned an
+    /// unsupported error.
+    #[doc(alias = "dup")]
+    #[doc(alias = "dup2")]
+    #[doc(alias = "F_DUPFD")]
+    #[doc(alias = "F_DUPFD_CLOEXEC")]
+    pub fn try_clone(&self) -> io::Result<AsyncFd> {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if let Kind::Direct = self.kind() {
+            return Err(io::ErrorKind::Unsupported.into());
         }
+
+        let fd = self.as_fd().try_clone_to_owned()?;
+        Ok(AsyncFd::new(fd, self.sq.clone()))
     }
 
     /// Returns the `RawFd` of this `AsyncFd`.
@@ -136,16 +136,23 @@ impl<D: Descriptor> AsyncFd<D> {
     }
 }
 
-impl AsFd for AsyncFd<File> {
+impl AsFd for AsyncFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if let Kind::Direct = self.kind() {
+            // SAFETY: this is incorrect.
+            // FIXME: change this to a failable method.
+            return unsafe { BorrowedFd::borrow_raw(RawFd::MAX) };
+        }
+
         // SAFETY: we're ensured that `fd` is valid.
         unsafe { BorrowedFd::borrow_raw(self.fd()) }
     }
 }
 
-impl<D: Descriptor> Unpin for AsyncFd<D> {}
+impl Unpin for AsyncFd {}
 
-impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
+impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncFd")
             .field("fd", &self.fd())
@@ -155,7 +162,7 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
     }
 }
 
-impl<D: Descriptor> Drop for AsyncFd<D> {
+impl Drop for AsyncFd {
     fn drop(&mut self) {
         // Try to asynchronously close the desctiptor (if the OS supports it).
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -205,19 +212,3 @@ impl Kind {
         }
     }
 }
-
-/// What kind of descriptor is used [`File`] or [`Direct`].
-#[allow(private_bounds)] // That's the point of the private module.
-pub trait Descriptor: private::Descriptor {}
-
-pub(crate) mod private {
-    pub(crate) trait Descriptor {}
-}
-
-/// Regular Unix file descriptors.
-#[derive(Copy, Clone, Debug)]
-pub enum File {}
-
-impl Descriptor for File {}
-
-impl private::Descriptor for File {}

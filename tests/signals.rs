@@ -7,7 +7,6 @@ use std::task::Poll;
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, task, thread};
 
-use a10::fd::{Descriptor, Direct, File};
 use a10::process::{ReceiveSignal, ReceiveSignals, Signals};
 use a10::Ring;
 
@@ -90,18 +89,12 @@ fn main() {
     let start = Instant::now();
     println!("\nrunning {} tests", (2 * (3 * SIGNALS.len()) + 1));
 
-    is_send::<Signals<File>>();
-    is_sync::<Signals<File>>();
-    is_send::<Signals<Direct>>();
-    is_sync::<Signals<Direct>>();
-    is_send::<ReceiveSignal<File>>();
-    is_sync::<ReceiveSignal<File>>();
-    is_send::<ReceiveSignal<Direct>>();
-    is_sync::<ReceiveSignal<Direct>>();
-    is_send::<ReceiveSignals<File>>();
-    is_sync::<ReceiveSignals<File>>();
-    is_send::<ReceiveSignals<Direct>>();
-    is_sync::<ReceiveSignals<Direct>>();
+    is_send::<Signals>();
+    is_sync::<Signals>();
+    is_send::<ReceiveSignal>();
+    is_sync::<ReceiveSignal>();
+    is_send::<ReceiveSignals>();
+    is_sync::<ReceiveSignals>();
 
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
@@ -130,16 +123,16 @@ fn main() {
     println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n", start.elapsed().as_secs_f64());
 }
 
-struct TestHarness<D: Descriptor> {
+struct TestHarness {
     ring: Ring,
-    signals: Option<Signals<D>>,
+    signals: Option<Signals>,
     passed: usize,
     failed: usize,
     quiet: bool,
 }
 
-impl TestHarness<File> {
-    fn setup(quiet: bool) -> TestHarness<File> {
+impl TestHarness {
+    fn setup(quiet: bool) -> TestHarness {
         let ring = Ring::config(2).with_direct_descriptors(2).build().unwrap();
         let sq = ring.submission_queue().clone();
         TestHarness {
@@ -152,7 +145,7 @@ impl TestHarness<File> {
     }
 }
 
-impl<D: Descriptor> TestHarness<D> {
+impl TestHarness {
     fn test_single_threaded(&mut self) {
         let pid = process::id();
         let signals = self.signals.as_ref().unwrap();
@@ -289,11 +282,7 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
     };
 }
 
-fn receive_signal<D: Descriptor>(
-    ring: &mut Ring,
-    signals: &Signals<D>,
-    expected_signal: libc::c_int,
-) {
+fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: libc::c_int) {
     let mut receive = signals.receive();
     let signal_info = loop {
         match poll_nop(Pin::new(&mut receive)) {
@@ -304,7 +293,7 @@ fn receive_signal<D: Descriptor>(
     assert_eq!(signal_info.ssi_signo as libc::c_int, expected_signal);
 }
 
-fn to_direct(ring: &mut Ring, signals: Signals<File>) -> Signals<Direct> {
+fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
     let mut to_direct = signals.to_direct_descriptor();
     loop {
         match poll_nop(Pin::new(&mut to_direct)) {
