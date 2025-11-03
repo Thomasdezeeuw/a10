@@ -381,7 +381,7 @@ impl<D: Descriptor> AsyncFd<D> {
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
         const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
-        self.accept4(D::cloexec_flag())
+        self.accept4(self.cloexec_flag())
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
@@ -407,7 +407,7 @@ impl<D: Descriptor> AsyncFd<D> {
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
         const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
-        self.multishot_accept4(D::cloexec_flag())
+        self.multishot_accept4(self.cloexec_flag())
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted

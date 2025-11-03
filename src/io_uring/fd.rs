@@ -32,10 +32,6 @@ impl crate::fd::private::Descriptor for Direct {
         true
     }
 
-    fn cloexec_flag() -> libc::c_int {
-        0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
-    }
-
     fn cancel_flag() -> u32 {
         libc::IORING_ASYNC_CANCEL_FD_FIXED
     }
