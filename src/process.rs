@@ -9,7 +9,7 @@ use std::process::Child;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::fd::{AsyncFd, Descriptor, Direct, File};
+use crate::fd::{self, AsyncFd, Descriptor, Direct, File};
 use crate::op::{self, fd_operation, operation, FdIter, FdOp, FdOperation, Operation};
 use crate::{man_link, sys, syscall, SubmissionQueue};
 
@@ -116,7 +116,7 @@ impl Signals {
         log::trace!(signals:? = signals; "setting up signal handling");
         let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
-        let fd = unsafe { AsyncFd::from_raw_fd(fd, sq) };
+        let fd = unsafe { AsyncFd::from_raw(fd, fd::Kind::File, sq) };
         // Block all `signals` as we're going to read them from the signalfd.
         sigprocmask(libc::SIG_BLOCK, &signals.0)?;
         Ok(Signals { fd, signals })

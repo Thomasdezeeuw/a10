@@ -14,13 +14,13 @@ pub(crate) struct OpenOp<D>(PhantomData<*const D>);
 
 impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     type Output = AsyncFd<D>;
-    type Resources = CString; // path.
-    type Args = (libc::c_int, libc::mode_t, fd::Kind); // flags, mode, fd::Kind.
+    type Resources = (CString, fd::Kind); // path.
+    type Args = (libc::c_int, libc::mode_t); // flags, mode.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        path: &mut Self::Resources,
-        (flags, mode, fd_kind): &mut Self::Args,
+        (path, fd_kind): &mut Self::Resources,
+        (flags, mode): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_OPENAT as u8;
@@ -38,9 +38,9 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_ok(sq: &SubmissionQueue, (_, fd_kind): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
     }
 }
 
@@ -50,11 +50,11 @@ impl<D: Descriptor> OpExtract for OpenOp<D> {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok_extract(
         sq: &SubmissionQueue,
-        path: Self::Resources,
+        (path, fd_kind): Self::Resources,
         (_, fd): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         // SAFETY: kernel ensures that `fd` is valid.
-        let fd = unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) };
+        let fd = unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) };
         let path = path_from_cstring(path);
         (fd, path)
     }
