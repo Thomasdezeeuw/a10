@@ -203,6 +203,7 @@ pub use extract::Extract;
 pub use fd::AsyncFd;
 
 use crate::bitmap::AtomicBitMap;
+use crate::sys::Submission;
 
 /// This type represents the user space side of an io_uring.
 ///

@@ -244,7 +244,7 @@ impl<D: Descriptor> ReceiveSignals<D> {
             ctx,
             fd.sq(),
             |resources, args, submission| {
-                D::use_flags(submission);
+                fd.use_flags(submission);
                 sys::process::ReceiveSignalOp::fill_submission(fd, resources, args, submission);
             },
             |resources, args, state| {

@@ -6,6 +6,10 @@ use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
 use crate::SubmissionQueue;
 
+pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
+    submission.0.flags |= libc::IOSQE_FIXED_FILE;
+}
+
 /// Direct descriptors are io_uring private file descriptors.
 ///
 /// They avoid some of the overhead associated with thread shared file tables
@@ -19,10 +23,6 @@ impl Descriptor for Direct {}
 impl crate::fd::private::Descriptor for Direct {
     fn is_direct() -> bool {
         true
-    }
-
-    fn use_flags(submission: &mut sq::Submission) {
-        submission.0.flags |= libc::IOSQE_FIXED_FILE;
     }
 
     #[allow(clippy::cast_sign_loss)]
