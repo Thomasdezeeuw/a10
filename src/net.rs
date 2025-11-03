@@ -34,8 +34,8 @@ pub const fn socket<D: Descriptor>(
     protocol: libc::c_int,
     flags: libc::c_int,
 ) -> Socket<D> {
-    let args = (domain, r#type, protocol, flags, fd::Kind::File);
-    Socket(Operation::new(sq, (), args))
+    let args = (domain, r#type, protocol, flags);
+    Socket(Operation::new(sq, fd::Kind::File, args))
 }
 
 operation!(
@@ -50,8 +50,8 @@ impl<D: Descriptor> Socket<D> {
     ///
     /// Defaults to a regular [`fd::Kind::File`] descriptor.
     pub fn kind(mut self, kind: fd::Kind) -> Self {
-        if let Some(args) = self.0.update_args() {
-            args.4 = kind;
+        if let Some(resources) = self.0.update_args() {
+            *resources = kind;
         }
         self
     }

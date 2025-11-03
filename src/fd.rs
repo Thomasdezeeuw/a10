@@ -54,30 +54,44 @@ impl AsyncFd<File> {
         unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
     }
 
-    /// Creates a new independently owned `AsyncFd` that shares the same
-    /// underlying file descriptor as the existing `AsyncFd`.
-    #[doc(alias = "dup")]
-    #[doc(alias = "dup2")]
-    #[doc(alias = "F_DUPFD")]
-    #[doc(alias = "F_DUPFD_CLOEXEC")]
-    pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        let fd = self.as_fd().try_clone_to_owned()?;
-        Ok(AsyncFd::new(fd, self.sq.clone()))
-    }
-}
-
-impl<D: Descriptor> AsyncFd<D> {
     /// Create a new `AsyncFd` from a `RawFd`.
     ///
     /// # Safety
     ///
     /// The caller must ensure that `fd` is valid and that it's no longer used
     /// by anything other than the returned `AsyncFd`.
+    pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
+        AsyncFd::from_raw(fd, Kind::File, sq)
+    }
+
+    /// Creates a new independently owned `AsyncFd` that shares the same
+    /// underlying file descriptor as the existing `AsyncFd`.
     ///
-    /// Furthermore the caller must ensure that `fd` is either a [`File`]
-    /// descriptor or a [`Direct`] descriptor.
-    pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
-        // SAFETY: caller must ensure that `fd` is valid.
+    /// # Notes
+    ///
+    /// Direct descriptors can not be cloned.
+    #[doc(alias = "dup")]
+    #[doc(alias = "dup2")]
+    #[doc(alias = "F_DUPFD")]
+    #[doc(alias = "F_DUPFD_CLOEXEC")]
+    pub fn try_clone(&self) -> io::Result<AsyncFd> {
+        if let Kind::Direct = self.kind() {
+            return Err(io::ErrorKind::Unsupported.into());
+        }
+
+        let fd = self.as_fd().try_clone_to_owned()?;
+        Ok(AsyncFd::new(fd, self.sq.clone()))
+    }
+}
+
+impl<D: Descriptor> AsyncFd<D> {
+    pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd<D> {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        let fd = if let Kind::Direct = kind {
+            fd | (1 << 31)
+        } else {
+            fd
+        };
         AsyncFd {
             fd,
             sq,
@@ -89,7 +103,8 @@ impl<D: Descriptor> AsyncFd<D> {
     ///
     /// The file descriptor can be a regular or direct descriptor.
     pub(crate) fn fd(&self) -> RawFd {
-        self.fd
+        // We use the sign bit to indicate direct descriptors, so we unset it.
+        self.fd & !(1 << 31)
     }
 
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
@@ -113,7 +128,11 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Returns the kind of descriptor.
     pub fn kind(&self) -> Kind {
-        D::kind()
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if self.fd.is_negative() {
+            return Kind::Direct;
+        }
+        Kind::File
     }
 }
 
@@ -192,11 +211,7 @@ impl Kind {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
-    use crate::fd::Kind;
-
-    pub(crate) trait Descriptor {
-        fn kind() -> Kind;
-    }
+    pub(crate) trait Descriptor {}
 }
 
 /// Regular Unix file descriptors.
@@ -205,8 +220,4 @@ pub enum File {}
 
 impl Descriptor for File {}
 
-impl private::Descriptor for File {
-    fn kind() -> Kind {
-        Kind::File
-    }
-}
+impl private::Descriptor for File {}

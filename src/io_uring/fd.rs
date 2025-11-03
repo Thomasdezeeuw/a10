@@ -1,7 +1,7 @@
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
-use crate::fd::{AsyncFd, Descriptor, File, Kind};
+use crate::fd::{self, AsyncFd, Descriptor, File};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
 
@@ -26,11 +26,7 @@ pub enum Direct {}
 
 impl Descriptor for Direct {}
 
-impl crate::fd::private::Descriptor for Direct {
-    fn kind() -> Kind {
-        Kind::Direct
-    }
-}
+impl crate::fd::private::Descriptor for Direct {}
 
 /// io_uring specific methods.
 impl AsyncFd<File> {
@@ -116,7 +112,7 @@ impl io_uring::FdOp for ToDirectOp {
         debug_assert!(n == 1);
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw_fd(*fd, sq) }
+        unsafe { AsyncFd::from_raw(*fd, fd::Kind::Direct, sq) }
     }
 }
 
@@ -149,6 +145,6 @@ impl io_uring::FdOp for ToFdOp {
     ) -> Self::Output {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, fd::Kind::File, sq) }
     }
 }

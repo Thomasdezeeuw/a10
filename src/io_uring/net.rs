@@ -16,13 +16,13 @@ pub(crate) struct SocketOp<D>(PhantomData<*const D>);
 
 impl<D: Descriptor> io_uring::Op for SocketOp<D> {
     type Output = AsyncFd<D>;
-    type Resources = ();
-    type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int, fd::Kind); // domain, type, protocol, flags, fd kind.
+    type Resources = fd::Kind;
+    type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol, flags.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        (): &mut Self::Resources,
-        (domain, r#type, protocol, flags, fd_kind): &mut Self::Args,
+        fd_kind: &mut Self::Resources,
+        (domain, r#type, protocol, flags): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_SOCKET as u8;
@@ -32,15 +32,19 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
         };
         submission.0.len = *protocol as u32;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: *flags };
-        if let fd::Kind::Direct = fd_kind {
+        if let fd::Kind::Direct = *fd_kind {
             io_uring::fd::create_direct_flags(submission)
         }
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(sq: &SubmissionQueue, (): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_ok(
+        sq: &SubmissionQueue,
+        fd_kind: Self::Resources,
+        (_, fd): cq::OpReturn,
+    ) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
     }
 }
 
@@ -499,7 +503,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     ) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
-        let socket = unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) };
+        let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
         // SAFETY: the kernel has written the address for us.
         let address = unsafe { A::init((resources.0).0, (resources.0).1) };
         (socket, address)
@@ -548,7 +552,7 @@ impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
     ) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) }
+        unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) }
     }
 }
 

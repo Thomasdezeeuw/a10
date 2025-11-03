@@ -182,8 +182,8 @@ impl OpenOptions {
     #[doc = man_link!(openat(2))]
     #[doc(alias = "openat")]
     pub fn open<D: Descriptor>(self, sq: SubmissionQueue, path: PathBuf) -> Open<D> {
-        let args = (self.flags | self.kind.cloexec_flag(), self.mode, self.kind);
-        Open(Operation::new(sq, path_to_cstring(path), args))
+        let args = (self.flags | self.kind.cloexec_flag(), self.mode);
+        Open(Operation::new(sq, (path_to_cstring(path), self.kind), args))
     }
 }
 
