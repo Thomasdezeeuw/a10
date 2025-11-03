@@ -111,14 +111,6 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
-    pub(crate) fn cloexec_flag(&self) -> libc::c_int {
-        if self.is_direct() {
-            0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
-        } else {
-            libc::O_CLOEXEC
-        }
-    }
-
     fn is_direct(&self) -> bool {
         D::is_direct()
     }
@@ -183,6 +175,16 @@ pub enum Kind {
     /// tables and can be used in any io_uring request that takes a file
     /// descriptor. However they cannot be used outside of io_uring.
     Direct,
+}
+
+impl Kind {
+    pub(crate) fn cloexec_flag(self) -> libc::c_int {
+        if let Kind::Direct = self {
+            0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
+        } else {
+            libc::O_CLOEXEC
+        }
+    }
 }
 
 /// What kind of descriptor is used [`File`] or [`Direct`].
