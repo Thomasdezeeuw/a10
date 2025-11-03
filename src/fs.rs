@@ -172,7 +172,12 @@ impl OpenOptions {
     #[doc = man_link!(openat(2))]
     #[doc(alias = "openat")]
     pub fn open<D: Descriptor>(self, sq: SubmissionQueue, path: PathBuf) -> Open<D> {
-        let args = (self.flags | D::cloexec_flag(), self.mode);
+        let flags = if D::is_direct() {
+            0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
+        } else {
+            libc::O_CLOEXEC
+        };
+        let args = (self.flags | flags, self.mode);
         Open(Operation::new(sq, path_to_cstring(path), args))
     }
 }

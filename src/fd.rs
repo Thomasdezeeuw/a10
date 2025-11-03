@@ -111,6 +111,14 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    pub(crate) fn cloexec_flag(&self) -> libc::c_int {
+        if self.is_direct() {
+            0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
+        } else {
+            libc::O_CLOEXEC
+        }
+    }
+
     fn is_direct(&self) -> bool {
         D::is_direct()
     }
@@ -196,9 +204,6 @@ pub(crate) mod private {
             false
         }
 
-        /// Return the equivalant of `O_CLOEXEC` for the descripor.
-        fn cloexec_flag() -> libc::c_int;
-
         /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
         /// descriptor.
         fn cancel_flag() -> u32;
@@ -221,10 +226,6 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    fn cloexec_flag() -> libc::c_int {
-        libc::O_CLOEXEC
-    }
-
     fn cancel_flag() -> u32 {
         0
     }
