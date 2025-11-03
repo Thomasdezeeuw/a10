@@ -96,6 +96,10 @@ impl<D: Descriptor> AsyncFd<D> {
     pub(crate) const fn sq(&self) -> &SubmissionQueue {
         &self.sq
     }
+
+    fn is_direct(&self) -> bool {
+        D::is_direct()
+    }
 }
 
 impl AsFd for AsyncFd<File> {
@@ -151,6 +155,10 @@ pub(crate) mod private {
     use crate::SubmissionQueue;
 
     pub(crate) trait Descriptor {
+        fn is_direct() -> bool {
+            false
+        }
+
         /// Set any additional flags in `submission` when using the descriptor.
         fn use_flags(submission: &mut crate::sys::Submission);
 
