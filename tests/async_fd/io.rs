@@ -26,6 +26,22 @@ const BUF_SIZE: usize = 4096;
 const NO_OFFSET: u64 = u64::MAX;
 
 #[test]
+fn size() {
+    assert_eq!(std::mem::size_of::<AsyncFd>(), 16);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), 16);
+    assert_eq!(std::mem::size_of::<AsyncFd<Direct>>(), 16);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd<Direct>>>(), 16);
+}
+
+#[test]
+fn is_send_and_sync() {
+    is_send::<AsyncFd>();
+    is_sync::<AsyncFd>();
+    is_send::<AsyncFd<Direct>>();
+    is_sync::<AsyncFd<Direct>>();
+}
+
+#[test]
 fn try_clone() {
     let sq = test_queue();
     let waker = Waker::new();
