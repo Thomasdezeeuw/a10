@@ -104,6 +104,13 @@ impl<D: Descriptor> AsyncFd<D> {
         }
     }
 
+    pub(crate) fn create_flags(&self, submission: &mut Submission) {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        if self.is_direct() {
+            crate::sys::fd::create_direct_flags(submission)
+        }
+    }
+
     fn is_direct(&self) -> bool {
         D::is_direct()
     }
@@ -189,9 +196,6 @@ pub(crate) mod private {
             false
         }
 
-        /// Set any additional flags in `submission` when creating the descriptor.
-        fn create_flags(submission: &mut crate::sys::Submission);
-
         /// Return the equivalant of `O_CLOEXEC` for the descripor.
         fn cloexec_flag() -> libc::c_int;
 
@@ -217,10 +221,6 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
-    fn create_flags(_: &mut crate::sys::Submission) {
-        // No additional flags needed.
-    }
-
     fn cloexec_flag() -> libc::c_int {
         libc::O_CLOEXEC
     }

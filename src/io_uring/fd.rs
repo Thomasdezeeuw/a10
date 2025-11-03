@@ -10,6 +10,13 @@ pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
 }
 
+#[allow(clippy::cast_sign_loss)]
+pub(crate) fn create_direct_flags(submission: &mut sq::Submission) {
+    submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+        file_index: libc::IORING_FILE_INDEX_ALLOC as u32,
+    };
+}
+
 /// Direct descriptors are io_uring private file descriptors.
 ///
 /// They avoid some of the overhead associated with thread shared file tables
@@ -23,13 +30,6 @@ impl Descriptor for Direct {}
 impl crate::fd::private::Descriptor for Direct {
     fn is_direct() -> bool {
         true
-    }
-
-    #[allow(clippy::cast_sign_loss)]
-    fn create_flags(submission: &mut sq::Submission) {
-        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: libc::IORING_FILE_INDEX_ALLOC as u32,
-        };
     }
 
     fn cloexec_flag() -> libc::c_int {

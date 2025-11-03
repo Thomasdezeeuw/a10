@@ -5,7 +5,7 @@ use std::{ptr, slice};
 
 use crate::fd::{AsyncFd, Descriptor};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{self, cq, fd, libc, sq};
 use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
 use crate::op::{FdIter, FdOpExtract};
 use crate::SubmissionQueue;
@@ -32,7 +32,9 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
         };
         submission.0.len = *protocol as u32;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: *flags };
-        D::create_flags(submission);
+        if D::is_direct() {
+            fd::create_direct_flags(submission)
+        }
     }
 
     #[allow(clippy::cast_possible_wrap)]
@@ -486,7 +488,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
             accept_flags: *flags as u32,
         };
         submission.0.flags |= libc::IOSQE_ASYNC;
-        D::create_flags(submission);
+        fd.create_flags(submission);
     }
 
     #[allow(clippy::cast_possible_wrap)]
@@ -525,7 +527,7 @@ impl<D: Descriptor> io_uring::FdOp for MultishotAcceptOp<D> {
             accept_flags: *flags as u32,
         };
         submission.0.flags = libc::IOSQE_ASYNC;
-        D::create_flags(submission);
+        fd.create_flags(submission);
     }
 
     fn map_ok<LD: Descriptor>(
