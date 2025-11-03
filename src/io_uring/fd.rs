@@ -36,10 +36,6 @@ impl crate::fd::private::Descriptor for Direct {
         Kind::Direct
     }
 
-    fn fmt_dbg() -> &'static str {
-        "direct descriptor"
-    }
-
     #[allow(clippy::cast_sign_loss)] // For fd as u32.
     fn close_flags(fd: RawFd, submission: &mut sq::Submission) {
         submission.0.opcode = libc::IORING_OP_CLOSE as u8;
