@@ -125,11 +125,7 @@ impl<D: Descriptor> AsyncFd<D> {
 
     /// Returns the kind of descriptor.
     pub fn kind(&self) -> Kind {
-        if self.is_direct() {
-            Kind::Direct
-        } else {
-            Kind::File
-        }
+        D::kind()
     }
 }
 
@@ -197,12 +193,15 @@ pub(crate) mod private {
     use std::io;
     use std::os::fd::RawFd;
 
+    use crate::fd::Kind;
     use crate::SubmissionQueue;
 
     pub(crate) trait Descriptor {
         fn is_direct() -> bool {
             false
         }
+
+        fn kind() -> Kind;
 
         /// Return the equivalant of `IORING_ASYNC_CANCEL_FD_FIXED` for the
         /// descriptor.
@@ -226,6 +225,10 @@ pub enum File {}
 impl Descriptor for File {}
 
 impl private::Descriptor for File {
+    fn kind() -> Kind {
+        Kind::File
+    }
+
     fn cancel_flag() -> u32 {
         0
     }
