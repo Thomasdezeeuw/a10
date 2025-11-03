@@ -107,6 +107,15 @@ impl<D: Descriptor> AsyncFd<D> {
     fn is_direct(&self) -> bool {
         D::is_direct()
     }
+
+    /// Returns the kind of descriptor.
+    pub fn kind(&self) -> Kind {
+        if self.is_direct() {
+            Kind::Direct
+        } else {
+            Kind::File
+        }
+    }
 }
 
 impl AsFd for AsyncFd<File> {
