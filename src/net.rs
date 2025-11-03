@@ -45,6 +45,18 @@ operation!(
     pub struct Socket<D: Descriptor>(sys::net::SocketOp<D>) -> io::Result<AsyncFd<D>>;
 );
 
+impl<D: Descriptor> Socket<D> {
+    /// Set the kind of descriptor to use.
+    ///
+    /// Defaults to a regular [`fd::Kind::File`] descriptor.
+    pub fn kind(mut self, kind: fd::Kind) -> Self {
+        if let Some(args) = self.0.update_args() {
+            args.4 = kind;
+        }
+        self
+    }
+}
+
 /// Socket related system calls.
 impl<D: Descriptor> AsyncFd<D> {
     /// Initiate a connection on this socket to the specified address.
