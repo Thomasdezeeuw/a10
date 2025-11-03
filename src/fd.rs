@@ -151,6 +151,20 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
     }
 }
 
+/// Kind of descriptor.
+#[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
+pub enum Kind {
+    /// Regular Unix file descriptor.
+    File,
+    /// Direct descriptor are io_uring private file descriptor.
+    ///
+    /// They avoid some of the overhead associated with thread shared file
+    /// tables and can be used in any io_uring request that takes a file
+    /// descriptor. However they cannot be used outside of io_uring.
+    Direct,
+}
+
 /// What kind of descriptor is used [`File`] or [`Direct`].
 #[allow(private_bounds)] // That's the point of the private module.
 pub trait Descriptor: private::Descriptor {}
