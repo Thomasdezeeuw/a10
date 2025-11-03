@@ -17,6 +17,10 @@ pub enum Direct {}
 impl Descriptor for Direct {}
 
 impl crate::fd::private::Descriptor for Direct {
+    fn is_direct() -> bool {
+        true
+    }
+
     fn use_flags(submission: &mut sq::Submission) {
         submission.0.flags |= libc::IOSQE_FIXED_FILE;
     }
