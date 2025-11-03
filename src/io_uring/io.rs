@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
@@ -491,9 +491,7 @@ impl<D: Descriptor> io_uring::Op for CloseOp<D> {
         fd: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        // Don't set `IOSQE_FIXED_FILE`, will result it EBADF.
-        submission.0.flags &= !libc::IOSQE_FIXED_FILE;
-        D::close_flags(*fd, submission);
+        close_file_fd(*fd, D::kind(), submission)
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
@@ -501,9 +499,15 @@ impl<D: Descriptor> io_uring::Op for CloseOp<D> {
     }
 }
 
-pub(crate) fn close_file_fd(fd: RawFd, submission: &mut io_uring::sq::Submission) {
+pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring::sq::Submission) {
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
-    submission.0.fd = fd;
+    if let fd::Kind::Direct = kind {
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            file_index: fd as u32,
+        };
+    } else {
+        submission.0.fd = fd;
+    }
 }
 
 /// Size of a single page, often 4096.

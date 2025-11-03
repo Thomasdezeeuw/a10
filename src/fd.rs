@@ -146,7 +146,7 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         {
             let result = self.sq.inner.submit_no_completion(|submission| {
-                D::close_flags(self.fd(), submission);
+                crate::sys::io::close_file_fd(self.fd(), self.kind(), submission);
             });
             match result {
                 Ok(()) => return,
@@ -205,9 +205,6 @@ pub(crate) mod private {
 
         fn kind() -> Kind;
 
-        /// Set flags in `submission` to close the descriptor.
-        fn close_flags(fd: RawFd, submission: &mut crate::sys::Submission);
-
         /// Synchronously close the file descriptor.
         fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()>;
     }
@@ -222,10 +219,6 @@ impl Descriptor for File {}
 impl private::Descriptor for File {
     fn kind() -> Kind {
         Kind::File
-    }
-
-    fn close_flags(fd: RawFd, submission: &mut crate::sys::Submission) {
-        crate::sys::io::close_file_fd(fd, submission);
     }
 
     fn close(fd: RawFd, _: &SubmissionQueue) -> io::Result<()> {
