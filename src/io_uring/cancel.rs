@@ -1,4 +1,4 @@
-use crate::fd::{AsyncFd, Descriptor};
+use crate::fd::{self, AsyncFd, Descriptor};
 use crate::io_uring::{self, cancel, cq, libc, sq};
 use crate::{OperationId, SubmissionQueue};
 
@@ -22,7 +22,7 @@ impl io_uring::FdOp for CancelAllOp {
     ) {
         submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
         submission.0.fd = fd.fd();
-        let cancel_flags = if fd.is_direct() {
+        let cancel_flags = if let fd::Kind::Direct = fd.kind() {
             libc::IORING_ASYNC_CANCEL_FD_FIXED
         } else {
             0
