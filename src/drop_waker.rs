@@ -6,6 +6,7 @@ use std::cell::UnsafeCell;
 use std::ffi::CString;
 use std::{ptr, task};
 
+use crate::fd;
 use crate::io::{Buffer, ReadBufPool};
 use crate::net::AddressStorage;
 
@@ -92,6 +93,14 @@ impl DropWake for ReadBufPool {
 // Don't need to be deallocated.
 
 impl DropWake for () {
+    fn into_waker_data(self) -> *const () {
+        ptr::null()
+    }
+
+    unsafe fn drop_from_waker_data(_: *const ()) {}
+}
+
+impl DropWake for fd::Kind {
     fn into_waker_data(self) -> *const () {
         ptr::null()
     }
