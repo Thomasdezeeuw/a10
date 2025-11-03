@@ -483,15 +483,15 @@ pub(crate) struct CloseOp<D>(PhantomData<*const D>);
 impl<D: Descriptor> io_uring::Op for CloseOp<D> {
     type Output = ();
     type Resources = ();
-    type Args = RawFd;
+    type Args = (RawFd, fd::Kind);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        (): &mut Self::Resources,
-        fd: &mut Self::Args,
+        _: &mut Self::Resources,
+        (fd, kind): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        close_file_fd(*fd, D::kind(), submission)
+        close_file_fd(*fd, *kind, submission)
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
