@@ -38,7 +38,7 @@ impl<D: Descriptor> io_uring::Op for OpenOp<D> {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(sq: &SubmissionQueue, _: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) }
+        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) }
     }
 }
 
@@ -52,7 +52,7 @@ impl<D: Descriptor> OpExtract for OpenOp<D> {
         (_, fd): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         // SAFETY: kernel ensures that `fd` is valid.
-        let fd = unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) };
+        let fd = unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) };
         let path = path_from_cstring(path);
         (fd, path)
     }

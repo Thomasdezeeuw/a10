@@ -75,7 +75,7 @@ impl io_uring::Op for ToSignalsDirectOp {
     ) -> Self::Output {
         debug_assert!(n == 1);
         // SAFETY: the kernel ensures that `dfd` is valid.
-        let dfd = unsafe { AsyncFd::from_raw(*dfd, sq.clone()) };
+        let dfd = unsafe { AsyncFd::from_raw_fd(*dfd, sq.clone()) };
         unsafe { signals.change_fd(dfd) }
     }
 }

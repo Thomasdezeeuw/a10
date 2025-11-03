@@ -149,7 +149,7 @@ impl io_uring::FdOp for ToDirectOp {
         debug_assert!(n == 1);
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(*fd, sq) }
+        unsafe { AsyncFd::from_raw_fd(*fd, sq) }
     }
 }
 
@@ -182,6 +182,6 @@ impl io_uring::FdOp for ToFdOp {
     ) -> Self::Output {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as RawFd, sq) }
+        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) }
     }
 }
