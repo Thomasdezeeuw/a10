@@ -135,7 +135,7 @@ impl<D: Descriptor> fmt::Debug for AsyncFd<D> {
         f.debug_struct("AsyncFd")
             .field("fd", &self.fd())
             .field("sq", &"SubmissionQueue")
-            .field("kind", &D::fmt_dbg())
+            .field("kind", &self.kind())
             .finish()
     }
 }
@@ -205,9 +205,6 @@ pub(crate) mod private {
 
         fn kind() -> Kind;
 
-        /// Debug representation of the descriptor.
-        fn fmt_dbg() -> &'static str;
-
         /// Set flags in `submission` to close the descriptor.
         fn close_flags(fd: RawFd, submission: &mut crate::sys::Submission);
 
@@ -225,10 +222,6 @@ impl Descriptor for File {}
 impl private::Descriptor for File {
     fn kind() -> Kind {
         Kind::File
-    }
-
-    fn fmt_dbg() -> &'static str {
-        "file descriptor"
     }
 
     fn close_flags(fd: RawFd, submission: &mut crate::sys::Submission) {
