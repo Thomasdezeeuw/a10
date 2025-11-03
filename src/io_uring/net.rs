@@ -17,12 +17,12 @@ pub(crate) struct SocketOp<D>(PhantomData<*const D>);
 impl<D: Descriptor> io_uring::Op for SocketOp<D> {
     type Output = AsyncFd<D>;
     type Resources = ();
-    type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol, flags
+    type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int, fd::Kind); // domain, type, protocol, flags, fd kind.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         (): &mut Self::Resources,
-        (domain, r#type, protocol, flags): &mut Self::Args,
+        (domain, r#type, protocol, flags, fd_kind): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_SOCKET as u8;
@@ -32,7 +32,7 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
         };
         submission.0.len = *protocol as u32;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: *flags };
-        if let fd::Kind::Direct = D::kind() {
+        if let fd::Kind::Direct = fd_kind {
             io_uring::fd::create_direct_flags(submission)
         }
     }

@@ -17,7 +17,7 @@ use std::{fmt, io, ptr, slice};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::fd::{AsyncFd, Descriptor, File};
+use crate::fd::{self, AsyncFd, Descriptor, File};
 use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
@@ -34,7 +34,8 @@ pub const fn socket<D: Descriptor>(
     protocol: libc::c_int,
     flags: libc::c_int,
 ) -> Socket<D> {
-    Socket(Operation::new(sq, (), (domain, r#type, protocol, flags)))
+    let args = (domain, r#type, protocol, flags, fd::Kind::File);
+    Socket(Operation::new(sq, (), args))
 }
 
 operation!(
