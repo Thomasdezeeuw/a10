@@ -157,7 +157,11 @@ impl<D: Descriptor> Drop for AsyncFd<D> {
         }
 
         // Fall back to synchronously closing the descriptor.
-        if let Err(err) = D::close(self.fd(), &self.sq) {
+        let result = match self.kind() {
+            Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), self.sq()),
+            Kind::File => syscall!(close(self.fd())).map(|_| ()),
+        };
+        if let Err(err) = result {
             log::warn!("error closing a10::AsyncFd: {err}");
         }
     }
@@ -192,11 +196,7 @@ impl Kind {
 pub trait Descriptor: private::Descriptor {}
 
 pub(crate) mod private {
-    use std::io;
-    use std::os::fd::RawFd;
-
     use crate::fd::Kind;
-    use crate::SubmissionQueue;
 
     pub(crate) trait Descriptor {
         fn is_direct() -> bool {
@@ -204,9 +204,6 @@ pub(crate) mod private {
         }
 
         fn kind() -> Kind;
-
-        /// Synchronously close the file descriptor.
-        fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()>;
     }
 }
 
@@ -219,10 +216,5 @@ impl Descriptor for File {}
 impl private::Descriptor for File {
     fn kind() -> Kind {
         Kind::File
-    }
-
-    fn close(fd: RawFd, _: &SubmissionQueue) -> io::Result<()> {
-        syscall!(close(fd))?;
-        Ok(())
     }
 }

@@ -4,7 +4,6 @@ use std::{io, ptr};
 use crate::fd::{AsyncFd, Descriptor, File, Kind};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{fd_operation, FdOperation};
-use crate::SubmissionQueue;
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
@@ -34,22 +33,6 @@ impl crate::fd::private::Descriptor for Direct {
 
     fn kind() -> Kind {
         Kind::Direct
-    }
-
-    #[allow(clippy::cast_sign_loss)] // For fd as u32.
-    fn close(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
-        let shared = sq.inner.shared_data();
-        let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
-        let update = libc::io_uring_files_update {
-            offset: fd as u32, // The fd is also the index/offset into the set.
-            resv: 0,
-            fds: ptr::from_ref(fd_updates).addr() as u64,
-        };
-        shared.register(
-            libc::IORING_REGISTER_FILES_UPDATE,
-            ptr::from_ref(&update).cast(),
-            1,
-        )
     }
 }
 

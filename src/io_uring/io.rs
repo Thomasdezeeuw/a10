@@ -510,6 +510,22 @@ pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring
     }
 }
 
+#[allow(clippy::cast_sign_loss)] // For fd as u32.
+pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
+    let shared = sq.inner.shared_data();
+    let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
+    let update = libc::io_uring_files_update {
+        offset: fd as u32, // The fd is also the index/offset into the set.
+        resv: 0,
+        fds: ptr::from_ref(fd_updates).addr() as u64,
+    };
+    shared.register(
+        libc::IORING_REGISTER_FILES_UPDATE,
+        ptr::from_ref(&update).cast(),
+        1,
+    )
+}
+
 /// Size of a single page, often 4096.
 #[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
 fn page_size() -> usize {
