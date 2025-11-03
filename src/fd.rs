@@ -51,7 +51,7 @@ impl AsyncFd<File> {
     /// Create a new `AsyncFd`.
     pub fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
         // SAFETY: OwnedFd ensure that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd.into_raw_fd(), sq) }
+        unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
     }
 
     /// Creates a new independently owned `AsyncFd` that shares the same
@@ -77,23 +77,6 @@ impl<D: Descriptor> AsyncFd<D> {
     /// Furthermore the caller must ensure that `fd` is either a [`File`]
     /// descriptor or a [`Direct`] descriptor.
     pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
-        // SAFETY: caller must ensure that `fd` is valid.
-        AsyncFd {
-            fd,
-            sq,
-            kind: PhantomData,
-        }
-    }
-
-    /// Create a new `AsyncFd` from a direct descriptor.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `fd` is valid and that it's no longer
-    /// used by anything other than the returned `AsyncFd`. Furthermore the
-    /// caller must ensure the descriptor is file or direct descriptor depending
-    /// on `D`.
-    pub(crate) unsafe fn from_raw(fd: RawFd, sq: SubmissionQueue) -> AsyncFd<D> {
         // SAFETY: caller must ensure that `fd` is valid.
         AsyncFd {
             fd,

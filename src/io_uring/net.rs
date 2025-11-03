@@ -38,7 +38,7 @@ impl<D: Descriptor> io_uring::Op for SocketOp<D> {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(sq: &SubmissionQueue, (): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as RawFd, sq.clone()) }
+        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq.clone()) }
     }
 }
 
@@ -497,7 +497,7 @@ impl<A: SocketAddress, D: Descriptor> io_uring::FdOp for AcceptOp<A, D> {
     ) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
-        let socket = unsafe { AsyncFd::from_raw(fd as RawFd, sq) };
+        let socket = unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) };
         // SAFETY: the kernel has written the address for us.
         let address = unsafe { A::init((resources.0).0, (resources.0).1) };
         (socket, address)
@@ -546,7 +546,7 @@ impl<D: Descriptor> FdIter for MultishotAcceptOp<D> {
     ) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as RawFd, sq) }
+        unsafe { AsyncFd::from_raw_fd(fd as RawFd, sq) }
     }
 }
 
