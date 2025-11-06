@@ -131,13 +131,13 @@ impl AsyncFd {
 
     pub(crate) fn use_flags(&self, submission: &mut Submission) {
         if let Kind::Direct = self.kind() {
-            crate::sys::fd::use_direct_flags(submission)
+            crate::sys::fd::use_direct_flags(submission);
         }
     }
 
     pub(crate) fn create_flags(&self, submission: &mut Submission) {
         if let Kind::Direct = self.kind() {
-            crate::sys::fd::create_direct_flags(submission)
+            crate::sys::fd::create_direct_flags(submission);
         }
     }
 }
