@@ -189,6 +189,7 @@ pub mod io;
 pub mod mem;
 pub mod msg;
 pub mod net;
+pub mod pipe;
 pub mod poll;
 pub mod process;
 

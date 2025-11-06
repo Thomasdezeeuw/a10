@@ -434,6 +434,11 @@ impl fmt::Debug for Submission {
                         &self.0.__bindgen_anon_3.install_fd_flags
                     });
             }
+            libc::IORING_OP_PIPE => {
+                f.field("opcode", &"IORING_OP_PIPE")
+                    .field("fds", unsafe { &self.0.__bindgen_anon_2.addr })
+                    .field("pipe_flags", unsafe { &self.0.__bindgen_anon_3.pipe_flags });
+            }
             _ => {
                 // NOTE: we can't access the unions safely without know what
                 // fields to read.
