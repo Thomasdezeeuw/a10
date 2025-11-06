@@ -31,7 +31,7 @@ impl io_uring::Op for OpenOp {
             open_flags: *flags as u32,
         };
         if let fd::Kind::Direct = fd_kind {
-            io_uring::fd::create_direct_flags(submission)
+            io_uring::fd::create_direct_flags(submission);
         }
     }
 

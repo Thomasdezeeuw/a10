@@ -466,11 +466,11 @@ impl io_uring::Op for CloseOp {
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        _: &mut Self::Resources,
+        (): &mut Self::Resources,
         (fd, kind): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        close_file_fd(*fd, *kind, submission)
+        close_file_fd(*fd, *kind, submission);
     }
 
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
@@ -478,6 +478,7 @@ impl io_uring::Op for CloseOp {
     }
 }
 
+#[allow(clippy::cast_sign_loss)] // fd as u32.
 pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring::sq::Submission) {
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
     if let fd::Kind::Direct = kind {
