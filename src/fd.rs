@@ -69,13 +69,20 @@ impl AsyncFd {
     }
 
     pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         let fd = if let Kind::Direct = kind {
             fd | (1 << 31)
         } else {
             fd
         };
         AsyncFd { fd, sq }
+    }
+
+    /// Returns the kind of descriptor.
+    pub fn kind(&self) -> Kind {
+        if self.fd.is_negative() {
+            return Kind::Direct;
+        }
+        Kind::File
     }
 
     /// Creates a new independently owned `AsyncFd` that shares the same
@@ -90,7 +97,6 @@ impl AsyncFd {
     #[doc(alias = "F_DUPFD")]
     #[doc(alias = "F_DUPFD_CLOEXEC")]
     pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             return Err(io::ErrorKind::Unsupported.into());
         }
@@ -103,7 +109,7 @@ impl AsyncFd {
     ///
     /// The file descriptor can be a regular or direct descriptor.
     pub(crate) fn fd(&self) -> RawFd {
-        // We use the sign bit to indicate direct descriptors, so we unset it.
+        // The sign bit is used to indicate direct descriptors, so unset it.
         self.fd & !(1 << 31)
     }
 
@@ -113,32 +119,20 @@ impl AsyncFd {
     }
 
     pub(crate) fn use_flags(&self, submission: &mut Submission) {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             crate::sys::fd::use_direct_flags(submission)
         }
     }
 
     pub(crate) fn create_flags(&self, submission: &mut Submission) {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             crate::sys::fd::create_direct_flags(submission)
         }
-    }
-
-    /// Returns the kind of descriptor.
-    pub fn kind(&self) -> Kind {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        if self.fd.is_negative() {
-            return Kind::Direct;
-        }
-        Kind::File
     }
 }
 
 impl AsFd for AsyncFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             // SAFETY: this is incorrect.
             // FIXME: change this to a failable method.
