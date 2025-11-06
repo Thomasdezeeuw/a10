@@ -10,7 +10,7 @@ use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::os::fd::{AsFd, AsRawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Once, OnceLock};
@@ -543,13 +543,13 @@ pub(crate) async fn new_socket(
 /// on it. Returns the bound address.
 pub(crate) fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket);
-    let fd = socket.as_fd().as_raw_fd();
+    let fd = fd(&socket).as_raw_fd();
     syscall!(listen(fd, 128)).expect("failed to listen on socket");
     address
 }
 
 pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
-    let fd = socket.as_fd().as_raw_fd();
+    let fd = fd(&socket).as_raw_fd();
     let mut addr = libc::sockaddr_in {
         sin_family: libc::AF_INET as libc::sa_family_t,
         sin_port: 0,
@@ -572,6 +572,10 @@ pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes()),
         u16::from_be(addr.sin_port),
     ))
+}
+
+pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
+    fd.as_fd().expect("not a file descriptor")
 }
 
 /// Helper macro to execute a system call that returns an `io::Result`.
