@@ -7,7 +7,7 @@ use std::net::{
     Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream,
     UdpSocket,
 };
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr;
 
 use a10::cancel::{Cancel, CancelResult};
@@ -20,9 +20,9 @@ use a10::{fd, AsyncFd, Extract, Ring};
 
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
-    bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno, expect_io_error_kind, init,
-    is_send, is_sync, new_socket, next, require_kernel, start_mulitshot_op, start_op, syscall,
-    tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
+    bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno, expect_io_error_kind, fd,
+    init, is_send, is_sync, new_socket, next, require_kernel, start_mulitshot_op, start_op,
+    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -180,7 +180,7 @@ fn multishot_accept() {
                     .block_on(next(&mut accept_stream))
                     .expect("missing a connection")
                     .expect("failed to accept connection");
-                let addr = peer_addr(client.as_fd()).expect("failed to get address");
+                let addr = peer_addr(fd(&client)).expect("failed to get address");
                 (client, addr)
             })
             .collect::<Vec<_>>();
@@ -246,7 +246,7 @@ fn cancel_multishot_accept() {
         .block_on(next(&mut accept_stream))
         .expect("missing a connection")
         .expect("failed to accept connection");
-    let c_addr1 = peer_addr(client1.as_fd()).expect("failed to get address");
+    let c_addr1 = peer_addr(fd(&client1)).expect("failed to get address");
 
     // Then cancel the accept multishot call.
     cancel(&waker, &mut accept_stream, start_mulitshot_op);
@@ -729,7 +729,7 @@ fn recv_vectored_truncated() {
         .block_on(socket.connect(local_addr))
         .expect("failed to connect");
 
-    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
     listener
         .send_to(DATA1, socket_addr)
         .expect("failed to send data");
@@ -796,7 +796,7 @@ fn recv_from() {
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
     bind_ipv4(&socket);
-    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
 
     listener
         .send_to(DATA1, socket_addr)
@@ -828,7 +828,7 @@ fn recv_from_read_buf_pool() {
 
     let socket = block_on(&mut ring, udp_ipv4_socket(sq));
     bind_ipv4(&socket);
-    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
 
     listener
         .send_to(DATA1, socket_addr)
@@ -853,7 +853,7 @@ fn recv_from_vectored() {
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
     bind_ipv4(&socket);
-    let socket_addr = sock_addr(socket.as_fd()).expect("failed to get local address");
+    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
 
     listener
         .send_to(DATA1, socket_addr)

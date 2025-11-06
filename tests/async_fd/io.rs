@@ -5,7 +5,7 @@ use std::env::temp_dir;
 use std::future::Future;
 use std::io;
 use std::ops::Bound;
-use std::os::fd::{AsFd, FromRawFd, RawFd};
+use std::os::fd::{FromRawFd, RawFd};
 use std::panic::{self, AssertUnwindSafe};
 
 use a10::fs::{self, Open, OpenOptions};
@@ -16,7 +16,7 @@ use a10::io::{
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
-    bind_and_listen_ipv4, block_on, cancel_all, defer, expect_io_errno, init, is_send, is_sync,
+    bind_and_listen_ipv4, block_on, cancel_all, defer, expect_io_errno, fd, init, is_send, is_sync,
     remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket, test_queue, tmp_path,
     Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
 };
@@ -787,7 +787,7 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        .block_on(file.splice_to_at(10, w.as_fd(), NO_OFFSET, expected.len() as u32, 0))
+        .block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, 0))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);
 
@@ -821,7 +821,7 @@ fn splice_from() {
         .expect("failed to write all");
 
     let n = waker
-        .block_on(file.splice_from_at(10, r.as_fd(), NO_OFFSET, expected.len() as u32, 0))
+        .block_on(file.splice_from_at(10, fd(&r), NO_OFFSET, expected.len() as u32, 0))
         .expect("failed to splice");
     assert_eq!(n, expected.len());
 

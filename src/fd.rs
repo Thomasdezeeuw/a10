@@ -2,7 +2,7 @@
 //!
 //! See [`AsyncFd`].
 
-use std::os::fd::{AsFd, BorrowedFd, IntoRawFd, OwnedFd, RawFd};
+use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
 use crate::{syscall, Submission, SubmissionQueue};
@@ -85,6 +85,20 @@ impl AsyncFd {
         Kind::File
     }
 
+    /// Attempts to borrow the file descriptor.
+    ///
+    /// If this is a direct descriptor this returns `None`. The direct
+    /// descriptor can be cloned into a regular file descriptor using
+    /// [`AsyncFd::to_file_descriptor`].
+    pub fn as_fd(&self) -> Option<BorrowedFd<'_>> {
+        if let Kind::Direct = self.kind() {
+            return None;
+        }
+
+        // SAFETY: we're ensured that `fd` is valid.
+        unsafe { Some(BorrowedFd::borrow_raw(self.fd())) }
+    }
+
     /// Creates a new independently owned `AsyncFd` that shares the same
     /// underlying file descriptor as the existing `AsyncFd`.
     ///
@@ -97,11 +111,8 @@ impl AsyncFd {
     #[doc(alias = "F_DUPFD")]
     #[doc(alias = "F_DUPFD_CLOEXEC")]
     pub fn try_clone(&self) -> io::Result<AsyncFd> {
-        if let Kind::Direct = self.kind() {
-            return Err(io::ErrorKind::Unsupported.into());
-        }
-
-        let fd = self.as_fd().try_clone_to_owned()?;
+        let fd = self.as_fd().ok_or(io::ErrorKind::Unsupported)?;
+        let fd = fd.try_clone_to_owned()?;
         Ok(AsyncFd::new(fd, self.sq.clone()))
     }
 
@@ -128,19 +139,6 @@ impl AsyncFd {
         if let Kind::Direct = self.kind() {
             crate::sys::fd::create_direct_flags(submission)
         }
-    }
-}
-
-impl AsFd for AsyncFd {
-    fn as_fd(&self) -> BorrowedFd<'_> {
-        if let Kind::Direct = self.kind() {
-            // SAFETY: this is incorrect.
-            // FIXME: change this to a failable method.
-            return unsafe { BorrowedFd::borrow_raw(RawFd::MAX) };
-        }
-
-        // SAFETY: we're ensured that `fd` is valid.
-        unsafe { BorrowedFd::borrow_raw(self.fd()) }
     }
 }
 
