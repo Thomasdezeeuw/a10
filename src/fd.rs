@@ -48,7 +48,7 @@ impl AsyncFd {
     ///
     /// # Notes
     ///
-    /// `fd` is expected to be a regulat file descriptor.
+    /// `fd` is expected to be a regular file descriptor.
     pub fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
         // SAFETY: OwnedFd ensure that `fd` is valid.
         unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
@@ -58,7 +58,7 @@ impl AsyncFd {
     ///
     /// # Notes
     ///
-    /// `fd` is expected to be a regulat file descriptor.
+    /// `fd` is expected to be a regular file descriptor.
     ///
     /// # Safety
     ///
@@ -104,7 +104,7 @@ impl AsyncFd {
     ///
     /// # Notes
     ///
-    /// Direct descriptors can not be cloned and will always returned an
+    /// Direct descriptors can not be cloned and will always return an
     /// unsupported error.
     #[doc(alias = "dup")]
     #[doc(alias = "dup2")]
