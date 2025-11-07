@@ -18,8 +18,6 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
-use getrandom::getrandom;
-
 use a10::net::socket;
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
@@ -467,7 +465,7 @@ pub(crate) fn tmp_path() -> PathBuf {
         std::fs::create_dir_all(&tmp_dir).expect("failed to create temporary directory");
     });
     let mut n = [0; 8];
-    getrandom(&mut n).expect("failed to get random data");
+    getrandom::fill(&mut n).expect("failed to get random data");
     let n = u64::from_ne_bytes(n);
     tmp_dir.push(&format!("{n}"));
     tmp_dir
