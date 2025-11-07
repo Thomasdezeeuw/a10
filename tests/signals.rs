@@ -103,11 +103,10 @@ fn main() {
     harness.test_receive_signals();
 
     // Switch to use a direct descriptor.
-    #[rustfmt::skip]
-    let TestHarness { mut ring, signals, passed, failed, quiet } = harness;
-    let signals = Some(to_direct(&mut ring, signals.unwrap()));
-    #[rustfmt::skip]
-    let mut harness = TestHarness { ring, signals, passed, failed, quiet };
+    harness.signals = Some(to_direct(
+        &mut harness.ring,
+        harness.signals.take().unwrap(),
+    ));
     // Run the tests again.
     harness.test_single_threaded();
     harness.test_multi_threaded();
