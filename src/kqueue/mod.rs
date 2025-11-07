@@ -216,20 +216,6 @@ impl crate::cq::Event for Event {
     }
 }
 
-/// No additional state is needed.
-#[derive(Copy, Clone, Debug)]
-pub(crate) struct OperationState;
-
-impl crate::cq::OperationState for OperationState {
-    fn new() -> OperationState {
-        OperationState
-    }
-
-    fn new_multishot() -> OperationState {
-        OperationState
-    }
-}
-
 impl crate::sq::Submission for Event {
     fn set_id(&mut self, id: OperationId) {
         self.0.udata = id as _;
@@ -634,5 +620,19 @@ impl fmt::Debug for Event {
             .field("fflags", &FflagsDetails(self.0.fflags))
             .field("data", &data)
             .finish()
+    }
+}
+
+/// No additional state is needed.
+#[derive(Copy, Clone, Debug)]
+pub(crate) struct OperationState;
+
+impl crate::cq::OperationState for OperationState {
+    fn new() -> OperationState {
+        OperationState
+    }
+
+    fn new_multishot() -> OperationState {
+        OperationState
     }
 }
