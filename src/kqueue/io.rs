@@ -1,9 +1,10 @@
 use std::io;
 use std::marker::PhantomData;
+use std::os::fd::RawFd;
 
 use crate::io::{BufMut, BufMutSlice, NO_OFFSET};
 use crate::op::OpResult;
-use crate::{kqueue, syscall, AsyncFd};
+use crate::{kqueue, syscall, AsyncFd, SubmissionQueue};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -94,4 +95,8 @@ impl<B: BufMutSlice<N>, const N: usize> kqueue::FdOp for ReadVectoredOp<B, N> {
         unsafe { bufs.set_init(n) };
         bufs
     }
+}
+
+pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
+    unreachable!("close_direct_fd: kqueue doesn't have direct descriptors")
 }

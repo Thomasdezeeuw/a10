@@ -16,6 +16,7 @@ use crate::{debug_detail, AsyncFd, OperationId};
 
 pub(crate) mod config;
 mod cq;
+pub(crate) mod fd;
 pub(crate) mod io;
 mod sq;
 
