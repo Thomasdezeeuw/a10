@@ -64,3 +64,31 @@ fn check_fs_fd(waker: Arc<Waker>, regular_fd: AsyncFd, direct_fd: AsyncFd) {
     waker.block_on(regular_fd.close()).unwrap();
     waker.block_on(direct_fd.close()).unwrap();
 }
+
+#[test]
+#[should_panic = "can't covert a direct descriptor to a different direct descriptor"]
+fn direct_to_direct_descriptor() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = OpenOptions::new()
+        .kind(fd::Kind::Direct)
+        .open(sq, LOREM_IPSUM_5.path.into());
+    let direct_fd = waker.block_on(open_file).unwrap();
+    // This should panic.
+    waker.block_on(direct_fd.to_direct_descriptor()).unwrap();
+}
+
+#[test]
+#[should_panic = "can't covert a file descriptor to a different file descriptor"]
+fn file_to_file_descriptor() {
+    require_kernel!(6, 8);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
+    let regular_fd = waker.block_on(open_file).unwrap();
+    // This should panic.
+    waker.block_on(regular_fd.to_file_descriptor()).unwrap();
+}
