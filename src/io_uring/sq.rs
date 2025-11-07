@@ -349,7 +349,8 @@ impl fmt::Debug for Submission {
             }
             libc::IORING_OP_CLOSE => {
                 f.field("opcode", &"IORING_OP_CLOSE")
-                    .field("fd", &self.0.fd);
+                    .field("fd", &self.0.fd)
+                    .field("file_index", unsafe { &self.0.__bindgen_anon_5.file_index });
             }
             libc::IORING_OP_FILES_UPDATE => {
                 f.field("opcode", &"IORING_OP_FILES_UPDATE")
