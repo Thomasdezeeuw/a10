@@ -98,19 +98,14 @@ fn main() {
 
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
-    harness.test_single_threaded();
-    harness.test_multi_threaded();
-    harness.test_receive_signals();
+    harness.run_tests();
 
     // Switch to use a direct descriptor.
     harness.signals = Some(to_direct(
         &mut harness.ring,
         harness.signals.take().unwrap(),
     ));
-    // Run the tests again.
-    harness.test_single_threaded();
-    harness.test_multi_threaded();
-    harness.test_receive_signals();
+    harness.run_tests();
 
     let mut passed = harness.passed;
     let mut failed = harness.failed;
@@ -142,9 +137,13 @@ impl TestHarness {
             quiet,
         }
     }
-}
 
-impl TestHarness {
+    fn run_tests(&mut self) {
+        self.test_single_threaded();
+        self.test_multi_threaded();
+        self.test_receive_signals();
+    }
+
     fn test_single_threaded(&mut self) {
         let pid = process::id();
         let signals = self.signals.as_ref().unwrap();
