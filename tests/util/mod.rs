@@ -1,6 +1,6 @@
 //! Test utilities.
 
-#![allow(dead_code, unused_imports, unused_macros)] // Not all tests use all code here.
+#![allow(dead_code)] // Not all tests use all code here.
 
 use std::any::Any;
 #[cfg(feature = "nightly")]
@@ -10,7 +10,7 @@ use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::os::fd::{AsRawFd, BorrowedFd};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Once, OnceLock};
@@ -68,6 +68,7 @@ pub(crate) fn has_kernel_version(major: u32, minor: u32) -> bool {
 
 /// This `return`s from the function if the kernel version is smaller than
 /// major.minor, continues if the kernel version is larger.
+#[allow(unused_macros)]
 macro_rules! require_kernel {
     ($major: expr, $minor: expr) => {{
         let major = $major;
@@ -79,6 +80,7 @@ macro_rules! require_kernel {
     }};
 }
 
+#[allow(unused_imports)]
 pub(crate) use require_kernel;
 
 /// Start a single background thread for polling and return the submission
