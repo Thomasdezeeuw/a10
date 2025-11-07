@@ -328,6 +328,16 @@ impl crate::cq::OperationState for OperationState {
             results: Vec::new(),
         }
     }
+
+    fn prep_retry(&mut self) {
+        match self {
+            OperationState::Single { result } => {
+                result.flags = u16::MAX;
+                result.result = i32::MIN;
+            }
+            OperationState::Multishot { .. } => { /* We'll continue to collect the results. */ }
+        }
+    }
 }
 
 /// Completed result of an operation.

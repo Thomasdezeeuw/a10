@@ -441,6 +441,13 @@ impl<T> QueuedOperation<T> {
             self.waker.clone_from(waker);
         }
     }
+
+    fn prep_retry(&mut self)
+    where
+        T: cq::OperationState,
+    {
+        self.state.prep_retry();
+    }
 }
 
 /// Operation id.

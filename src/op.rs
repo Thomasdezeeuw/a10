@@ -500,6 +500,9 @@ impl<R, A> State<R, A> {
 
                 // Retry the operation.
                 update_waker(queued_op_slot.as_mut(), ctx.waker());
+                if let Some(queued_op) = &mut *queued_op_slot {
+                    queued_op.prep_retry();
+                }
                 drop(queued_op_slot); // Unlock.
                 if resubmit {
                     // SAFETY: we've ensured that we own the `op_id`.
