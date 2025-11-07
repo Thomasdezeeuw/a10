@@ -106,8 +106,8 @@ impl Completions {
         ));
         match result {
             Ok(_) => Ok(()),
-            // Hit timeout, we can ignore it.
-            Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => Ok(()),
+            // Hit timeout or got interrupted, we can ignore it.
+            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(()),
             Err(err) => Err(err),
         }
     }
