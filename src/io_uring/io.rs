@@ -483,7 +483,8 @@ pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
     if let fd::Kind::Direct = kind {
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: fd as u32,
+            // Zero mean a file descriptor, so indices need to be encoded +1.
+            file_index: (fd + 1) as u32,
         };
     } else {
         submission.0.fd = fd;
