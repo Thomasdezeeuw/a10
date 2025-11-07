@@ -478,42 +478,49 @@ impl<R, A> State<R, A> {
                     None => OpResult::Again(true),
                 };
                 log::trace!(result:? = result; "mapped operation result");
-                match result {
+                let resubmit = match result {
                     OpResult::Ok(ok) => {
                         let resources = self.done();
                         // SAFETY: we've ensured that `op_id` is valid.
                         unsafe { sq.make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Ok(map_ok(sq, resources, ok)))
+                        return Poll::Ready(Ok(map_ok(sq, resources, ok)));
                     }
-                    OpResult::Again(resubmit) => {
-                        // Operation wasn't completed, need to try again.
-                        update_waker(queued_op_slot.as_mut(), ctx.waker());
-                        drop(queued_op_slot); // Unlock.
-                        if resubmit {
-                            // SAFETY: we've ensured that we own the `op_id`.
-                            // Furthermore we don't use it in case an error is
-                            // returned.
-                            let result = unsafe {
-                                sq.inner.resubmit(op_id, |submission| {
-                                    fill_submission(resources.get_mut(), args, submission);
-                                })
-                            };
-                            match result {
-                                Ok(()) => { /* Running again using the same operation id. */ }
-                                Err(QueueFull) => self.not_started(),
-                            }
-                        }
-                        // We'll be awoken once the operation is ready again or
-                        // if we can submit again (in case of QueueFull).
-                        Poll::Pending
-                    }
+                    OpResult::Again(resubmit) => resubmit,
                     OpResult::Err(err) => {
-                        *self = State::Done;
-                        // SAFETY: we've ensured that `op_id` is valid.
-                        unsafe { sq.make_op_available(op_id, queued_op_slot) };
-                        Poll::Ready(Err(err))
+                        if err.raw_os_error() != Some(libc::EINTR) {
+                            *self = State::Done;
+                            // SAFETY: we've ensured that `op_id` is valid.
+                            unsafe { sq.make_op_available(op_id, queued_op_slot) };
+                            return Poll::Ready(Err(err));
+                        }
+
+                        true // Resubmit as it failed.
+                    }
+                };
+
+                // Retry the operation.
+                update_waker(queued_op_slot.as_mut(), ctx.waker());
+                if let Some(queued_op) = &mut *queued_op_slot {
+                    queued_op.prep_retry();
+                }
+                drop(queued_op_slot); // Unlock.
+                if resubmit {
+                    // SAFETY: we've ensured that we own the `op_id`.
+                    // Furthermore we don't use it in case an error is
+                    // returned.
+                    let result = unsafe {
+                        sq.inner.resubmit(op_id, |submission| {
+                            fill_submission(resources.get_mut(), args, submission);
+                        })
+                    };
+                    match result {
+                        Ok(()) => { /* Running again using the same operation id. */ }
+                        Err(QueueFull) => self.not_started(),
                     }
                 }
+                // We'll be awoken once the operation is ready again or
+                // if we can submit again (in case of QueueFull).
+                Poll::Pending
             }
             State::Cancelled => Poll::Ready(Err(io::Error::from_raw_os_error(libc::ECANCELED))),
             State::Done => unreachable!("Future polled after completion"),

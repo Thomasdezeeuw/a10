@@ -106,8 +106,8 @@ impl Completions {
         ));
         match result {
             Ok(_) => Ok(()),
-            // Hit timeout, we can ignore it.
-            Err(ref err) if err.raw_os_error() == Some(libc::ETIME) => Ok(()),
+            // Hit timeout or got interrupted, we can ignore it.
+            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(()),
             Err(err) => Err(err),
         }
     }
@@ -326,6 +326,16 @@ impl crate::cq::OperationState for OperationState {
     fn new_multishot() -> OperationState {
         OperationState::Multishot {
             results: Vec::new(),
+        }
+    }
+
+    fn prep_retry(&mut self) {
+        match self {
+            OperationState::Single { result } => {
+                result.flags = u16::MAX;
+                result.result = i32::MIN;
+            }
+            OperationState::Multishot { .. } => { /* We'll continue to collect the results. */ }
         }
     }
 }

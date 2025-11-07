@@ -156,4 +156,7 @@ pub(crate) trait OperationState: fmt::Debug {
 
     /// Create a queued multishot operation.
     fn new_multishot() -> Self;
+
+    /// Prepare the operation state for a retry of the operation.
+    fn prep_retry(&mut self);
 }

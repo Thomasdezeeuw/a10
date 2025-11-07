@@ -647,4 +647,8 @@ impl crate::cq::OperationState for OperationState {
     fn new_multishot() -> OperationState {
         OperationState
     }
+
+    fn prep_retry(&mut self) {
+        *self = OperationState;
+    }
 }
