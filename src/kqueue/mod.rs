@@ -19,6 +19,7 @@ pub(crate) mod config;
 mod cq;
 pub(crate) mod fd;
 pub(crate) mod io;
+pub(crate) mod net;
 mod sq;
 
 pub(crate) use config::Config;

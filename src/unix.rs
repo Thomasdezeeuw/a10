@@ -82,6 +82,7 @@ impl MsgHeader {
     /// # Safety
     ///
     /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
+    #[allow(trivial_numeric_casts)]
     pub(crate) unsafe fn init_recv<A: SocketAddress>(
         &mut self,
         address: &mut MaybeUninit<A::Storage>,
@@ -92,12 +93,13 @@ impl MsgHeader {
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
-        self.0.msg_iovlen = iovecs.len();
+        self.0.msg_iovlen = iovecs.len() as _;
     }
 
     /// # Safety
     ///
     /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
+    #[allow(trivial_numeric_casts)]
     pub(crate) unsafe fn init_send<A: SocketAddress>(
         &mut self,
         address: &mut A::Storage,
@@ -108,7 +110,7 @@ impl MsgHeader {
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
-        self.0.msg_iovlen = iovecs.len();
+        self.0.msg_iovlen = iovecs.len() as _;
     }
 
     pub(crate) const fn address_len(&self) -> libc::socklen_t {
