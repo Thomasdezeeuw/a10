@@ -2,7 +2,7 @@ use std::io;
 use std::marker::PhantomData;
 use std::os::fd::RawFd;
 
-use crate::io::{BufMut, BufMutSlice, NO_OFFSET};
+use crate::io::{BufId, BufMut, BufMutSlice, Buffer, NO_OFFSET};
 use crate::op::OpResult;
 use crate::{kqueue, syscall, AsyncFd, SubmissionQueue};
 
@@ -15,7 +15,7 @@ pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
 impl<B: BufMut> kqueue::FdOp for ReadOp<B> {
     type Output = B;
-    type Resources = B;
+    type Resources = Buffer<B>;
     type Args = u64; // Offset.
     type OperationOutput = usize;
 
@@ -29,7 +29,7 @@ impl<B: BufMut> kqueue::FdOp for ReadOp<B> {
         buf: &mut Self::Resources,
         offset: &mut Self::Args,
     ) -> OpResult<Self::OperationOutput> {
-        let (ptr, len) = unsafe { buf.parts_mut() };
+        let (ptr, len) = unsafe { buf.buf.parts_mut() };
         // io_uring uses `NO_OFFSET` to issue a `read` system call,
         // otherwise it uses `pread`. We emulate the same thing.
         let result = if *offset == NO_OFFSET {
@@ -47,8 +47,10 @@ impl<B: BufMut> kqueue::FdOp for ReadOp<B> {
 
     fn map_ok(mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
-        unsafe { buf.set_init(n) }
-        buf
+        unsafe {
+            buf.buf.set_init(n);
+        };
+        buf.buf
     }
 }
 
@@ -56,7 +58,7 @@ pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> kqueue::FdOp for ReadVectoredOp<B, N> {
     type Output = B;
-    type Resources = (B, [crate::io::IoMutSlice; N]);
+    type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
     type Args = u64; // Offset.
     type OperationOutput = usize;
 
