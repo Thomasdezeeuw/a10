@@ -464,9 +464,7 @@ pub(crate) fn tmp_path() -> PathBuf {
     CREATE_TEMP_DIR.call_once(|| {
         std::fs::create_dir_all(&tmp_dir).expect("failed to create temporary directory");
     });
-    let mut n = [0; 8];
-    getrandom::fill(&mut n).expect("failed to get random data");
-    let n = u64::from_ne_bytes(n);
+    let n = getrandom::u64().expect("failed to get random data");
     tmp_dir.push(&format!("{n}"));
     tmp_dir
 }
