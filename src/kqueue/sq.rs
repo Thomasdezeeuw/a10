@@ -1,8 +1,9 @@
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, mem, ptr};
 
-use crate::sq::QueueFull;
-use crate::{kqueue, syscall, WAKE_ID};
+use crate::sq::{Cancelled, QueueFull};
+use crate::{kqueue, syscall, OperationId, WAKE_ID};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
@@ -37,7 +38,10 @@ impl crate::sq::Submissions for Submissions {
         // SAFETY: all zero is valid for `libc::kevent`.
         let mut event = unsafe { mem::zeroed() };
         submit(&mut event);
-        event.0.flags = libc::EV_ADD | libc::EV_RECEIPT | libc::EV_ONESHOT;
+        event.0.flags |= libc::EV_RECEIPT | libc::EV_ONESHOT;
+        if event.0.flags & libc::EV_DELETE == 0 {
+            event.0.flags |= libc::EV_ADD;
+        }
 
         // Add the event to the list of waiting events.
         let mut change_list = shared.change_list.lock().unwrap();
@@ -97,6 +101,18 @@ impl crate::sq::Submissions for Submissions {
         changes.clear();
         shared.merge_change_list(changes);
         Ok(())
+    }
+
+    fn cancel(
+        &self,
+        shared: &Self::Shared,
+        is_polling: &AtomicBool,
+        op_id: OperationId,
+    ) -> Cancelled {
+        // FIXME: kqueue can't seem to be able to cancel an operation based on
+        // the user data alone, it needs a file descriptor (ident).
+
+        todo!("kqueue::Submissions::cancel")
     }
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
