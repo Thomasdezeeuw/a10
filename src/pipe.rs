@@ -19,13 +19,17 @@ use crate::{man_link, sys, SubmissionQueue};
 /// commands to the child process.
 ///
 /// ```
-/// # async fn new_pipe() -> io::Result<()> {
+/// # use std::io;
+/// # use a10::pipe::pipe;
+/// # use a10::fd;
+/// # async fn new_pipe(sq: &a10::SubmissionQueue) -> io::Result<()> {
 /// let flags = 0; // NOTE: O_CLOEXEC is already set.
 /// // Creating a new pipe using file descriptors.
-/// let [receiver, sender] = pipe(sq, flags)?;
+/// let [receiver, sender] = pipe(sq.clone(), flags).await?;
 ///
 /// // Using direct descriptors.
-/// let [receiver, sender] = pipe(sq, flags).kind(fd::Kind::Direct)?;
+/// let [receiver, sender] = pipe(sq.clone(), flags).kind(fd::Kind::Direct).await?;
+/// # Ok(())
 /// # }
 /// ```
 #[doc = man_link!(pipe(2))]
