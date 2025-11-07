@@ -154,6 +154,24 @@ impl<I: Implementation> Queue<I> {
         }
     }
 
+    /// Add a new submission, without waiting for a result.
+    ///
+    /// This marks the submission to not generate a completion event (as it will
+    /// be discarded any way).
+    pub(crate) fn submit_no_completion<F>(&self, fill: F) -> Result<(), QueueFull>
+    where
+        F: FnOnce(&mut <I::Submissions as Submissions>::Submission),
+    {
+        let shared = &*self.shared;
+        shared
+            .submissions
+            .add(&shared.data, &shared.is_polling, |submission| {
+                fill(submission);
+                submission.no_success_event();
+                submission.set_id(crate::NO_COMPLETION_ID);
+            })
+    }
+
     /// Cancel an operation with `op_id`.
     ///
     /// # Safety
@@ -281,27 +299,6 @@ impl<I: Implementation> Queue<I> {
     /// Returns the implementation specific shared data.
     pub(crate) fn shared_data(&self) -> &I::Shared {
         &self.shared.data
-    }
-}
-
-#[cfg(any(target_os = "android", target_os = "linux"))]
-impl Queue<crate::sys::Implementation> {
-    /// Add a new submission, without waiting for a result.
-    ///
-    /// This marks the submission to not generate a completion event (as it will
-    /// be discarded any way).
-    pub(crate) fn submit_no_completion<F>(&self, fill: F) -> Result<(), QueueFull>
-    where
-        F: FnOnce(&mut crate::sys::Submission),
-    {
-        let shared = &*self.shared;
-        shared
-            .submissions
-            .add(&shared.data, &shared.is_polling, |submission| {
-                fill(submission);
-                submission.no_completion_event();
-                submission.set_id(crate::NO_COMPLETION_ID);
-            })
     }
 }
 
