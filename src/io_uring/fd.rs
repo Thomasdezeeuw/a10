@@ -76,11 +76,15 @@ impl io_uring::FdOp for ToDirectOp {
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        _: &AsyncFd,
+        ofd: &AsyncFd,
         fd: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        debug_assert!(
+            matches!(ofd.kind(), fd::Kind::File),
+            "can't covert a direct descriptor to a different direct descriptor"
+        );
         submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
         submission.0.fd = -1;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
@@ -113,6 +117,10 @@ impl io_uring::FdOp for ToFdOp {
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        debug_assert!(
+            matches!(fd.kind(), fd::Kind::Direct),
+            "can't covert a file descriptor to a different file descriptor"
+        );
         submission.0.opcode = libc::IORING_OP_FIXED_FD_INSTALL as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
