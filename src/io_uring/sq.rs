@@ -126,7 +126,7 @@ impl crate::sq::Submissions for Submissions {
             submission.set_id(op_id);
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
-            submission.no_completion_event();
+            submission.no_success_event();
             cancel::operation(op_id, submission);
         });
         if let Ok(()) = result {
@@ -169,6 +169,7 @@ impl crate::sq::Submissions for Submissions {
     }
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
+        use crate::sq::Submission;
         // This is only called if we're not polling, so we can set `is_polling`
         // to false and we ignore the queue full error.
         let is_polling = AtomicBool::new(false);
@@ -181,7 +182,7 @@ impl crate::sq::Submissions for Submissions {
             submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
                 off: WAKE_ID as u64,
             };
-            submission.no_completion_event();
+            submission.no_success_event();
         });
         Ok(())
     }
@@ -204,11 +205,6 @@ impl Submission {
         unsafe { ptr::addr_of_mut!(self.0).write_bytes(0, 1) };
     }
 
-    /// Don't return a completion event for this submission.
-    pub(crate) fn no_completion_event(&mut self) {
-        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
-    }
-
     /// Returns `true` if the submission is unchanged after a [`reset`].
     ///
     /// [`reset`]: Submission::reset
@@ -227,6 +223,10 @@ impl Submission {
 impl crate::sq::Submission for Submission {
     fn set_id(&mut self, id: OperationId) {
         self.0.user_data = id as u64;
+    }
+
+    fn no_success_event(&mut self) {
+        self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 }
 

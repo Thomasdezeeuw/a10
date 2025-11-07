@@ -372,6 +372,9 @@ pub(crate) trait Submission: fmt::Debug {
     /// This must cause the relevant [`cq::Event::id`] of the completion event
     /// to return `id`.
     fn set_id(&mut self, id: OperationId);
+
+    /// Don't return a completion event for this submission if it succeeds.
+    fn no_success_event(&mut self);
 }
 
 /// Submission queue is full.
