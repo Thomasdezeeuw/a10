@@ -33,6 +33,9 @@ impl AsyncFd {
     /// `Ok(0)` if operations were never polled only to start it after their
     /// first poll.
     ///
+    /// Using kqueue (BSD family, macOS) this always returns `Ok(0)` (or an
+    /// error) as we can't determine how many operations where canceled.
+    ///
     /// [`Future`]: std::future::Future
     pub const fn cancel_all<'fd>(&'fd self) -> CancelAll<'fd> {
         CancelAll(FdOperation::new(self, (), ()))

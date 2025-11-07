@@ -14,6 +14,7 @@ use crate::drop_waker::DropWake;
 use crate::op::OpResult;
 use crate::{debug_detail, AsyncFd, OperationId};
 
+pub(crate) mod cancel;
 pub(crate) mod config;
 mod cq;
 pub(crate) mod fd;
@@ -67,7 +68,7 @@ pub(crate) trait Op {
     type Args;
     type OperationOutput;
 
-    fn fill_submission(kevent: &mut Event);
+    fn fill_submission(args: &mut Self::Args, kevent: &mut Event);
 
     fn check_result(
         resources: &mut Self::Resources,
@@ -89,8 +90,12 @@ impl<T: Op> crate::op::Op for T {
     type OperationState = OperationState;
     type OperationOutput = T::OperationOutput;
 
-    fn fill_submission(_: &mut Self::Resources, _: &mut Self::Args, kevent: &mut Self::Submission) {
-        T::fill_submission(kevent)
+    fn fill_submission(
+        _: &mut Self::Resources,
+        args: &mut Self::Args,
+        kevent: &mut Self::Submission,
+    ) {
+        T::fill_submission(args, kevent)
     }
 
     fn check_result(
