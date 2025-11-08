@@ -34,6 +34,10 @@ impl AsyncFd {
     #[doc(alias = "IORING_OP_FILES_UPDATE")]
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
     pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd> {
+        debug_assert!(
+            matches!(self.kind(), fd::Kind::File),
+            "can't covert a direct descriptor to a different direct descriptor"
+        );
         // The `fd` needs to be valid until the operation is complete, so we
         // need to heap allocate it so we can delay it's allocation in case of
         // an early drop.
@@ -54,7 +58,11 @@ impl AsyncFd {
     ///
     /// Requires Linux 6.8.
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
-    pub const fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd> {
+    pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd> {
+        debug_assert!(
+            matches!(self.kind(), fd::Kind::Direct),
+            "can't covert a file descriptor to a different file descriptor"
+        );
         ToFd(FdOperation::new(self, (), ()))
     }
 }
@@ -76,15 +84,11 @@ impl io_uring::FdOp for ToDirectOp {
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
-        ofd: &AsyncFd,
+        _: &AsyncFd,
         fd: &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        debug_assert!(
-            matches!(ofd.kind(), fd::Kind::File),
-            "can't covert a direct descriptor to a different direct descriptor"
-        );
         submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
         submission.0.fd = -1;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
@@ -117,10 +121,6 @@ impl io_uring::FdOp for ToFdOp {
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        debug_assert!(
-            matches!(fd.kind(), fd::Kind::Direct),
-            "can't covert a file descriptor to a different file descriptor"
-        );
         submission.0.opcode = libc::IORING_OP_FIXED_FD_INSTALL as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
