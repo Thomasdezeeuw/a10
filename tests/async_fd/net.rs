@@ -56,7 +56,7 @@ fn accept() {
 
     // Write some data.
     let n = waker
-        .block_on(client.write(Box::from(DATA2))) // Test Buf impl for Box<[u8]>.
+        .block_on(client.write(DATA2))
         .expect("failed to write");
     assert_eq!(n, DATA2.len());
     buf.resize(DATA2.len() + 1, 0);
