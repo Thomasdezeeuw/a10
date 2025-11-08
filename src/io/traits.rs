@@ -3,6 +3,7 @@
 //! See [`BufMut`] and [`Buf`], and their vectored counterparts [`BufMutSlice`]
 //! and [`BufSlice`].
 
+use std::borrow::Cow;
 use std::cmp::min;
 use std::mem::MaybeUninit;
 use std::{fmt, slice};
@@ -540,6 +541,26 @@ unsafe impl Buf for &'static str {
 
     fn as_slice(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+// SAFETY: this is either a `Vec<u8>` or `&'static [u8]`, both have
+// implementations of `Buf`.
+unsafe impl Buf for Cow<'static, [u8]> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_ptr(), self.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        <[u8]>::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        <[u8]>::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
