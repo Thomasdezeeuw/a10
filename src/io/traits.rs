@@ -482,6 +482,27 @@ unsafe impl Buf for String {
     }
 }
 
+// SAFETY: `Box<str>` is the same as `Box<[u8]>`, see it's implementation for the safety
+// reasoning.
+unsafe impl Buf for Box<str> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let bytes = self.as_bytes();
+        (bytes.as_ptr().cast(), bytes.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        str::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        str::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
 // can't be deallocated, so it's safe to implement `Buf`.
 unsafe impl Buf for &'static [u8] {
