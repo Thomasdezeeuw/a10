@@ -1,7 +1,7 @@
 //! Unix pipes.
 //!
 //! To create a new pipe use the [`pipe`] function. It will return two
-//! [`AsyncFd`], the sending and receiving side.
+//! [`AsyncFd`]s, the sending and receiving side.
 
 use std::io;
 
@@ -46,7 +46,9 @@ operation!(
 impl Pipe {
     /// Set the kind of descriptor to use.
     ///
-    /// Defaults to a regular [`fd::Kind::File`] descriptor.
+    /// Defaults to a regular [`File`] descriptor.
+    ///
+    /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
         if let Some(resources) = self.0.update_args() {
             resources.1 = kind;

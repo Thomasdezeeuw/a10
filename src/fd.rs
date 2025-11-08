@@ -44,7 +44,7 @@ pub struct AsyncFd {
 // implementation types a reasonable place in the docs.
 
 impl AsyncFd {
-    /// Create a new `AsyncFd`.
+    /// Create a new `AsyncFd` from an owned file descriptor.
     ///
     /// # Notes
     ///
@@ -54,7 +54,7 @@ impl AsyncFd {
         unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
     }
 
-    /// Create a new `AsyncFd` from a `RawFd`.
+    /// Create a new `AsyncFd` from a raw file descriptor.
     ///
     /// # Notes
     ///

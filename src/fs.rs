@@ -158,7 +158,9 @@ impl OpenOptions {
 
     /// Set the kind of descriptor to use.
     ///
-    /// Defaults to a regular [`fd::Kind::File`] descriptor.
+    /// Defaults to a regular [`File`] descriptor.
+    ///
+    /// [`File`]: fd::Kind::File
     pub const fn kind(mut self, kind: fd::Kind) -> Self {
         self.kind = kind;
         self

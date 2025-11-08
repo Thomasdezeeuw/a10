@@ -48,7 +48,9 @@ operation!(
 impl Socket {
     /// Set the kind of descriptor to use.
     ///
-    /// Defaults to a regular [`fd::Kind::File`] descriptor.
+    /// Defaults to a regular [`File`] descriptor.
+    ///
+    /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
         if let Some(resources) = self.0.update_args() {
             *resources = kind;
