@@ -6,6 +6,7 @@
 use std::borrow::Cow;
 use std::cmp::min;
 use std::mem::MaybeUninit;
+use std::sync::Arc;
 use std::{fmt, slice};
 
 /// Trait that defines the behaviour of buffers used in reading, which requires
@@ -581,6 +582,26 @@ unsafe impl Buf for Cow<'static, str> {
 
     fn as_slice(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+// SAFETY: `Arc<[u8]>` manages the allocation of the bytes, so as long as it's
+// alive, so is the slice of bytes.
+unsafe impl Buf for Arc<[u8]> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_ptr().cast(), self.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        <[u8]>::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        <[u8]>::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self
     }
 }
 
