@@ -66,7 +66,10 @@ fn test_change_descriptor_type(fd_kind: fd::Kind) {
 }
 
 #[test]
-#[should_panic = "can't covert a direct descriptor to a different direct descriptor"]
+#[cfg_attr(
+    debug_assertions,
+    should_panic = "can't covert a direct descriptor to a different direct descriptor"
+)]
 fn direct_to_direct_descriptor() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -76,11 +79,17 @@ fn direct_to_direct_descriptor() {
         .open(sq, LOREM_IPSUM_5.path.into());
     let direct_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    waker.block_on(direct_fd.to_direct_descriptor()).unwrap();
+    let err = waker
+        .block_on(direct_fd.to_direct_descriptor())
+        .unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
 }
 
 #[test]
-#[should_panic = "can't covert a file descriptor to a different file descriptor"]
+#[cfg_attr(
+    debug_assertions,
+    should_panic = "can't covert a file descriptor to a different file descriptor"
+)]
 fn file_to_file_descriptor() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -88,5 +97,6 @@ fn file_to_file_descriptor() {
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     let regular_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    waker.block_on(regular_fd.to_file_descriptor()).unwrap();
+    let err = waker.block_on(regular_fd.to_file_descriptor()).unwrap_err();
+    assert_eq!(err.raw_os_error(), Some(libc::EBADF));
 }
