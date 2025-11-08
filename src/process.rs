@@ -144,6 +144,10 @@ impl Signals {
     ///
     /// See [`AsyncFd::to_direct_descriptor`].
     pub fn to_direct_descriptor(self) -> ToSignalsDirect {
+        debug_assert!(
+            matches!(self.fd.kind(), fd::Kind::File),
+            "can't covert a direct descriptor to a different direct descriptor"
+        );
         let sq = self.fd.sq().clone();
         let fd = self.fd.fd();
         ToSignalsDirect(Operation::new(sq, (self, Box::new(fd)), ()))
