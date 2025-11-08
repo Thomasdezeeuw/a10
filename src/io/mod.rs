@@ -3,7 +3,7 @@
 //! The main types of this module are the [`Buf`] and [`BufMut`] traits, which
 //! define the requirements on buffers using the I/O system calls on an file
 //! descriptor ([`AsyncFd`]). Additionally the [`BufSlice`] and [`BufMutSlice`]
-//! traits existing to define the behaviour of buffers in vectored I/O.
+//! traits exist to define the behaviour of buffers in vectored I/O.
 //!
 //! A specialised io_uring-only read buffer pool implementation exists in
 //! [`ReadBufPool`], which is a buffer pool managed by the kernel when making

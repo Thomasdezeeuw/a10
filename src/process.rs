@@ -1,7 +1,7 @@
 //! Process handling.
 //!
-//! In this module process signal handling is also supported. For that See the
-//! documentation of [`Signals`].
+//! [`wait`] and [`wait_on`] can be used to wait on started processes.
+//! [`Signals`] can be used for process signal handling.
 
 use std::mem::{self, ManuallyDrop, MaybeUninit};
 use std::pin::Pin;
