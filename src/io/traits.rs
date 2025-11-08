@@ -605,6 +605,27 @@ unsafe impl Buf for Arc<[u8]> {
     }
 }
 
+// SAFETY: `Arc<str>` manages the allocation of the bytes, so as long as it's
+// alive, so is the slice of bytes.
+unsafe impl Buf for Arc<str> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let bytes = self.as_bytes();
+        (bytes.as_ptr().cast(), bytes.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        str::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        str::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 /// Trait that defines the behaviour of buffers used in writing using vectored
 /// I/O, which requires read only access.
 ///
