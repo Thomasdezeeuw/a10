@@ -564,6 +564,26 @@ unsafe impl Buf for Cow<'static, [u8]> {
     }
 }
 
+// SAFETY: this is either a `String` or `&'static str`, both have
+// implementations of `Buf`.
+unsafe impl Buf for Cow<'static, str> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        (self.as_bytes().as_ptr(), self.len() as u32)
+    }
+
+    fn len(&self) -> usize {
+        str::len(self)
+    }
+
+    fn is_empty(&self) -> bool {
+        str::is_empty(self)
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.as_bytes()
+    }
+}
+
 /// Trait that defines the behaviour of buffers used in writing using vectored
 /// I/O, which requires read only access.
 ///
