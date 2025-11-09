@@ -104,6 +104,13 @@ new_flag!(
     }
 );
 
+impl Domain {
+    /// Returns the correct domain for `address`.
+    pub fn for_address<A: SocketAddress>(address: &A) -> Domain {
+        address.domain()
+    }
+}
+
 operation!(
     /// [`Future`] behind [`socket`].
     ///
@@ -852,6 +859,8 @@ pub trait SocketAddress: private::SocketAddress + Sized {}
 mod private {
     use std::mem::MaybeUninit;
 
+    use super::Domain;
+
     pub trait SocketAddress {
         type Storage: Sized;
 
@@ -888,6 +897,9 @@ mod private {
         /// Caller must ensure that at least `length` bytes have been written to
         /// `address`.
         unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self;
+
+        /// Return the correct domain for the address.
+        fn domain(&self) -> Domain;
     }
 }
 
@@ -942,6 +954,13 @@ impl private::SocketAddress for SocketAddr {
             unsafe { SocketAddrV6::init(storage, length).into() }
         }
     }
+
+    fn domain(&self) -> Domain {
+        match self {
+            SocketAddr::V4(_) => Domain::IPV4,
+            SocketAddr::V6(_) => Domain::IPV6,
+        }
+    }
 }
 
 impl SocketAddress for SocketAddrV4 {}
@@ -985,6 +1004,10 @@ impl private::SocketAddress for SocketAddrV4 {
         let ip = Ipv4Addr::from(storage.sin_addr.s_addr.to_ne_bytes());
         let port = u16::from_be(storage.sin_port);
         SocketAddrV4::new(ip, port)
+    }
+
+    fn domain(&self) -> Domain {
+        Domain::IPV4
     }
 }
 
@@ -1030,6 +1053,10 @@ impl private::SocketAddress for SocketAddrV6 {
         let ip = Ipv6Addr::from(storage.sin6_addr.s6_addr);
         let port = u16::from_be(storage.sin6_port);
         SocketAddrV6::new(ip, port, storage.sin6_flowinfo, storage.sin6_scope_id)
+    }
+
+    fn domain(&self) -> Domain {
+        Domain::IPV6
     }
 }
 
@@ -1100,6 +1127,10 @@ impl private::SocketAddress for unix::net::SocketAddr {
             // Fallback to an unnamed address.
             .unwrap_or_else(|_| unix::net::SocketAddr::from_pathname("").unwrap())
     }
+
+    fn domain(&self) -> Domain {
+        Domain::UNIX
+    }
 }
 
 /// When [`accept`]ing connections we're not interested in the address.
@@ -1135,6 +1166,10 @@ impl private::SocketAddress for NoAddress {
     unsafe fn init(_: MaybeUninit<Self>, length: libc::socklen_t) -> Self {
         debug_assert!(length == 0);
         NoAddress
+    }
+
+    fn domain(&self) -> Domain {
+        Domain(libc::AF_UNSPEC)
     }
 }
 
