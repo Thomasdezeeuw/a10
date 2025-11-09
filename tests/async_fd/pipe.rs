@@ -27,7 +27,7 @@ fn test_pipe(fd_kind: fd::Kind) {
     is_sync::<Pipe>();
 
     let [receiver, sender] = waker
-        .block_on(pipe(sq, 0).kind(fd_kind))
+        .block_on(pipe(sq, None).kind(fd_kind))
         .expect("failed to create pipe");
 
     // Send some data.
@@ -49,6 +49,6 @@ fn cancel_pipe() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let mut pipe = pipe(sq, 0);
+    let mut pipe = pipe(sq, None);
     cancel(&waker, &mut pipe, start_op);
 }
