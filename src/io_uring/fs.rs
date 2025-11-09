@@ -3,7 +3,9 @@ use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS, AdviseFlag};
+use crate::fs::{
+    path_from_cstring, AdviseFlag, AllocateFlag, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS,
+};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -282,7 +284,7 @@ pub(crate) struct AllocateOp;
 impl io_uring::FdOp for AllocateOp {
     type Output = ();
     type Resources = ();
-    type Args = (u64, u32, libc::c_int); // offset, length, mode
+    type Args = (u64, u32, AllocateFlag); // offset, length, mode
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -297,7 +299,7 @@ impl io_uring::FdOp for AllocateOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: (*length).into(),
         };
-        submission.0.len = *mode as u32;
+        submission.0.len = mode.0;
     }
 
     fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {

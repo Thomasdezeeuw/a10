@@ -320,7 +320,7 @@ impl AsyncFd {
         &'fd self,
         offset: u64,
         length: u32,
-        mode: libc::c_int,
+        mode: AllocateFlag,
     ) -> Allocate<'fd> {
         Allocate(FdOperation::new(self, (), (offset, length, mode)))
     }
@@ -360,6 +360,25 @@ new_flag!(
         WILL_NEED = libc::POSIX_FADV_WILLNEED,
         /// Data will not be accessed in the near future.
         DONT_NEED = libc::POSIX_FADV_DONTNEED,
+    }
+
+    /// Mode for call to [`AsyncFd::allocate`].
+    pub struct AllocateFlag(u32) impl BitOr libc::c_int {
+        /// Allocate the disk space.
+        ALLOCATE = 0,
+        /// Keep the same file size.
+        KEEP_SIZE = libc::FALLOC_FL_KEEP_SIZE,
+        /// Guarantee that a subsequent write will not fail due to lack of
+        /// space.
+        UNSHARE_RANGE = libc::FALLOC_FL_UNSHARE_RANGE,
+        /// Deallocate the space.
+        PUNCH_HOLE = libc::FALLOC_FL_PUNCH_HOLE,
+        /// Remove the byte range from the file, without leaving a hole.
+        COLLAPSE_RANGE = libc::FALLOC_FL_COLLAPSE_RANGE,
+        /// Zero the byte range.
+        ZERO_RANGE = libc::FALLOC_FL_ZERO_RANGE,
+        /// Inserta  hole in the file without overwriting any existing data.
+        INSERT_RANGE = libc::FALLOC_FL_INSERT_RANGE,
     }
 );
 

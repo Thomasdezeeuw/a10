@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use std::{panic, str};
 
 use a10::fs::{
-    self, Advise, AdviseFlag, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate,
+    self, Advise, AdviseFlag, Allocate, AllocateFlag, CreateDir, Delete, Open, OpenOptions, Rename,
+    Truncate,
 };
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{fd, Extract, SubmissionQueue};
@@ -572,7 +573,7 @@ fn ftruncate() {
 
     waker
         .block_on(file.truncate(SIZE))
-        .expect("failed fallocate");
+        .expect("failed truncate");
 
     let metadata = waker.block_on(file.metadata()).unwrap();
     assert_eq!(metadata.len(), SIZE);
@@ -597,7 +598,7 @@ fn fallocate() {
         .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let mode = libc::FALLOC_FL_KEEP_SIZE;
+    let mode = AllocateFlag::ALLOCATE | libc::FALLOC_FL_KEEP_SIZE;
     waker
         .block_on(file.allocate(0, 4096, mode))
         .expect("failed fallocate");
