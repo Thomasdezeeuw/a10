@@ -16,9 +16,9 @@ use std::os::fd::{AsRawFd, BorrowedFd};
 use std::{fmt, io};
 
 use crate::op::{iter_operation, operation, Operation};
-use crate::{man_link, sys, SubmissionQueue};
+use crate::{man_link, new_flag, sys, SubmissionQueue};
 
-/// Wait for an event specified in `mask` on the file descriptor `fd`.
+/// Wait for an event specified in `interest` on the file descriptor `fd`.
 ///
 /// Ths is similar to calling `poll(2)` on the file descriptor.
 ///
@@ -31,8 +31,8 @@ use crate::{man_link, sys, SubmissionQueue};
 #[doc(alias = "epoll")]
 #[doc(alias = "select")]
 #[allow(clippy::module_name_repetitions)]
-pub fn oneshot_poll(sq: SubmissionQueue, fd: BorrowedFd, mask: libc::c_int) -> OneshotPoll {
-    OneshotPoll(Operation::new(sq, (), (fd.as_raw_fd(), mask)))
+pub fn oneshot_poll(sq: SubmissionQueue, fd: BorrowedFd, interest: Interest) -> OneshotPoll {
+    OneshotPoll(Operation::new(sq, (), (fd.as_raw_fd(), interest)))
 }
 
 operation!(
@@ -41,7 +41,7 @@ operation!(
 );
 
 /// Returns an [`AsyncIterator`] that returns multiple events as specified
-/// in `mask` on the file descriptor `fd`.
+/// in `interest` on the file descriptor `fd`.
 ///
 /// This is not the same as calling [`oneshot_poll`] in a loop as this uses a
 /// multishot operation, which means only a single operation is created kernel
@@ -58,13 +58,28 @@ operation!(
 #[doc(alias = "epoll")]
 #[doc(alias = "select")]
 #[allow(clippy::module_name_repetitions)]
-pub fn multishot_poll(sq: SubmissionQueue, fd: BorrowedFd, mask: libc::c_int) -> MultishotPoll {
-    MultishotPoll(Operation::new(sq, (), (fd.as_raw_fd(), mask)))
+pub fn multishot_poll(sq: SubmissionQueue, fd: BorrowedFd, interest: Interest) -> MultishotPoll {
+    MultishotPoll(Operation::new(sq, (), (fd.as_raw_fd(), interest)))
 }
 
 iter_operation!(
     /// [`AsyncIterator`] behind [`multishot_poll`].
     pub struct MultishotPoll(sys::poll::MultishotPollOp) -> io::Result<PollEvent>;
+);
+
+new_flag!(
+    /// Specification of the communication domain for a socket.
+    pub struct Interest(u32) {
+        /// The associated file is available for `read(2)` operations.
+        READABLE = libc::EPOLLIN,
+        /// The associated file is available for `write(2)` operations.
+        WRITABLE = libc::EPOLLOUT,
+        /// Stream socket peer closed connection, or shut down writing half of
+        /// connection.
+        READ_HANG_UP = libc::EPOLLRDHUP,
+        /// There is some exceptional condition on the file descriptor.
+        PRIORITY = libc::EPOLLPRI,
+    }
 );
 
 /// Event returned by [`OneshotPoll`].

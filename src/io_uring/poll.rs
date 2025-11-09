@@ -2,7 +2,7 @@ use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::Iter;
-use crate::poll::PollEvent;
+use crate::poll::{Interest, PollEvent};
 use crate::SubmissionQueue;
 
 pub(crate) struct OneshotPollOp;
@@ -10,18 +10,17 @@ pub(crate) struct OneshotPollOp;
 impl io_uring::Op for OneshotPollOp {
     type Output = PollEvent;
     type Resources = ();
-    type Args = (RawFd, libc::c_int); // mask;
+    type Args = (RawFd, Interest);
 
-    #[allow(clippy::cast_sign_loss)] // For mask as u32.
     fn fill_submission(
         (): &mut Self::Resources,
-        (fd, mask): &mut Self::Args,
+        (fd, interest): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_POLL_ADD as u8;
         submission.0.fd = *fd;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            poll32_events: *mask as u32,
+            poll32_events: interest.0,
         };
     }
 
@@ -36,7 +35,7 @@ pub(crate) struct MultishotPollOp;
 impl io_uring::Op for MultishotPollOp {
     type Output = PollEvent;
     type Resources = ();
-    type Args = (RawFd, libc::c_int); // mask;
+    type Args = (RawFd, Interest);
 
     fn fill_submission(
         resources: &mut Self::Resources,

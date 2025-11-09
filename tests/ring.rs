@@ -19,7 +19,7 @@ use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
-use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
+use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
 use a10::{process, Config, Ring, SubmissionQueue};
 
 mod util;
@@ -291,8 +291,8 @@ fn test_oneshot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let sender_write = pin!(oneshot_poll(sq.clone(), sender.as_fd(), libc::POLLOUT as _));
-    let receiver_read = pin!(oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _));
+    let sender_write = pin!(oneshot_poll(sq.clone(), sender.as_fd(), Interest::WRITABLE));
+    let receiver_read = pin!(oneshot_poll(sq, receiver.as_fd(), Interest::READABLE));
 
     let event = waker.block_on(sender_write).unwrap();
     assert!(event.is_writable());
@@ -312,7 +312,7 @@ fn drop_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), Interest::READABLE);
 
     start_op(&mut receiver_read);
 
@@ -328,7 +328,7 @@ fn cancel_oneshot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = oneshot_poll(sq, receiver.as_fd(), Interest::READABLE);
 
     cancel(&waker, &mut receiver_read, start_op);
     expect_io_errno(waker.block_on(receiver_read), libc::ECANCELED);
@@ -345,7 +345,7 @@ fn test_multishot_poll() {
 
     let (mut receiver, mut sender) = pipe2().unwrap();
 
-    let mut receiver_read = pin!(multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _));
+    let mut receiver_read = pin!(multishot_poll(sq, receiver.as_fd(), Interest::READABLE));
     start_mulitshot_op(&mut receiver_read);
 
     let mut buf = vec![0; DATA.len() + 1];
@@ -371,7 +371,7 @@ fn cancel_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), Interest::READABLE);
 
     cancel(&waker, &mut receiver_read, start_mulitshot_op);
     assert!(waker.block_on(next(receiver_read)).is_none());
@@ -384,7 +384,7 @@ fn drop_multishot_poll() {
 
     let (receiver, sender) = pipe2().unwrap();
 
-    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), libc::POLLIN as _);
+    let mut receiver_read = multishot_poll(sq, receiver.as_fd(), Interest::READABLE);
 
     start_mulitshot_op(&mut receiver_read);
 
