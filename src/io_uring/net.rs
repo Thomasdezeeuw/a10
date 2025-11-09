@@ -5,7 +5,7 @@ use std::{ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
-use crate::net::{AddressStorage, NoAddress, SendCall, SocketAddress};
+use crate::net::{AddressStorage, Domain, NoAddress, Protocol, SendCall, SocketAddress, Type};
 use crate::op::{FdIter, FdOpExtract};
 use crate::{fd, AsyncFd, SubmissionQueue};
 
@@ -16,7 +16,7 @@ pub(crate) struct SocketOp;
 impl io_uring::Op for SocketOp {
     type Output = AsyncFd;
     type Resources = fd::Kind;
-    type Args = (libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol.
+    type Args = (Domain, Type, Protocol);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -25,11 +25,11 @@ impl io_uring::Op for SocketOp {
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_SOCKET as u8;
-        submission.0.fd = *domain;
+        submission.0.fd = domain.0;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: *r#type as u64,
+            off: r#type.0 as u64,
         };
-        submission.0.len = *protocol as u32;
+        submission.0.len = protocol.0;
         // Must currently always be set to zero per the manual.
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
         if let fd::Kind::Direct = *fd_kind {

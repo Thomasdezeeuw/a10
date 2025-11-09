@@ -23,19 +23,86 @@ use crate::io::{
 };
 use crate::op::{fd_iter_operation, fd_operation, operation, FdOperation, Operation};
 use crate::sys::net::MsgHeader;
-use crate::{fd, man_link, sys, AsyncFd, SubmissionQueue};
+use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
 pub const fn socket(
     sq: SubmissionQueue,
-    domain: libc::c_int,
-    r#type: libc::c_int,
-    protocol: libc::c_int,
+    domain: Domain,
+    r#type: Type,
+    protocol: Option<Protocol>,
 ) -> Socket {
+    let protocol = match protocol {
+        Some(protocol) => protocol,
+        None => Protocol(0),
+    };
     let args = (domain, r#type, protocol);
     Socket(Operation::new(sq, fd::Kind::File, args))
 }
+
+new_flag!(
+    /// Specification of the communication domain for a socket.
+    pub struct Domain(i32) {
+        /// Domain for IPv4 communication.
+        IPV4 = libc::AF_INET,
+        /// Domain for IPv6 communication.
+        IPV6 = libc::AF_INET6,
+        /// Domain for Unix socket communication.
+        UNIX = libc::AF_UNIX,
+        /// Domain for low-level packet interface, corresponding to `AF_PACKET`.
+        PACKET = libc::AF_PACKET,
+        /// Domain for low-level VSOCK interface, corresponding to `AF_VSOCK`.
+        VSOCK = libc::AF_VSOCK,
+    }
+
+    /// Specification of communication semantics on a socket.
+    pub struct Type(u32) {
+        /// Provides sequenced, reliable, two-way, connection-based byte
+        /// streams.
+        ///
+        /// Used for protocols such as TCP.
+        STREAM = libc::SOCK_STREAM,
+        /// Supports datagrams (connectionless, unreliable messages of a fixed
+        /// maximum length).
+        ///
+        /// Used for protocols such as UDP.
+        DGRAM = libc::SOCK_DGRAM,
+        /// Raw network protocol access.
+        RAW = libc::SOCK_RAW,
+        /// Provides a reliable datagram layer that does not guarantee ordering.
+        RDM = libc::SOCK_RDM,
+        /// Provides a sequenced, reliable, two-way connection-based data
+        /// transmission path for datagrams of fixed maximum length.
+        SEQPACKET = libc::SOCK_SEQPACKET,
+        /// Datagram Congestion Control Protocol socket.
+        ///
+        /// Used for the DCCP protocol.
+        DCCP = libc::SOCK_DCCP,
+    }
+
+    /// Specification of communication protocol.
+    pub struct Protocol(u32) {
+        /// Internet Control Message Protocol IPv4.
+        ICMPV4 = libc::IPPROTO_ICMP,
+        /// Internet Control Message Protocol IPv6.
+        ICMPV6 = libc::IPPROTO_ICMPV6,
+        /// Transmission Control Protocol.
+        TCP = libc::IPPROTO_TCP,
+        /// User Datagram Protocol.
+        UDP = libc::IPPROTO_UDP,
+        /// Datagram Congestion Control Protocol.
+        DCCP = libc::IPPROTO_DCCP,
+        /// Stream Control Transport Protocol.
+        SCTP = libc::IPPROTO_SCTP,
+        /// UDP-Lite.
+        UDPLITE = libc::IPPROTO_UDPLITE,
+        /// Raw IP packets.
+        RAW = libc::IPPROTO_RAW,
+        /// Multipath TCP connection.
+        MPTCP = libc::IPPROTO_MPTCP,
+    }
+);
 
 operation!(
     /// [`Future`] behind [`socket`].

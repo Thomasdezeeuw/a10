@@ -1,8 +1,8 @@
 use std::net::SocketAddr;
 use std::{env, io, str};
 
-use a10::net::socket;
-use a10::{AsyncFd, Ring, SubmissionQueue};
+use a10::net::{socket, Domain, Type};
+use a10::{Ring, SubmissionQueue};
 
 mod runtime;
 
@@ -47,10 +47,7 @@ fn main() -> io::Result<()> {
 /// Make a HTTP GET request to `address`.
 async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Result<Vec<u8>> {
     // Create a new TCP, IPv4 socket.
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
-    let protocol = 0;
-    let socket = socket(sq, domain, r#type, protocol).await?;
+    let socket = socket(sq, Domain::IPV4, Type::STREAM, None).await?;
 
     // Connect.
     socket.connect(address).await?;
