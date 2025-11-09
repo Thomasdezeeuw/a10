@@ -505,7 +505,7 @@ macro_rules! new_flag {
     (
         $(
         $(#[$type_meta:meta])*
-        $type_vis: vis struct $type_name: ident ( $type_repr: tt ) {
+        $type_vis: vis struct $type_name: ident ( $type_repr: ty ) $(impl BitOr $( $type_or: ty )*)? {
             $(
             $(#[$value_meta:meta])*
             $value_name: ident = $value_type: expr,
@@ -525,6 +525,26 @@ macro_rules! new_flag {
             $type_vis const $value_name: $type_name = $type_name($value_type as $type_repr);
             )*
         }
+
+        $(
+        impl std::ops::BitOr for $type_name {
+            type Output = Self;
+
+            fn bitor(self, rhs: Self) -> Self::Output {
+                $type_name(self.0 | rhs.0)
+            }
+        }
+
+        $(
+        impl std::ops::BitOr<$type_or> for $type_name {
+            type Output = Self;
+
+            fn bitor(self, rhs: $type_or) -> Self::Output {
+                $type_name(self.0 | rhs as $type_repr)
+            }
+        }
+        )*
+        )?
         )+
     };
 }
