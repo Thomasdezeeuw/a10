@@ -457,6 +457,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        let fd_kind = fd.kind();
         let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
         let address_length = &mut (resources.0).1;
         *address_length = length;
@@ -472,7 +473,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
             accept_flags: *flags as u32,
         };
         submission.0.flags |= libc::IOSQE_ASYNC;
-        fd.create_flags(submission);
+        fd_kind.create_flags(submission);
     }
 
     #[allow(clippy::cast_possible_wrap)]
@@ -500,6 +501,7 @@ impl io_uring::FdOp for MultishotAcceptOp {
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
+        let fd_kind = fd.kind();
         submission.0.opcode = libc::IORING_OP_ACCEPT as u8;
         submission.0.ioprio = libc::IORING_ACCEPT_MULTISHOT as u16;
         submission.0.fd = fd.fd();
@@ -507,7 +509,7 @@ impl io_uring::FdOp for MultishotAcceptOp {
             accept_flags: *flags as u32,
         };
         submission.0.flags = libc::IOSQE_ASYNC;
-        fd.create_flags(submission);
+        fd_kind.create_flags(submission);
     }
 
     fn map_ok(lfd: &AsyncFd, (): Self::Resources, ok: cq::OpReturn) -> Self::Output {
