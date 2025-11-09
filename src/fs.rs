@@ -151,7 +151,7 @@ impl OpenOptions {
     }
 
     /// Sets the mode bits that a new file will be created with.
-    pub const fn mode(mut self, mode: libc::mode_t) -> Self {
+    pub const fn mode(mut self, mode: u32) -> Self {
         self.mode = mode;
         self
     }
