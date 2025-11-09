@@ -46,8 +46,8 @@ fn main() -> io::Result<()> {
 
 /// Make a HTTP GET request to `address`.
 async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Result<Vec<u8>> {
-    // Create a new TCP, IPv4 socket.
-    let socket = socket(sq, Domain::IPV4, Type::STREAM, None).await?;
+    // Create a new TCP socket.
+    let socket = socket(sq, Domain::for_address(&address), Type::STREAM, None).await?;
 
     // Connect.
     socket.connect(address).await?;
