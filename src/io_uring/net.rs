@@ -5,7 +5,9 @@ use std::{ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
-use crate::net::{AddressStorage, Domain, NoAddress, Protocol, SendCall, SocketAddress, Type};
+use crate::net::{
+    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, SendCall, SocketAddress, Type,
+};
 use crate::op::{FdIter, FdOpExtract};
 use crate::{fd, AsyncFd, SubmissionQueue};
 
@@ -448,7 +450,7 @@ pub(crate) struct AcceptOp<A>(PhantomData<*const A>);
 impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
     type Output = (AsyncFd, A);
     type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
-    type Args = libc::c_int; // flags
+    type Args = AcceptFlag;
 
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission(
@@ -470,7 +472,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
             addr: ptr.addr() as u64,
         };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            accept_flags: *flags as u32,
+            accept_flags: flags.0 | fd_kind.cloexec_flag() as u32,
         };
         submission.0.flags |= libc::IOSQE_ASYNC;
         fd_kind.create_flags(submission);
@@ -492,7 +494,7 @@ pub(crate) struct MultishotAcceptOp;
 impl io_uring::FdOp for MultishotAcceptOp {
     type Output = AsyncFd;
     type Resources = ();
-    type Args = libc::c_int; // flags
+    type Args = AcceptFlag;
 
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission(
@@ -506,7 +508,7 @@ impl io_uring::FdOp for MultishotAcceptOp {
         submission.0.ioprio = libc::IORING_ACCEPT_MULTISHOT as u16;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            accept_flags: *flags as u32,
+            accept_flags: flags.0 | fd_kind.cloexec_flag() as u32,
         };
         submission.0.flags = libc::IOSQE_ASYNC;
         fd_kind.create_flags(submission);

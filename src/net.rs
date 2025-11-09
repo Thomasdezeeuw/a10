@@ -465,11 +465,7 @@ impl AsyncFd {
     where
         A: SocketAddress,
     {
-        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
-        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
-        // expected.
-        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
-        self.accept4(self.kind().cloexec_flag())
+        self.accept4(None)
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
@@ -477,10 +473,11 @@ impl AsyncFd {
     ///
     /// Also see [`AsyncFd::accept`].
     #[doc = man_link!(accept4(2))]
-    pub fn accept4<'fd, A>(&'fd self, flags: libc::c_int) -> Accept<'fd, A>
+    pub fn accept4<'fd, A>(&'fd self, flags: Option<AcceptFlag>) -> Accept<'fd, A>
     where
         A: SocketAddress,
     {
+        let flags = flags.unwrap_or(AcceptFlag(0));
         let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
         Accept(FdOperation::new(self, address, flags))
     }
@@ -491,18 +488,21 @@ impl AsyncFd {
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
-        // `cloexec_flag` returns `O_CLOEXEC`, technically we should use
-        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
-        // expected.
-        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
-        self.multishot_accept4(self.kind().cloexec_flag())
+        self.multishot_accept4(None)
     }
 
     /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
     /// socket.
     ///
     /// Also see [`AsyncFd::multishot_accept`].
-    pub const fn multishot_accept4<'fd>(&'fd self, flags: libc::c_int) -> MultishotAccept<'fd> {
+    pub const fn multishot_accept4<'fd>(
+        &'fd self,
+        flags: Option<AcceptFlag>,
+    ) -> MultishotAccept<'fd> {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => AcceptFlag(0),
+        };
         MultishotAccept(FdOperation::new(self, (), flags))
     }
 
@@ -556,6 +556,15 @@ pub(crate) enum SendCall {
     Normal,
     ZeroCopy,
 }
+
+new_flag!(
+    /// Flags in calls to accept.
+    ///
+    /// See [`AsyncFd::accept4`] and [`AsyncFd::multishot_accept4`].
+    pub struct AcceptFlag(u32) {
+        // NOTE: we don't need SOCK_NONBLOCK and SOCK_CLOEXEC.
+    }
+);
 
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::connect`].

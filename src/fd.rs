@@ -194,6 +194,10 @@ impl Kind {
         if let Kind::Direct = self {
             0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
         } else {
+            // We also use `O_CLOEXEC` when we technically should use
+            // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+            // expected.
+            const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
             libc::O_CLOEXEC
         }
     }
