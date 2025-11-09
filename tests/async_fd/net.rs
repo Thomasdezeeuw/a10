@@ -1587,7 +1587,7 @@ fn direct_fd() {
 
     // Create a socket and connect the listener.
     let stream: AsyncFd = waker
-        .block_on(socket(sq, libc::AF_INET, libc::SOCK_STREAM, 0, 0).kind(fd::Kind::Direct))
+        .block_on(socket(sq, libc::AF_INET, libc::SOCK_STREAM, 0).kind(fd::Kind::Direct))
         .expect("failed to create socket");
     waker
         .block_on(stream.connect(local_addr))

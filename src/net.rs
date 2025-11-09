@@ -32,9 +32,8 @@ pub const fn socket(
     domain: libc::c_int,
     r#type: libc::c_int,
     protocol: libc::c_int,
-    flags: libc::c_int,
 ) -> Socket {
-    let args = (domain, r#type, protocol, flags);
+    let args = (domain, r#type, protocol);
     Socket(Operation::new(sq, fd::Kind::File, args))
 }
 

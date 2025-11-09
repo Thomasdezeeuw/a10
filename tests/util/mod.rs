@@ -532,7 +532,7 @@ pub(crate) async fn new_socket(
         // SAFETY: kernel initialises the socket for us.
         syscall!(socket(domain, r#type, protocol)).map(|fd| unsafe { AsyncFd::from_raw_fd(fd, sq) })
     } else {
-        socket(sq, domain, r#type, protocol, 0).await
+        socket(sq, domain, r#type, protocol).await
     }
     .expect("failed to create socket")
 }
