@@ -501,6 +501,29 @@ macro_rules! syscall {
     }};
 }
 
+macro_rules! new_flag {
+    (
+        $(#[$type_meta:meta])*
+        $type_vis: vis struct $type_name: ident ( $type_repr: tt ) {
+            $(
+            $(#[$value_meta:meta])*
+            $value_name: ident = $value_type: expr,
+            )+
+        }
+    ) => {
+        $(#[$type_meta])*
+        #[derive(Copy, Clone, Debug)]
+        $type_vis struct $type_name(pub(crate) $type_repr);
+
+        impl $type_name {
+            $(
+            $(#[$value_meta])*
+            $type_vis const $value_name: $type_name = $type_name($value_type as $type_repr);
+            )+
+        }
+    };
+}
+
 #[allow(unused_macros)] // Not used on all OS.
 macro_rules! debug_detail {
     (
@@ -558,4 +581,4 @@ macro_rules! debug_detail {
 }
 
 #[allow(unused_imports)] // Not used on all OS.
-use {debug_detail, man_link, syscall};
+use {debug_detail, man_link, new_flag, syscall};
