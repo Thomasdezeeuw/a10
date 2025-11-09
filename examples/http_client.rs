@@ -50,8 +50,7 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Re
     let domain = libc::AF_INET;
     let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
     let protocol = 0;
-    let flags = 0;
-    let socket: AsyncFd = socket(sq, domain, r#type, protocol, flags).await?;
+    let socket = socket(sq, domain, r#type, protocol).await?;
 
     // Connect.
     socket.connect(address).await?;

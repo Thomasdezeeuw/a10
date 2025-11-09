@@ -16,12 +16,12 @@ pub(crate) struct SocketOp;
 impl io_uring::Op for SocketOp {
     type Output = AsyncFd;
     type Resources = fd::Kind;
-    type Args = (libc::c_int, libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol, flags.
+    type Args = (libc::c_int, libc::c_int, libc::c_int); // domain, type, protocol.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         fd_kind: &mut Self::Resources,
-        (domain, r#type, protocol, flags): &mut Self::Args,
+        (domain, r#type, protocol): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_SOCKET as u8;
@@ -30,7 +30,8 @@ impl io_uring::Op for SocketOp {
             off: *r#type as u64,
         };
         submission.0.len = *protocol as u32;
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: *flags };
+        // Must currently always be set to zero per the manual.
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
         if let fd::Kind::Direct = *fd_kind {
             io_uring::fd::create_direct_flags(submission);
         }
