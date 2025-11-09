@@ -17,9 +17,10 @@ use std::time::{Duration, Instant};
 
 use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
+use a10::mem::{self, AdviseFlag};
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, MultishotPoll, OneshotPoll};
-use a10::{mem, process, Config, Ring, SubmissionQueue};
+use a10::{process, Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
@@ -424,7 +425,7 @@ fn madvise() {
             sq,
             ptr.cast(),
             page_size as u32,
-            libc::MADV_WILLNEED,
+            AdviseFlag::WILL_NEED,
         ))
         .expect("failed madvise");
 }

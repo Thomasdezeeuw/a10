@@ -1,4 +1,5 @@
 use crate::io_uring::{self, cq, libc, sq};
+use crate::mem::AdviseFlag;
 use crate::SubmissionQueue;
 
 pub(crate) struct AdviseOp;
@@ -6,7 +7,7 @@ pub(crate) struct AdviseOp;
 impl io_uring::Op for AdviseOp {
     type Output = ();
     type Resources = ();
-    type Args = (*mut (), u32, libc::c_int); // address, length, advice.
+    type Args = (*mut (), u32, AdviseFlag); // address, length, advice.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -21,7 +22,7 @@ impl io_uring::Op for AdviseOp {
         };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            fadvise_advice: *advice as u32,
+            fadvise_advice: advice.0,
         };
     }
 
