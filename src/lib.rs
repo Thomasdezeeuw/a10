@@ -503,14 +503,17 @@ macro_rules! syscall {
 
 macro_rules! new_flag {
     (
+        $(
         $(#[$type_meta:meta])*
         $type_vis: vis struct $type_name: ident ( $type_repr: tt ) {
             $(
             $(#[$value_meta:meta])*
             $value_name: ident = $value_type: expr,
-            )+
+            )*
         }
+        )+
     ) => {
+        $(
         $(#[$type_meta])*
         #[derive(Copy, Clone, Debug)]
         $type_vis struct $type_name(pub(crate) $type_repr);
@@ -518,9 +521,11 @@ macro_rules! new_flag {
         impl $type_name {
             $(
             $(#[$value_meta])*
+            #[allow(trivial_numeric_casts)]
             $type_vis const $value_name: $type_name = $type_name($value_type as $type_repr);
-            )+
+            )*
         }
+        )+
     };
 }
 
