@@ -3,7 +3,7 @@ use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
-use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS};
+use crate::fs::{path_from_cstring, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS, AdviseFlag};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -254,7 +254,7 @@ pub(crate) struct AdviseOp;
 impl io_uring::FdOp for AdviseOp {
     type Output = ();
     type Resources = ();
-    type Args = (u64, u32, libc::c_int); // offset, length, advice
+    type Args = (u64, u32, AdviseFlag); // offset, length, advice
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -268,7 +268,7 @@ impl io_uring::FdOp for AdviseOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            fadvise_advice: *advice as u32,
+            fadvise_advice: advice.0,
         };
     }
 

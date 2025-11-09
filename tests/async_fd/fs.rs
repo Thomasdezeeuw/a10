@@ -4,7 +4,9 @@ use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 use std::{panic, str};
 
-use a10::fs::{self, Advise, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
+use a10::fs::{
+    self, Advise, AdviseFlag, Allocate, CreateDir, Delete, Open, OpenOptions, Rename, Truncate,
+};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{fd, Extract, SubmissionQueue};
 
@@ -527,9 +529,8 @@ fn fadvise() {
     let open_file: Open = OpenOptions::new().open(sq, test_file.path.into());
     let file = waker.block_on(open_file).unwrap();
 
-    let advice = libc::POSIX_FADV_WILLNEED | libc::POSIX_FADV_SEQUENTIAL;
     waker
-        .block_on(file.advise(0, 0, advice))
+        .block_on(file.advise(0, 0, AdviseFlag::SEQUENTIAL))
         .expect("failed fadvise");
 
     let buf = Vec::with_capacity(test_file.content.len() + 1);
