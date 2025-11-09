@@ -401,7 +401,7 @@ macro_rules! op_async_iter {
 op_async_iter!(a10::msg::MsgListener => u32);
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
-op_async_iter!(a10::poll::MultishotPoll => io::Result<a10::poll::PollEvent>);
+op_async_iter!(a10::poll::MultishotPoll => io::Result<a10::poll::Event>);
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {

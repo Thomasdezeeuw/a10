@@ -1,9 +1,8 @@
 //! Poll for file descriptor events.
 //!
 //! To wait for events on a file descriptor use:
-//!  * [`oneshot_poll`] a [`Future`] returning a single [`PollEvent`].
-//!  * [`multishot_poll`] an [`AsyncIterator`] returning multiple
-//!    [`PollEvent`]s.
+//!  * [`oneshot_poll`] a [`Future`] returning a single [`Event`].
+//!  * [`multishot_poll`] an [`AsyncIterator`] returning multiple [`Event`]s.
 //!
 //! Note that module only supports regular file descriptors, not direct
 //! descriptors as it doesn't make much sense to poll a direct descriptor,
@@ -37,7 +36,7 @@ pub fn oneshot_poll(sq: SubmissionQueue, fd: BorrowedFd, interest: Interest) -> 
 
 operation!(
     /// [`Future`] behind [`oneshot_poll`].
-    pub struct OneshotPoll(sys::poll::OneshotPollOp) -> io::Result<PollEvent>;
+    pub struct OneshotPoll(sys::poll::OneshotPollOp) -> io::Result<Event>;
 );
 
 /// Returns an [`AsyncIterator`] that returns multiple events as specified
@@ -64,7 +63,7 @@ pub fn multishot_poll(sq: SubmissionQueue, fd: BorrowedFd, interest: Interest) -
 
 iter_operation!(
     /// [`AsyncIterator`] behind [`multishot_poll`].
-    pub struct MultishotPoll(sys::poll::MultishotPollOp) -> io::Result<PollEvent>;
+    pub struct MultishotPoll(sys::poll::MultishotPollOp) -> io::Result<Event>;
 );
 
 new_flag!(
@@ -84,10 +83,9 @@ new_flag!(
 
 /// Event returned by [`OneshotPoll`].
 #[derive(Copy, Clone)]
-#[allow(clippy::module_name_repetitions)]
-pub struct PollEvent(pub(crate) libc::c_int);
+pub struct Event(pub(crate) libc::c_int);
 
-impl PollEvent {
+impl Event {
     /// There is data to read.
     #[doc(alias = "POLLIN")]
     #[doc(alias = "EPOLLIN")]
@@ -146,7 +144,7 @@ const KNOWN_EVENTS: [(libc::c_int, &str); 10] = [
     (libc::EPOLLRDHUP, "EPOLLRDHUP"),
 ];
 
-impl fmt::Debug for PollEvent {
+impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let events = KNOWN_EVENTS
             .into_iter()
