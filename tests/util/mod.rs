@@ -18,7 +18,7 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
-use a10::net::socket;
+use a10::net::{socket, Domain, Protocol, Type};
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
 /// Initialise logging.
@@ -506,31 +506,34 @@ pub(crate) fn expect_io_errno<T>(result: Result<T, io::Error>, expected: libc::c
 
 /// Create an IPv4, TCP socket.
 pub(crate) async fn tcp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
-    let protocol = 0;
-    new_socket(sq, domain, r#type, protocol).await
+    new_socket(sq, Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).await
 }
 
 /// Create an IPv4, UPD socket.
 pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_DGRAM | libc::SOCK_CLOEXEC;
-    let protocol = libc::IPPROTO_UDP;
-    new_socket(sq, domain, r#type, protocol).await
+    new_socket(sq, Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).await
 }
 
 pub(crate) async fn new_socket(
     sq: SubmissionQueue,
-    domain: libc::c_int,
-    r#type: libc::c_int,
-    protocol: libc::c_int,
+    domain: Domain,
+    r#type: Type,
+    protocol: Option<Protocol>,
 ) -> AsyncFd {
     if !has_kernel_version(5, 19) {
         // IORING_OP_SOCKET is only available since 5.19, fall back to a
         // blocking system call.
-        // SAFETY: kernel initialises the socket for us.
-        syscall!(socket(domain, r#type, protocol)).map(|fd| unsafe { AsyncFd::from_raw_fd(fd, sq) })
+        unsafe {
+            // SAFETY: these transmutes aren't safe.
+            let domain = std::mem::transmute(domain);
+            let r#type = std::mem::transmute(r#type);
+            let protocol = match protocol {
+                Some(protocol) => std::mem::transmute(protocol),
+                None => 0,
+            };
+            // SAFETY: kernel initialises the socket for us.
+            syscall!(socket(domain, r#type, protocol)).map(|fd| AsyncFd::from_raw_fd(fd, sq))
+        }
     } else {
         socket(sq, domain, r#type, protocol).await
     }
@@ -579,6 +582,7 @@ pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
+        #[allow(unused_unsafe)]
         let res = unsafe { libc::$fn($( $arg, )*) };
         if res == -1 {
             Err(std::io::Error::last_os_error())

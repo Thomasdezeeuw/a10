@@ -13,8 +13,8 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    socket, Accept, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored, Send,
-    SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption,
+    socket, Accept, Domain, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored,
+    Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption, Type,
 };
 use a10::{fd, AsyncFd, Extract, Ring};
 
@@ -1500,10 +1500,7 @@ fn socket_option() {
     is_send::<SocketOption<libc::c_int>>();
     is_sync::<SocketOption<libc::c_int>>();
 
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
-    let protocol = 0;
-    let socket = waker.block_on(new_socket(sq, domain, r#type, protocol));
+    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
     let got_domain = waker
         .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_DOMAIN))
@@ -1542,10 +1539,7 @@ fn set_socket_option() {
     is_send::<SetSocketOption<libc::c_int>>();
     is_sync::<SetSocketOption<libc::c_int>>();
 
-    let domain = libc::AF_INET;
-    let r#type = libc::SOCK_STREAM | libc::SOCK_CLOEXEC;
-    let protocol = 0;
-    let socket = waker.block_on(new_socket(sq, domain, r#type, protocol));
+    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
     waker
         .block_on(socket.set_socket_option::<libc::c_int>(
@@ -1587,7 +1581,7 @@ fn direct_fd() {
 
     // Create a socket and connect the listener.
     let stream: AsyncFd = waker
-        .block_on(socket(sq, libc::AF_INET, libc::SOCK_STREAM, 0).kind(fd::Kind::Direct))
+        .block_on(socket(sq, Domain::IPV4, Type::STREAM, None).kind(fd::Kind::Direct))
         .expect("failed to create socket");
     waker
         .block_on(stream.connect(local_addr))
