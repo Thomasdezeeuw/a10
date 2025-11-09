@@ -7,7 +7,7 @@ use std::io;
 
 use crate::fd::{self, AsyncFd};
 use crate::op::{operation, Operation};
-use crate::{man_link, sys, SubmissionQueue};
+use crate::{man_link, new_flag, sys, SubmissionQueue};
 
 /// Create a new Unix pipe.
 ///
@@ -23,20 +23,28 @@ use crate::{man_link, sys, SubmissionQueue};
 /// # use a10::pipe::pipe;
 /// # use a10::fd;
 /// # async fn new_pipe(sq: &a10::SubmissionQueue) -> io::Result<()> {
-/// let flags = 0; // NOTE: O_CLOEXEC is already set.
 /// // Creating a new pipe using file descriptors.
-/// let [receiver, sender] = pipe(sq.clone(), flags).await?;
+/// let [receiver, sender] = pipe(sq.clone(), None).await?;
 ///
 /// // Using direct descriptors.
-/// let [receiver, sender] = pipe(sq.clone(), flags).kind(fd::Kind::Direct).await?;
+/// let [receiver, sender] = pipe(sq.clone(), None).kind(fd::Kind::Direct).await?;
 /// # Ok(())
 /// # }
 /// ```
 #[doc = man_link!(pipe(2))]
-pub fn pipe(sq: SubmissionQueue, flags: libc::c_int) -> Pipe {
+pub fn pipe(sq: SubmissionQueue, flags: Option<PipeFlag>) -> Pipe {
+    let flags = flags.unwrap_or(PipeFlag(0));
     let resources = (Box::new([-1, -1]), fd::Kind::File);
     Pipe(Operation::new(sq, resources, flags))
 }
+
+new_flag!(
+    /// Flags to [`pipe`].
+    pub struct PipeFlag(u32) {
+        /// Create a pipe that performs I/O in "packet" mode.
+        DIRECT = libc::O_DIRECT,
+    }
+);
 
 operation!(
     /// [`Future`] behind [`pipe`].

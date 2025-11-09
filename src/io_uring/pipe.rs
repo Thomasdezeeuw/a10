@@ -1,6 +1,7 @@
 use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
+use crate::pipe::PipeFlag;
 use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) struct PipeOp;
@@ -8,7 +9,7 @@ pub(crate) struct PipeOp;
 impl io_uring::Op for PipeOp {
     type Output = [AsyncFd; 2];
     type Resources = (Box<[RawFd; 2]>, fd::Kind);
-    type Args = libc::c_int; // flags.
+    type Args = PipeFlag;
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -21,7 +22,7 @@ impl io_uring::Op for PipeOp {
             addr: (&raw mut **fds) as u64,
         };
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            pipe_flags: (*flags | fd_kind.cloexec_flag()) as u32,
+            pipe_flags: (flags.0 | fd_kind.cloexec_flag() as u32),
         };
         if let fd::Kind::Direct = *fd_kind {
             io_uring::fd::create_direct_flags(submission);
