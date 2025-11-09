@@ -134,12 +134,6 @@ impl AsyncFd {
             crate::sys::fd::use_direct_flags(submission);
         }
     }
-
-    pub(crate) fn create_flags(&self, submission: &mut Submission) {
-        if let Kind::Direct = self.kind() {
-            crate::sys::fd::create_direct_flags(submission);
-        }
-    }
 }
 
 impl Unpin for AsyncFd {}
@@ -201,6 +195,12 @@ impl Kind {
             0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
         } else {
             libc::O_CLOEXEC
+        }
+    }
+
+    pub(crate) fn create_flags(self, submission: &mut Submission) {
+        if let Kind::Direct = self {
+            crate::sys::fd::create_direct_flags(submission);
         }
     }
 }
