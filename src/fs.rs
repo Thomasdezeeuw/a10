@@ -9,7 +9,7 @@ use std::time::{Duration, SystemTime};
 use std::{fmt, io, mem, str};
 
 use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{fd, man_link, sys, AsyncFd, SubmissionQueue};
+use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
 /// Flags needed to fill [`Metadata`].
 pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
@@ -304,7 +304,7 @@ impl AsyncFd {
         &'fd self,
         offset: u64,
         length: u32,
-        advice: libc::c_int,
+        advice: AdviseFlag,
     ) -> Advise<'fd> {
         Advise(FdOperation::new(self, (), (offset, length, advice)))
     }
@@ -342,6 +342,26 @@ pub(crate) enum SyncDataFlag {
     All,
     Data,
 }
+
+new_flag!(
+    /// Advise about data access.
+    ///
+    /// See [`AsyncFd::advise`].
+    pub struct AdviseFlag(u32) {
+        /// No advice.
+        NORMAL = libc::POSIX_FADV_NORMAL,
+        /// Data will be accessed sequentially.
+        SEQUENTIAL = libc::POSIX_FADV_SEQUENTIAL,
+        /// Data will be accessed randomly.
+        RANDOM = libc::POSIX_FADV_RANDOM,
+        /// Data will be accessed only once.
+        NO_REUSE = libc::POSIX_FADV_NOREUSE,
+        /// Data will be accessed in the near future.
+        WILL_NEED = libc::POSIX_FADV_WILLNEED,
+        /// Data will not be accessed in the near future.
+        DONT_NEED = libc::POSIX_FADV_DONTNEED,
+    }
+);
 
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::sync_all`] and [`AsyncFd::sync_data`].
