@@ -521,7 +521,7 @@ macro_rules! new_flag {
         impl $type_name {
             $(
             $(#[$value_meta])*
-            #[allow(trivial_numeric_casts)]
+            #[allow(trivial_numeric_casts, clippy::cast_sign_loss)]
             $type_vis const $value_name: $type_name = $type_name($value_type as $type_repr);
             )*
         }
@@ -539,6 +539,7 @@ macro_rules! new_flag {
         impl std::ops::BitOr<$type_or> for $type_name {
             type Output = Self;
 
+            #[allow(clippy::cast_sign_loss)]
             fn bitor(self, rhs: $type_or) -> Self::Output {
                 $type_name(self.0 | rhs as $type_repr)
             }
