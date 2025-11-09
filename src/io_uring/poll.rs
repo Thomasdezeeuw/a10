@@ -2,13 +2,13 @@ use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::Iter;
-use crate::poll::{Interest, PollEvent};
+use crate::poll::{Event, Interest};
 use crate::SubmissionQueue;
 
 pub(crate) struct OneshotPollOp;
 
 impl io_uring::Op for OneshotPollOp {
-    type Output = PollEvent;
+    type Output = Event;
     type Resources = ();
     type Args = (RawFd, Interest);
 
@@ -26,14 +26,14 @@ impl io_uring::Op for OneshotPollOp {
 
     #[allow(clippy::cast_possible_wrap)] // For events as i32.
     fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, events): cq::OpReturn) -> Self::Output {
-        PollEvent(events as libc::c_int)
+        Event(events as libc::c_int)
     }
 }
 
 pub(crate) struct MultishotPollOp;
 
 impl io_uring::Op for MultishotPollOp {
-    type Output = PollEvent;
+    type Output = Event;
     type Resources = ();
     type Args = (RawFd, Interest);
 
@@ -58,6 +58,6 @@ impl Iter for MultishotPollOp {
         (): &mut Self::Resources,
         (_, events): cq::OpReturn,
     ) -> Self::Output {
-        PollEvent(events as libc::c_int)
+        Event(events as libc::c_int)
     }
 }
