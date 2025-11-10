@@ -22,7 +22,7 @@ use std::{io, ptr};
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{man_link, sys, AsyncFd};
+use crate::{man_link, new_flag, sys, AsyncFd};
 
 mod read_buf;
 mod traits;
@@ -307,7 +307,7 @@ impl AsyncFd {
         &'fd self,
         target: BorrowedFd<'fd>,
         length: u32,
-        flags: libc::c_int,
+        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
     }
@@ -321,7 +321,7 @@ impl AsyncFd {
         target: BorrowedFd<'fd>,
         target_offset: u64,
         length: u32,
-        flags: libc::c_int,
+        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         self.splice(
             target,
@@ -341,7 +341,7 @@ impl AsyncFd {
         &'fd self,
         target: BorrowedFd<'fd>,
         length: u32,
-        flags: libc::c_int,
+        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
     }
@@ -356,7 +356,7 @@ impl AsyncFd {
         target: BorrowedFd<'fd>,
         target_offset: u64,
         length: u32,
-        flags: libc::c_int,
+        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         self.splice(
             target,
@@ -375,9 +375,13 @@ impl AsyncFd {
         off_in: u64,
         off_out: u64,
         length: u32,
-        flags: libc::c_int,
+        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         let target_fd = target.as_raw_fd();
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SpliceFlag(0),
+        };
         let args = (target_fd, direction, off_in, off_out, length, flags);
         Splice(FdOperation::new(self, (), args))
     }
@@ -407,6 +411,18 @@ pub(crate) enum SpliceDirection {
     To,
     From,
 }
+
+new_flag!(
+    /// Splice flags.
+    ///
+    /// See [`AsyncFd::splice_to`] and related function.
+    pub struct SpliceFlag(u32) impl BitOr {
+        /// Attempt to move pages instead of copying.
+        MOVE = libc::SPLICE_F_MOVE,
+        /// More data will be coming in a subsequent splice.
+        MORE = libc::SPLICE_F_MORE,
+    }
+);
 
 fd_operation!(
     /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].

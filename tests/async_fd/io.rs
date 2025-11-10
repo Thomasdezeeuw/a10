@@ -787,7 +787,7 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        .block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, 0))
+        .block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, None))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);
 
@@ -821,7 +821,7 @@ fn splice_from() {
         .expect("failed to write all");
 
     let n = waker
-        .block_on(file.splice_from_at(10, fd(&r), NO_OFFSET, expected.len() as u32, 0))
+        .block_on(file.splice_from_at(10, fd(&r), NO_OFFSET, expected.len() as u32, None))
         .expect("failed to splice");
     assert_eq!(n, expected.len());
 
