@@ -10,7 +10,7 @@ use crate::{fd, AsyncFd, SubmissionQueue};
 pub(crate) struct WaitIdOp;
 
 impl io_uring::Op for WaitIdOp {
-    type Output = Box<WaitInfo>;
+    type Output = WaitInfo;
     type Resources = Box<WaitInfo>;
     type Args = (WaitOn, WaitOption);
 
@@ -39,7 +39,7 @@ impl io_uring::Op for WaitIdOp {
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         debug_assert!(n == 0);
-        info
+        *info
     }
 }
 
