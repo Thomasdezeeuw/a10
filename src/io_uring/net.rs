@@ -6,8 +6,8 @@ use std::{ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, RecvFlag, SendCall, SendFlag,
-    SocketAddress, Type,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, Protocol, RecvFlag, SendCall,
+    SendFlag, SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -522,7 +522,7 @@ pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 impl<T> io_uring::FdOp for SocketOptionOp<T> {
     type Output = T;
     type Resources = Box<MaybeUninit<T>>;
-    type Args = (libc::c_int, libc::c_int); // level, optname.
+    type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission(
@@ -541,8 +541,8 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
-                level: *level as u32,
-                optname: *optname as u32,
+                level: level.0,
+                optname: optname.0,
             },
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
@@ -566,7 +566,7 @@ pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = Box<T>;
-    type Args = (libc::c_int, libc::c_int); // level, optname.
+    type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission(
@@ -585,8 +585,8 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
-                level: *level as u32,
-                optname: *optname as u32,
+                level: level.0,
+                optname: optname.0,
             },
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
