@@ -562,11 +562,11 @@ impl AsyncFd {
     #[doc(alias = "getsockopt")]
     pub fn socket_option<'fd, T>(
         &'fd self,
-        level: libc::c_int,
-        optname: libc::c_int,
+        level: Level,
+        optname: impl Into<Opt>,
     ) -> SocketOption<'fd, T> {
         let value = Box::new_uninit();
-        SocketOption(FdOperation::new(self, value, (level, optname)))
+        SocketOption(FdOperation::new(self, value, (level, optname.into())))
     }
 
     /// Set socket option.
@@ -580,12 +580,12 @@ impl AsyncFd {
     #[doc(alias = "setsockopt")]
     pub fn set_socket_option<'fd, T>(
         &'fd self,
-        level: libc::c_int,
-        optname: libc::c_int,
+        level: Level,
+        optname: impl Into<Opt>,
         optvalue: T,
     ) -> SetSocketOption<'fd, T> {
         let value = Box::new(optvalue);
-        SetSocketOption(FdOperation::new(self, value, (level, optname)))
+        SetSocketOption(FdOperation::new(self, value, (level, optname.into())))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -654,7 +654,374 @@ new_flag!(
     pub struct AcceptFlag(u32) {
         // NOTE: we don't need SOCK_NONBLOCK and SOCK_CLOEXEC.
     }
+
+    /// Socket level.
+    ///
+    /// See [`AsyncFd::socket_option`] and [`AsyncFd::set_socket_option`].
+    pub struct Level(u32) {
+        /// Options for all sockets.
+        ///
+        /// See [`SocketOpt`] for the options.
+        ///
+        /// This is also used for Unix options, see [`UnixOpt`].
+        SOCKET = libc::SOL_SOCKET,
+        /// IPv4.
+        ///
+        /// See [`IPv4Opt`] for the options.
+        IPV4 = libc::SOL_IP,
+        /// IPv6.
+        ///
+        /// See [`IPv6Opt`] for the options.
+        IPV6 = libc::SOL_IPV6,
+        /// Transmission Control Protocol.
+        ///
+        /// See [`TcpOpt`] for the options.
+        TCP = libc::SOL_TCP,
+        /// User Datagram Protocol.
+        ///
+        /// See [`UdpOpt`] for the options.
+        UDP = libc::SOL_UDP,
+    }
+
+    /// Socket option.
+    ///
+    /// The actual options are defined on the types that can be converted into this
+    /// type, e.g. [`SocketOpt`] or [`TcpOpt`].
+    ///
+    /// See [`AsyncFd::socket_option`] and [`AsyncFd::set_socket_option`].
+    pub struct Opt(u32) {}
+
+    /// Socket level option.
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(socket(7))]
+    pub struct SocketOpt(u32) {
+        /// Returns a value indicating whether or not this socket has been
+        /// marked to accept connections with `listen(2)`.
+        ACCEPT_CONN = libc::SO_ACCEPTCONN,
+        /// Attach a classic BPF program to the socket for use as a filter of
+        /// incoming packets.
+        ATTACH_FILTER = libc::SO_ATTACH_FILTER,
+        /// Attach an extended BPF program to the socket for use as a filter of
+        /// incoming packets.
+        ATTACH_BPF = libc::SO_ATTACH_BPF,
+        /// Set a classic BPF program which defines how packets are assigned to
+        /// the sockets in the reuseport group.
+        ATTACH_REUSE_PORT_CBPF = libc::SO_ATTACH_REUSEPORT_CBPF,
+        /// Set an extended BPF program which defines how packets are assigned
+        /// to the sockets in the reuseport group.
+        ATTACH_REUSE_PORT_EBPF = libc::SO_ATTACH_REUSEPORT_EBPF,
+        /// Bind to a particular device.
+        BIND_TO_DEVICE = libc::SO_BINDTODEVICE,
+        /// Broadcast flag.
+        BROADCAST = libc::SO_BROADCAST,
+        /// Enable socket debugging.
+        DEBUG = libc::SO_DEBUG,
+        /// Remove the classic extended BPF program.
+        DETACH_FILTER = libc::SO_DETACH_FILTER,
+        /// Remove the classic or extended BPF program.
+        DETACH_BPF = libc::SO_DETACH_BPF,
+        /// Domain.
+        DOMAIN = libc::SO_DOMAIN,
+        /// Get and clear the pending socket error.
+        ERROR = libc::SO_ERROR,
+        /// Don't send via a gateway, send only to directly connected hosts.
+        DONT_ROUTE = libc::SO_DONTROUTE,
+        /// CPU affinity.
+        INCOMING_CPU = libc::SO_INCOMING_CPU,
+        /// Returns a system-level unique ID called NAPI ID that is associated
+        /// with a RX queue on which the last packet associated with that socket
+        /// is received.
+        INCOMING_NAPI_ID = libc::SO_INCOMING_NAPI_ID,
+        /// Enable sending of keep-alive messages on connection-oriented
+        /// sockets.
+        KEEP_ALIVE = libc::SO_KEEPALIVE,
+        /// Linger option.
+        LINGER = libc::SO_LINGER,
+        /// When set, this option will prevent changing the filters associated
+        /// with the socket.
+        LOCK_FILTER = libc::SO_LOCK_FILTER,
+        /// Set the mark for each packet sent through this socket.
+        MARK = libc::SO_MARK,
+        /// Place out-of-band (OOB) data directly into the receive data stream.
+        OOB_INLINE = libc::SO_OOBINLINE,
+        /// Return the credentials of the peer process connected to this socket.
+        PEER_CRED = libc::SO_PEERCRED,
+        /// Return the security context of the peer socket connected to this
+        /// socket.
+        PEER_SEC = libc::SO_PEERSEC,
+        /// Set the protocol-defined priority for all packets to be sent.
+        PRIORITY = libc::SO_PRIORITY,
+        /// Retrieves the socket protocol.
+        PROTOCOL = libc::SO_PROTOCOL,
+        /// Maximum receive buffer in bytes.
+        RECV_BUF = libc::SO_RCVBUF,
+        /// Same task as [`SocketOpt::RECV_BUF`], but the rmem_max limit can be
+        /// overridden.
+        RECV_BUF_FORCE = libc::SO_RCVBUFFORCE,
+        /// Minimum number of bytes in the buffer until the socket layer will
+        /// pass the data to the user on receiving.
+        RECV_LOW_WATER = libc::SO_RCVLOWAT,
+        /// Minimum number of bytes in the buffer until the socket layer will
+        /// pass the data to the protocol.
+        SEND_LOW_WATER = libc::SO_SNDLOWAT,
+        /// Specify the receiving timeouts until reporting an error.
+        RECV_TIMEOUT = libc::SO_RCVTIMEO,
+        /// Specify the sending timeouts until reporting an error.
+        SEND_TIMEOUT = libc::SO_SNDTIMEO,
+        /// Allow reuse of local addresses.
+        REUSE_ADDR = libc::SO_REUSEADDR,
+        /// Allow multiple sockets to be bound to an identical socket address.
+        REUSE_PORT = libc::SO_REUSEPORT,
+        /// Maximum send buffer in bytes.
+        SEND_BUF = libc::SO_SNDBUF,
+        /// Same task as [`SocketOpt::SEND_BUF`], but the wmem_max limit can be
+        /// overridden.
+        SEND_BUF_FORCE = libc::SO_SNDBUFFORCE,
+        /// Receiving of the `SO_TIMESTAMP` control message.
+        TIMESTAMP = libc::SO_TIMESTAMP,
+        /// Receiving of the `SO_TIMESTAMPNS` control message.
+        TIMESTAMP_NS = libc::SO_TIMESTAMPNS,
+        /// Type.
+        TYPE = libc::SO_TYPE,
+        /// Sets the approximate time in microseconds to busy poll on a blocking
+        /// receive when there is no data.
+        BUSY_POLL = libc::SO_BUSY_POLL,
+    }
+
+    /// IPv4 level option.
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(ip(7))]
+    pub struct IPv4Opt(u32) {
+        /// Join a multicast group.
+        ADD_MEMBERSHIP = libc::IP_ADD_MEMBERSHIP,
+        /// Join a multicast group and allow receiving data only from a
+        /// specified source.
+        ADD_SOURCE_MEMBERSHIP = libc::IP_ADD_SOURCE_MEMBERSHIP,
+        /// Do not reserve an ephemeral port when using `bind(2)` with a port
+        /// number of 0.
+        BIND_ADDRESS_NO_PORT = libc::IP_BIND_ADDRESS_NO_PORT,
+        /// Stop receiving multicast data from a specific source in a given
+        /// group.
+        BLOCK_SOURCE = libc::IP_BLOCK_SOURCE,
+        /// Leave a multicast group.
+        DROP_MEMBERSHIP = libc::IP_DROP_MEMBERSHIP,
+        /// Leave a source-specific group.
+        DROP_SOURCE_MEMBERSHIP = libc::IP_DROP_SOURCE_MEMBERSHIP,
+        /// Allow binding to an IP address that is nonlocal or does not (yet)
+        /// exist.
+        FREE_BIND = libc::IP_FREEBIND,
+        /// If enabled, the user supplies an IP header in front of the user
+        /// data.
+        HDR_INCL = libc::IP_HDRINCL,
+        /// Access to the advanced full-state filtering API.
+        MSFILTER = libc::IP_MSFILTER,
+        /// MTU value.
+        MTU = libc::IP_MTU,
+        /// Set or receive the Path MTU Discovery setting for a socket.
+        MTU_DISCOVER = libc::IP_MTU_DISCOVER,
+        /// Delivery policy of multicast messages.
+        MULTICAST_ALL = libc::IP_MULTICAST_ALL,
+        /// Set the local device for a multicast socket.
+        MULTICAST_IF = libc::IP_MULTICAST_IF,
+        /// Control whether the socket sees multicast packets that it has send
+        /// itself.
+        MULTICAST_LOOP = libc::IP_MULTICAST_LOOP,
+        /// Set or read the time-to-live value of outgoing multicast packets for
+        /// this socket.
+        MULTICAST_TTL = libc::IP_MULTICAST_TTL,
+        /// Control the reassembly of outgoing packets is disabled in the
+        /// netfilter layer.
+        NO_DEFRAG = libc::IP_NODEFRAG,
+        /// IP options to be sent with every packet from this socket.
+        OPTIONS = libc::IP_OPTIONS,
+        /// Enables receiving of the SELinux security label of the peer socket
+        /// in an ancillary message of type `SCM_SECURITY`.
+        PASS_SEC = libc::IP_PASSSEC,
+        /// Collect information about this socket.
+        PKT_INFO = libc::IP_PKTINFO,
+        /// Enable extended reliable error message passing.
+        RECV_ERR = libc::IP_RECVERR,
+        /// Pass all incoming IP options to the user in a `IP_OPTIONS` control
+        /// message.
+        RECV_OPTS = libc::IP_RECVOPTS,
+        /// Enables the `IP_ORIGDSTADDR` ancillary message in `recvmsg(2)`.
+        RECV_ORIG_DST_ADDR = libc::IP_RECVORIGDSTADDR,
+        /// Enable passing of `IP_TOS` in ancillary message with incoming
+        /// packets.
+        RECV_TOS = libc::IP_RECVTOS,
+        /// Enable passing of `IP_TTL` in ancillary message with incoming
+        /// packets.
+        RECV_TTL = libc::IP_RECVTTL,
+        /// Identical to [`IPv4Opt::RECV_OPTS`], but returns raw unprocessed
+        /// options with timestamp and route record options not filled in for
+        /// this hop.
+        RET_OPTS = libc::IP_RETOPTS,
+        /// Pass all to-be forwarded packets with the IP Router Alert option set
+        /// to this socket.
+        ROUTER_ALERT = libc::IP_ROUTER_ALERT,
+        /// Type-Of-Service (TOS) field that is sent with every IP packet
+        /// originating from this socket.
+        TOS = libc::IP_TOS,
+        /// Enable transparent proxying on this socket.
+        TRANSPARENT = libc::IP_TRANSPARENT,
+        /// Current time-to-live field that is used in every packet sent from
+        /// this socket.
+        TTL = libc::IP_TTL,
+        /// Unblock previously blocked multicast source.
+        UNBLOCK_SOURCE = libc::IP_UNBLOCK_SOURCE,
+    }
+
+    /// IPv6 level option.
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(ipv6(7))]
+    pub struct IPv6Opt(u32) {
+        /// Turn an IPv6 socket into a socket of a different address family.
+        ADDR_FORM = libc::IPV6_ADDRFORM,
+        /// Control membership in multicast groups.
+        ADD_MEMBERSHIP = libc::IPV6_ADD_MEMBERSHIP,
+        /// Control membership in multicast groups.
+        DROP_MEMBERSHIP = libc::IPV6_DROP_MEMBERSHIP,
+        /// MTU value.
+        MTU = libc::IPV6_MTU,
+        /// Control path-MTU discovery on the socket.
+        MTU_DISCOVER = libc::IPV6_MTU_DISCOVER,
+        /// Set the multicast hop limit for the socket.
+        MULTICAST_HOPS = libc::IPV6_MULTICAST_HOPS,
+        /// Set the device for outgoing multicast packets on the socket.
+        MULTICAST_IF = libc::IPV6_MULTICAST_IF,
+        /// Control whether the socket sees multicast packets that it has send
+        /// itself.
+        MULTICAST_LOOP = libc::IPV6_MULTICAST_LOOP,
+        /// Set delivery of the `IPV6_PKTINFO` control message on incoming
+        /// datagrams.
+        RECV_PKT_INFO = libc::IPV6_RECVPKTINFO,
+        /// Set routing header.
+        RT_HDR = libc::IPV6_RTHDR,
+        /// Set authentication header.
+        AUTH_HDR = libc::IPV6_AUTHHDR,
+        /// Set destination options.
+        DST_OPTS = libc::IPV6_DSTOPTS,
+        /// Set hop options.
+        HOP_OPTS = libc::IPV6_HOPOPTS,
+        /// Set flow id.
+        FLOW_INFO = libc::IPV6_FLOWINFO,
+        /// Set hop limit.
+        HOP_LIMIT = libc::IPV6_HOPLIMIT,
+        /// Control receiving of asynchronous error options.
+        RECV_ERR = libc::IPV6_RECVERR,
+        /// Pass forwarded packets containing a router alert hop-by-hop option
+        /// to this socket.
+        ROUTER_ALERT = libc::IPV6_ROUTER_ALERT,
+        /// Set the unicast hop limit for the socket.
+        UNICAST_HOPS = libc::IPV6_UNICAST_HOPS,
+        /// Restrict to sending and receiving IPv6 packets only.
+        V6_ONLY = libc::IPV6_V6ONLY,
+    }
+
+    /// Transmission Control Protocol level option.
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(tcp(7))]
+    pub struct TcpOpt(u32) {
+        /// Set the TCP congestion control algorithm to be used.
+        CONGESTION = libc::TCP_CONGESTION,
+        /// Don't send out partial frames.
+        CORK = libc::TCP_CORK,
+        /// Allow a listener to be awakened only when data arrives on the
+        /// socket.
+        DEFER_ACCEPT = libc::TCP_DEFER_ACCEPT,
+        /// Collect information about this socket.
+        INFO = libc::TCP_INFO,
+        /// The maximum number of keepalive probes TCP should send before
+        /// dropping the connection.
+        KEEP_CNT = libc::TCP_KEEPCNT,
+        /// The time (in seconds) the connection needs to remain idle before TCP
+        /// starts sending keepalive probes.
+        KEEP_IDLE = libc::TCP_KEEPIDLE,
+        /// The time (in seconds) between individual keepalive probes.
+        KEEP_INTVL = libc::TCP_KEEPINTVL,
+        /// The lifetime of orphaned FIN_WAIT2 state sockets.
+        LINGER2 = libc::TCP_LINGER2,
+        /// The maximum segment size for outgoing TCP packets.
+        MAX_SEG = libc::TCP_MAXSEG,
+        /// Disable the Nagle algorithm.
+        NO_DELAY = libc::TCP_NODELAY,
+        /// Enable quickack mode.
+        QUICK_ACK = libc::TCP_QUICKACK,
+        /// Set the number of SYN retransmits that TCP should send before
+        /// aborting the attempt to connect.
+        SYN_CNT = libc::TCP_SYNCNT,
+        /// Maximum amount of time in milliseconds that transmitted data may
+        /// remain unacknowledged, or buffered data may remain untransmitted,
+        /// before TCP will forcibly close the connection.
+        USER_TIMEOUT = libc::TCP_USER_TIMEOUT,
+        /// Bound the size of the advertised window.
+        WINDOW_CLAMP = libc::TCP_WINDOW_CLAMP,
+        /// This option enables Fast Open on the listener socket.
+        FASTOPEN = libc::TCP_FASTOPEN,
+        /// This option enables an alternative way to perform Fast Open on the
+        /// client side.
+        FASTOPEN_CONNECT = libc::TCP_FASTOPEN_CONNECT,
+    }
+
+    /// User Datagram Protocol level option.
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(udp(7))]
+    pub struct UdpOpt(u32) {
+        /// If this option is enabled, then all data output on this socket is
+        /// accumulated into a single datagram that is transmitted when the
+        /// option is disabled.
+        CORK = libc::UDP_CORK,
+        /// Enables UDP segmentation offload.
+        SEGMENT = libc::UDP_SEGMENT,
+        /// Enables UDP receive offload.
+        GRO = libc::UDP_GRO,
+    }
+
+    /// Unix level option.
+    ///
+    /// Notes this uses [`Level::SOCKET`].
+    ///
+    /// See [`Opt`].
+    #[doc = man_link!(unix(7))]
+    pub struct UnixOpt(u32) {
+        /// Enables receiving of the credentials of the sending process in an
+        /// `SCM_CREDENTIALS` ancillary message in each subsequently received
+        /// message.
+        PASS_CRED = libc::SO_PASSCRED,
+        /// Enables receiving of the SELinux security label of the peer socket
+        /// in an ancillary message of type `SCM_SECURITY`.
+        PASS_SEC = libc::SO_PASSSEC,
+        /// Set the value of the "peek offset" for the `recv(2)` system call when
+        /// used with `MSG_PEEK` flag.
+        PEEK_OFF = libc::SO_PEEK_OFF,
+        /// Returns the credentials of the peer process connected to this
+        /// socket.
+        ///
+        /// *Read-only*
+        PEER_CRED = libc::SO_PEERCRED,
+    }
 );
+
+macro_rules! impl_from {
+    (
+        $into: ident <- $( $from: ty ),+ $(,)?
+    ) => {
+        $(
+        impl From<$from> for $into {
+            fn from(option: $from) -> $into {
+                $into(option.0)
+            }
+        }
+        )+
+    };
+}
+
+impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::connect`].

@@ -13,8 +13,9 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    socket, Accept, Domain, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored,
-    Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOption, Type,
+    socket, Accept, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
+    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt,
+    SocketOption, Type,
 };
 use a10::{fd, AsyncFd, Extract, Ring};
 
@@ -1503,28 +1504,28 @@ fn socket_option() {
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
     let got_domain = waker
-        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_DOMAIN))
+        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::DOMAIN))
         .unwrap();
     assert_eq!(libc::AF_INET, got_domain);
 
     let got_type = waker
-        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_TYPE))
+        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::TYPE))
         .unwrap();
     assert_eq!(libc::SOCK_STREAM, got_type);
 
     let got_protocol = waker
-        .block_on(socket.socket_option(libc::SOL_SOCKET, libc::SO_PROTOCOL))
+        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::PROTOCOL))
         .unwrap();
     assert_eq!(libc::IPPROTO_TCP, got_protocol);
 
     let got_linger = waker
-        .block_on(socket.socket_option::<libc::linger>(libc::SOL_SOCKET, libc::SO_LINGER))
+        .block_on(socket.socket_option::<libc::linger>(Level::SOCKET, SocketOpt::LINGER))
         .unwrap();
     assert_eq!(0, got_linger.l_onoff);
     assert_eq!(0, got_linger.l_linger);
 
     let got_error = waker
-        .block_on(socket.socket_option::<libc::c_int>(libc::SOL_SOCKET, libc::SO_ERROR))
+        .block_on(socket.socket_option::<libc::c_int>(Level::SOCKET, SocketOpt::ERROR))
         .unwrap();
     assert_eq!(0, got_error);
 }
@@ -1543,8 +1544,8 @@ fn set_socket_option() {
 
     waker
         .block_on(socket.set_socket_option::<libc::c_int>(
-            libc::SOL_SOCKET,
-            libc::SO_INCOMING_CPU,
+            Level::SOCKET,
+            SocketOpt::INCOMING_CPU,
             0,
         ))
         .unwrap();
@@ -1556,7 +1557,7 @@ fn set_socket_option() {
     let got_linger = waker
         .block_on(
             socket
-                .set_socket_option(libc::SOL_SOCKET, libc::SO_LINGER, linger)
+                .set_socket_option(Level::SOCKET, SocketOpt::LINGER, linger)
                 .extract(),
         )
         .unwrap();
@@ -1564,7 +1565,7 @@ fn set_socket_option() {
     assert_eq!(linger.l_linger, got_linger.l_linger);
 
     let got_linger = waker
-        .block_on(socket.socket_option::<libc::linger>(libc::SOL_SOCKET, libc::SO_LINGER))
+        .block_on(socket.socket_option::<libc::linger>(Level::SOCKET, SocketOpt::LINGER))
         .unwrap();
     assert_eq!(linger.l_onoff, got_linger.l_onoff);
     assert_eq!(linger.l_linger, got_linger.l_linger);
