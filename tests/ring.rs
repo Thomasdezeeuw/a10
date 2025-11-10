@@ -20,7 +20,7 @@ use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
-use a10::process::{self, WaitOption};
+use a10::process::{self, ChildStatus, Signal, WaitOption};
 use a10::{Config, Ring, SubmissionQueue};
 
 mod util;
@@ -447,11 +447,10 @@ fn process_wait_on() {
         .block_on(process::wait_on(sq, &process, Some(WaitOption::EXITED)))
         .expect("failed wait");
 
-    assert_eq!(info.si_signo, libc::SIGCHLD);
-    assert_eq!(info.si_code, libc::CLD_EXITED);
-    // SAFETY: these fields are set if `si_signo == SIGCHLD`.
-    assert_eq!(unsafe { info.si_pid() }, pid as i32);
-    assert_eq!(unsafe { info.si_status() }, libc::EXIT_SUCCESS);
+    assert_eq!(info.signal(), Signal::CHILD);
+    assert_eq!(info.code(), ChildStatus::EXITED);
+    assert_eq!(info.pid(), pid as i32);
+    assert_eq!(info.status().code(), Some(libc::EXIT_SUCCESS));
 }
 
 #[test]
