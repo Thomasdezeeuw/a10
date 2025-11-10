@@ -515,7 +515,7 @@ macro_rules! new_flag {
     ) => {
         $(
         $(#[$type_meta])*
-        #[derive(Copy, Clone, Debug)]
+        #[derive(Copy, Clone, Eq, PartialEq, Debug)]
         $type_vis struct $type_name(pub(crate) $type_repr);
 
         impl $type_name {
