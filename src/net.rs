@@ -50,9 +50,9 @@ new_flag!(
         IPV6 = libc::AF_INET6,
         /// Domain for Unix socket communication.
         UNIX = libc::AF_UNIX,
-        /// Domain for low-level packet interface, corresponding to `AF_PACKET`.
+        /// Domain for low-level packet interface.
         PACKET = libc::AF_PACKET,
-        /// Domain for low-level VSOCK interface, corresponding to `AF_VSOCK`.
+        /// Domain for low-level VSOCK interface.
         VSOCK = libc::AF_VSOCK,
     }
 
