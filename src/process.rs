@@ -4,8 +4,9 @@
 //! [`Signals`] can be used for process signal handling.
 
 use std::mem::{self, ManuallyDrop, MaybeUninit};
+use std::os::unix::process::ExitStatusExt;
 use std::pin::Pin;
-use std::process::Child;
+use std::process::{Child, ExitStatus};
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
@@ -26,7 +27,7 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>
 #[doc = man_link!(waitid(2))]
 #[doc(alias = "waitid")]
 pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> WaitId {
-    // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
+    // SAFETY: fully zeroed `libc::siginfo_t` is a valid value.
     let info = unsafe { Box::new(mem::zeroed()) };
     let options = match options {
         Some(options) => options,
@@ -72,9 +73,77 @@ new_flag!(
     }
 );
 
+/// Information about an awaited process.
+///
+/// See [`wait`] and [`wait_on`].
+#[repr(transparent)]
+pub struct WaitInfo(libc::siginfo_t);
+
+impl WaitInfo {
+    /// Process id of the child.
+    pub fn pid(&self) -> i32 {
+        unsafe { self.0.si_pid() }
+    }
+
+    /// Real user ID of the child.
+    pub fn real_user_id(&self) -> u32 {
+        unsafe { self.0.si_uid() }
+    }
+
+    /// Process signal.
+    pub fn signal(&self) -> Signal {
+        Signal(self.0.si_signo)
+    }
+
+    /// Either the exit status of the child or the signal that caused the child
+    /// to terminate, stop, or continue.
+    ///
+    /// The [`code`] field can be used to determine how to interpret this field.
+    ///
+    /// [`code`]: WaitInfo::code
+    pub fn status(&self) -> ExitStatus {
+        unsafe { ExitStatus::from_raw(self.0.si_status()) }
+    }
+
+    /// Status of the child process.
+    pub fn code(&self) -> ChildStatus {
+        ChildStatus(self.0.si_code)
+    }
+}
+
+impl fmt::Debug for WaitInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WaitInfo")
+            .field("pid", &self.pid())
+            .field("real_user_id", &self.real_user_id())
+            .field("signal", &self.signal())
+            .field("status", &self.status())
+            .field("code", &self.code())
+            .finish()
+    }
+}
+
+new_flag!(
+    /// See [`WaitInfo::code`].
+    pub struct ChildStatus(i32) {
+        /// Exited (called `exit(3)`).
+        EXITED = libc::CLD_EXITED,
+        /// Killed by a signal.
+        KILLED = libc::CLD_KILLED,
+        /// Killed by a signal, dumped core.
+        DUMPED = libc::CLD_DUMPED,
+        /// Stopped by signal.
+        STOPPED = libc::CLD_STOPPED,
+        /// Traced child has trapped.
+        TRAPPED = libc::CLD_TRAPPED,
+        /// Continue by continue signal.
+        CONTINUED = libc::CLD_CONTINUED,
+    }
+);
+
 operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
-    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<libc::siginfo_t>>;
+    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<WaitInfo>>;
 );
 
 /// Notification of process signals.
