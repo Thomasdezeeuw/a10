@@ -598,7 +598,7 @@ fn fallocate() {
         .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let mode = AllocateFlag::ALLOCATE | libc::FALLOC_FL_KEEP_SIZE;
+    let mode = AllocateFlag::ALLOCATE | AllocateFlag::KEEP_SIZE;
     waker
         .block_on(file.allocate(0, 4096, mode))
         .expect("failed fallocate");
