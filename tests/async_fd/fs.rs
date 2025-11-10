@@ -598,9 +598,8 @@ fn fallocate() {
         .open(sq, path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let mode = AllocateFlag::ALLOCATE | AllocateFlag::KEEP_SIZE;
     waker
-        .block_on(file.allocate(0, 4096, mode))
+        .block_on(file.allocate(0, 4096, Some(AllocateFlag::KEEP_SIZE)))
         .expect("failed fallocate");
 
     let write = file.write(b"Hello world".to_vec()).extract();

@@ -320,8 +320,12 @@ impl AsyncFd {
         &'fd self,
         offset: u64,
         length: u32,
-        mode: AllocateFlag,
+        mode: Option<AllocateFlag>,
     ) -> Allocate<'fd> {
+        let mode = match mode {
+            Some(mode) => mode,
+            None => AllocateFlag(0),
+        };
         Allocate(FdOperation::new(self, (), (offset, length, mode)))
     }
 
@@ -364,8 +368,6 @@ new_flag!(
 
     /// Mode for call to [`AsyncFd::allocate`].
     pub struct AllocateFlag(u32) impl BitOr {
-        /// Allocate the disk space.
-        ALLOCATE = 0,
         /// Keep the same file size.
         KEEP_SIZE = libc::FALLOC_FL_KEEP_SIZE,
         /// Guarantee that a subsequent write will not fail due to lack of
