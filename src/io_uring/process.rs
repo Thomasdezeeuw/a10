@@ -4,7 +4,7 @@ use std::ptr;
 use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
-use crate::process::{Signals, WaitInfo, WaitOn, WaitOption};
+use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
 use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) struct WaitIdOp;
@@ -82,8 +82,8 @@ impl io_uring::Op for ToSignalsDirectOp {
 pub(crate) struct ReceiveSignalOp;
 
 impl io_uring::FdOp for ReceiveSignalOp {
-    type Output = libc::signalfd_siginfo;
-    type Resources = Box<libc::signalfd_siginfo>;
+    type Output = SignalInfo;
+    type Resources = Box<SignalInfo>;
     type Args = ();
 
     fn fill_submission(
@@ -96,7 +96,7 @@ impl io_uring::FdOp for ReceiveSignalOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **info).addr() as u64,
+            addr: (&raw mut info.0) as u64,
         };
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
@@ -114,6 +114,6 @@ impl FdIter for ReceiveSignalOp {
         (_, n): Self::OperationOutput,
     ) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        **info
+        SignalInfo(info.0)
     }
 }

@@ -190,7 +190,7 @@ operation!(
 ///     let signals = Signals::from_signals(sq, [Signal::INTERRUPT, Signal::QUIT, Signal::TERMINATION])?;
 ///
 ///     let signal_info = signals.receive().await?;
-///     println!("Got process signal: {}", signal_info.ssi_signo);
+///     println!("Got process signal: {:?}", signal_info.signal());
 ///     Ok(())
 /// }
 /// # }
@@ -307,8 +307,42 @@ operation!(
 
 fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
-    pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<libc::signalfd_siginfo>;
+    pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<SignalInfo>;
 );
+
+/// Process signal information.
+///
+/// See [`Signals::receive`] and [`Signals::receive_signals`].
+#[repr(transparent)]
+pub struct SignalInfo(pub(crate) libc::signalfd_siginfo);
+
+impl SignalInfo {
+    /// Signal send.
+    #[allow(clippy::cast_possible_wrap)]
+    pub fn signal(&self) -> Signal {
+        Signal(self.0.ssi_signo as i32)
+    }
+
+    /// Process id of the sender.
+    pub fn pid(&self) -> u32 {
+        self.0.ssi_pid
+    }
+
+    /// Real user ID of the sender.
+    pub fn real_user_id(&self) -> u32 {
+        self.0.ssi_uid
+    }
+}
+
+impl fmt::Debug for SignalInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SignalInfo")
+            .field("signal", &self.signal())
+            .field("pid", &self.pid())
+            .field("real_user_id", &self.real_user_id())
+            .finish()
+    }
+}
 
 /// [`AsyncIterator`] behind [`Signals::receive_signals`].
 ///
@@ -317,7 +351,7 @@ fd_operation!(
 #[derive(Debug)]
 pub struct ReceiveSignals {
     signals: Signals,
-    state: op::State<Box<libc::signalfd_siginfo>, ()>,
+    state: op::State<Box<SignalInfo>, ()>,
 }
 
 impl ReceiveSignals {
@@ -328,7 +362,7 @@ impl ReceiveSignals {
     pub fn poll_next(
         self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
-    ) -> Poll<Option<io::Result<libc::signalfd_siginfo>>> {
+    ) -> Poll<Option<io::Result<SignalInfo>>> {
         // SAFETY: not moving `signals` or `state`.
         let ReceiveSignals { signals, state } = unsafe { self.get_unchecked_mut() };
         let fd = &signals.fd;
@@ -373,7 +407,7 @@ impl ReceiveSignals {
 
 #[cfg(feature = "nightly")]
 impl std::async_iter::AsyncIterator for ReceiveSignals {
-    type Item = io::Result<libc::signalfd_siginfo>;
+    type Item = io::Result<SignalInfo>;
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next(ctx)

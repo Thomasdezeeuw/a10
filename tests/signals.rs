@@ -263,7 +263,7 @@ impl TestHarness {
                         Poll::Pending => self.ring.poll(None).unwrap(),
                     }
                 };
-                assert_eq!(signal_info.ssi_signo as libc::c_int, signal_to_os(signal));
+                assert_eq!(signal_info.signal(), signal);
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -297,7 +297,6 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
 }
 
 fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
-    let expected_signal = signal_to_os(expected_signal);
     let mut receive = signals.receive();
     let signal_info = loop {
         match poll_nop(Pin::new(&mut receive)) {
@@ -305,7 +304,7 @@ fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
             Poll::Pending => ring.poll(None).unwrap(),
         }
     };
-    assert_eq!(signal_info.ssi_signo as libc::c_int, expected_signal);
+    assert_eq!(signal_info.signal(), expected_signal);
 }
 
 fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
