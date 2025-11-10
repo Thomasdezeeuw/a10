@@ -56,7 +56,7 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Re
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
     let version = env!("CARGO_PKG_VERSION");
     let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
-    socket.send_all(request, 0).await?;
+    socket.send_all(request, None).await?;
 
     // Receiving the response.
     let recv_buf = socket.recv(Vec::with_capacity(8192), None).await?;

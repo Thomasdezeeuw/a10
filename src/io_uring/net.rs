@@ -6,8 +6,8 @@ use std::{ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, RecvFlag, SendCall, SocketAddress,
-    Type,
+    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, RecvFlag, SendCall, SendFlag,
+    SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -297,7 +297,7 @@ pub(crate) struct SendOp<B>(PhantomData<*const B>);
 impl<B: Buf> io_uring::FdOp for SendOp<B> {
     type Output = usize;
     type Resources = Buffer<B>;
-    type Args = (SendCall, libc::c_int); // send_op, flags
+    type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -315,9 +315,7 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as u32,
-        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = buf_length;
     }
 
@@ -343,7 +341,7 @@ pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
     type Output = usize;
     type Resources = (B, Box<A::Storage>);
-    type Args = (SendCall, libc::c_int); // send_op, flags
+    type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -363,9 +361,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as u32,
-        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as u16;
         submission.0.len = buf_length;
     }
@@ -396,7 +392,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
         // These types need a stable address for the duration of the operation.
         Box<(MsgHeader, [crate::io::IoSlice; N], A::Storage)>,
     );
-    type Args = (SendCall, libc::c_int); // send_op, flags
+    type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -417,9 +413,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr::from_mut(&mut *msg).addr() as u64,
         };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as u32,
-        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = 1;
     }
 

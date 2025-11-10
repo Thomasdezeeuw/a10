@@ -277,10 +277,14 @@ impl AsyncFd {
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(send(2))]
-    pub const fn send<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
+    pub const fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
     where
         B: Buf,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
         let buf = Buffer { buf };
         Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
     }
@@ -297,17 +301,21 @@ impl AsyncFd {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
-    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Send<'fd, B>
+    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
     where
         B: Buf,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
         let buf = Buffer { buf };
         Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B>
+    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -323,7 +331,7 @@ impl AsyncFd {
 
     /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
     /// copies of `buf`.
-    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> SendAll<'fd, B>
+    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -342,7 +350,7 @@ impl AsyncFd {
     pub fn send_vectored<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendMsg<'fd, B, NoAddress, N>
     where
         B: BufSlice<N>,
@@ -355,7 +363,7 @@ impl AsyncFd {
     pub fn send_vectored_zc<'fd, B, const N: usize>(
         &'fd self,
         bufs: B,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendMsg<'fd, B, NoAddress, N>
     where
         B: BufSlice<N>,
@@ -374,7 +382,7 @@ impl AsyncFd {
         B: BufSlice<N>,
     {
         SendAllVectored {
-            send: self.send_vectored(bufs, 0).extract(),
+            send: self.send_vectored(bufs, None).extract(),
             skip: 0,
             send_op: SendCall::Normal,
         }
@@ -391,7 +399,7 @@ impl AsyncFd {
         B: BufSlice<N>,
     {
         SendAllVectored {
-            send: self.send_vectored(bufs, 0).extract(),
+            send: self.send_vectored(bufs, None).extract(),
             skip: 0,
             send_op: SendCall::ZeroCopy,
         }
@@ -403,13 +411,17 @@ impl AsyncFd {
         &'fd self,
         buf: B,
         address: A,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendTo<'fd, B, A>
     where
         B: Buf,
         A: SocketAddress,
     {
         let resources = (buf, Box::new(address.into_storage()));
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
         let args = (SendCall::Normal, flags);
         SendTo(FdOperation::new(self, resources, args))
     }
@@ -422,13 +434,17 @@ impl AsyncFd {
         &'fd self,
         buf: B,
         address: A,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendTo<'fd, B, A>
     where
         B: Buf,
         A: SocketAddress,
     {
         let resources = (buf, Box::new(address.into_storage()));
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
         let args = (SendCall::ZeroCopy, flags);
         SendTo(FdOperation::new(self, resources, args))
     }
@@ -439,7 +455,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
         address: A,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
@@ -454,7 +470,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
         address: A,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
@@ -468,12 +484,16 @@ impl AsyncFd {
         send_op: SendCall,
         bufs: B,
         address: A,
-        flags: libc::c_int,
+        flags: Option<SendFlag>,
     ) -> SendMsg<'fd, B, A, N>
     where
         B: BufSlice<N>,
         A: SocketAddress,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
         let iovecs = unsafe { bufs.as_iovecs() };
         let address = address.into_storage();
         let resources = Box::new((MsgHeader::empty(), iovecs, address));
@@ -606,6 +626,28 @@ new_flag!(
         WAIT_ALL = libc::MSG_WAITALL,
     }
 
+    /// Flags in calls to send.
+    ///
+    /// See functions such as [`AsyncFd::send`], [`AsyncFd::send_vectored`] and
+    /// [`AsyncFd::send_to`].
+    pub struct SendFlag(u32) impl BitOr {
+        /// Tell the link layer that forward progress happened: you got a
+        /// successful reply from the other side.
+        CONFIRM = libc::MSG_CONFIRM,
+        /// Don't use a gateway to send out the packet, send to hosts only on
+        /// directly connected networks.
+        DONT_ROUTE = libc::MSG_DONTROUTE,
+        /// Terminates a record.
+        EOR = libc::MSG_EOR,
+        /// The caller has more data to send.
+        MORE = libc::MSG_MORE,
+        // NOTE: `MSG_NOSIGNAL` is always set.
+        /// Sends out-of-band data.
+        OOB = libc::MSG_OOB,
+        /// Attempts TCP Fast Open.
+        FAST_OPEN = libc::MSG_FASTOPEN,
+    }
+
     /// Flags in calls to accept.
     ///
     /// See [`AsyncFd::accept4`] and [`AsyncFd::multishot_accept4`].
@@ -718,7 +760,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 pub struct SendAll<'fd, B: Buf> {
     send: Extractor<Send<'fd, SkipBuf<B>>>,
     send_op: SendCall,
-    flags: libc::c_int,
+    flags: Option<SendFlag>,
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
@@ -867,7 +909,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                     SendMsg(FdOperation::new(
                         send.fut.0.fd(),
                         (bufs, resources),
-                        (this.send_op, 0),
+                        (this.send_op, SendFlag(0)),
                     ))
                     .extract(),
                 );

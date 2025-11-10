@@ -481,7 +481,7 @@ fn recv_read_buf_pool_send_read_buf() {
     assert_eq!(buf.as_slice(), DATA1);
 
     // Send the data back.
-    let n = block_on(&mut ring, stream.send(buf, 0)).expect("failed to send");
+    let n = block_on(&mut ring, stream.send(buf, None)).expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 1];
     let n = client.read(&mut buf).expect("failed to read data");
@@ -897,7 +897,7 @@ fn send() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send(DATA2, 0))
+        .block_on(stream.send(DATA2, None))
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -926,7 +926,7 @@ fn send_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send_zc(DATA2, 0))
+        .block_on(stream.send_zc(DATA2, None))
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -953,7 +953,7 @@ fn send_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send(DATA2, 0).extract())
+        .block_on(stream.send(DATA2, None).extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
@@ -983,7 +983,7 @@ fn send_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send_zc(DATA2, 0).extract())
+        .block_on(stream.send_zc(DATA2, None).extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
@@ -1017,7 +1017,7 @@ fn send_all() {
         calls: Cell::new(0),
     };
     waker
-        .block_on(stream.send_all(buf, 0))
+        .block_on(stream.send_all(buf, None))
         .expect("failed to send");
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
@@ -1048,7 +1048,7 @@ fn send_all_extract() {
         calls: Cell::new(0),
     };
     let buf = waker
-        .block_on(stream.send_all(buf, 0).extract())
+        .block_on(stream.send_all(buf, None).extract())
         .expect("failed to send");
     assert_eq!(buf.calls.get(), 6);
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
@@ -1081,7 +1081,7 @@ fn send_vectored() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(stream.send_vectored(bufs, 0))
+        .block_on(stream.send_vectored(bufs, None))
         .expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1114,7 +1114,7 @@ fn send_vectored_zc() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(stream.send_vectored_zc(bufs, 0))
+        .block_on(stream.send_vectored_zc(bufs, None))
         .expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1142,7 +1142,7 @@ fn send_vectored_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (bufs, n) = waker
-        .block_on(stream.send_vectored(bufs, 0).extract())
+        .block_on(stream.send_vectored(bufs, None).extract())
         .expect("failed to send");
     assert_eq!(bufs[0], "Hello");
     assert_eq!(n, DATA2.len());
@@ -1173,7 +1173,7 @@ fn send_vectored_zc_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (bufs, n) = waker
-        .block_on(stream.send_vectored_zc(bufs, 0).extract())
+        .block_on(stream.send_vectored_zc(bufs, None).extract())
         .expect("failed to send");
     assert_eq!(bufs[0], "Hello");
     assert_eq!(n, DATA2.len());
@@ -1270,7 +1270,7 @@ fn send_to() {
 
     // Send some data.
     let n = waker
-        .block_on(socket.send_to(DATA1, local_addr, 0))
+        .block_on(socket.send_to(DATA1, local_addr, None))
         .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
@@ -1295,7 +1295,7 @@ fn send_to_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(socket.send_to_zc(DATA1, local_addr, 0))
+        .block_on(socket.send_to_zc(DATA1, local_addr, None))
         .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
@@ -1320,7 +1320,7 @@ fn send_to_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(socket.send_to(DATA1, local_addr, 0).extract())
+        .block_on(socket.send_to(DATA1, local_addr, None).extract())
         .expect("failed to send_to");
     assert!(buf == DATA1);
     assert_eq!(n, DATA1.len());
@@ -1346,7 +1346,7 @@ fn send_to_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(socket.send_to_zc(DATA1, local_addr, 0).extract())
+        .block_on(socket.send_to_zc(DATA1, local_addr, None).extract())
         .expect("failed to send_to");
     assert!(buf == DATA1);
     assert_eq!(n, DATA1.len());
@@ -1374,7 +1374,7 @@ fn send_to_vectored() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(socket.send_to_vectored(bufs, local_addr, 0))
+        .block_on(socket.send_to_vectored(bufs, local_addr, None))
         .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
@@ -1400,7 +1400,7 @@ fn send_to_vectored_zc() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(socket.send_to_vectored_zc(bufs, local_addr, 0))
+        .block_on(socket.send_to_vectored_zc(bufs, local_addr, None))
         .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
@@ -1424,7 +1424,7 @@ fn send_to_vectored_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (buf, n) = waker
-        .block_on(socket.send_to_vectored(bufs, local_addr, 0).extract())
+        .block_on(socket.send_to_vectored(bufs, local_addr, None).extract())
         .expect("failed to send_to");
     assert!(buf[2] == "Mars!");
     assert_eq!(n, DATA2.len());
@@ -1451,7 +1451,7 @@ fn send_to_vectored_zc_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (bufs, n) = waker
-        .block_on(socket.send_to_vectored_zc(bufs, local_addr, 0).extract())
+        .block_on(socket.send_to_vectored_zc(bufs, local_addr, None).extract())
         .expect("failed to send_to");
     assert!(bufs[0] == "Hello");
     assert_eq!(n, DATA2.len());
@@ -1591,7 +1591,7 @@ fn direct_fd() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send(DATA2, 0))
+        .block_on(stream.send(DATA2, None))
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
