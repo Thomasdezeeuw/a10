@@ -4,7 +4,7 @@ use std::ptr;
 use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
-use crate::process::{Signals, WaitOn};
+use crate::process::{Signals, WaitOn, WaitOption};
 use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) struct WaitIdOp;
@@ -12,7 +12,7 @@ pub(crate) struct WaitIdOp;
 impl io_uring::Op for WaitIdOp {
     type Output = Box<libc::siginfo_t>;
     type Resources = Box<libc::siginfo_t>;
-    type Args = (WaitOn, libc::c_int); // options.
+    type Args = (WaitOn, WaitOption);
 
     #[allow(clippy::cast_sign_loss)]
     #[allow(clippy::cast_possible_wrap)]
@@ -33,7 +33,7 @@ impl io_uring::Op for WaitIdOp {
         };
         submission.0.len = id_type;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            file_index: *options as u32,
+            file_index: options.0,
         };
     }
 
