@@ -7,7 +7,9 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
-use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection};
+use crate::io::{
+    Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection, SpliceFlag,
+};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -424,7 +426,7 @@ pub(crate) struct SpliceOp;
 impl io_uring::FdOp for SpliceOp {
     type Output = usize;
     type Resources = ();
-    type Args = (RawFd, SpliceDirection, u64, u64, u32, libc::c_int); // target, direction, off_in, off_out, len, flags
+    type Args = (RawFd, SpliceDirection, u64, u64, u32, SpliceFlag); // target, direction, off_in, off_out, len, flags
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -445,7 +447,7 @@ impl io_uring::FdOp for SpliceOp {
         };
         submission.0.len = *length;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            splice_flags: *flags as u32,
+            splice_flags: flags.0,
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             splice_fd_in: fd_in,
