@@ -147,10 +147,14 @@ impl AsyncFd {
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
-    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: libc::c_int) -> Recv<'fd, B>
+    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
     where
         B: BufMut,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
         let buf = Buffer { buf };
         Recv(FdOperation::new(self, buf, flags))
     }
@@ -168,8 +172,12 @@ impl AsyncFd {
     pub const fn multishot_recv<'fd>(
         &'fd self,
         pool: ReadBufPool,
-        flags: libc::c_int,
+        flags: Option<RecvFlag>,
     ) -> MultishotRecv<'fd> {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
         MultishotRecv(FdOperation::new(self, pool, flags))
     }
 
@@ -181,7 +189,7 @@ impl AsyncFd {
     {
         let buf = ReadNBuf { buf, last_read: 0 };
         RecvN {
-            recv: self.recv(buf, 0),
+            recv: self.recv(buf, None),
             left: n,
         }
     }
@@ -192,11 +200,15 @@ impl AsyncFd {
     pub fn recv_vectored<'fd, B, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: libc::c_int,
+        flags: Option<RecvFlag>,
     ) -> RecvVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = Box::new((MsgHeader::empty(), iovecs));
         RecvVectored(FdOperation::new(self, (bufs, resources), flags))
@@ -217,18 +229,26 @@ impl AsyncFd {
             last_read: 0,
         };
         RecvNVectored {
-            recv: self.recv_vectored(bufs, 0),
+            recv: self.recv_vectored(bufs, None),
             left: n,
         }
     }
 
     /// Receives data on the socket and returns the source address.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from<'fd, B, A>(&'fd self, mut buf: B, flags: libc::c_int) -> RecvFrom<'fd, B, A>
+    pub fn recv_from<'fd, B, A>(
+        &'fd self,
+        mut buf: B,
+        flags: Option<RecvFlag>,
+    ) -> RecvFrom<'fd, B, A>
     where
         B: BufMut,
         A: SocketAddress,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
         let resources = Box::new((MsgHeader::empty(), iovec, MaybeUninit::uninit()));
@@ -240,12 +260,16 @@ impl AsyncFd {
     pub fn recv_from_vectored<'fd, B, A, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: libc::c_int,
+        flags: Option<RecvFlag>,
     ) -> RecvFromVectored<'fd, B, A, N>
     where
         B: BufMutSlice<N>,
         A: SocketAddress,
     {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = Box::new((MsgHeader::empty(), iovecs, MaybeUninit::uninit()));
         RecvFromVectored(FdOperation::new(self, (bufs, resources), flags))
@@ -558,6 +582,30 @@ pub(crate) enum SendCall {
 }
 
 new_flag!(
+    /// Flags in calls to recv.
+    ///
+    /// See [`AsyncFd::recv`], [`AsyncFd::multishot_recv`],
+    /// [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
+    /// [`AsyncFd::recv_from_vectored`].
+    pub struct RecvFlag(u32) impl BitOr {
+        /// Set the close-on-exec flag for the file descriptor received via a
+        /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
+        CMSG_CLOEXEC = libc::MSG_CMSG_CLOEXEC,
+        /// This flag specifies that queued errors should be received from the
+        /// socket error queue.
+        ERR_QUEUE = libc::MSG_ERRQUEUE,
+        /// Requests receipt of out-of-band data that would not be received in
+        /// the normal data stream.
+        OOB = libc::MSG_OOB,
+        /// Receive data without removing that data from the queue.
+        PEEK = libc::MSG_PEEK,
+        // NOTE: `MSG_TRUNC` breaks the logic used to initialise the buffers so
+        // not including it here.
+        /// This flag requests that the operation block until the full request
+        /// is satisfied.
+        WAIT_ALL = libc::MSG_WAITALL,
+    }
+
     /// Flags in calls to accept.
     ///
     /// See [`AsyncFd::accept4`] and [`AsyncFd::multishot_accept4`].
@@ -656,7 +704,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.0.fd().recv(buf, 0));
+                recv.set(recv.0.fd().recv(buf, None));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -765,7 +813,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.0.fd().recv_vectored(bufs, 0));
+                recv.set(recv.0.fd().recv_vectored(bufs, None));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),

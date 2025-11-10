@@ -6,7 +6,8 @@ use std::{ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, SendCall, SocketAddress, Type,
+    AcceptFlag, AddressStorage, Domain, NoAddress, Protocol, RecvFlag, SendCall, SocketAddress,
+    Type,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{fd, AsyncFd, SubmissionQueue};
@@ -84,7 +85,7 @@ pub(crate) struct RecvOp<B>(PhantomData<*const B>);
 impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     type Output = B;
     type Resources = Buffer<B>;
-    type Args = libc::c_int; // flags
+    type Args = RecvFlag;
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -99,9 +100,7 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as u32,
-        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = length;
         if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
@@ -123,7 +122,7 @@ pub(crate) struct MultishotRecvOp;
 impl io_uring::FdOp for MultishotRecvOp {
     type Output = ReadBuf;
     type Resources = ReadBufPool;
-    type Args = libc::c_int; // flags
+    type Args = RecvFlag;
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -136,9 +135,7 @@ impl io_uring::FdOp for MultishotRecvOp {
         submission.0.flags = libc::IOSQE_BUFFER_SELECT;
         submission.0.ioprio = libc::IORING_RECV_MULTISHOT as u16;
         submission.0.fd = fd.fd();
-        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            msg_flags: *flags as u32,
-        };
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
     }
 
@@ -168,7 +165,7 @@ pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
     type Resources = (B, Box<(MsgHeader, [crate::io::IoMutSlice; N])>);
-    type Args = libc::c_int; // flags
+    type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
@@ -202,7 +199,7 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
         // These types need a stable address for the duration of the operation.
         Box<(MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>)>,
     );
-    type Args = libc::c_int; // flags
+    type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
@@ -248,7 +245,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
             MaybeUninit<A::Storage>,
         )>,
     );
-    type Args = libc::c_int; // flags
+    type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
@@ -280,7 +277,7 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     msg: &mut MsgHeader,
     iovecs: &mut [crate::io::IoMutSlice],
     address: &mut MaybeUninit<A::Storage>,
-    flags: libc::c_int,
+    flags: RecvFlag,
     submission: &mut sq::Submission,
 ) {
     // SAFETY: `address` and `iovecs` outlive `msg`.
@@ -291,9 +288,7 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
         addr: ptr::from_mut(&mut *msg).addr() as u64,
     };
-    submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-        msg_flags: flags as u32,
-    };
+    submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
     submission.0.len = 1;
 }
 
