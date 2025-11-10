@@ -508,23 +508,25 @@ macro_rules! new_flag {
         $type_vis: vis struct $type_name: ident ( $type_repr: ty ) $(impl BitOr $( $type_or: ty )*)? {
             $(
             $(#[$value_meta:meta])*
-            $value_name: ident = $value_type: expr,
+            $value_name: ident = $libc: ident :: $value_type: ident,
             )*
         }
         )+
     ) => {
         $(
         $(#[$type_meta])*
-        #[derive(Copy, Clone, Eq, PartialEq, Debug)]
+        #[derive(Copy, Clone, Eq, PartialEq)]
         $type_vis struct $type_name(pub(crate) $type_repr);
 
         impl $type_name {
             $(
             $(#[$value_meta])*
             #[allow(trivial_numeric_casts, clippy::cast_sign_loss)]
-            $type_vis const $value_name: $type_name = $type_name($value_type as $type_repr);
+            $type_vis const $value_name: $type_name = $type_name($libc::$value_type as $type_repr);
             )*
         }
+
+        $crate::debug_detail!(impl for $type_name($type_repr) match $( $libc::$value_type ),*);
 
         $(
         impl std::ops::BitOr for $type_name {
@@ -554,23 +556,37 @@ macro_rules! new_flag {
 macro_rules! debug_detail {
     (
         // Match a value exactly.
+        impl for $type: ident ($type_repr: ty) match
+        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),* $(,)?
+    ) => {
+        impl ::std::fmt::Debug for $type {
+            #[allow(trivial_numeric_casts, unreachable_patterns, unreachable_code, clippy::bad_bit_mask)]
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                mod consts {
+                    $(
+                    $(#[$target])*
+                    pub(super) const $flag: $type_repr = $libc :: $flag as $type_repr;
+                    )*
+                }
+
+                f.write_str(match self.0 {
+                    $(
+                    $(#[$target])*
+                    consts::$flag => stringify!($flag),
+                    )*
+                    value => return value.fmt(f),
+                })
+            }
+        }
+    };
+    (
+        // Match a value exactly.
         match $type: ident ($event_type: ty),
         $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
     ) => {
         struct $type($event_type);
 
-        impl fmt::Debug for $type {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(match self.0 {
-                    $(
-                    $(#[$target])*
-                    #[allow(clippy::bad_bit_mask)] // Apparently some flags are zero.
-                    $libc :: $flag => stringify!($flag),
-                    )+
-                    _ => "<unknown>",
-                })
-            }
-        }
+        $crate::debug_detail!(impl for $type($event_type) match $( $libc::$flag ),*);
     };
     (
         // Integer bitset.
