@@ -8,46 +8,43 @@ use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, task, thread};
 
 use a10::fd;
-use a10::process::{ReceiveSignal, ReceiveSignals, Signals};
+use a10::process::{ReceiveSignal, ReceiveSignals, Signal, Signals};
 use a10::Ring;
 
 mod util;
 use util::{is_send, is_sync, poll_nop, syscall, NOP_WAKER};
 
-const SIGNALS: [libc::c_int; 31] = [
-    libc::SIGHUP,
-    libc::SIGINT,
-    libc::SIGQUIT,
-    libc::SIGILL,
-    libc::SIGTRAP,
-    libc::SIGABRT,
-    libc::SIGIOT,
-    libc::SIGBUS,
-    libc::SIGFPE,
-    //libc::SIGKILL, // Can't handle this.
-    libc::SIGUSR1,
-    libc::SIGSEGV,
-    libc::SIGUSR2,
-    libc::SIGPIPE,
-    libc::SIGALRM,
-    libc::SIGTERM,
-    libc::SIGSTKFLT,
-    libc::SIGCHLD,
-    libc::SIGCONT,
-    //libc::SIGSTOP, // Can't handle this.
-    libc::SIGTSTP,
-    libc::SIGTTIN,
-    libc::SIGTTOU,
-    libc::SIGURG,
-    libc::SIGXCPU,
-    libc::SIGXFSZ,
-    libc::SIGVTALRM,
-    libc::SIGPROF,
-    libc::SIGWINCH,
-    libc::SIGIO,
-    libc::SIGPOLL, // NOTE: same value as `SIGIO`.
-    libc::SIGPWR,
-    libc::SIGSYS,
+const SIGNALS: [Signal; 30] = [
+    Signal::HUP,
+    Signal::INTERRUPT,
+    Signal::QUIT,
+    Signal::ILLEGAL,
+    Signal::TRAP,
+    Signal::ABORT,
+    Signal::IOT,
+    Signal::BUS,
+    Signal::FP_ERROR,
+    Signal::USER1,
+    Signal::USER2,
+    Signal::SEG_VAULT,
+    Signal::PIPE,
+    Signal::ALARM,
+    Signal::TERMINATION,
+    Signal::CHILD,
+    Signal::CONTINUE,
+    Signal::TERM_STOP,
+    Signal::TTY_IN,
+    Signal::TTY_OUT,
+    Signal::URGENT,
+    Signal::EXCEEDED_CPU,
+    Signal::EXCEEDED_FILE_SIZE,
+    Signal::VIRTUAL_ALARM,
+    Signal::PROFILE_ALARM,
+    Signal::WINDOW_RESIZE,
+    Signal::IO,
+    Signal::POLL, // NOTE: same value as `IO`.
+    Signal::PWR,
+    Signal::SYS,
 ];
 
 const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
@@ -60,17 +57,14 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
     "SIGIOT",
     "SIGBUS",
     "SIGFPE",
-    //"SIGKILL",
     "SIGUSR1",
-    "SIGSEGV",
     "SIGUSR2",
+    "SIGSEGV",
     "SIGPIPE",
     "SIGALRM",
     "SIGTERM",
-    "SIGSTKFLT",
     "SIGCHLD",
     "SIGCONT",
-    //"SIGSTOP",
     "SIGTSTP",
     "SIGTTIN",
     "SIGTTOU",
@@ -154,7 +148,7 @@ impl TestHarness {
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
-            if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(
                     self.quiet,
                     format_args!("single_threaded ({:?}, {name})", self.fd_kind),
@@ -192,7 +186,7 @@ impl TestHarness {
             for signal in SIGNALS {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
                 #[cfg(feature = "nightly")]
-                if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
+                if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
                     continue;
                 }
 
@@ -209,7 +203,7 @@ impl TestHarness {
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
-            if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(
                     self.quiet,
                     format_args!("multi_threaded ({:?}, {name})", self.fd_kind),
@@ -246,7 +240,7 @@ impl TestHarness {
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
-            if signal == libc::SIGSYS && cfg!(sanitize = "thread") {
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
                 print_test_start(
                     self.quiet,
                     format_args!("receive_signals ({:?}, {name})", self.fd_kind),
@@ -269,7 +263,7 @@ impl TestHarness {
                         Poll::Pending => self.ring.poll(None).unwrap(),
                     }
                 };
-                assert_eq!(signal_info.ssi_signo as libc::c_int, signal);
+                assert_eq!(signal_info.ssi_signo as libc::c_int, signal_to_os(signal));
             }));
             if res.is_ok() {
                 print_test_ok(self.quiet);
@@ -290,7 +284,7 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
         // After `Signals` is dropped all signals should be unblocked.
         let set = blocked_signalset().unwrap();
         for signal in SIGNALS.into_iter() {
-            assert!(!in_signalset(&set, signal));
+            assert!(!in_signalset(&set, signal_to_os(signal)));
         }
     }));
     if res.is_ok() {
@@ -302,7 +296,8 @@ fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
     };
 }
 
-fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: libc::c_int) {
+fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
+    let expected_signal = signal_to_os(expected_signal);
     let mut receive = signals.receive();
     let signal_info = loop {
         match poll_nop(Pin::new(&mut receive)) {
@@ -323,7 +318,8 @@ fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
     }
 }
 
-fn send_signal(pid: u32, signal: libc::c_int) -> std::io::Result<()> {
+fn send_signal(pid: u32, signal: Signal) -> std::io::Result<()> {
+    let signal = signal_to_os(signal);
     syscall!(kill(pid as libc::pid_t, signal))?;
     Ok(())
 }
@@ -338,6 +334,11 @@ fn blocked_signalset() -> io::Result<libc::sigset_t> {
 fn in_signalset(set: &libc::sigset_t, signal: libc::c_int) -> bool {
     // SAFETY: we ensure the signal set is a valid pointer.
     unsafe { libc::sigismember(set, signal) == 1 }
+}
+
+fn signal_to_os(signal: Signal) -> libc::c_int {
+    // SAFETY: this is not safe.
+    unsafe { std::mem::transmute(signal) }
 }
 
 fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
