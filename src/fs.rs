@@ -363,7 +363,7 @@ new_flag!(
     }
 
     /// Mode for call to [`AsyncFd::allocate`].
-    pub struct AllocateFlag(u32) impl BitOr libc::c_int {
+    pub struct AllocateFlag(u32) impl BitOr {
         /// Allocate the disk space.
         ALLOCATE = 0,
         /// Keep the same file size.
