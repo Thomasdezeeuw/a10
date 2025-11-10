@@ -143,7 +143,7 @@ new_flag!(
 
 operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
-    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<Box<WaitInfo>>;
+    pub struct WaitId(sys::process::WaitIdOp) -> io::Result<WaitInfo>;
 );
 
 /// Notification of process signals.
