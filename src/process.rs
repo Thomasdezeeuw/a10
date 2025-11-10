@@ -42,10 +42,10 @@ pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> W
 pub enum WaitOn {
     /// Wait for the child process.
     #[doc(alias = "P_PID")]
-    Process(libc::id_t),
+    Process(u32),
     /// Wait for any child process in the process group with ID.
     #[doc(alias = "P_PGID")]
-    Group(libc::id_t),
+    Group(u32),
     /// Wait for all childeren.
     #[doc(alias = "P_ALL")]
     All,
@@ -54,7 +54,7 @@ pub enum WaitOn {
 new_flag!(
     /// Wait option.
     ///
-    /// See [`wait`].
+    /// See [`wait`] and [`wait_on`].
     pub struct WaitOption(u32) {
         /// Return immediately if no child has exited.
         NO_HANG = libc::WNOHANG,
