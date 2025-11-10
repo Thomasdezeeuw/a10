@@ -110,7 +110,7 @@ operation!(
 /// use std::mem::MaybeUninit;
 ///
 /// use a10::Ring;
-/// use a10::process::Signals;
+/// use a10::process::{Signals, Signal};
 ///
 /// # fn main() {
 /// async fn main() -> io::Result<()> {
@@ -118,7 +118,7 @@ operation!(
 ///     let sq = ring.submission_queue().clone();
 ///
 ///     // Create a new `Signals` instance.
-///     let signals = Signals::from_signals(sq, [libc::SIGINT, libc::SIGQUIT, libc::SIGTERM])?;
+///     let signals = Signals::from_signals(sq, [Signal::INTERRUPT, Signal::QUIT, Signal::TERMINATION])?;
 ///
 ///     let signal_info = signals.receive().await?;
 ///     println!("Got process signal: {}", signal_info.ssi_signo);
@@ -135,8 +135,7 @@ pub struct Signals {
 
 impl Signals {
     /// Create a new signal notifier from a signal set.
-    pub fn from_set(sq: SubmissionQueue, signals: libc::sigset_t) -> io::Result<Signals> {
-        let signals = SignalSet(signals);
+    pub fn from_set(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
         log::trace!(signals:? = signals; "setting up signal handling");
         let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
@@ -149,18 +148,18 @@ impl Signals {
     /// Create a new signal notifier from a collection of signals.
     pub fn from_signals<I>(sq: SubmissionQueue, signals: I) -> io::Result<Signals>
     where
-        I: IntoIterator<Item = libc::c_int>,
+        I: IntoIterator<Item = Signal>,
     {
-        let set = create_sigset(signals)?;
+        let mut set = SignalSet::empty()?;
+        for signal in signals {
+            set.add(signal)?;
+        }
         Signals::from_set(sq, set)
     }
 
-    /// Create a new signal notifier for all supported signals (set by `sigfillset(3)`).
+    /// Create a new signal notifier for all supported signals.
     pub fn for_all_signals(sq: SubmissionQueue) -> io::Result<Signals> {
-        let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
-        syscall!(sigfillset(set.as_mut_ptr()))?;
-        // SAFETY: initialised the set in the call to `sigfillset`.
-        let set = unsafe { set.assume_init() };
+        let set = SignalSet::all()?;
         Signals::from_set(sq, set)
     }
 
@@ -319,20 +318,41 @@ impl Drop for ReceiveSignals {
     }
 }
 
-/// Wrapper around [`libc::sigset_t`] to implement [`fmt::Debug`].
+/// Set of signals.
 #[repr(transparent)]
-struct SignalSet(libc::sigset_t);
+pub struct SignalSet(libc::sigset_t);
 
-/// Create a `sigset_t` from `signals`.
-fn create_sigset<I: IntoIterator<Item = libc::c_int>>(signals: I) -> io::Result<libc::sigset_t> {
-    let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
-    syscall!(sigemptyset(set.as_mut_ptr()))?;
-    // SAFETY: initialised the set in the call to `sigemptyset`.
-    let mut set = unsafe { set.assume_init() };
-    for signal in signals {
-        syscall!(sigaddset(&raw mut set, signal))?;
+impl SignalSet {
+    /// Create an empty set.
+    #[doc(alias = "sigemptyset")]
+    pub fn empty() -> io::Result<SignalSet> {
+        let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
+        syscall!(sigemptyset(set.as_mut_ptr()))?;
+        // SAFETY: initialised the set in the call to `sigemptyset`.
+        Ok(SignalSet(unsafe { set.assume_init() }))
     }
-    Ok(set)
+
+    /// Create a set with all signals.
+    #[doc(alias = "sigfillset")]
+    pub fn all() -> io::Result<SignalSet> {
+        let mut set: MaybeUninit<libc::sigset_t> = MaybeUninit::uninit();
+        syscall!(sigfillset(set.as_mut_ptr()))?;
+        // SAFETY: initialised the set in the call to `sigfillset`.
+        Ok(SignalSet(unsafe { set.assume_init() }))
+    }
+
+    /// Returns true if `signal` is contained in the set.
+    #[doc(alias = "sigismember")]
+    pub fn contains(&self, signal: Signal) -> bool {
+        // SAFETY: we ensure the pointer to the signal set is valid.
+        unsafe { libc::sigismember(&raw const self.0, signal.0) == 1 }
+    }
+
+    /// Add `signal` to the set.
+    #[doc(alias = "sigaddset")]
+    pub fn add(&mut self, signal: Signal) -> io::Result<()> {
+        syscall!(sigaddset(&raw mut self.0, signal.0)).map(|_| ())
+    }
 }
 
 /// Known signals supported by Linux as of v6.3.
@@ -375,13 +395,80 @@ const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
 
 impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let signals = KNOWN_SIGNALS.into_iter().filter_map(|(signal, name)| {
-            // SAFETY: we ensure the pointer to the signal set is valid.
-            (unsafe { libc::sigismember(&raw const self.0, signal) } == 1).then_some(name)
-        });
+        let signals = KNOWN_SIGNALS
+            .into_iter()
+            .filter_map(|(signal, name)| self.contains(Signal(signal)).then_some(name));
         f.debug_set().entries(signals).finish()
     }
 }
+
+new_flag!(
+    /// See [`SignalSet`].
+    pub struct Signal(i32) {
+        /// Hangup.
+        HUP = libc::SIGHUP,
+        /// Interrupt.
+        INTERRUPT = libc::SIGINT,
+        /// Quit.
+        QUIT = libc::SIGQUIT,
+        /// Illegal instruction.
+        ILLEGAL = libc::SIGILL,
+        /// Trace/breakpoint trap.
+        TRAP = libc::SIGTRAP,
+        /// Abort.
+        ABORT = libc::SIGABRT,
+        /// IOT trap.
+        IOT = libc::SIGIOT,
+        /// Bus error (bad memory access).
+        BUS = libc::SIGBUS,
+        /// Erroneous arithmetic operation.
+        FP_ERROR = libc::SIGFPE,
+        /// User-defined 1.
+        USER1 = libc::SIGUSR1,
+        /// User-defined 2.
+        USER2 = libc::SIGUSR2,
+        /// Invalid memory reference.
+        SEG_VAULT = libc::SIGSEGV,
+        /// Broken pipe.
+        PIPE = libc::SIGPIPE,
+        /// Timer.
+        ALARM = libc::SIGALRM,
+        /// Termination.
+        TERMINATION = libc::SIGTERM,
+        /// Child stopped, terminated or continued.
+        CHILD = libc::SIGCHLD,
+        /// Continue if stopped.
+        CONTINUE = libc::SIGCONT,
+        /// Stop typed at terminal
+        TERM_STOP = libc::SIGTSTP,
+        /// Terminal input for background process.
+        TTY_IN = libc::SIGTTIN,
+        /// Terminal output for background process.
+        TTY_OUT = libc::SIGTTOU,
+        /// Urgent condition on socket.
+        URGENT = libc::SIGURG,
+        /// CPU time limit exceeded.
+        EXCEEDED_CPU = libc::SIGXCPU,
+        /// File size limit exceeded.
+        EXCEEDED_FILE_SIZE = libc::SIGXFSZ,
+        /// Virtual alarm clock.
+        VIRTUAL_ALARM = libc::SIGVTALRM,
+        /// Profiling timer expired.
+        PROFILE_ALARM = libc::SIGPROF,
+        /// Window resize signal.
+        WINDOW_RESIZE = libc::SIGWINCH,
+        /// I/O now possible.
+        IO = libc::SIGIO,
+        /// Pollable event.
+        ///
+        /// NOTE: same value as [`Signal::IO`].
+        POLL = libc::SIGPOLL,
+        /// Power failure.
+        PWR = libc::SIGPWR,
+        /// Bad system call.
+        SYS = libc::SIGSYS,
+    }
+);
 
 fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
     syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
