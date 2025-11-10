@@ -20,7 +20,8 @@ use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
 use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
-use a10::{process, Config, Ring, SubmissionQueue};
+use a10::process::{self, WaitOption};
+use a10::{Config, Ring, SubmissionQueue};
 
 mod util;
 use util::{
@@ -443,7 +444,7 @@ fn process_wait_on() {
     let pid = process.id();
 
     let info = waker
-        .block_on(process::wait_on(sq, &process, libc::WEXITED))
+        .block_on(process::wait_on(sq, &process, Some(WaitOption::EXITED)))
         .expect("failed wait");
 
     assert_eq!(info.si_signo, libc::SIGCHLD);
@@ -461,7 +462,7 @@ fn process_wait_on_cancel() {
 
     let mut process = Command::new("sleep").arg("1000").spawn().unwrap();
 
-    let mut future = process::wait_on(sq, &process, libc::WEXITED);
+    let mut future = process::wait_on(sq, &process, Some(WaitOption::EXITED));
 
     cancel(&waker, &mut future, |future| {
         // NOTE: can't use `start_op` as `siginfo_t` doesn't implemented
@@ -483,7 +484,7 @@ fn process_wait_on_drop_before_complete() {
 
     let process = Command::new("sleep").arg("1000").spawn().unwrap();
 
-    let mut future = process::wait_on(sq, &process, libc::WEXITED);
+    let mut future = process::wait_on(sq, &process, Some(WaitOption::EXITED));
     let result = poll_nop(Pin::new(&mut future));
     if !result.is_pending() {
         panic!("unexpected result, expected it to return Poll::Pending");

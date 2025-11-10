@@ -10,12 +10,12 @@ use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
 use crate::op::{self, fd_operation, operation, FdIter, FdOp, FdOperation, Operation};
-use crate::{fd, man_link, sys, syscall, AsyncFd, SubmissionQueue};
+use crate::{fd, man_link, new_flag, sys, syscall, AsyncFd, SubmissionQueue};
 
 /// Wait on the child `process`.
 ///
 /// See [`wait`].
-pub fn wait_on(sq: SubmissionQueue, process: &Child, options: libc::c_int) -> WaitId {
+pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>) -> WaitId {
     wait(sq, WaitOn::Process(process.id()), options)
 }
 
@@ -25,9 +25,13 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: libc::c_int) -> Wa
 /// Also see [`wait_on`] to wait on a [`Child`] process.
 #[doc = man_link!(waitid(2))]
 #[doc(alias = "waitid")]
-pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: libc::c_int) -> WaitId {
+pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> WaitId {
     // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
     let info = unsafe { Box::new(mem::zeroed()) };
+    let options = match options {
+        Some(options) => options,
+        None => WaitOption(0),
+    };
     WaitId(Operation::new(sq, info, (wait, options)))
 }
 
@@ -46,6 +50,27 @@ pub enum WaitOn {
     #[doc(alias = "P_ALL")]
     All,
 }
+
+new_flag!(
+    /// Wait option.
+    ///
+    /// See [`wait`].
+    pub struct WaitOption(u32) {
+        /// Return immediately if no child has exited.
+        NO_HANG = libc::WNOHANG,
+        /// Return if a child has stopped (but not traced via `ptrace(2)`).
+        UNTRACED = libc::WUNTRACED,
+        /// Wait for children that have been stopped by delivery of a signal.
+        STOPPED = libc::WSTOPPED,
+        /// Wait for children that have terminated.
+        EXITED = libc::WEXITED,
+        /// Return if a stopped child has been resumed by delivery of `SIGCONT`.
+        CONTINUED = libc::WCONTINUED,
+        /// Leave the child in a waitable state; a later wait call can be used
+        /// to again retrieve the child status information.
+        NO_WAIT = libc::WNOWAIT,
+    }
+);
 
 operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
