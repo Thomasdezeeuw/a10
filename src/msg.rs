@@ -1,8 +1,17 @@
-//! User space messages.
+//! User defined messages.
 //!
-//! To setup a [`MsgListener`] use [`msg_listener`]. It returns the listener as
-//! well as a [`MsgToken`], which can be used in [`try_send_msg`] and
-//! [`send_msg`] to send a message to the created `MsgListener`.
+//! To setup a message queue use [`listener`]. It returns a [`Listener`] as well
+//! as a [`Sender`], which can be used to send a message to the created
+//! listener.
+//!
+//! Messages send using the types in this module will use the io_uring
+//! submission queue to share the message with the receiving end. This means
+//! that it will wake up the thread if it's currently [polling]. *If this
+//! wake-up is not needed it's better to use a user-space queue such as the one
+//! found the [standard library]*.
+//!
+//! [polling]: crate::Ring::poll
+//! [standard library]: std::sync::mpsc
 
 use std::future::Future;
 use std::io;
@@ -11,49 +20,47 @@ use std::task::{self, Poll};
 
 use crate::{sys, OperationId, SubmissionQueue};
 
-/// Setup a listener for user space messages.
+/// Setup a listener and sender for user defined messages.
 ///
-/// The returned [`MsgListener`] will return all messages send using
-/// [`try_send_msg`] and [`send_msg`] using the returned `MsgToken`.
+/// The returned listener will return all messages send to it using the
+/// returned sender.
 ///
 /// # Notes
 ///
 /// This will return an error if too many operations are already queued, this is
 /// usually resolved by calling [`Ring::poll`].
 ///
-/// The returned `MsgToken` has an implicit lifetime linked to `MsgListener`. If
-/// `MsgListener` is dropped the `MsgToken` will become invalid.
-///
-/// Due to the limitations mentioned above it's advised to consider the
-/// usefulness of the type severly limited. The returned `MsgListener` iterator
-/// should live for the entire lifetime of the `Ring`, to ensure we don't use
-/// `MsgToken` after it became invalid. Furthermore to ensure the creation of it
-/// succeeds it should be done early in the lifetime of `Ring`.
-///
 /// [`Ring::poll`]: crate::Ring::poll
-#[allow(clippy::module_name_repetitions)]
-pub fn msg_listener(sq: SubmissionQueue) -> io::Result<(MsgListener, MsgToken)> {
+pub fn listener(sq: SubmissionQueue) -> io::Result<(Listener, Sender)> {
     let op_id = sq.inner.queue_multishot()?;
-    Ok((MsgListener { sq, op_id }, MsgToken(op_id)))
+    let listener = Listener {
+        sq: sq.clone(),
+        op_id,
+    };
+    let sender = Sender { sq, op_id };
+    Ok((listener, sender))
 }
 
-/// [`AsyncIterator`] behind [`msg_listener`].
+/// Listener for user defined messages.
+///
+/// This is implemented as an [`AsyncIterator`] that iterates over the message
+/// it receives.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct MsgListener {
+pub struct Listener {
     sq: SubmissionQueue,
     op_id: OperationId,
 }
 
-impl MsgListener {
+impl Listener {
     /// This is the same as the [`AsyncIterator::poll_next`] function, but then
     /// available on stable Rust.
     ///
     /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
-    pub fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<MsgData>> {
+    pub fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Message>> {
         let op_id = self.op_id;
         // SAFETY: we've ensured that `op_id` is valid.
         let mut queued_op_slot = unsafe { self.sq.get_op(op_id) };
@@ -72,69 +79,66 @@ impl MsgListener {
 }
 
 #[cfg(feature = "nightly")]
-impl std::async_iter::AsyncIterator for MsgListener {
-    type Item = MsgData;
+impl std::async_iter::AsyncIterator for Listener {
+    type Item = Message;
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next(ctx)
     }
 }
 
-/// Try to send a message to [`MsgListener`] using [`MsgToken`].
-///
-/// This will use the io_uring submission queue to share `data` with the
-/// receiving end. This means that it will wake up the thread if it's currently
-/// [polling].
-///
-/// This will fail if the submission queue is currently full. See [`send_msg`]
-/// for a version that tries again when the submission queue is full.
-///
-/// See [`msg_listener`] for examples.
-///
-/// [polling]: crate::Ring::poll
-#[allow(clippy::module_name_repetitions)]
-pub fn try_send_msg(sq: &SubmissionQueue, token: MsgToken, data: MsgData) -> io::Result<()> {
-    sq.inner
-        .submit_no_completion(|submission| sys::msg::send(sq, token.0, data, submission))?;
-    Ok(())
+/// Sender to the connected [`Listener`].
+#[derive(Debug)]
+pub struct Sender {
+    sq: SubmissionQueue,
+    op_id: OperationId,
 }
 
-/// Send a message to iterator listening for message using [`MsgToken`].
-#[allow(clippy::module_name_repetitions)]
-pub const fn send_msg(sq: SubmissionQueue, token: MsgToken, data: MsgData) -> SendMsg {
-    SendMsg { sq, token, data }
+impl Sender {
+    /// Try to send a message to the connected listener.
+    ///
+    /// This will fail if the submission queue is currently full. See [`send`]
+    /// for a version that tries again when the submission queue is full.
+    ///
+    /// [`send`]: Sender::send
+    pub fn try_send(&self, msg: Message) -> io::Result<()> {
+        self.sq.inner.submit_no_completion(|submission| {
+            sys::msg::send(&self.sq, self.op_id, msg, submission);
+        })?;
+        Ok(())
+    }
+
+    /// Send a message to the connected listener.
+    pub fn send<'s>(&'s self, msg: Message) -> SendMsg<'s> {
+        SendMsg { sender: self, msg }
+    }
 }
 
-/// [`Future`] behind [`send_msg`].
+/// [`Future`] behind [`Sender::send`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 #[allow(clippy::module_name_repetitions)]
-pub struct SendMsg {
-    sq: SubmissionQueue,
-    token: MsgToken,
-    data: MsgData,
+pub struct SendMsg<'s> {
+    sender: &'s Sender,
+    msg: Message,
 }
 
-impl Future for SendMsg {
+impl<'s> Future for SendMsg<'s> {
     type Output = io::Result<()>;
 
     fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        match try_send_msg(&self.sq, self.token, self.data) {
+        match self.sender.try_send(self.msg) {
             Ok(()) => Poll::Ready(Ok(())),
             Err(_) => {
-                self.sq.inner.wait_for_submission(ctx.waker().clone());
+                self.sender
+                    .sq
+                    .inner
+                    .wait_for_submission(ctx.waker().clone());
                 Poll::Pending
             }
         }
     }
 }
 
-/// Type of data this module can send.
-pub type MsgData = u32;
-
-/// Token used to the messages.
-///
-/// See [`msg_listener`].
-#[derive(Copy, Clone, Debug)]
-#[allow(clippy::module_name_repetitions)]
-pub struct MsgToken(pub(crate) OperationId);
+/// Type of message this module can send.
+pub type Message = u32;
