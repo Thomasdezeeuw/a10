@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
-use a10::msg::{msg_listener, MsgListener, MsgToken, SendMsg};
+use a10::msg::{msg_listener, MsgListener, MsgSender, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
 use a10::process::{self, ChildStatus, Signal, WaitOption};
 use a10::{Config, Ring, SubmissionQueue};
@@ -261,10 +261,10 @@ fn message_sending() {
 
     is_send::<MsgListener>();
     is_sync::<MsgListener>();
+    is_send::<MsgSender>();
+    is_sync::<MsgSender>();
     is_send::<SendMsg>();
     is_sync::<SendMsg>();
-    is_send::<MsgToken>();
-    is_sync::<MsgToken>();
 
     let (msg_listener, msg_sender) = msg_listener(sq.clone()).unwrap();
     let mut msg_listener = pin!(msg_listener);
