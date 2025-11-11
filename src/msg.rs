@@ -1,8 +1,8 @@
-//! User space messages.
+//! User defined messages.
 //!
 //! To setup a [`MsgListener`] use [`msg_listener`]. It returns the listener as
-//! well as a [`MsgToken`], which can be used in [`try_send_msg`] and
-//! [`send_msg`] to send a message to the created `MsgListener`.
+//! well as a [`MsgSender`], which can be used to send a message to the created
+//! `MsgListener`.
 
 use std::future::Future;
 use std::io;
@@ -11,33 +11,32 @@ use std::task::{self, Poll};
 
 use crate::{sys, OperationId, SubmissionQueue};
 
-/// Setup a listener for user space messages.
+/// Setup a listener for user defined messages.
 ///
-/// The returned [`MsgListener`] will return all messages send using
-/// [`try_send_msg`] and [`send_msg`] using the returned `MsgToken`.
+/// The returned listener will return all messages send to it using the
+/// returned sender.
 ///
 /// # Notes
 ///
 /// This will return an error if too many operations are already queued, this is
 /// usually resolved by calling [`Ring::poll`].
 ///
-/// The returned `MsgToken` has an implicit lifetime linked to `MsgListener`. If
-/// `MsgListener` is dropped the `MsgToken` will become invalid.
-///
-/// Due to the limitations mentioned above it's advised to consider the
-/// usefulness of the type severly limited. The returned `MsgListener` iterator
-/// should live for the entire lifetime of the `Ring`, to ensure we don't use
-/// `MsgToken` after it became invalid. Furthermore to ensure the creation of it
-/// succeeds it should be done early in the lifetime of `Ring`.
-///
 /// [`Ring::poll`]: crate::Ring::poll
 #[allow(clippy::module_name_repetitions)]
-pub fn msg_listener(sq: SubmissionQueue) -> io::Result<(MsgListener, MsgToken)> {
+pub fn msg_listener(sq: SubmissionQueue) -> io::Result<(MsgListener, MsgSender)> {
     let op_id = sq.inner.queue_multishot()?;
-    Ok((MsgListener { sq, op_id }, MsgToken(op_id)))
+    let listener = MsgListener {
+        sq: sq.clone(),
+        op_id,
+    };
+    let sender = MsgSender { sq, op_id };
+    Ok((listener, sender))
 }
 
-/// [`AsyncIterator`] behind [`msg_listener`].
+/// Listener for user defined messages.
+///
+/// This is implemented as an [`AsyncIterator`] that iterates over the message
+/// it receives.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 #[derive(Debug)]
@@ -80,6 +79,30 @@ impl std::async_iter::AsyncIterator for MsgListener {
     }
 }
 
+/// Send message to the connected [`MsgListener`].
+#[derive(Debug)]
+pub struct MsgSender {
+    sq: SubmissionQueue,
+    op_id: OperationId,
+}
+
+impl MsgSender {
+    /// Try to send a message to the connected listener.
+    pub fn try_send(&self, data: MsgData) -> io::Result<()> {
+        try_send_msg(&self.sq, self.token(), data)
+    }
+
+    /// Send a message to the connected listener.
+    pub fn send(&self, data: MsgData) -> SendMsg {
+        send_msg(self.sq.clone(), self.token(), data)
+    }
+
+    /// Returns the token for this sender.
+    const fn token(&self) -> MsgToken {
+        MsgToken(self.op_id)
+    }
+}
+
 /// Try to send a message to [`MsgListener`] using [`MsgToken`].
 ///
 /// This will use the io_uring submission queue to share `data` with the
@@ -99,7 +122,7 @@ pub fn try_send_msg(sq: &SubmissionQueue, token: MsgToken, data: MsgData) -> io:
     Ok(())
 }
 
-/// Send a message to iterator listening for message using [`MsgToken`].
+/// Send a message to listener for message using [`MsgToken`].
 #[allow(clippy::module_name_repetitions)]
 pub const fn send_msg(sq: SubmissionQueue, token: MsgToken, data: MsgData) -> SendMsg {
     SendMsg { sq, token, data }

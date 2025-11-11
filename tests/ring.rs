@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
-use a10::msg::{msg_listener, send_msg, try_send_msg, MsgListener, MsgToken, SendMsg};
+use a10::msg::{msg_listener, MsgListener, MsgToken, SendMsg};
 use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
 use a10::process::{self, ChildStatus, Signal, WaitOption};
 use a10::{Config, Ring, SubmissionQueue};
@@ -266,15 +266,13 @@ fn message_sending() {
     is_send::<MsgToken>();
     is_sync::<MsgToken>();
 
-    let (msg_listener, msg_token) = msg_listener(sq.clone()).unwrap();
+    let (msg_listener, msg_sender) = msg_listener(sq.clone()).unwrap();
     let mut msg_listener = pin!(msg_listener);
     start_mulitshot_op(&mut msg_listener);
 
     // Send some messages.
-    try_send_msg(&sq, msg_token, DATA1).unwrap();
-    waker
-        .block_on(pin!(send_msg(sq, msg_token, DATA2)))
-        .unwrap();
+    msg_sender.try_send(DATA1).unwrap();
+    waker.block_on(pin!(msg_sender.send(DATA2))).unwrap();
 
     assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA1));
     assert_eq!(waker.block_on(next(msg_listener.as_mut())), Some(DATA2));
