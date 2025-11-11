@@ -5,7 +5,7 @@ use std::time::Duration;
 use std::{fmt, io, ptr};
 
 use crate::io_uring::{self, libc, load_atomic_u32, mmap, munmap, Shared};
-use crate::msg::MsgData;
+use crate::msg::Message;
 use crate::op::OpResult;
 use crate::{debug_detail, syscall, OperationId};
 
@@ -363,8 +363,8 @@ impl CompletionResult {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub(crate) const fn as_msg(self) -> MsgData {
-        self.result as MsgData
+    pub(crate) const fn as_msg(self) -> Message {
+        self.result as Message
     }
 }
 

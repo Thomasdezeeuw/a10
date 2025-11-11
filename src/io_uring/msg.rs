@@ -1,10 +1,10 @@
 use std::os::fd::AsRawFd;
 
 use crate::io_uring::{cq, libc, sq};
-use crate::msg::MsgData;
+use crate::msg::Message;
 use crate::{OperationId, SubmissionQueue};
 
-pub(crate) fn next(state: &mut cq::OperationState) -> Option<MsgData> {
+pub(crate) fn next(state: &mut cq::OperationState) -> Option<Message> {
     let result = match state {
         cq::OperationState::Single { result } => *result,
         cq::OperationState::Multishot { results } if results.is_empty() => return None,
@@ -16,7 +16,7 @@ pub(crate) fn next(state: &mut cq::OperationState) -> Option<MsgData> {
 pub(crate) fn send(
     sq: &SubmissionQueue,
     op_id: OperationId,
-    data: MsgData,
+    data: Message,
     submission: &mut sq::Submission,
 ) {
     submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
