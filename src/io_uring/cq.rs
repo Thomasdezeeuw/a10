@@ -202,17 +202,27 @@ impl<'a> Iterator for CompletionsIter<'a> {
     type Item = &'a Completion;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.local_head < self.tail {
-            // SAFETY: the `mask` ensures we can never get an `idx` larger then
-            // the size of the queue. We checked above that the kernel has
-            // written the struct (and isn't writing to now) os we can safely
-            // read from it.
-            let idx = (self.local_head & self.mask) as usize;
-            let completion = unsafe { &*self.entries.add(idx) };
-            self.local_head += 1;
-            Some(completion)
-        } else {
-            None
+        loop {
+            if self.local_head < self.tail {
+                // SAFETY: the `mask` ensures we can never get an `idx` larger then
+                // the size of the queue. We checked above that the kernel has
+                // written the struct (and isn't writing to now) so we can safely
+                // read from it.
+                let idx = (self.local_head & self.mask) as usize;
+                let completion = unsafe { &*self.entries.add(idx) };
+                self.local_head += 1;
+
+                // Skip the completion events that are inserted as padding to
+                // fill gaps in the ring.
+                if completion.0.flags & libc::IORING_CQE_F_SKIP != 0 {
+                    let id = crate::cq::Event::id(completion);
+                    log::trace!(id = id, completion:? = completion; "skipping completion");
+                    continue;
+                }
+
+                return Some(completion);
+            }
+            return None;
         }
     }
 }
