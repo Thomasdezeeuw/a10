@@ -205,13 +205,7 @@ impl Shared {
 
     /// Returns the number of unsumitted submission queue entries.
     pub(crate) fn unsubmitted(&self) -> u32 {
-        // SAFETY: the `kernel_read` pointer itself is valid as long as
-        // `Ring.fd` is alive.
-        // We use Relaxed here because it can already be outdated the moment we
-        // return it, the caller has to deal with that.
-        let kernel_read = self.kernel_read();
-        let pending_tail = self.pending_tail.load(Ordering::Relaxed);
-        pending_tail - kernel_read
+        self.pending_tail() - self.kernel_read()
     }
 
     /// Returns `self.kernel_read`.
@@ -219,6 +213,12 @@ impl Shared {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (*self.kernel_read).load(Ordering::Acquire) }
+    }
+
+    /// Returns `self.pending_tail`.
+    fn pending_tail(&self) -> u32 {
+        // SAFETY: to sync with other threads use `Acquire` ordering.
+        self.pending_tail.load(Ordering::Acquire)
     }
 
     /// Returns `self.flags`.

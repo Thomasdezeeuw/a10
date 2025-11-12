@@ -158,12 +158,8 @@ impl crate::cq::Completions for Completions {
     }
 
     fn queue_space(&mut self, shared: &Self::Shared) -> usize {
-        // SAFETY: the `kernel_read` pointer itself is valid as long as the ring
-        // is alive.
-        // We use relaxed ordering here because the caller knows the value will
-        // be outdated.
         let kernel_read = shared.kernel_read();
-        let pending_tail = shared.pending_tail.load(Ordering::Relaxed);
+        let pending_tail = shared.pending_tail();
         (self.entries_len - (pending_tail - kernel_read)) as usize
     }
 }
