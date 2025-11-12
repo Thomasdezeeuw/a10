@@ -395,5 +395,5 @@ pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<(
 
 /// Load a `u32` using relaxed ordering from `ptr`.
 unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-    unsafe { (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed) }
+    unsafe { (*ptr.cast::<AtomicU32>()).load(Ordering::Acquire) }
 }
