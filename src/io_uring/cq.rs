@@ -114,9 +114,8 @@ impl Completions {
 
     /// Returns `Completions.head`.
     fn completion_head(&mut self) -> u32 {
-        // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
-        // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (*self.head).load(Ordering::Relaxed) }
+        // SAFETY: the pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (*self.head).load(Ordering::Acquire) }
     }
 
     /// Returns `Completions.tail`.
