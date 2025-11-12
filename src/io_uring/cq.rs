@@ -158,9 +158,7 @@ impl crate::cq::Completions for Completions {
     }
 
     fn queue_space(&mut self, shared: &Self::Shared) -> usize {
-        let kernel_read = shared.kernel_read();
-        let pending_tail = shared.pending_tail();
-        (self.entries_len - (pending_tail - kernel_read)) as usize
+        (self.entries_len - shared.unsubmitted()) as usize
     }
 }
 
