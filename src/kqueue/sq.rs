@@ -48,7 +48,7 @@ impl crate::sq::Submissions for Submissions {
         change_list.push(event);
         // If we haven't collected enough events yet and we're not polling,
         // we're done quickly.
-        if change_list.len() < self.max_change_list_size && !is_polling.load(Ordering::Relaxed) {
+        if change_list.len() < self.max_change_list_size && !is_polling.load(Ordering::Acquire) {
             drop(change_list); // Unlock first.
             return Ok(());
         }

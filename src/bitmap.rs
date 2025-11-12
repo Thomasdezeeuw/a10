@@ -34,6 +34,9 @@ impl AtomicBitMap {
     /// Returns the index of the available slot, or `None`.
     pub(crate) fn next_available(&self) -> Option<usize> {
         for (idx, data) in self.data.iter().enumerate() {
+            // SAFETY: Relaxed ordering is acceptable here because when we
+            // actually attempt to set the bit below (the `fetch_or`) we use the
+            // correct Acquire ordering.
             let mut value = data.load(Ordering::Relaxed);
             let mut i = value.trailing_ones();
             while i < usize::BITS {

@@ -114,9 +114,8 @@ impl Completions {
 
     /// Returns `Completions.head`.
     fn completion_head(&mut self) -> u32 {
-        // SAFETY: we're the only once writing to it so `Relaxed` is fine. The
-        // pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (*self.head).load(Ordering::Relaxed) }
+        // SAFETY: the pointer itself is valid as long as `Ring.fd` is alive.
+        unsafe { (*self.head).load(Ordering::Acquire) }
     }
 
     /// Returns `Completions.tail`.
@@ -158,13 +157,7 @@ impl crate::cq::Completions for Completions {
     }
 
     fn queue_space(&mut self, shared: &Self::Shared) -> usize {
-        // SAFETY: the `kernel_read` pointer itself is valid as long as the ring
-        // is alive.
-        // We use relaxed ordering here because the caller knows the value will
-        // be outdated.
-        let kernel_read = unsafe { (*shared.kernel_read).load(Ordering::Relaxed) };
-        let pending_tail = shared.pending_tail.load(Ordering::Relaxed);
-        (self.entries_len - (pending_tail - kernel_read)) as usize
+        (self.entries_len - shared.unsubmitted()) as usize
     }
 }
 

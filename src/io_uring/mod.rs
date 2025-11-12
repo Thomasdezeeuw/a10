@@ -193,7 +193,7 @@ impl Shared {
     ///
     /// [`Ring::poll`]: crate::Ring::poll
     fn maybe_submit_event(&self, is_polling: &AtomicBool) {
-        if !self.kernel_thread && is_polling.load(Ordering::Relaxed) {
+        if !self.kernel_thread && is_polling.load(Ordering::Acquire) {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");
             let rfd = self.rfd.as_raw_fd();
             let res = syscall!(io_uring_enter2(rfd, 1, 0, 0, ptr::null(), 0));
@@ -205,13 +205,7 @@ impl Shared {
 
     /// Returns the number of unsumitted submission queue entries.
     pub(crate) fn unsubmitted(&self) -> u32 {
-        // SAFETY: the `kernel_read` pointer itself is valid as long as
-        // `Ring.fd` is alive.
-        // We use Relaxed here because it can already be outdated the moment we
-        // return it, the caller has to deal with that.
-        let kernel_read = unsafe { (*self.kernel_read).load(Ordering::Relaxed) };
-        let pending_tail = self.pending_tail.load(Ordering::Relaxed);
-        pending_tail - kernel_read
+        self.pending_tail() - self.kernel_read()
     }
 
     /// Returns `self.kernel_read`.
@@ -219,6 +213,12 @@ impl Shared {
         // SAFETY: this written to by the kernel so we need to use `Acquire`
         // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
         unsafe { (*self.kernel_read).load(Ordering::Acquire) }
+    }
+
+    /// Returns `self.pending_tail`.
+    fn pending_tail(&self) -> u32 {
+        // SAFETY: to sync with other threads use `Acquire` ordering.
+        self.pending_tail.load(Ordering::Acquire)
     }
 
     /// Returns `self.flags`.
@@ -395,5 +395,5 @@ pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<(
 
 /// Load a `u32` using relaxed ordering from `ptr`.
 unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-    unsafe { (*ptr.cast::<AtomicU32>()).load(Ordering::Relaxed) }
+    unsafe { (*ptr.cast::<AtomicU32>()).load(Ordering::Acquire) }
 }
