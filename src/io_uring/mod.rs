@@ -288,11 +288,11 @@ impl<T: Op> crate::op::Op for T {
         state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput> {
         match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
+            cq::OperationState::Single { result } => result.as_op_return(),
             cq::OperationState::Multishot { results } if results.is_empty() => {
                 OpResult::Again(false)
             }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
+            cq::OperationState::Multishot { results } => results.remove(0).as_op_return(),
         }
     }
 
@@ -345,11 +345,11 @@ impl<T: FdOp> crate::op::FdOp for T {
         state: &mut Self::OperationState,
     ) -> OpResult<Self::OperationOutput> {
         match state {
-            cq::OperationState::Single { result } => result.as_op_result(),
+            cq::OperationState::Single { result } => result.as_op_return(),
             cq::OperationState::Multishot { results } if results.is_empty() => {
                 OpResult::Again(false)
             }
-            cq::OperationState::Multishot { results } => results.remove(0).as_op_result(),
+            cq::OperationState::Multishot { results } => results.remove(0).as_op_return(),
         }
     }
 
