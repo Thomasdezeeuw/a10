@@ -262,8 +262,7 @@ impl crate::cq::Event for Completion {
                 // overwriting result.
             }
             OperationState::Single { result } => {
-                debug_assert!(result.result == i32::MIN);
-                debug_assert!(result.flags == u16::MAX);
+                debug_assert_eq!(*result, CompletionResult::empty());
                 *result = completion;
             }
             OperationState::Multishot { results } => {
@@ -316,10 +315,7 @@ pub(crate) enum OperationState {
 impl crate::cq::OperationState for OperationState {
     fn new() -> OperationState {
         OperationState::Single {
-            result: CompletionResult {
-                flags: u16::MAX,
-                result: i32::MIN,
-            },
+            result: CompletionResult::empty(),
         }
     }
 
@@ -332,8 +328,7 @@ impl crate::cq::OperationState for OperationState {
     fn prep_retry(&mut self) {
         match self {
             OperationState::Single { result } => {
-                result.flags = u16::MAX;
-                result.result = i32::MIN;
+                *result = CompletionResult::empty();
             }
             OperationState::Multishot { .. } => { /* We'll continue to collect the results. */ }
         }
@@ -341,7 +336,7 @@ impl crate::cq::OperationState for OperationState {
 }
 
 /// Completed result of an operation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct CompletionResult {
     /// The 16 upper bits of `io_uring_cqe.flags`, e.g. the index of a buffer in
     /// a buffer pool.
@@ -352,6 +347,13 @@ pub(crate) struct CompletionResult {
 }
 
 impl CompletionResult {
+    const fn empty() -> CompletionResult {
+        CompletionResult {
+            flags: u16::MAX,
+            result: i32::MIN,
+        }
+    }
+
     #[allow(clippy::cast_sign_loss)]
     pub(crate) fn as_op_result(self) -> OpResult<OpReturn> {
         if self.result.is_negative() {
