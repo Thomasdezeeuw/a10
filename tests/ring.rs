@@ -25,7 +25,7 @@ use a10::{msg, Config, Ring, SubmissionQueue};
 mod util;
 use util::{
     cancel, defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel,
-    start_mulitshot_op, start_op, test_queue, Waker,
+    start_mulitshot_op, start_op, test_queue, Waker, LOREM_IPSUM_50,
 };
 
 const DATA: &[u8] = b"Hello, World!";
@@ -65,8 +65,6 @@ fn dropping_unmaps_queues() {
 
 #[test]
 fn submission_queue_full_is_handle_internally() {
-    const PATH: &str = "tests/data/lorem_ipsum_50.txt";
-    const EXPECTED: &[u8] = include_bytes!("data/lorem_ipsum_50.txt");
     const SIZE: usize = 31396;
     const N: usize = (usize::BITS as usize) + 10;
     const BUF_SIZE: usize = SIZE / N;
@@ -74,8 +72,10 @@ fn submission_queue_full_is_handle_internally() {
     init();
     let mut ring = Ring::new(2).unwrap();
     let sq = ring.submission_queue();
+    let path = LOREM_IPSUM_50.path;
+    let expected = LOREM_IPSUM_50.content;
 
-    let mut future: Open = OpenOptions::new().open(sq.clone(), PATH.into());
+    let mut future: Open = OpenOptions::new().open(sq.clone(), path.into());
     let file = loop {
         match poll_nop(Pin::new(&mut future)) {
             Poll::Ready(result) => break result.unwrap(),
@@ -118,7 +118,7 @@ fn submission_queue_full_is_handle_internally() {
                 Poll::Ready(result) => {
                     *fut = None;
                     let read_buf = result.unwrap();
-                    assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
+                    assert_eq!(read_buf, &expected[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
                 }
                 Poll::Pending => {}
             }
@@ -134,7 +134,7 @@ fn submission_queue_full_is_handle_internally() {
                     Poll::Ready(result) => {
                         futures[i] = None;
                         let read_buf = result.unwrap();
-                        assert_eq!(read_buf, &EXPECTED[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
+                        assert_eq!(read_buf, &expected[i * BUF_SIZE..(i + 1) * BUF_SIZE]);
                     }
                     Poll::Pending => {}
                 }
