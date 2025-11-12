@@ -193,7 +193,7 @@ impl Shared {
     ///
     /// [`Ring::poll`]: crate::Ring::poll
     fn maybe_submit_event(&self, is_polling: &AtomicBool) {
-        if !self.kernel_thread && is_polling.load(Ordering::Relaxed) {
+        if !self.kernel_thread && is_polling.load(Ordering::Acquire) {
             log::debug!("submitting submission event while another thread is `Ring::poll`ing");
             let rfd = self.rfd.as_raw_fd();
             let res = syscall!(io_uring_enter2(rfd, 1, 0, 0, ptr::null(), 0));
