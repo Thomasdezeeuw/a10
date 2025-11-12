@@ -64,7 +64,7 @@ fn dropping_unmaps_queues() {
 }
 
 #[test]
-fn submission_queue_full_is_handle_internally() {
+fn submission_queue_full_is_handled_internally() {
     const SIZE: usize = 31396;
     const N: usize = (usize::BITS as usize) + 10;
     const BUF_SIZE: usize = SIZE / N;
