@@ -365,7 +365,7 @@ impl CompletionResult {
     }
 
     #[allow(clippy::cast_sign_loss)]
-    pub(crate) fn as_op_result(self) -> OpResult<OpReturn> {
+    pub(crate) fn as_op_return(self) -> OpResult<OpReturn> {
         if self.result.is_negative() {
             OpResult::Err(io::Error::from_raw_os_error(-self.result))
         } else {
