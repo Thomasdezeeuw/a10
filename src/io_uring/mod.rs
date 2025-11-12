@@ -209,7 +209,7 @@ impl Shared {
         // `Ring.fd` is alive.
         // We use Relaxed here because it can already be outdated the moment we
         // return it, the caller has to deal with that.
-        let kernel_read = unsafe { (*self.kernel_read).load(Ordering::Relaxed) };
+        let kernel_read = self.kernel_read();
         let pending_tail = self.pending_tail.load(Ordering::Relaxed);
         pending_tail - kernel_read
     }

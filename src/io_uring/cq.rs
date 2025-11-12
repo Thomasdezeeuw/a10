@@ -162,7 +162,7 @@ impl crate::cq::Completions for Completions {
         // is alive.
         // We use relaxed ordering here because the caller knows the value will
         // be outdated.
-        let kernel_read = unsafe { (*shared.kernel_read).load(Ordering::Relaxed) };
+        let kernel_read = shared.kernel_read();
         let pending_tail = shared.pending_tail.load(Ordering::Relaxed);
         (self.entries_len - (pending_tail - kernel_read)) as usize
     }
