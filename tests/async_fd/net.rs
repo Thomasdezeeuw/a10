@@ -1051,7 +1051,7 @@ fn send_all_extract() {
     let buf = waker
         .block_on(stream.send_all(buf, None).extract())
         .expect("failed to send");
-    assert_eq!(buf.calls.get(), 6);
+    assert_eq!(buf.calls.get(), 6 + 2); // + 2 for asan.
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
     assert_eq!(n, BadBuf::DATA.len());

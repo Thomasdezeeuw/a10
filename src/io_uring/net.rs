@@ -10,7 +10,7 @@ use crate::net::{
     SendFlag, SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) use crate::unix::MsgHeader;
 
@@ -73,9 +73,11 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        asan::poison_box(&address.0);
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&address.0);
         debug_assert!(n == 0);
     }
 }
@@ -100,6 +102,7 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        asan::poison_buf_mut(&mut buf.buf);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = length;
         if let Some(buf_group) = buf.buf.buffer_group() {
@@ -109,6 +112,7 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_buf_mut(&mut buf.buf);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -183,6 +187,10 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> 
         (mut bufs, resources): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
+        let (msg, iovecs) = &*resources;
+        // NOTE: don't need to unpoison the address.
+        asan::unpoison_iovecs_mut(iovecs);
+        asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
@@ -221,6 +229,10 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
         (mut buf, resources): Self::Resources,
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
+        let (msg, iovecs, address) = &*resources;
+        asan::unpoison(address);
+        asan::unpoison_iovecs_mut(slice::from_ref(iovecs));
+        asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { buf.buffer_init(BufId(buf_id), n) };
@@ -262,6 +274,10 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
         (mut bufs, resources): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
+        let (msg, iovecs, address) = &*resources;
+        asan::unpoison(address);
+        asan::unpoison_iovecs_mut(iovecs);
+        asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
@@ -288,6 +304,9 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
         addr: ptr::from_mut(&mut *msg).addr() as u64,
     };
+    asan::poison(address);
+    asan::poison_iovecs_mut(iovecs);
+    asan::poison(msg);
     submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
     submission.0.len = 1;
 }
@@ -315,11 +334,13 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
+        asan::poison_buf(&buf.buf);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = buf_length;
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, buf: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_buf(&buf.buf);
         n as usize
     }
 }
@@ -332,6 +353,7 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
         buf: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_buf(&buf.buf);
         (buf.buf, n as usize)
     }
 }
@@ -358,15 +380,19 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
+        asan::poison(address);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
+        asan::poison_buf(buf);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as u16;
         submission.0.len = buf_length;
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (buf, address): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison(&raw const address);
+        asan::unpoison_buf(&buf);
         n as usize
     }
 }
@@ -379,6 +405,7 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
         (buf, _): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_buf(&buf);
         (buf, n as usize)
     }
 }
@@ -413,11 +440,18 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr::from_mut(&mut *msg).addr() as u64,
         };
+        asan::poison(address);
+        asan::poison_iovecs(iovecs);
+        asan::poison(msg);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = 1;
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (_, resources): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        let (msg, iovecs, address) = &*resources;
+        asan::unpoison(address);
+        asan::unpoison_iovecs(iovecs);
+        asan::unpoison(msg);
         n as usize
     }
 }
@@ -427,9 +461,13 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, _): Self::Resources,
+        (buf, resources): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        let (msg, iovecs, address) = &*resources;
+        asan::unpoison(address);
+        asan::unpoison_iovecs(iovecs);
+        asan::unpoison(msg);
         (buf, n as usize)
     }
 }
@@ -460,6 +498,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        asan::poison_box(&resources.0);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             accept_flags: flags.0 | fd_kind.cloexec_flag() as u32,
         };
@@ -469,6 +508,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
 
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&resources.0);
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
@@ -551,9 +591,11 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(value.as_mut_ptr().addr() as u64),
         };
+        asan::poison_box(value);
     }
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&value);
         debug_assert!(n == (size_of::<T>() as u32));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -595,9 +637,11 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as u64),
         };
+        asan::poison_box(value);
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&value);
         debug_assert!(n == 0);
     }
 }
@@ -610,6 +654,7 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
         value: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::poison_box(&value);
         debug_assert!(n == 0);
         *value
     }
