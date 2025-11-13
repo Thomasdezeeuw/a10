@@ -16,7 +16,7 @@ impl AtomicBitMap {
     /// actual number of bits available.
     pub(crate) fn new(entries: usize) -> Box<AtomicBitMap> {
         let mut size = entries / usize::BITS as usize;
-        if (entries % usize::BITS as usize) != 0 {
+        if !entries.is_multiple_of(usize::BITS as usize) {
             size += 1;
         }
         let mut vec = Vec::with_capacity(size);
