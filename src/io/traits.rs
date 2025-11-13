@@ -298,6 +298,10 @@ impl IoMutSlice {
     pub unsafe fn set_len(&mut self, new_len: usize) {
         self.0.set_len(new_len);
     }
+
+    pub(crate) unsafe fn ptr(&self) -> *const u8 {
+        self.0.ptr()
+    }
 }
 
 impl std::fmt::Debug for IoMutSlice {
@@ -670,6 +674,10 @@ impl IoSlice {
 
     pub(crate) unsafe fn set_len(&mut self, new_len: usize) {
         self.0.set_len(new_len);
+    }
+
+    pub(crate) unsafe fn ptr(&self) -> *const u8 {
+        self.0.ptr()
     }
 }
 

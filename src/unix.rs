@@ -21,6 +21,10 @@ impl IoMutSlice {
         (self.0.iov_base.cast(), self.0.iov_len)
     }
 
+    pub(crate) const fn ptr(&self) -> *const u8 {
+        self.0.iov_base.cast()
+    }
+
     // NOTE: can't implement `as_bytes` as we don't know if the bytes are
     // initialised. `len` will have to do.
     pub(crate) const fn len(&self) -> usize {
@@ -53,6 +57,10 @@ impl IoSlice {
         // SAFETY: on creation we've ensure that `iov_base` and `iov_len` are
         // valid.
         unsafe { std::slice::from_raw_parts(self.0.iov_base.cast(), self.0.iov_len) }
+    }
+
+    pub(crate) const fn ptr(&self) -> *const u8 {
+        self.0.iov_base.cast()
     }
 
     pub(crate) const fn len(&self) -> usize {

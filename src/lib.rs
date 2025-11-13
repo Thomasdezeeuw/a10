@@ -122,7 +122,10 @@
 //! }
 //! ```
 
-#![cfg_attr(feature = "nightly", feature(async_iterator, io_error_more))]
+#![cfg_attr(
+    feature = "nightly",
+    feature(async_iterator, cfg_sanitize, io_error_more)
+)]
 #![warn(
     anonymous_parameters,
     bare_trait_objects,
@@ -142,6 +145,7 @@ use std::{fmt, task};
 // This must come before the other modules for the documentation.
 pub mod fd;
 
+mod asan;
 mod bitmap;
 mod config;
 mod cq;
