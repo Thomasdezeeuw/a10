@@ -18,7 +18,7 @@ use std::io;
 use std::pin::Pin;
 use std::task::{self, Poll};
 
-use crate::{sys, OperationId, SubmissionQueue};
+use crate::{OperationId, SubmissionQueue, sys};
 
 /// Setup a listener and sender for user defined messages.
 ///

@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, MutexGuard};
 use std::{fmt, io, mem, task};
 
-use crate::drop_waker::{drop_task_waker, DropWake};
-use crate::{cq, Implementation, OperationId, QueuedOperation, SharedState};
+use crate::drop_waker::{DropWake, drop_task_waker};
+use crate::{Implementation, OperationId, QueuedOperation, SharedState, cq};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {

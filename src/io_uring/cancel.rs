@@ -1,5 +1,5 @@
 use crate::io_uring::{self, cancel, cq, libc, sq};
-use crate::{fd, AsyncFd, OperationId, SubmissionQueue};
+use crate::{AsyncFd, OperationId, SubmissionQueue, fd};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut sq::Submission) {
     submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;

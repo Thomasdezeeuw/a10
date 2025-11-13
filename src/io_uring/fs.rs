@@ -4,11 +4,11 @@ use std::path::PathBuf;
 use std::ptr;
 
 use crate::fs::{
-    path_from_cstring, AdviseFlag, AllocateFlag, Metadata, RemoveFlag, SyncDataFlag, METADATA_FLAGS,
+    AdviseFlag, AllocateFlag, METADATA_FLAGS, Metadata, RemoveFlag, SyncDataFlag, path_from_cstring,
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) struct OpenOp;
 

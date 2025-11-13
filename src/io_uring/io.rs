@@ -12,7 +12,7 @@ use crate::io::{
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;

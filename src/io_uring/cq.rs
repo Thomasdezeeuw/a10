@@ -4,10 +4,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
-use crate::io_uring::{self, libc, load_atomic_u32, mmap, munmap, Shared};
+use crate::io_uring::{self, Shared, libc, load_atomic_u32, mmap, munmap};
 use crate::msg::Message;
 use crate::op::OpResult;
-use crate::{debug_detail, syscall, OperationId};
+use crate::{OperationId, debug_detail, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {

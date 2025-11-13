@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, mem, ptr};
 
 use crate::sq::{Cancelled, QueueFull};
-use crate::{kqueue, syscall, OperationId, WAKE_ID};
+use crate::{OperationId, WAKE_ID, kqueue, syscall};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]

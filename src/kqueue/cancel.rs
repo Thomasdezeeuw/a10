@@ -1,6 +1,6 @@
 use crate::kqueue::{self, cancel, cq, sq};
 use crate::op::OpResult;
-use crate::{fd, AsyncFd, OperationId, SubmissionQueue};
+use crate::{AsyncFd, OperationId, SubmissionQueue, fd};
 
 pub(crate) fn operation(op_id: OperationId, submission: &mut kqueue::Event) {
     // FIXME: we need a fd here, can't do it with the operation id only.

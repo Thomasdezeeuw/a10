@@ -6,8 +6,8 @@
 use std::io;
 
 use crate::fd::{self, AsyncFd};
-use crate::op::{operation, Operation};
-use crate::{man_link, new_flag, sys, SubmissionQueue};
+use crate::op::{Operation, operation};
+use crate::{SubmissionQueue, man_link, new_flag, sys};
 
 /// Create a new Unix pipe.
 ///

@@ -2,8 +2,8 @@ use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::io_uring::{self, cq, libc, sq};
-use crate::op::{fd_operation, FdOperation};
-use crate::{fd, AsyncFd};
+use crate::op::{FdOperation, fd_operation};
+use crate::{AsyncFd, fd};
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;

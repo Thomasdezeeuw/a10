@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::{fmt, io, slice};
 
 use crate::io::{Buf, BufGroupId, BufId, BufMut};
-use crate::{sys, SubmissionQueue};
+use crate::{SubmissionQueue, sys};
 
 /// A read buffer pool.
 ///

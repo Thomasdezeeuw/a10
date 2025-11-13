@@ -21,8 +21,8 @@ use std::{io, ptr};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{man_link, new_flag, sys, AsyncFd};
+use crate::op::{FdOperation, Operation, fd_operation, operation};
+use crate::{AsyncFd, man_link, new_flag, sys};
 
 mod read_buf;
 mod traits;

@@ -8,8 +8,8 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::op::{fd_operation, FdOperation, Operation};
-use crate::{sys, AsyncFd, OperationId, SubmissionQueue};
+use crate::op::{FdOperation, Operation, fd_operation};
+use crate::{AsyncFd, OperationId, SubmissionQueue, sys};
 
 /// Cancelation of operations, also see the [`Cancel`] trait to cancel specific
 /// operations.
