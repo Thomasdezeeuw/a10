@@ -560,11 +560,13 @@ unsafe impl BufSlice<3> for BadBufSlice {
         let calls = self.calls.get();
         self.calls.set(calls + 1);
         let max_length = if calls == 0 { 5 } else { 10 };
-        [
-            IoSlice::new(&Self::DATA1),
-            IoSlice::new(&Self::DATA2),
-            IoSlice::new(&&Self::DATA3[0..max_length]),
-        ]
+        unsafe {
+            [
+                IoSlice::new(&Self::DATA1),
+                IoSlice::new(&Self::DATA2),
+                IoSlice::new(&&Self::DATA3[0..max_length]),
+            ]
+        }
     }
 }
 
@@ -614,7 +616,7 @@ pub(crate) struct BadReadBuf {
 
 unsafe impl BufMut for BadReadBuf {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
-        let (ptr, size) = self.data.parts_mut();
+        let (ptr, size) = unsafe { self.data.parts_mut() };
         if size >= 10 {
             (ptr, 10)
         } else {
@@ -623,7 +625,7 @@ unsafe impl BufMut for BadReadBuf {
     }
 
     unsafe fn set_init(&mut self, n: usize) {
-        self.data.set_init(n);
+        unsafe { self.data.set_init(n) };
     }
 }
 
@@ -654,12 +656,14 @@ pub(crate) struct BadReadBufSlice {
 
 unsafe impl BufMutSlice<2> for BadReadBufSlice {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
-        let mut iovecs = self.data.as_iovecs_mut();
-        if iovecs[0].len() >= 10 {
-            iovecs[0].set_len(10);
-            iovecs[1].set_len(5);
+        unsafe {
+            let mut iovecs = self.data.as_iovecs_mut();
+            if iovecs[0].len() >= 10 {
+                iovecs[0].set_len(10);
+                iovecs[1].set_len(5);
+            }
+            iovecs
         }
-        iovecs
     }
 
     unsafe fn set_init(&mut self, n: usize) {
@@ -667,11 +671,13 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
             return;
         }
 
-        if self.as_iovecs_mut()[0].len() == 10 {
-            self.data[0].set_init(10);
-            self.data[1].set_init(n - 10);
-        } else {
-            self.data.set_init(n);
+        unsafe {
+            if self.as_iovecs_mut()[0].len() == 10 {
+                self.data[0].set_init(10);
+                self.data[1].set_init(n - 10);
+            } else {
+                self.data.set_init(n);
+            }
         }
     }
 }
@@ -708,11 +714,11 @@ struct GrowingBufSlice {
 
 unsafe impl BufMutSlice<2> for GrowingBufSlice {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
-        self.data.as_iovecs_mut()
+        unsafe { self.data.as_iovecs_mut() }
     }
 
     unsafe fn set_init(&mut self, n: usize) {
-        self.data.set_init(n);
+        unsafe { self.data.set_init(n) };
         self.data[1].reserve(200);
     }
 }
