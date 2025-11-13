@@ -3,7 +3,7 @@
 use a10::fd;
 use a10::fs::OpenOptions;
 
-use crate::util::{require_kernel, test_queue, Waker, LOREM_IPSUM_5};
+use crate::util::{LOREM_IPSUM_5, Waker, require_kernel, test_queue};
 
 #[test]
 fn to_direct_descriptor() {

@@ -1,9 +1,9 @@
 //! Tests for the Unix pipe.
 
 use a10::fd;
-use a10::pipe::{pipe, Pipe};
+use a10::pipe::{Pipe, pipe};
 
-use crate::util::{cancel, is_send, is_sync, require_kernel, start_op, test_queue, Waker};
+use crate::util::{Waker, cancel, is_send, is_sync, require_kernel, start_op, test_queue};
 
 const DATA1: &[u8] = b"Hello from the other side";
 

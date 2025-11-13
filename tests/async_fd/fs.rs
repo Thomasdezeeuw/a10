@@ -9,11 +9,11 @@ use a10::fs::{
     Truncate,
 };
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
-use a10::{fd, Extract, SubmissionQueue};
+use a10::{Extract, SubmissionQueue, fd};
 
 use crate::util::{
-    defer, is_send, is_sync, page_size, remove_test_dir, remove_test_file, require_kernel,
-    test_queue, TestFile, Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
+    LOREM_IPSUM_5, LOREM_IPSUM_50, TestFile, Waker, defer, is_send, is_sync, page_size,
+    remove_test_dir, remove_test_file, require_kernel, test_queue,
 };
 
 const DATA: &[u8] = b"Hello, World";

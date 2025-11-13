@@ -18,7 +18,7 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, ptr, str};
 
-use a10::net::{socket, Domain, Protocol, Type};
+use a10::net::{Domain, Protocol, Type, socket};
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
 /// Initialise logging.
@@ -108,11 +108,13 @@ pub(crate) fn test_queue() -> SubmissionQueue {
             };
             let sq = ring.submission_queue().clone();
             thread::spawn(move || {
-                let res = panic::catch_unwind(move || loop {
-                    match ring.poll(None) {
-                        Ok(()) => continue,
-                        Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                        Err(err) => panic!("unexpected error polling: {err}"),
+                let res = panic::catch_unwind(move || {
+                    loop {
+                        match ring.poll(None) {
+                            Ok(()) => continue,
+                            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
+                            Err(err) => panic!("unexpected error polling: {err}"),
+                        }
                     }
                 });
                 match res {

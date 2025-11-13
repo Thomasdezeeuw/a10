@@ -10,15 +10,15 @@ use std::panic::{self, AssertUnwindSafe};
 
 use a10::fs::{self, Open, OpenOptions};
 use a10::io::{
-    stderr, stdout, Buf, BufMut, BufMutSlice, BufSlice, Close, IoMutSlice, IoSlice, ReadBuf,
-    ReadBufPool, Splice, Stderr, Stdout,
+    Buf, BufMut, BufMutSlice, BufSlice, Close, IoMutSlice, IoSlice, ReadBuf, ReadBufPool, Splice,
+    Stderr, Stdout, stderr, stdout,
 };
 use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
-    bind_and_listen_ipv4, block_on, cancel_all, defer, expect_io_errno, fd, init, is_send, is_sync,
-    remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket, test_queue, tmp_path,
-    Waker, LOREM_IPSUM_5, LOREM_IPSUM_50,
+    LOREM_IPSUM_5, LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, block_on, cancel_all, defer,
+    expect_io_errno, fd, init, is_send, is_sync, remove_test_file, require_kernel, start_op,
+    syscall, tcp_ipv4_socket, test_queue, tmp_path,
 };
 
 const BUF_SIZE: usize = 4096;
@@ -617,11 +617,7 @@ pub(crate) struct BadReadBuf {
 unsafe impl BufMut for BadReadBuf {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         let (ptr, size) = unsafe { self.data.parts_mut() };
-        if size >= 10 {
-            (ptr, 10)
-        } else {
-            (ptr, size)
-        }
+        if size >= 10 { (ptr, 10) } else { (ptr, size) }
     }
 
     unsafe fn set_init(&mut self, n: usize) {
