@@ -2,7 +2,7 @@ use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) struct PipeOp;
 

@@ -11,7 +11,7 @@ use std::{fmt, io, mem};
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::drop_waker::DropWake;
 use crate::sq::QueueFull;
-use crate::{cq, sq, sys, AsyncFd, OperationId, QueuedOperation, SubmissionQueue};
+use crate::{AsyncFd, OperationId, QueuedOperation, SubmissionQueue, cq, sq, sys};
 
 /// Generic [`Future`] that powers other I/O operation futures.
 ///

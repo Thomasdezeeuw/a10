@@ -2,8 +2,8 @@
 
 use std::io;
 
-use crate::op::{operation, Operation};
-use crate::{man_link, new_flag, sys, SubmissionQueue};
+use crate::op::{Operation, operation};
+use crate::{SubmissionQueue, man_link, new_flag, sys};
 
 /// Give advice about use of memory.
 ///

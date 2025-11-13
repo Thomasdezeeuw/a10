@@ -1,7 +1,7 @@
 use std::net::SocketAddr;
 use std::{env, io, str};
 
-use a10::net::{socket, Domain, Type};
+use a10::net::{Domain, Type, socket};
 use a10::{Ring, SubmissionQueue};
 
 mod runtime;
@@ -55,7 +55,9 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Re
     // Send a HTTP GET / request to the socket.
     let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
     let version = env!("CARGO_PKG_VERSION");
-    let request = format!("GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n");
+    let request = format!(
+        "GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n"
+    );
     socket.send_all(request, None).await?;
 
     // Receiving the response.

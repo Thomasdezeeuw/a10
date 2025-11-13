@@ -14,8 +14,8 @@
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::{fmt, io};
 
-use crate::op::{iter_operation, operation, Operation};
-use crate::{man_link, new_flag, sys, SubmissionQueue};
+use crate::op::{Operation, iter_operation, operation};
+use crate::{SubmissionQueue, man_link, new_flag, sys};
 
 /// Wait for an event specified in `interest` on the file descriptor `fd`.
 ///

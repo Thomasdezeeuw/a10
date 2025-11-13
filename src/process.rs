@@ -10,8 +10,8 @@ use std::process::{Child, ExitStatus};
 use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::op::{self, fd_operation, operation, FdIter, FdOp, FdOperation, Operation};
-use crate::{fd, man_link, new_flag, sys, syscall, AsyncFd, SubmissionQueue};
+use crate::op::{self, FdIter, FdOp, FdOperation, Operation, fd_operation, operation};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
 
 /// Wait on the child `process`.
 ///

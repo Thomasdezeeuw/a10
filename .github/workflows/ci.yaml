@@ -17,7 +17,7 @@ jobs:
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
-    - uses: dtolnay/rust-toolchain@1.85
+    - uses: dtolnay/rust-toolchain@1.91
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)

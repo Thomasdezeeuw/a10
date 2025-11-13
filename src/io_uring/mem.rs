@@ -1,6 +1,6 @@
+use crate::SubmissionQueue;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::mem::AdviseFlag;
-use crate::SubmissionQueue;
 
 pub(crate) struct AdviseOp;
 

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::{io, mem, ptr};
 
 use crate::kqueue::{self, Completions, Shared, Submissions};
-use crate::{syscall, WAKE_ID};
+use crate::{WAKE_ID, syscall};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config<'r> {

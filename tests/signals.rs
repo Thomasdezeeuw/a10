@@ -7,12 +7,12 @@ use std::task::Poll;
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, task, thread};
 
+use a10::Ring;
 use a10::fd;
 use a10::process::{ReceiveSignal, ReceiveSignals, Signal, Signals};
-use a10::Ring;
 
 mod util;
-use util::{is_send, is_sync, poll_nop, syscall, NOP_WAKER};
+use util::{NOP_WAKER, is_send, is_sync, poll_nop, syscall};
 
 const SIGNALS: [Signal; 30] = [
     Signal::HUP,
@@ -110,7 +110,10 @@ fn main() {
     drop(harness);
     test_cleanup(quiet, &mut passed, &mut failed);
 
-    println!("\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n", start.elapsed().as_secs_f64());
+    println!(
+        "\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n",
+        start.elapsed().as_secs_f64()
+    );
 }
 
 struct TestHarness {
@@ -347,11 +350,7 @@ fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
 }
 
 fn print_test_ok(quiet: bool) {
-    if quiet {
-        print!(".")
-    } else {
-        print!("ok\n")
-    }
+    if quiet { print!(".") } else { print!("ok\n") }
 }
 
 fn print_test_failed(quiet: bool) {

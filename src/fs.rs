@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use std::{fmt, io, mem, str};
 
-use crate::op::{fd_operation, operation, FdOperation, Operation};
-use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
+use crate::op::{FdOperation, Operation, fd_operation, operation};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
 /// Flags needed to fill [`Metadata`].
 pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE

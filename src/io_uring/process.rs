@@ -5,7 +5,7 @@ use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
 use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) struct WaitIdOp;
 

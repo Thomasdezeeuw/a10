@@ -5,7 +5,7 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{syscall, Submission, SubmissionQueue};
+use crate::{Submission, SubmissionQueue, syscall};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{ToDirect, ToFd};
@@ -65,7 +65,8 @@ impl AsyncFd {
     /// The caller must ensure that `fd` is valid and that it's no longer used
     /// by anything other than the returned `AsyncFd`.
     pub unsafe fn from_raw_fd(fd: RawFd, sq: SubmissionQueue) -> AsyncFd {
-        AsyncFd::from_raw(fd, Kind::File, sq)
+        // SAFETY: caller must ensure that `fd` is correct.
+        unsafe { AsyncFd::from_raw(fd, Kind::File, sq) }
     }
 
     pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd {

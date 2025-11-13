@@ -4,7 +4,7 @@ use std::os::fd::RawFd;
 
 use crate::io::{BufId, BufMut, BufMutSlice, Buffer, NO_OFFSET};
 use crate::op::OpResult;
-use crate::{kqueue, syscall, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, kqueue, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;

@@ -25,7 +25,7 @@ fn main() -> io::Result<()> {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "missing source",
-            ))
+            ));
         }
     };
     let destination = match args.next() {
@@ -34,7 +34,7 @@ fn main() -> io::Result<()> {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "missing destination",
-            ))
+            ));
         }
     };
 

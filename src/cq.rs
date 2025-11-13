@@ -1,12 +1,12 @@
 //! Completion Queue.
 
 use std::cmp::min;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{fmt, io, mem};
 
-use crate::{Implementation, OperationId, SharedState, NO_COMPLETION_ID, WAKE_ID};
+use crate::{Implementation, NO_COMPLETION_ID, OperationId, SharedState, WAKE_ID};
 
 /// Queue of completion events.
 pub(crate) struct Queue<I: Implementation> {

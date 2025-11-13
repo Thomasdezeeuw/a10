@@ -1,9 +1,9 @@
 use std::os::fd::RawFd;
 
+use crate::SubmissionQueue;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::Iter;
 use crate::poll::{Event, Interest};
-use crate::SubmissionQueue;
 
 pub(crate) struct OneshotPollOp;
 

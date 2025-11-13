@@ -2,13 +2,13 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator))]
 
-use std::alloc::{alloc, dealloc, Layout};
+use std::alloc::{Layout, alloc, dealloc};
 use std::fs::File;
 use std::future::Future;
 use std::io::{self, Read, Write};
 use std::mem::take;
 use std::os::fd::{AsFd, FromRawFd, RawFd};
-use std::pin::{pin, Pin};
+use std::pin::{Pin, pin};
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
@@ -18,14 +18,14 @@ use std::time::{Duration, Instant};
 use a10::fs::{Open, OpenOptions};
 use a10::io::ReadBufPool;
 use a10::mem::{self, AdviseFlag};
-use a10::poll::{multishot_poll, oneshot_poll, Interest, MultishotPoll, OneshotPoll};
+use a10::poll::{Interest, MultishotPoll, OneshotPoll, multishot_poll, oneshot_poll};
 use a10::process::{self, ChildStatus, Signal, WaitOption};
-use a10::{msg, Config, Ring, SubmissionQueue};
+use a10::{Config, Ring, SubmissionQueue, msg};
 
 mod util;
 use util::{
-    cancel, defer, expect_io_errno, init, is_send, is_sync, next, poll_nop, require_kernel,
-    start_mulitshot_op, start_op, test_queue, Waker, LOREM_IPSUM_50,
+    LOREM_IPSUM_50, Waker, cancel, defer, expect_io_errno, init, is_send, is_sync, next, poll_nop,
+    require_kernel, start_mulitshot_op, start_op, test_queue,
 };
 
 const DATA: &[u8] = b"Hello, World!";

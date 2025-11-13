@@ -2,12 +2,12 @@
 
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::drop_waker::DropWake;
 use crate::op::OpResult;
-use crate::{syscall, AsyncFd};
+use crate::{AsyncFd, syscall};
 
 pub(crate) mod cancel;
 pub(crate) mod config;

@@ -10,7 +10,7 @@ use crate::net::{
     SendFlag, SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) use crate::unix::MsgHeader;
 

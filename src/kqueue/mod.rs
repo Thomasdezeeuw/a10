@@ -12,7 +12,7 @@ use std::{fmt, mem};
 
 use crate::drop_waker::DropWake;
 use crate::op::OpResult;
-use crate::{debug_detail, AsyncFd, OperationId};
+use crate::{AsyncFd, OperationId, debug_detail};
 
 pub(crate) mod cancel;
 pub(crate) mod config;
@@ -22,10 +22,10 @@ pub(crate) mod io;
 pub(crate) mod net;
 mod sq;
 
+pub(crate) use Event as Submission;
 pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
-pub(crate) use Event as Submission;
 
 /// kqueue implementation.
 pub(crate) enum Implementation {}

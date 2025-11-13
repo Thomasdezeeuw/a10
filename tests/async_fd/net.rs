@@ -13,17 +13,17 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    socket, Accept, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
-    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt,
-    SocketOption, Type,
+    Accept, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored,
+    Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt, SocketOption, Type,
+    socket,
 };
-use a10::{fd, AsyncFd, Extract, Ring};
+use a10::{AsyncFd, Extract, Ring, fd};
 
 use crate::async_fd::io::{BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice};
 use crate::util::{
-    bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno, expect_io_error_kind, fd,
-    init, is_send, is_sync, new_socket, next, require_kernel, start_mulitshot_op, start_op,
-    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, Waker,
+    Waker, bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno,
+    expect_io_error_kind, fd, init, is_send, is_sync, new_socket, next, require_kernel,
+    start_mulitshot_op, start_op, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
