@@ -135,6 +135,8 @@ impl ReadBufPool {
         }
         ring_tail.store(pool_size, Ordering::Release);
 
+        asan::poison_region(ptr::from_ref(ring_addr).cast(), ring_layout.size());
+        asan::poison_region(pool.bufs_addr.cast(), bufs_layout.size());
         Ok(pool)
     }
 
@@ -152,6 +154,10 @@ impl ReadBufPool {
         log::trace!(buffer_group = self.id.0, buffer = id.0, addr:? = addr, len = n; "initialised buffer");
         // SAFETY: `bufs_addr` is not NULL.
         let addr = unsafe { NonNull::new_unchecked(addr) };
+        // NOTE: unpoising the entire buffer, not just the written part.
+        // If/once we support increment buffer consumption (IOU_PBUF_RING_INC)
+        // this needs to be changed.
+        asan::unpoison_region(addr.as_ptr().cast(), self.buf_size());
         NonNull::slice_from_raw_parts(addr, n as usize)
     }
 
@@ -188,6 +194,8 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
+        // NOTE: poising the buffer again.
+        asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
         drop(guard);
     }
@@ -232,6 +240,7 @@ impl Drop for ReadBufPool {
             // SAFETY: created this layout in `new` and didn't fail, so it's
             // still valid here.
             let ring_layout = alloc_layout_ring(self.pool_size, page_size).unwrap();
+            asan::poison_region(self.ring_addr.cast(), ring_layout.size());
             // SAFETY: we allocated this in `new`, so it's safe to deallocate
             // for us.
             dealloc(self.ring_addr.cast(), ring_layout);
@@ -244,6 +253,7 @@ impl Drop for ReadBufPool {
                 // still valid here.
                 let layout =
                     alloc_layout_buffers(self.pool_size, self.buf_size, page_size).unwrap();
+                asan::unpoison_region(self.bufs_addr.cast(), layout.size());
                 // SAFETY: we allocated this in `new`, so it's safe to
                 // deallocate for us.
                 dealloc(self.bufs_addr, layout);
