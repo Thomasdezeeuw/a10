@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::drop_waker::DropWake;
 use crate::op::OpResult;
-use crate::{AsyncFd, syscall};
+use crate::{AsyncFd, asan, syscall};
 
 pub(crate) mod cancel;
 pub(crate) mod config;
@@ -111,9 +111,14 @@ impl Shared {
             rfd.as_raw_fd(),
             libc::off_t::from(libc::IORING_OFF_SQ_RING),
         )?;
+        // We poison the entire allocation and then unpoison on a per submission
+        // basis (see Submissions::add) when we get write something to it.
+        asan::poison_region(submission_queue.cast(), submission_queue_size as usize);
 
+        let submission_queue_entries_size =
+            parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>();
         let submission_queue_entries = mmap(
-            parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>(),
+            submission_queue_entries_size,
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_SHARED | libc::MAP_POPULATE,
             rfd.as_raw_fd(),
@@ -122,6 +127,11 @@ impl Shared {
         .inspect_err(|_| {
             _ = munmap(submission_queue, submission_queue_size as usize); // Can't handle two errors.
         })?;
+        // Same as what we did for the submission queue, but this time with the entries.
+        asan::poison_region(
+            submission_queue_entries.cast(),
+            submission_queue_entries_size,
+        );
 
         let entries_len = unsafe {
             load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize))
@@ -237,10 +247,12 @@ impl Drop for Shared {
     fn drop(&mut self) {
         let ptr = self.entries.cast();
         let size = self.entries_len as usize * size_of::<sq::Submission>();
+        asan::unpoison_region(ptr, size);
         if let Err(err) = munmap(ptr, size) {
             log::warn!(ptr:? = ptr, size = size; "error unmapping io_uring entries: {err}");
         }
 
+        asan::unpoison_region(self.ptr, self.size as usize);
         if let Err(err) = munmap(self.ptr, self.size as usize) {
             log::warn!(ptr:? = self.ptr, size = self.size; "error unmapping io_uring submission queue: {err}");
         }

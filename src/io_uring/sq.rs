@@ -4,7 +4,7 @@ use std::{fmt, io, ptr};
 
 use crate::io_uring::{Shared, cancel, libc};
 use crate::sq::{Cancelled, QueueFull};
-use crate::{OperationId, WAKE_ID};
+use crate::{OperationId, WAKE_ID, asan};
 
 /// NOTE: all the state is in [`Shared`].
 #[derive(Debug)]
@@ -62,6 +62,8 @@ impl crate::sq::Submissions for Submissions {
         // we're the only thread  with mutable access to the entry.
         let submission_index = tail & shared.entries_mask;
         let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
+        // We've ensured above that we can access the submission.
+        asan::unpoison(submission);
 
         // Let the caller fill the `submission`.
         submission.reset();
@@ -75,6 +77,9 @@ impl crate::sq::Submissions for Submissions {
         // Now that we've written our submission we need add it to the
         // `array` so that the kernel can process it.
         log::trace!(submission:? = submission; "queueing submission");
+        // Now that the submission is fully written we have access to the kernel
+        // (see below), so we poision the submission again.
+        asan::poison(submission);
         {
             // Now that the submission is filled we need to add it to the
             // `shared.array` so that the kernel can read from it.
@@ -98,10 +103,16 @@ impl crate::sq::Submissions for Submissions {
             let mut array_index = shared.array_index.lock().unwrap();
             let idx = (*array_index & shared.entries_mask) as usize;
             // SAFETY: `idx` is masked above to be within the correct bounds.
-            unsafe { (*shared.array.add(idx)).store(submission_index, Ordering::Release) };
+            let array_entry = unsafe { &mut *shared.array.add(idx) };
+            array_entry.store(submission_index, Ordering::Release);
+            // We've ensured unique access to the array entry, so unpoison it
+            // for the write.
+            asan::unpoison(array_entry);
             // SAFETY: we filled the array above.
             let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
             debug_assert!(old_tail == *array_index);
+            // Now it's written poison it again until the kernel have read it.
+            asan::poison(array_entry);
             *array_index += 1;
         }
 
