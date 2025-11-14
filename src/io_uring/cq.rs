@@ -7,7 +7,7 @@ use std::{fmt, io, ptr};
 use crate::io_uring::{self, Shared, libc, load_atomic_u32, mmap, munmap};
 use crate::msg::Message;
 use crate::op::OpResult;
-use crate::{OperationId, debug_detail, syscall};
+use crate::{OperationId, asan, debug_detail, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -35,8 +35,8 @@ impl Completions {
         rfd: BorrowedFd<'_>,
         parameters: &libc::io_uring_params,
     ) -> io::Result<Completions> {
-        let size = parameters.cq_off.cqes
-            + parameters.cq_entries * (size_of::<libc::io_uring_cqe>() as u32);
+        let entries_size = parameters.cq_entries * (size_of::<libc::io_uring_cqe>() as u32);
+        let size = parameters.cq_off.cqes + entries_size;
         let completion_queue = mmap(
             size as usize,
             libc::PROT_READ | libc::PROT_WRITE,
@@ -44,6 +44,12 @@ impl Completions {
             rfd.as_raw_fd(),
             libc::off_t::from(libc::IORING_OFF_CQ_RING),
         )?;
+
+        // The entries are written by the kernel and can only be read based on
+        // the `tail` (also written by the kernel), see `poll` below.
+        let entries: *const Completion =
+            unsafe { completion_queue.add(parameters.cq_off.cqes as usize).cast() };
+        asan::poison_region(entries.cast(), entries_size as usize);
 
         let entries_len = unsafe {
             load_atomic_u32(completion_queue.add(parameters.cq_off.ring_entries as usize))
@@ -60,7 +66,7 @@ impl Completions {
                 // Fields are shared with the kernel.
                 head: completion_queue.add(parameters.cq_off.head as usize).cast(),
                 tail: completion_queue.add(parameters.cq_off.tail as usize).cast(),
-                entries: completion_queue.add(parameters.cq_off.cqes as usize).cast(),
+                entries,
                 entries_len,
                 entries_mask,
             })
@@ -146,6 +152,11 @@ impl crate::cq::Completions for Completions {
             tail = self.completion_tail();
         }
 
+        // Unpoison the region we can safely read based.
+        let n = (head & self.entries_mask) as usize;
+        let size = (tail - head) as usize * size_of::<libc::io_uring_cqe>();
+        asan::unpoison_region(unsafe { self.entries.add(n).cast() }, size);
+
         Ok(CompletionsIter {
             entries: self.entries,
             local_head: head,
@@ -167,6 +178,8 @@ unsafe impl Sync for Completions {}
 
 impl Drop for Completions {
     fn drop(&mut self) {
+        let entries_size = self.entries_len as usize * size_of::<libc::io_uring_cqe>();
+        asan::poison_region(self.entries.cast(), entries_size);
         if let Err(err) = munmap(self.ptr, self.size as usize) {
             log::warn!(ptr:? = self.ptr, size = self.size; "error unmapping io_uring completions: {err}");
         }
@@ -222,6 +235,10 @@ impl<'a> Iterator for CompletionsIter<'a> {
 
 impl<'a> Drop for CompletionsIter<'a> {
     fn drop(&mut self) {
+        // Poison all entries again.
+        let size = self.tail as usize * size_of::<libc::io_uring_cqe>();
+        asan::unpoison_region(self.entries.cast(), size);
+
         // Let the kernel know we've read the completions.
         // SAFETY: the kernel needs to read the value so we need `Release`. The
         // pointer itself is valid as long as `Ring.fd` is alive.
