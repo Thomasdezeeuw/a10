@@ -189,6 +189,7 @@ impl ReadBufPool {
                 .cast::<MaybeUninit<libc::io_uring_buf>>()
                 .add(ring_idx as usize))
         };
+        asan::unpoison(ring_buf);
         log::trace!(buffer_group = self.id.0, buffer = buf_id, addr:? = ptr; "reregistering buffer");
         ring_buf.write(libc::io_uring_buf {
             addr: ptr.cast::<u8>().as_ptr().addr() as u64,
@@ -196,6 +197,17 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
+        asan::poison_region(
+            ring_buf.as_ptr().cast(),
+            // Don't poison the `resv` field, which overlaps with the ring tail
+            // for the first buffer.
+            size_of::<libc::io_uring_buf>()
+                - if ring_buf.as_ptr() == self.ring_addr.cast() {
+                    size_of::<u16>()
+                } else {
+                    0
+                },
+        );
         // NOTE: poising the buffer again.
         asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
