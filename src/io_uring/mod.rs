@@ -113,7 +113,12 @@ impl Shared {
         )?;
         // We poison the entire allocation and then unpoison on a per submission
         // basis (see Submissions::add) when we get write something to it.
-        asan::poison_region(submission_queue.cast(), submission_queue_size as usize);
+        let array: *mut AtomicU32 = unsafe {
+            submission_queue
+                .add(parameters.sq_off.array as usize)
+                .cast()
+        };
+        asan::poison_region(array.cast(), submission_queue_size as usize);
 
         let submission_queue_entries_size =
             parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>();
@@ -127,7 +132,8 @@ impl Shared {
         .inspect_err(|_| {
             _ = munmap(submission_queue, submission_queue_size as usize); // Can't handle two errors.
         })?;
-        // Same as what we did for the submission queue, but this time with the entries.
+        // Same as what we did for the submission array, but this time with the
+        // actual submissions.
         asan::poison_region(
             submission_queue_entries.cast(),
             submission_queue_entries_size,
@@ -160,9 +166,7 @@ impl Shared {
                 entries_len,
                 entries_mask,
                 array_index: Mutex::new(0),
-                array: submission_queue
-                    .add(parameters.sq_off.array as usize)
-                    .cast(),
+                array,
                 array_tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
             }
         })
