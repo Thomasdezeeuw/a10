@@ -254,7 +254,7 @@ impl Drop for ReadBufPool {
             // SAFETY: created this layout in `new` and didn't fail, so it's
             // still valid here.
             let ring_layout = alloc_layout_ring(self.pool_size, page_size).unwrap();
-            asan::poison_region(self.ring_addr.cast(), ring_layout.size());
+            asan::unpoison_region(self.ring_addr.cast(), ring_layout.size());
             // SAFETY: we allocated this in `new`, so it's safe to deallocate
             // for us.
             dealloc(self.ring_addr.cast(), ring_layout);
