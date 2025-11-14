@@ -1412,7 +1412,7 @@ impl private::SocketAddress for SocketAddr {
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {
         debug_assert!(length as usize >= size_of::<libc::sa_family_t>());
-        let family = unsafe { ptr::addr_of!((*storage.as_ptr()).sin6_family).read() };
+        let family = unsafe { storage.as_ptr().cast::<libc::sa_family_t>().read() };
         if family == libc::AF_INET as libc::sa_family_t {
             let storage = unsafe { storage.as_ptr().cast::<libc::sockaddr_in>().read() };
             unsafe { SocketAddrV4::init(MaybeUninit::new(storage), length).into() }
