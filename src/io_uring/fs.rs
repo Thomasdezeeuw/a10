@@ -8,7 +8,7 @@ use crate::fs::{
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct OpenOp;
 
@@ -28,6 +28,7 @@ impl io_uring::Op for OpenOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        asan::poison_cstring(path);
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             open_flags: *flags as u32,
@@ -40,9 +41,10 @@ impl io_uring::Op for OpenOp {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(
         sq: &SubmissionQueue,
-        (_, fd_kind): Self::Resources,
+        (path, fd_kind): Self::Resources,
         (_, fd): cq::OpReturn,
     ) -> Self::Output {
+        asan::unpoison_cstring(&path);
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
     }
@@ -57,6 +59,7 @@ impl OpExtract for OpenOp {
         (path, fd_kind): Self::Resources,
         (_, fd): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_cstring(&path);
         // SAFETY: kernel ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) };
         let path = path_from_cstring(path);
@@ -81,10 +84,12 @@ impl io_uring::Op for CreateDirOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        asan::poison_cstring(path);
         submission.0.len = 0o777; // Same as used by the standard library.
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
     }
 }
@@ -97,6 +102,7 @@ impl OpExtract for CreateDirOp {
         path: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
     }
@@ -120,13 +126,21 @@ impl io_uring::Op for RenameOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             off: to.as_ptr().addr() as u64,
         };
+        asan::poison_cstring(to);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: from.as_ptr().addr() as u64,
         };
+        asan::poison_cstring(from);
         submission.0.len = libc::AT_FDCWD as u32;
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(
+        _: &SubmissionQueue,
+        (from, to): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        asan::unpoison_cstring(&from);
+        asan::unpoison_cstring(&to);
         debug_assert!(n == 0);
     }
 }
@@ -139,6 +153,8 @@ impl OpExtract for RenameOp {
         (from, to): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_cstring(&from);
+        asan::unpoison_cstring(&to);
         debug_assert!(n == 0);
         (path_from_cstring(from), path_from_cstring(to))
     }
@@ -162,6 +178,7 @@ impl io_uring::Op for DeleteOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        asan::poison_cstring(path);
         let flags = match flags {
             RemoveFlag::File => 0,
             RemoveFlag::Directory => libc::AT_REMOVEDIR,
@@ -171,7 +188,8 @@ impl io_uring::Op for DeleteOp {
         };
     }
 
-    fn map_ok(_: &SubmissionQueue, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
     }
 }
@@ -184,6 +202,7 @@ impl OpExtract for DeleteOp {
         path: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
     }
@@ -235,6 +254,7 @@ impl io_uring::FdOp for StatOp {
             // SAFETY: this is safe because `Metadata` is transparent.
             off: ptr::from_mut(&mut **metadata).addr() as u64,
         };
+        asan::poison_box(metadata);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: c"".as_ptr().addr() as u64, // Not using a path.
         };
@@ -245,6 +265,7 @@ impl io_uring::FdOp for StatOp {
     }
 
     fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&metadata);
         debug_assert!(n == 0);
         debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
         *metadata

@@ -12,7 +12,7 @@ use crate::io::{
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -135,6 +135,8 @@ impl ReadBufPool {
         }
         ring_tail.store(pool_size, Ordering::Release);
 
+        asan::poison_region(ptr::from_ref(ring_addr).cast(), ring_layout.size());
+        asan::poison_region(pool.bufs_addr.cast(), bufs_layout.size());
         Ok(pool)
     }
 
@@ -152,6 +154,10 @@ impl ReadBufPool {
         log::trace!(buffer_group = self.id.0, buffer = id.0, addr:? = addr, len = n; "initialised buffer");
         // SAFETY: `bufs_addr` is not NULL.
         let addr = unsafe { NonNull::new_unchecked(addr) };
+        // NOTE: unpoising the entire buffer, not just the written part.
+        // If/once we support increment buffer consumption (IOU_PBUF_RING_INC)
+        // this needs to be changed.
+        asan::unpoison_region(addr.as_ptr().cast(), self.buf_size());
         NonNull::slice_from_raw_parts(addr, n as usize)
     }
 
@@ -188,6 +194,8 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
+        // NOTE: poising the buffer again.
+        asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
         drop(guard);
     }
@@ -232,6 +240,7 @@ impl Drop for ReadBufPool {
             // SAFETY: created this layout in `new` and didn't fail, so it's
             // still valid here.
             let ring_layout = alloc_layout_ring(self.pool_size, page_size).unwrap();
+            asan::poison_region(self.ring_addr.cast(), ring_layout.size());
             // SAFETY: we allocated this in `new`, so it's safe to deallocate
             // for us.
             dealloc(self.ring_addr.cast(), ring_layout);
@@ -244,6 +253,7 @@ impl Drop for ReadBufPool {
                 // still valid here.
                 let layout =
                     alloc_layout_buffers(self.pool_size, self.buf_size, page_size).unwrap();
+                asan::unpoison_region(self.bufs_addr.cast(), layout.size());
                 // SAFETY: we allocated this in `new`, so it's safe to
                 // deallocate for us.
                 dealloc(self.bufs_addr, layout);
@@ -297,6 +307,7 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        asan::poison_buf_mut(&mut buf.buf);
         submission.0.len = len;
         if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
@@ -305,6 +316,7 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_buf_mut(&mut buf.buf);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -332,10 +344,16 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
+        asan::poison_iovecs_mut(&**iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok(_: &AsyncFd, (mut bufs, _): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(
+        _: &AsyncFd,
+        (mut bufs, iovecs): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        asan::unpoison_iovecs_mut(&*iovecs);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
@@ -362,10 +380,12 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        asan::poison_buf(&buf.buf);
         submission.0.len = length;
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, buf: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_buf(&buf.buf);
         n as usize
     }
 }
@@ -378,6 +398,7 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
         buf: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_buf(&buf.buf);
         (buf.buf, n as usize)
     }
 }
@@ -401,10 +422,12 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_ptr().addr() as u64,
         };
+        asan::poison_iovecs(&**iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (_, iovecs): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_iovecs(&*iovecs);
         n as usize
     }
 }
@@ -414,9 +437,10 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, _): Self::Resources,
+        (buf, iovecs): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_iovecs(&*iovecs);
         (buf, n as usize)
     }
 }

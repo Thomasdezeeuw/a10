@@ -5,7 +5,7 @@ use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
 use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct WaitIdOp;
 
@@ -31,6 +31,7 @@ impl io_uring::Op for WaitIdOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             addr2: ptr::from_mut(&mut **info).addr() as u64,
         };
+        asan::poison_box(info);
         submission.0.len = id_type;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             file_index: options.0,
@@ -38,6 +39,7 @@ impl io_uring::Op for WaitIdOp {
     }
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&info);
         debug_assert!(n == 0);
         *info
     }
@@ -64,6 +66,7 @@ impl io_uring::Op for ToSignalsDirectOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr::from_mut(&mut **fd).addr() as u64,
         };
+        asan::poison_box(fd);
         submission.0.len = 1;
     }
 
@@ -72,6 +75,7 @@ impl io_uring::Op for ToSignalsDirectOp {
         (signals, dfd): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
+        asan::unpoison_box(&dfd);
         debug_assert!(n == 1);
         // SAFETY: the kernel ensures that `dfd` is valid.
         let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq.clone()) };
@@ -98,11 +102,13 @@ impl io_uring::FdOp for ReceiveSignalOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: (&raw mut info.0) as u64,
         };
+        asan::poison_box(info);
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
     }
 
     fn map_ok(fd: &AsyncFd, mut info: Self::Resources, ok: cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&info);
         ReceiveSignalOp::map_next(fd, &mut info, ok)
     }
 }
@@ -113,6 +119,7 @@ impl FdIter for ReceiveSignalOp {
         info: &mut Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::Output {
+        asan::unpoison_box(info);
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         SignalInfo(info.0)
     }

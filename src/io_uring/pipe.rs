@@ -2,7 +2,7 @@ use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct PipeOp;
 
@@ -21,6 +21,7 @@ impl io_uring::Op for PipeOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: (&raw mut **fds) as u64,
         };
+        asan::poison_box(fds);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             pipe_flags: (flags.0 | fd_kind.cloexec_flag() as u32),
         };
@@ -35,6 +36,7 @@ impl io_uring::Op for PipeOp {
         (fds, fd_kind): Self::Resources,
         (_, res): cq::OpReturn,
     ) -> Self::Output {
+        asan::unpoison_box(&fds);
         debug_assert!(res == 0);
         // SAFETY: kernel ensures that `fds` are valid.
         unsafe {
