@@ -104,15 +104,15 @@ impl crate::sq::Submissions for Submissions {
             let idx = (*array_index & shared.entries_mask) as usize;
             // SAFETY: `idx` is masked above to be within the correct bounds.
             let array_entry = unsafe { &mut *shared.array.add(idx) };
-            array_entry.store(submission_index, Ordering::Release);
             // We've ensured unique access to the array entry, so unpoison it
             // for the write.
             asan::unpoison(array_entry);
+            array_entry.store(submission_index, Ordering::Release);
+            // Now it's written poison it again until the kernel have read it.
+            asan::poison(array_entry);
             // SAFETY: we filled the array above.
             let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
             debug_assert!(old_tail == *array_index);
-            // Now it's written poison it again until the kernel have read it.
-            asan::poison(array_entry);
             *array_index += 1;
         }
 
