@@ -136,6 +136,7 @@ impl ReadBufPool {
         ring_tail.store(pool_size, Ordering::Release);
 
         asan::poison_region(ptr::from_ref(ring_addr).cast(), ring_layout.size());
+        asan::unpoison(ring_tail); // Overlaps with `ring_addr`.
         asan::poison_region(pool.bufs_addr.cast(), bufs_layout.size());
         Ok(pool)
     }
@@ -188,6 +189,7 @@ impl ReadBufPool {
                 .cast::<MaybeUninit<libc::io_uring_buf>>()
                 .add(ring_idx as usize))
         };
+        asan::unpoison(ring_buf);
         log::trace!(buffer_group = self.id.0, buffer = buf_id, addr:? = ptr; "reregistering buffer");
         ring_buf.write(libc::io_uring_buf {
             addr: ptr.cast::<u8>().as_ptr().addr() as u64,
@@ -195,6 +197,17 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
+        asan::poison_region(
+            ring_buf.as_ptr().cast(),
+            // Don't poison the `resv` field, which overlaps with the ring tail
+            // for the first buffer.
+            size_of::<libc::io_uring_buf>()
+                - if ring_buf.as_ptr() == self.ring_addr.cast() {
+                    size_of::<u16>()
+                } else {
+                    0
+                },
+        );
         // NOTE: poising the buffer again.
         asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
@@ -241,7 +254,7 @@ impl Drop for ReadBufPool {
             // SAFETY: created this layout in `new` and didn't fail, so it's
             // still valid here.
             let ring_layout = alloc_layout_ring(self.pool_size, page_size).unwrap();
-            asan::poison_region(self.ring_addr.cast(), ring_layout.size());
+            asan::unpoison_region(self.ring_addr.cast(), ring_layout.size());
             // SAFETY: we allocated this in `new`, so it's safe to deallocate
             // for us.
             dealloc(self.ring_addr.cast(), ring_layout);
