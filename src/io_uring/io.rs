@@ -136,6 +136,7 @@ impl ReadBufPool {
         ring_tail.store(pool_size, Ordering::Release);
 
         asan::poison_region(ptr::from_ref(ring_addr).cast(), ring_layout.size());
+        asan::unpoison(ring_tail); // Overlaps with `ring_addr`.
         asan::poison_region(pool.bufs_addr.cast(), bufs_layout.size());
         Ok(pool)
     }
