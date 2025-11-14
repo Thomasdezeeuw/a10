@@ -12,7 +12,7 @@ use crate::io::{
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdOpExtract;
-use crate::{AsyncFd, SubmissionQueue, asan, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -158,6 +158,7 @@ impl ReadBufPool {
         // If/once we support increment buffer consumption (IOU_PBUF_RING_INC)
         // this needs to be changed.
         asan::unpoison_region(addr.as_ptr().cast(), self.buf_size());
+        msan::unpoison_region(addr.as_ptr().cast(), n as usize);
         NonNull::slice_from_raw_parts(addr, n as usize)
     }
 
@@ -317,6 +318,7 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_buf_mut(&mut buf.buf);
+        msan::unpoison_buf_mut(&mut buf.buf, n as usize);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -354,6 +356,7 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         asan::unpoison_iovecs_mut(&*iovecs);
+        msan::unpoison_iovecs_mut(&*iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
