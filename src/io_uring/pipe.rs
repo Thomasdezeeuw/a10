@@ -2,7 +2,7 @@ use std::os::fd::RawFd;
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{AsyncFd, SubmissionQueue, asan, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) struct PipeOp;
 
@@ -37,6 +37,7 @@ impl io_uring::Op for PipeOp {
         (_, res): cq::OpReturn,
     ) -> Self::Output {
         asan::unpoison_box(&fds);
+        msan::unpoison_box(&fds);
         debug_assert!(res == 0);
         // SAFETY: kernel ensures that `fds` are valid.
         unsafe {

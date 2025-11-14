@@ -150,6 +150,7 @@ mod bitmap;
 mod config;
 mod cq;
 mod drop_waker;
+mod msan;
 mod op;
 mod sq;
 #[cfg(unix)]

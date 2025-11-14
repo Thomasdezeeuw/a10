@@ -70,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [address, leak] # TODO: enable thread, memory.
+        sanitizer: [address, memory, leak] # TODO: enable thread.
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly

@@ -3,7 +3,7 @@ use std::{io, ptr};
 
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{FdOperation, fd_operation};
-use crate::{AsyncFd, asan, fd};
+use crate::{AsyncFd, asan, fd, msan};
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
@@ -103,6 +103,7 @@ impl io_uring::FdOp for ToDirectOp {
 
     fn map_ok(ofd: &AsyncFd, fd: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&fd);
+        msan::unpoison_box(&fd);
         debug_assert!(n == 1);
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.

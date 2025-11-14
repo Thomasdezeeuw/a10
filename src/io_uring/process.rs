@@ -5,7 +5,7 @@ use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
 use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{AsyncFd, SubmissionQueue, asan, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) struct WaitIdOp;
 
@@ -40,6 +40,7 @@ impl io_uring::Op for WaitIdOp {
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&info);
+        msan::unpoison_box(&info);
         debug_assert!(n == 0);
         *info
     }
@@ -76,6 +77,7 @@ impl io_uring::Op for ToSignalsDirectOp {
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         asan::unpoison_box(&dfd);
+        msan::unpoison_box(&dfd);
         debug_assert!(n == 1);
         // SAFETY: the kernel ensures that `dfd` is valid.
         let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq.clone()) };
@@ -109,6 +111,7 @@ impl io_uring::FdOp for ReceiveSignalOp {
 
     fn map_ok(fd: &AsyncFd, mut info: Self::Resources, ok: cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&info);
+        msan::unpoison_box(&info);
         ReceiveSignalOp::map_next(fd, &mut info, ok)
     }
 }
@@ -120,6 +123,7 @@ impl FdIter for ReceiveSignalOp {
         (_, n): Self::OperationOutput,
     ) -> Self::Output {
         asan::unpoison_box(info);
+        msan::unpoison_box(info);
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         SignalInfo(info.0)
     }

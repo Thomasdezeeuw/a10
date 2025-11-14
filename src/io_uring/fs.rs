@@ -8,7 +8,7 @@ use crate::fs::{
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
-use crate::{AsyncFd, SubmissionQueue, asan, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) struct OpenOp;
 
@@ -266,6 +266,7 @@ impl io_uring::FdOp for StatOp {
 
     fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&metadata);
+        msan::unpoison_box(&metadata);
         debug_assert!(n == 0);
         debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
         *metadata

@@ -1,4 +1,4 @@
-//! Utilities for sanitizer support.
+//! Utilities for address sanitizer support.
 
 // Let's make it easier with all the `cfg`s.
 #![allow(unused_variables)]
