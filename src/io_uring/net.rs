@@ -10,7 +10,7 @@ use crate::net::{
     SendFlag, SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
-use crate::{AsyncFd, SubmissionQueue, asan, fd};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) use crate::unix::MsgHeader;
 
@@ -113,6 +113,7 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_buf_mut(&mut buf.buf);
+        msan::unpoison_buf_mut(&mut buf.buf, n as usize);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -158,6 +159,7 @@ impl FdIter for MultishotRecvOp {
         buf_pool: &mut Self::Resources,
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
+        // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
         unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
@@ -190,6 +192,7 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> 
         let (msg, iovecs) = &*resources;
         // NOTE: don't need to unpoison the address.
         asan::unpoison_iovecs_mut(iovecs);
+        msan::unpoison_iovecs_mut(iovecs, n as usize);
         asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
@@ -231,7 +234,9 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
     ) -> Self::Output {
         let (msg, iovecs, address) = &*resources;
         asan::unpoison(address);
+        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         asan::unpoison_iovecs_mut(slice::from_ref(iovecs));
+        msan::unpoison_iovecs_mut(slice::from_ref(iovecs), n as usize);
         asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
@@ -276,7 +281,9 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
     ) -> Self::Output {
         let (msg, iovecs, address) = &*resources;
         asan::unpoison(address);
+        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         asan::unpoison_iovecs_mut(iovecs);
+        msan::unpoison_iovecs_mut(iovecs, n as usize);
         asan::unpoison(msg);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
@@ -509,6 +516,11 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&resources.0);
+        msan::unpoison_region(
+            ptr::from_ref(&(resources.0).1).cast(),
+            size_of::<libc::socklen_t>(),
+        );
+        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
@@ -596,6 +608,7 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&value);
+        msan::unpoison_box(&value);
         debug_assert!(n == (size_of::<T>() as u32));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
