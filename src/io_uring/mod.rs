@@ -215,7 +215,12 @@ impl Shared {
 
     /// Returns the number of unsumitted submission queue entries.
     pub(crate) fn unsubmitted(&self) -> u32 {
-        self.pending_tail() - self.kernel_read()
+        // NOTE: we MUST load the head before the tail to ensure the head is
+        // ALWAYS older. Otherwise it's possible for the subtraction to
+        // underflow.
+        let head = self.kernel_read();
+        let tail = self.pending_tail();
+        tail - head
     }
 
     /// Returns `self.kernel_read`.
