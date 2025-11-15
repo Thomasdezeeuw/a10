@@ -387,7 +387,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
-        asan::poison(address);
+        asan::poison_box(address);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
@@ -398,7 +398,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
     }
 
     fn map_ok(_: &AsyncFd, (buf, address): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison(&raw const address);
+        asan::unpoison_box(&address);
         asan::unpoison_buf(&buf);
         n as usize
     }
