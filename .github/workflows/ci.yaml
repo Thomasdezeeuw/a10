@@ -76,5 +76,7 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rust-src
+    - name: Install llvm-symbolizer
+      run: sudo apt install -y llvm-20
     - name: Run tests with sanitizer
-      run: make test_sanitizer sanitizer=${{ matrix.sanitizer }}
+      run: ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer-20) make test_sanitizer sanitizer=${{ matrix.sanitizer }}
