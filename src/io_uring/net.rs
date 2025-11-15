@@ -409,9 +409,10 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, _): Self::Resources,
+        (buf, address): Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
+        asan::unpoison_box(&address);
         asan::unpoison_buf(&buf);
         (buf, n as usize)
     }
