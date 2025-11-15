@@ -190,10 +190,10 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> 
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         let (msg, iovecs) = &*resources;
-        // NOTE: don't need to unpoison the address.
+        asan::unpoison(msg);
         asan::unpoison_iovecs_mut(iovecs);
         msan::unpoison_iovecs_mut(iovecs, n as usize);
-        asan::unpoison(msg);
+        // NOTE: don't need to unpoison the address as we didn't use one.
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
@@ -233,11 +233,11 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
         (buf_id, n): cq::OpReturn,
     ) -> Self::Output {
         let (msg, iovecs, address) = &*resources;
-        asan::unpoison(address);
-        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
+        asan::unpoison(msg);
         asan::unpoison_iovecs_mut(slice::from_ref(iovecs));
         msan::unpoison_iovecs_mut(slice::from_ref(iovecs), n as usize);
-        asan::unpoison(msg);
+        asan::unpoison(address);
+        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { buf.buffer_init(BufId(buf_id), n) };
@@ -280,11 +280,11 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         let (msg, iovecs, address) = &*resources;
-        asan::unpoison(address);
-        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
+        asan::unpoison(msg);
         asan::unpoison_iovecs_mut(iovecs);
         msan::unpoison_iovecs_mut(iovecs, n as usize);
-        asan::unpoison(msg);
+        asan::unpoison(address);
+        msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
@@ -456,9 +456,9 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
 
     fn map_ok(_: &AsyncFd, (_, resources): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         let (msg, iovecs, address) = &*resources;
-        asan::unpoison(address);
-        asan::unpoison_iovecs(iovecs);
         asan::unpoison(msg);
+        asan::unpoison_iovecs(iovecs);
+        asan::unpoison(address);
         n as usize
     }
 }
@@ -472,9 +472,9 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         let (msg, iovecs, address) = &*resources;
+        asan::unpoison(msg);
         asan::unpoison(address);
         asan::unpoison_iovecs(iovecs);
-        asan::unpoison(msg);
         (buf, n as usize)
     }
 }
