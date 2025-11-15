@@ -272,13 +272,8 @@ impl Signals {
     /// # Safety
     ///
     /// Caller must ensure `fd` is a signalfd valid descriptor.
-    pub(crate) unsafe fn change_fd(self, fd: AsyncFd) -> Signals {
-        let Signals { fd: _, signals: _ } = &self;
-        // SAFETY: reading or dropping all fields of `Signals`.
-        let mut signals = ManuallyDrop::new(self);
-        unsafe { ptr::drop_in_place(&raw mut signals.fd) }
-        let signals = unsafe { ptr::read(&raw const signals.signals) };
-        Signals { fd, signals }
+    pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
+        self.fd = fd;
     }
 }
 

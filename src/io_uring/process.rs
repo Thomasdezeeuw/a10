@@ -73,7 +73,7 @@ impl io_uring::Op for ToSignalsDirectOp {
 
     fn map_ok(
         sq: &SubmissionQueue,
-        (signals, dfd): Self::Resources,
+        (mut signals, dfd): Self::Resources,
         (_, n): cq::OpReturn,
     ) -> Self::Output {
         asan::unpoison_box(&dfd);
@@ -81,7 +81,10 @@ impl io_uring::Op for ToSignalsDirectOp {
         debug_assert!(n == 1);
         // SAFETY: the kernel ensures that `dfd` is valid.
         let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq.clone()) };
-        unsafe { signals.change_fd(dfd) }
+        // SAFETY: since we used the original descriptor to make this direct
+        // descriptor we're ensure that it still a signalfd.
+        unsafe { signals.set_fd(dfd) }
+        signals
     }
 }
 
