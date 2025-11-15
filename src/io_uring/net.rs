@@ -668,7 +668,7 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
         value: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        asan::poison_box(&value);
+        asan::unpoison_box(&value);
         debug_assert!(n == 0);
         *value
     }
