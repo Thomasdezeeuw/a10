@@ -167,7 +167,7 @@ impl crate::cq::Completions for Completions {
         })
     }
 
-    fn submission_queue_space(&mut self, shared: &Self::Shared) -> usize {
+    fn sq_available(&mut self, shared: &Self::Shared) -> usize {
         (shared.entries_len - shared.unsubmitted()) as usize
     }
 }
