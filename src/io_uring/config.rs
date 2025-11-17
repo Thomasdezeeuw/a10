@@ -145,7 +145,7 @@ impl<'r> crate::Config<'r> {
     ///
     /// When setting this to false it significantly changes the way A10 works.
     /// With this disabled you need to call [`Ring::poll`] to *submit* I/O work,
-    /// with this enables this is done by the kernel thread. That means that if
+    /// with this enabled this is done by the kernel thread. That means that if
     /// multiple threads use the same [`SubmissionQueue`] their submissions
     /// might not actually be submitted until `Ring::poll` is called.
     #[doc(alias = "IORING_SETUP_SQPOLL")]
