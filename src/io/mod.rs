@@ -21,7 +21,7 @@ use std::{io, ptr};
 
 use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::op::{FdOperation, Operation, fd_operation, operation};
+use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
 use crate::{AsyncFd, man_link, new_flag, sys};
 
 mod read_buf;
@@ -116,6 +116,19 @@ impl AsyncFd {
     {
         let buf = Buffer { buf };
         Read(FdOperation::new(self, buf, offset))
+    }
+
+    /// Continuously read data from the fd.
+    ///
+    /// # Notes
+    ///
+    /// Is restricted to pollable files and will fall back to single shot if the
+    /// file does not support `NOWAIT`.
+    ///
+    /// This will return `ENOBUFS` if no buffer is available in the `pool` to
+    /// read into.
+    pub const fn multishot_read<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRead<'fd> {
+        MultishotRead(FdOperation::new(self, pool, ()))
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
@@ -443,6 +456,11 @@ fd_operation!(
     /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
+
+fd_iter_operation! {
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_read`].
+    pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
+}
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
 #[derive(Debug)]
