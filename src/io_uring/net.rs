@@ -82,6 +82,30 @@ impl<A: SocketAddress> io_uring::FdOp for BindOp<A> {
     }
 }
 
+pub(crate) struct ListenOp;
+
+impl io_uring::FdOp for ListenOp {
+    type Output = ();
+    type Resources = ();
+    type Args = libc::c_int; // backlog.
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        fd: &AsyncFd,
+        (): &mut Self::Resources,
+        backlog: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_LISTEN as u8;
+        submission.0.fd = fd.fd();
+        submission.0.len = *backlog as u32;
+    }
+
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
 pub(crate) struct ConnectOp<A>(PhantomData<*const A>);
 
 impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {

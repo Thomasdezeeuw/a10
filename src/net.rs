@@ -144,6 +144,15 @@ impl AsyncFd {
         Bind(FdOperation::new(self, storage, ()))
     }
 
+    /// Mark the socket as a passive socket, i.e. allow it to accept incoming
+    /// connection using [`accept`].
+    ///
+    /// [`accept`]: AsyncFd::accept
+    #[doc = man_link!(listen(2))]
+    pub fn listen<'fd>(&'fd self, backlog: libc::c_int) -> Listen<'fd> {
+        Listen(FdOperation::new(self, (), backlog))
+    }
+
     /// Initiate a connection on this socket to the specified address.
     #[doc = man_link!(connect(2))]
     pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
@@ -1036,6 +1045,9 @@ impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::bind`].
     pub struct Bind<A: SocketAddress>(sys::net::BindOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::listen`].
+    pub struct Listen(sys::net::ListenOp) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::connect`].
     pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;

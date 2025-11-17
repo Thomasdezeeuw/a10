@@ -547,7 +547,17 @@ pub(crate) async fn new_socket(
 pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket).await;
     let fd = fd(&socket).as_raw_fd();
-    syscall!(listen(fd, 128)).expect("failed to listen on socket");
+    let backlog = 128;
+    if !has_kernel_version(6, 11) {
+        // IORING_OP_LISTEN is only available since 6.11, fall back to a
+        // blocking system call.
+        syscall!(listen(fd, backlog)).expect("failed to listen on socket");
+    } else {
+        socket
+            .listen(backlog)
+            .await
+            .expect("failed to listen on socket");
+    }
     address
 }
 
