@@ -134,6 +134,16 @@ impl Socket {
 
 /// Socket related system calls.
 impl AsyncFd {
+    /// Assign a name to the socket.
+    #[doc = man_link!(bind(2))]
+    pub fn bind<'fd, A>(&'fd self, address: A) -> Bind<'fd, A>
+    where
+        A: SocketAddress,
+    {
+        let storage = AddressStorage(Box::from(address.into_storage()));
+        Bind(FdOperation::new(self, storage, ()))
+    }
+
     /// Initiate a connection on this socket to the specified address.
     #[doc = man_link!(connect(2))]
     pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
@@ -1024,6 +1034,9 @@ macro_rules! impl_from {
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 
 fd_operation! {
+    /// [`Future`] behind [`AsyncFd::bind`].
+    pub struct Bind<A: SocketAddress>(sys::net::BindOp<A>) -> io::Result<()>;
+
     /// [`Future`] behind [`AsyncFd::connect`].
     pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
 
