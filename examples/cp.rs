@@ -1,20 +1,23 @@
 //! cp - copy files.
 //!
 //! Only a single file copy is supported.
+//!
+//! Run with:
+//! $ cargo run --example cp -- src/lib.rs lib.rs.bak
 
 use std::env::args;
 use std::io;
 
 use a10::fs::OpenOptions;
 use a10::io::ReadBufPool;
-use a10::{AsyncFd, Extract, SubmissionQueue};
+use a10::{Extract, SubmissionQueue};
 
 mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new(1)?;
-    // Get our copy of the submission queue.
+    // Get an owned reference to the submission queue.
     let sq = ring.submission_queue().clone();
 
     // Collect the files we want to concatenate.
@@ -38,13 +41,13 @@ fn main() -> io::Result<()> {
         }
     };
 
-    // Run our cat program.
+    // Run our copy program.
     runtime::block_on(&mut ring, cp(sq, source, destination))
 }
 
 async fn cp(sq: SubmissionQueue, source: String, destination: String) -> io::Result<()> {
-    let input: AsyncFd = OpenOptions::new().open(sq.clone(), source.into()).await?;
-    let output: AsyncFd = OpenOptions::new()
+    let input = OpenOptions::new().open(sq.clone(), source.into()).await?;
+    let output = OpenOptions::new()
         .write()
         .create_new()
         .open(sq.clone(), destination.into())
