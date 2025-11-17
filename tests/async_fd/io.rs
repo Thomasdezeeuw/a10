@@ -727,7 +727,7 @@ fn cancel_all_accept() {
     let waker = Waker::new();
 
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_and_listen_ipv4(&listener);
+    waker.block_on(bind_and_listen_ipv4(&listener));
 
     let mut accept = listener.accept::<a10::net::NoAddress>();
 
@@ -744,7 +744,7 @@ fn cancel_all_twice_accept() {
     let waker = Waker::new();
 
     let listener = waker.block_on(tcp_ipv4_socket(sq));
-    bind_and_listen_ipv4(&listener);
+    waker.block_on(bind_and_listen_ipv4(&listener));
 
     let mut accept = listener.accept::<a10::net::NoAddress>();
 

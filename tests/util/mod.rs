@@ -544,14 +544,14 @@ pub(crate) async fn new_socket(
 
 /// Bind `socket` to a local IPv4 addres with a random port and starts listening
 /// on it. Returns the bound address.
-pub(crate) fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
-    let address = bind_ipv4(socket);
+pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
+    let address = bind_ipv4(socket).await;
     let fd = fd(&socket).as_raw_fd();
     syscall!(listen(fd, 128)).expect("failed to listen on socket");
     address
 }
 
-pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
+pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
     let fd = fd(&socket).as_raw_fd();
     let mut addr = libc::sockaddr_in {
         sin_family: libc::AF_INET as libc::sa_family_t,
@@ -562,7 +562,16 @@ pub(crate) fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         ..unsafe { mem::zeroed() }
     };
     let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
+    if !has_kernel_version(6, 11) {
+        // IORING_OP_BIND is only available since 6.11, fall back to a blocking
+        // system call.
+        syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
+    } else {
+        socket
+            .bind::<SocketAddr>(([127, 0, 0, 1], 0).into())
+            .await
+            .expect("failed to bind socket");
+    }
 
     syscall!(getsockname(
         fd,

@@ -51,6 +51,37 @@ impl io_uring::Op for SocketOp {
     }
 }
 
+pub(crate) struct BindOp<A>(PhantomData<*const A>);
+
+impl<A: SocketAddress> io_uring::FdOp for BindOp<A> {
+    type Output = ();
+    type Resources = AddressStorage<Box<A::Storage>>;
+    type Args = ();
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        address: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_BIND as u8;
+        submission.0.fd = fd.fd();
+        let (ptr, length) = unsafe { A::as_ptr(&address.0) };
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            addr2: u64::from(length),
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
+        asan::poison_box(&address.0);
+    }
+
+    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&address.0);
+        debug_assert!(n == 0);
+    }
+}
+
 pub(crate) struct ConnectOp<A>(PhantomData<*const A>);
 
 impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
