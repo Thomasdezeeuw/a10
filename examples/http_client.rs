@@ -1,3 +1,8 @@
+//! Very simple HTTP/1.1 client.
+//!
+//! Run with:
+//! $ cargo run --example http_client -- thomasdezeeuw.nl
+
 use std::net::SocketAddr;
 use std::{env, io, str};
 
@@ -10,6 +15,8 @@ fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = Ring::new(2)?;
 
+    // Read the host, e.g. thomasdezeeuw.nl, this doesn't accept a scheme, path
+    // or anything else.
     let mut host = env::args()
         .nth(1)
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing host"))?;
@@ -28,8 +35,7 @@ fn main() -> io::Result<()> {
     // Create our future that makes the request.
     let request_future = request(ring.submission_queue().clone(), &host, address);
 
-    // Use our fake runtime to poll the future, this basically polls the future
-    // and the `a10::Ring` in a loop.
+    // Use our fake runtime to poll the future.
     let response = runtime::block_on(&mut ring, request_future)?;
 
     // We'll print the response (using ol' fashioned blocking I/O).
