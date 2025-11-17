@@ -17,7 +17,7 @@ use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
 
 use crate::util::{
     LOREM_IPSUM_5, LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, block_on, cancel_all, defer,
-    expect_io_errno, fd, init, is_send, is_sync, remove_test_file, require_kernel, start_op,
+    expect_io_errno, fd, init, is_send, is_sync, next, remove_test_file, require_kernel, start_op,
     syscall, tcp_ipv4_socket, test_queue, tmp_path,
 };
 
@@ -568,6 +568,39 @@ unsafe impl BufSlice<3> for BadBufSlice {
             ]
         }
     }
+}
+
+#[test]
+fn multishot_read() {
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let buf_pool = ReadBufPool::new(sq.clone(), 2, 128).expect("failed to create buf pool");
+
+    let (r, w) = pipe2(sq).expect("failed to create pipe");
+
+    let mut reads = r.multishot_read(buf_pool.clone());
+
+    const DATA1: &[u8] = b"Hello world!";
+    const DATA2: &[u8] = b"Hello mars!";
+
+    waker.block_on(w.write_all(DATA1)).unwrap();
+
+    let buf = waker
+        .block_on(next(&mut reads))
+        .unwrap()
+        .expect("failed to read");
+    assert_eq!(&*buf, DATA1);
+
+    waker.block_on(w.write_all(DATA2)).unwrap();
+
+    let buf = waker
+        .block_on(next(&mut reads))
+        .unwrap()
+        .expect("failed to read");
+    assert_eq!(&*buf, DATA2);
 }
 
 #[test]

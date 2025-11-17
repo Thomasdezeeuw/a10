@@ -11,7 +11,7 @@ use crate::io::{
     Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection, SpliceFlag,
 };
 use crate::io_uring::{self, cq, libc, sq};
-use crate::op::FdOpExtract;
+use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -337,6 +337,47 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
             buf.buf.buffer_init(BufId(buf_id), n);
         };
         buf.buf
+    }
+}
+
+pub(crate) struct MultishotReadOp;
+
+impl io_uring::FdOp for MultishotReadOp {
+    type Output = crate::io::ReadBuf;
+    type Resources = crate::io::ReadBufPool;
+    type Args = ();
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_READ_MULTISHOT as u8;
+        submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+    }
+
+    fn map_ok(
+        fd: &AsyncFd,
+        mut buf_pool: Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
+        MultishotReadOp::map_next(fd, &mut buf_pool, (buf_id, n))
+    }
+}
+
+impl FdIter for MultishotReadOp {
+    fn map_next(
+        _: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        (buf_id, n): cq::OpReturn,
+    ) -> Self::Output {
+        // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
+        // SAFETY: the kernel initialised the buffers for us as part of the read
+        // call.
+        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
     }
 }
 
