@@ -1,4 +1,7 @@
 //! cat - concatenate and print files.
+//!
+//! Run with:
+//! $ cargo run --example cat -- src/lib.rs src/fd.rs
 
 use std::env::args;
 use std::io;
@@ -12,7 +15,7 @@ mod runtime;
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new(1)?;
-    // Get our copy of the submission queue.
+    // Get an owned reference to the submission queue.
     let sq = ring.submission_queue().clone();
 
     // Collect the files we want to concatenate.
