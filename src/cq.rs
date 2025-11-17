@@ -72,7 +72,7 @@ impl<I: Implementation> Queue<I> {
     // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
     #[allow(clippy::iter_with_drain, clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self) {
-        let queue_space = self.completions.queue_space(&self.shared.data);
+        let queue_space = self.completions.submission_queue_space(&self.shared.data);
         if queue_space == 0 {
             return;
         }
@@ -127,11 +127,11 @@ pub(crate) trait Completions: fmt::Debug {
         timeout: Option<Duration>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>>;
 
-    /// Return the currently available queue space. May return `usize::MAX` is
-    /// there is no (practical) limit.
+    /// Return the currently available submission queue space. May return
+    /// `usize::MAX` is there is no (practical) limit.
     ///
     /// This value may be outdated due to concurrent access.
-    fn queue_space(&mut self, shared: &Self::Shared) -> usize;
+    fn submission_queue_space(&mut self, shared: &Self::Shared) -> usize;
 }
 
 /// Completition event.

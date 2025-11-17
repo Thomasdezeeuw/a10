@@ -90,7 +90,7 @@ impl crate::cq::Completions for Completions {
         }
     }
 
-    fn queue_space(&mut self, shared: &Self::Shared) -> usize {
+    fn submission_queue_space(&mut self, shared: &Self::Shared) -> usize {
         // No practical limit.
         usize::MAX
     }
