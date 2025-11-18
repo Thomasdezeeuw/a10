@@ -71,7 +71,7 @@ fn submission_queue_full_is_handled_internally() {
 
     init();
     let mut ring = Ring::new(2).unwrap();
-    let sq = ring.submission_queue();
+    let sq = ring.sq();
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
 
@@ -172,13 +172,12 @@ fn config_single_issuer() {
     let ring = Ring::config(1).single_issuer().build().unwrap();
 
     // This is fine.
-    let buf_pool = ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap();
+    let buf_pool = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32).unwrap();
     drop(buf_pool);
 
     thread::spawn(move || {
         // This is not (we're on a different thread).
-        let err =
-            ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap_err();
+        let err = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32).unwrap_err();
         assert_eq!(err.raw_os_error(), Some(libc::EEXIST));
     })
     .join()
@@ -196,8 +195,7 @@ fn config_single_issuer_disabled_ring() {
         ring.enable().unwrap();
 
         // Since this thread enabled the ring, this is now fine.
-        let buf_pool =
-            ReadBufPool::new(ring.submission_queue().clone(), 2, BUF_SIZE as u32).unwrap();
+        let buf_pool = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32).unwrap();
         drop(buf_pool);
     })
     .join()
@@ -226,7 +224,7 @@ fn wake_ring() {
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
 
     let handle = thread::spawn(move || {
         thread::sleep(Duration::from_millis(10));
@@ -242,7 +240,7 @@ fn wake_ring() {
 fn wake_ring_after_ring_dropped() {
     init();
     let ring = Ring::new(2).unwrap();
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
 
     drop(ring);
     sq.wake();

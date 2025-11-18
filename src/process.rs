@@ -184,7 +184,7 @@ operation!(
 /// # fn main() {
 /// async fn main() -> io::Result<()> {
 ///     let ring = Ring::new(128)?;
-///     let sq = ring.submission_queue().clone();
+///     let sq = ring.sq().clone();
 ///
 ///     // Create a new `Signals` instance.
 ///     let signals = Signals::from_signals(sq, [Signal::INTERRUPT, Signal::QUIT, Signal::TERMINATION])?;

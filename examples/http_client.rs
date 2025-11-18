@@ -33,7 +33,7 @@ fn main() -> io::Result<()> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to lookup ip"))?;
 
     // Create our future that makes the request.
-    let request_future = request(ring.submission_queue().clone(), &host, address);
+    let request_future = request(ring.sq().clone(), &host, address);
 
     // Use our fake runtime to poll the future.
     let response = runtime::block_on(&mut ring, request_future)?;

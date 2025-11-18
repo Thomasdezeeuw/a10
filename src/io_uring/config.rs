@@ -211,7 +211,7 @@ impl<'r> crate::Config<'r> {
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub const fn attach(self, other_ring: &'r Ring) -> Self {
-        self.attach_queue(other_ring.submission_queue())
+        self.attach_queue(other_ring.sq())
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].

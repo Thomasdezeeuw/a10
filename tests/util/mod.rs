@@ -106,7 +106,7 @@ pub(crate) fn test_queue() -> SubmissionQueue {
                     }
                 }
             };
-            let sq = ring.submission_queue().clone();
+            let sq = ring.sq().clone();
             thread::spawn(move || {
                 let res = panic::catch_unwind(move || {
                     loop {
