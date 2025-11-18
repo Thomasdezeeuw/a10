@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new(1)?;
     // Get an owned reference to the submission queue.
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
 
     // Collect the files we want to concatenate.
     let mut filenames: Vec<String> = args().skip(1).collect();

@@ -128,7 +128,7 @@ struct TestHarness {
 impl TestHarness {
     fn setup(quiet: bool) -> TestHarness {
         let ring = Ring::config(2).with_direct_descriptors(2).build().unwrap();
-        let sq = ring.submission_queue().clone();
+        let sq = ring.sq().clone();
         TestHarness {
             ring,
             signals: Some(Signals::from_signals(sq, SIGNALS).unwrap()),

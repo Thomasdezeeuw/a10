@@ -435,7 +435,7 @@ fn recv_read_buf_pool() {
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
@@ -468,7 +468,7 @@ fn recv_read_buf_pool_send_read_buf() {
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
@@ -513,7 +513,7 @@ fn multishot_recv() {
     is_sync::<MultishotRecv>();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
@@ -556,7 +556,7 @@ fn multishot_recv_large_send() {
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
@@ -602,7 +602,7 @@ fn multishot_recv_all_buffers_used() {
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
@@ -826,7 +826,7 @@ fn recv_from_read_buf_pool() {
     init();
 
     let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.submission_queue().clone();
+    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.

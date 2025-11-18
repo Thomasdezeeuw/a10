@@ -185,7 +185,7 @@ impl Ring {
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The `SubmissionQueue` can be used to queue asynchronous I/O operations.
-    pub const fn submission_queue(&self) -> &SubmissionQueue {
+    pub const fn sq(&self) -> &SubmissionQueue {
         &self.sq
     }
 
@@ -211,7 +211,7 @@ impl Ring {
 ///
 /// This type doesn't have many public methods, but is used by all I/O types, to
 /// queue asynchronous operations. The queue can be acquired by using
-/// [`Ring::submission_queue`].
+/// [`Ring::sq`].
 ///
 /// The submission queue can be shared by cloning it, it's a cheap operation.
 #[derive(Clone)]
