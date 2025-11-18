@@ -290,10 +290,7 @@ where
     I: AsyncIterator + Unpin,
     I::Item: fmt::Debug,
 {
-    let result = poll_nop(Pin::new(&mut next(iter)));
-    if !result.is_pending() {
-        panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
-    }
+    start_op(&mut next(iter));
 }
 
 /// Poll the `future` once with a no-op waker.
