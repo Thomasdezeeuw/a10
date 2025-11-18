@@ -3,4 +3,5 @@
 mod util;
 
 mod functional {
+    mod ring;
 }
