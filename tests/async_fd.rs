@@ -9,5 +9,4 @@ mod async_fd {
     mod fs;
     mod io;
     mod net;
-    mod pipe;
 }
