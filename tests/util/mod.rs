@@ -12,7 +12,7 @@ use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
@@ -312,11 +312,9 @@ pub(crate) fn block_on<Fut>(ring: &mut Ring, future: Fut) -> Fut::Output
 where
     Fut: IntoFuture,
 {
-    // Pin the `Future` to stack.
-    let mut future = future.into_future();
-    let mut future = unsafe { Pin::new_unchecked(&mut future) };
+    let mut future = pin!(future.into_future());
 
-    let waker = nop_waker();
+    let waker = task::Waker::noop();
     let mut task_ctx = task::Context::from_waker(&waker);
     loop {
         match Future::poll(future.as_mut(), &mut task_ctx) {
