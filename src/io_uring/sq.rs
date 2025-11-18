@@ -181,9 +181,8 @@ impl crate::sq::Submissions for Submissions {
 
     fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
         use crate::sq::Submission;
-        // This is only called if we're not polling, so we can set `is_polling`
-        // to false and we ignore the queue full error.
-        let is_polling = AtomicBool::new(false);
+        // This is only called if we're polling.
+        let is_polling = AtomicBool::new(true);
         let _: Result<(), QueueFull> = self.add(shared, &is_polling, |submission| {
             submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
             submission.0.fd = shared.rfd.as_raw_fd();
