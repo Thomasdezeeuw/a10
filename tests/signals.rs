@@ -103,16 +103,15 @@ fn main() {
     harness.fd_kind = fd::Kind::Direct;
     harness.run_tests();
 
-    let mut passed = harness.passed;
-    let mut failed = harness.failed;
-
     // Final test, make sure the cleanup is done properly.
-    drop(harness);
-    test_cleanup(quiet, &mut passed, &mut failed);
+    drop(harness.signals.take());
+    harness.test_cleanup();
 
     println!(
-        "\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n",
-        start.elapsed().as_secs_f64()
+        "\ntest result: ok. {} passed; {} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n",
+        harness.passed,
+        harness.failed,
+        start.elapsed().as_secs_f64(),
     );
 }
 
@@ -264,24 +263,24 @@ impl TestHarness {
 
         self.signals = Some(receive_signal.into_inner());
     }
-}
 
-fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
-    print_test_start(quiet, format_args!("cleanup"));
-    let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        // After `Signals` is dropped all signals should be unblocked.
-        let set = blocked_signalset().unwrap();
-        for signal in SIGNALS.into_iter() {
-            assert!(!in_signalset(&set, signal_to_os(signal)));
-        }
-    }));
-    if res.is_ok() {
-        print_test_ok(quiet);
-        *passed += 1
-    } else {
-        print_test_failed(quiet);
-        *failed += 1
-    };
+    fn test_cleanup(&mut self) {
+        print_test_start(self.quiet, format_args!("cleanup"));
+        let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            // After `Signals` is dropped all signals should be unblocked.
+            let set = blocked_signalset().unwrap();
+            for signal in SIGNALS.into_iter() {
+                assert!(!in_signalset(&set, signal_to_os(signal)));
+            }
+        }));
+        if res.is_ok() {
+            print_test_ok(self.quiet);
+            self.passed += 1
+        } else {
+            print_test_failed(self.quiet);
+            self.failed += 1
+        };
+    }
 }
 
 fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
