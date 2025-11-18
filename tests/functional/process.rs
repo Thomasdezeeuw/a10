@@ -5,7 +5,7 @@ use std::process::Command;
 
 use a10::process::{
     self, ChildStatus, ReceiveSignal, ReceiveSignals, Signal, SignalInfo, SignalSet, Signals,
-    ToSignalsDirect, WaitId, WaitOption,
+    ToDirect, WaitId, WaitOption,
 };
 
 use crate::util::{Waker, cancel, is_send, is_sync, poll_nop, require_kernel, test_queue};
@@ -35,9 +35,9 @@ fn signal_info_is_send_and_sync() {
 }
 
 #[test]
-fn to_signals_direct_is_send_and_sync() {
-    is_send::<ToSignalsDirect>();
-    is_sync::<ToSignalsDirect>();
+fn to_direct_is_send_and_sync() {
+    is_send::<ToDirect>();
+    is_sync::<ToDirect>();
 }
 
 #[test]

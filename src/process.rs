@@ -236,14 +236,14 @@ impl Signals {
     /// descriptor.
     ///
     /// See [`AsyncFd::to_direct_descriptor`].
-    pub fn to_direct_descriptor(self) -> ToSignalsDirect {
+    pub fn to_direct_descriptor(self) -> ToDirect {
         debug_assert!(
             matches!(self.fd.kind(), fd::Kind::File),
             "can't covert a direct descriptor to a different direct descriptor"
         );
         let sq = self.fd.sq().clone();
         let fd = self.fd.fd();
-        ToSignalsDirect(Operation::new(sq, (self, Box::new(fd)), ()))
+        ToDirect(Operation::new(sq, (self, Box::new(fd)), ()))
     }
 
     /// Receive a signal.
@@ -271,7 +271,7 @@ impl Signals {
     ///
     /// # Safety
     ///
-    /// Caller must ensure `fd` is a signalfd valid descriptor.
+    /// Caller must ensure `fd` is a valid signalfd descriptor.
     pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
         self.fd = fd;
     }
@@ -297,7 +297,7 @@ impl Drop for Signals {
 
 operation!(
     /// [`Future`] behind [`Signals::to_direct_descriptor`].
-    pub struct ToSignalsDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
+    pub struct ToDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
 );
 
 fd_operation!(
