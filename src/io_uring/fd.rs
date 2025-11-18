@@ -3,8 +3,8 @@ use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::io_uring::{self, cq, libc, sq};
-use crate::op::{fd_operation, FdOperation};
-use crate::{asan, fd, msan, AsyncFd};
+use crate::op::{FdOperation, fd_operation};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
@@ -83,9 +83,27 @@ impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M> {
     type Resources = (M, Box<RawFd>);
     type Args = ();
 
-    #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         _: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        <Self as io_uring::Op>::fill_submission(resources, args, submission);
+    }
+
+    fn map_ok(ofd: &AsyncFd, resources: Self::Resources, ret: cq::OpReturn) -> Self::Output {
+        <Self as io_uring::Op>::map_ok(ofd.sq(), resources, ret)
+    }
+}
+
+impl<M: DirectFdMapper> io_uring::Op for ToDirectOp<M> {
+    type Output = M::Output;
+    type Resources = (M, Box<RawFd>);
+    type Args = ();
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
         (_, fd): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
@@ -102,13 +120,17 @@ impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M> {
         submission.0.len = 1;
     }
 
-    fn map_ok(ofd: &AsyncFd, (mapper, fd): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&fd);
-        msan::unpoison_box(&fd);
+    fn map_ok(
+        sq: &SubmissionQueue,
+        (mapper, dfd): Self::Resources,
+        (_, n): cq::OpReturn,
+    ) -> Self::Output {
+        asan::unpoison_box(&dfd);
+        msan::unpoison_box(&dfd);
         debug_assert!(n == 1);
-        let sq = ofd.sq.clone();
-        // SAFETY: the kernel ensures that `fd` is valid.
-        let dfd = unsafe { AsyncFd::from_raw(*fd, fd::Kind::Direct, sq) };
+        let sq = sq.clone();
+        // SAFETY: the kernel ensures that `dfd` is valid.
+        let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq) };
         mapper.map(dfd)
     }
 }
