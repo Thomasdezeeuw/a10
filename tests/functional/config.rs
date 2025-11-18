@@ -4,7 +4,7 @@ use std::time::Duration;
 use a10::io::ReadBufPool;
 use a10::{Config, Ring};
 
-use crate::util::{init, is_send, is_sync, require_kernel};
+use crate::util::{expect_io_errno, init, is_send, is_sync, require_kernel};
 
 const BUF_SIZE: usize = 4096;
 
@@ -21,8 +21,7 @@ fn config_disabled() {
     let mut ring = Ring::config(1).disable().build().unwrap();
 
     // In a disabled state, so we expect an error.
-    let err = ring.poll(None).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::EBADFD));
+    expect_io_errno(ring.poll(None), libc::EBADFD);
 
     // Enabling it should allow us to poll.
     ring.enable().unwrap();
@@ -42,8 +41,8 @@ fn config_single_issuer() {
 
     thread::spawn(move || {
         // This is not (we're on a different thread).
-        let err = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32).unwrap_err();
-        assert_eq!(err.raw_os_error(), Some(libc::EEXIST));
+        let res = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32);
+        expect_io_errno(res, libc::EEXIST);
     })
     .join()
     .unwrap();

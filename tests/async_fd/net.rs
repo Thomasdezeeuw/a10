@@ -635,7 +635,7 @@ fn multishot_recv_all_buffers_used() {
                 // get more than `BUFS` buffers as they are put back into the
                 // pool.
                 assert!(i >= BUFS);
-                assert_eq!(err.raw_os_error(), Some(libc::ENOBUFS));
+                expect_io_errno(io::Result::<()>::Err(err), libc::ENOBUFS);
                 break;
             }
         }

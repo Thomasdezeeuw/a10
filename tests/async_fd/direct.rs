@@ -3,7 +3,7 @@
 use a10::fd;
 use a10::fs::OpenOptions;
 
-use crate::util::{LOREM_IPSUM_5, Waker, require_kernel, test_queue};
+use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, require_kernel, test_queue};
 
 #[test]
 fn to_direct_descriptor() {
@@ -79,10 +79,8 @@ fn direct_to_direct_descriptor() {
         .open(sq, LOREM_IPSUM_5.path.into());
     let direct_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    let err = waker
-        .block_on(direct_fd.to_direct_descriptor())
-        .unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    let res = waker.block_on(direct_fd.to_direct_descriptor());
+    expect_io_errno(res, libc::EINVAL);
 }
 
 #[test]
@@ -97,6 +95,6 @@ fn file_to_file_descriptor() {
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     let regular_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    let err = waker.block_on(regular_fd.to_file_descriptor()).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::EBADF));
+    let res = waker.block_on(regular_fd.to_file_descriptor());
+    expect_io_errno(res, libc::EBADF);
 }
