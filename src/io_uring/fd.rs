@@ -1,9 +1,10 @@
+use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::io_uring::{self, cq, libc, sq};
-use crate::op::{FdOperation, fd_operation};
-use crate::{AsyncFd, asan, fd, msan};
+use crate::op::{fd_operation, FdOperation};
+use crate::{asan, fd, msan, AsyncFd};
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
@@ -42,7 +43,7 @@ impl AsyncFd {
         // need to heap allocate it so we can delay it's allocation in case of
         // an early drop.
         let fd = Box::new(self.fd());
-        ToDirect(FdOperation::new(self, fd, ()))
+        ToDirect(FdOperation::new(self, ((), fd), ()))
     }
 }
 
@@ -75,17 +76,17 @@ fd_operation!(
     pub struct ToFd(ToFdOp) -> io::Result<AsyncFd>;
 );
 
-struct ToDirectOp;
+pub(crate) struct ToDirectOp<M = ()>(PhantomData<*const M>);
 
-impl io_uring::FdOp for ToDirectOp {
-    type Output = AsyncFd;
-    type Resources = Box<RawFd>;
+impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M> {
+    type Output = M::Output;
+    type Resources = (M, Box<RawFd>);
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         _: &AsyncFd,
-        fd: &mut Self::Resources,
+        (_, fd): &mut Self::Resources,
         (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
@@ -101,13 +102,29 @@ impl io_uring::FdOp for ToDirectOp {
         submission.0.len = 1;
     }
 
-    fn map_ok(ofd: &AsyncFd, fd: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(ofd: &AsyncFd, (mapper, fd): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&fd);
         msan::unpoison_box(&fd);
         debug_assert!(n == 1);
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(*fd, fd::Kind::Direct, sq) }
+        let dfd = unsafe { AsyncFd::from_raw(*fd, fd::Kind::Direct, sq) };
+        mapper.map(dfd)
+    }
+}
+
+/// Maps a `AsyncFd` with a direct descriptor into a different type `Output`.
+pub(crate) trait DirectFdMapper {
+    type Output;
+
+    fn map(self, dfd: AsyncFd) -> Self::Output;
+}
+
+impl DirectFdMapper for () {
+    type Output = AsyncFd;
+
+    fn map(self, dfd: AsyncFd) -> Self::Output {
+        dfd
     }
 }
 
