@@ -2,40 +2,13 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator))]
 
-use std::alloc::{Layout, alloc, dealloc};
 use std::pin::Pin;
 use std::process::Command;
 
-use a10::mem::{self, AdviseFlag};
 use a10::process::{self, ChildStatus, Signal, WaitOption};
 
 mod util;
-use util::{Waker, cancel, defer, is_send, is_sync, poll_nop, require_kernel, test_queue};
-
-#[test]
-fn madvise() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // The address in `madvise(2)` needs to be page aligned.
-    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
-    let layout =
-        Layout::from_size_align(2 * page_size, page_size).expect("failed to create alloc layout");
-    let ptr = unsafe { alloc(layout) };
-    let _d = defer(|| unsafe { dealloc(ptr, layout) });
-
-    is_send::<mem::Advise>();
-    is_sync::<mem::Advise>();
-
-    waker
-        .block_on(mem::advise(
-            sq,
-            ptr.cast(),
-            page_size as u32,
-            AdviseFlag::WILL_NEED,
-        ))
-        .expect("failed madvise");
-}
+use util::{Waker, cancel, is_send, is_sync, poll_nop, require_kernel, test_queue};
 
 #[test]
 fn process_wait_on() {
