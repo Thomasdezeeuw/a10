@@ -3,5 +3,6 @@
 mod util;
 
 mod functional {
+    mod config;
     mod ring;
 }
