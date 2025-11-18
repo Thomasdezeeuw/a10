@@ -149,21 +149,16 @@ impl TestHarness {
         let pid = process::id();
         let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
-            // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("single_threaded ({:?}, {name})", self.fd_kind),
-                );
-                print_test_ignored(self.quiet);
-                continue;
-            }
-
             print_test_start(
                 self.quiet,
                 format_args!("single_threaded ({:?}, {name})", self.fd_kind),
             );
+            // thread sanitizer can't deal with `SIGSYS` signal being send.
+            #[cfg(feature = "nightly")]
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                print_test_ignored(self.quiet);
+                continue;
+            }
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, signal).unwrap();
                 receive_signal(&mut self.ring, &signals, signal);
@@ -204,21 +199,16 @@ impl TestHarness {
 
         let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
-            // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("multi_threaded ({:?}, {name})", self.fd_kind),
-                );
-                print_test_ignored(self.quiet);
-                continue;
-            }
-
             print_test_start(
                 self.quiet,
                 format_args!("multi_threaded ({:?}, {name})", self.fd_kind),
             );
+            // thread sanitizer can't deal with `SIGSYS` signal being send.
+            #[cfg(feature = "nightly")]
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                print_test_ignored(self.quiet);
+                continue;
+            }
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 receive_signal(&mut self.ring, signals, signal);
             }));
@@ -241,21 +231,16 @@ impl TestHarness {
         let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
         let mut task_ctx = task::Context::from_waker(&task_waker);
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
-            // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("receive_signals ({:?}, {name})", self.fd_kind),
-                );
-                print_test_ignored(self.quiet);
-                continue;
-            }
-
             print_test_start(
                 self.quiet,
                 format_args!("receive_signals ({:?}, {name})", self.fd_kind),
             );
+            // thread sanitizer can't deal with `SIGSYS` signal being send.
+            #[cfg(feature = "nightly")]
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                print_test_ignored(self.quiet);
+                continue;
+            }
             let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, signal).unwrap();
 
