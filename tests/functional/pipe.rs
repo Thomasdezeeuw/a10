@@ -1,11 +1,15 @@
-//! Tests for the Unix pipe.
-
 use a10::fd;
-use a10::pipe::{Pipe, pipe};
+use a10::pipe::{pipe, Pipe};
 
-use crate::util::{Waker, cancel, is_send, is_sync, require_kernel, start_op, test_queue};
+use crate::util::{cancel, is_send, is_sync, require_kernel, start_op, test_queue, Waker};
 
 const DATA1: &[u8] = b"Hello from the other side";
+
+#[test]
+fn pipe_is_send_and_sync() {
+    is_send::<Pipe>();
+    is_sync::<Pipe>();
+}
 
 #[test]
 fn pipe_file_descriptor() {
@@ -22,9 +26,6 @@ fn test_pipe(fd_kind: fd::Kind) {
 
     let sq = test_queue();
     let waker = Waker::new();
-
-    is_send::<Pipe>();
-    is_sync::<Pipe>();
 
     let [receiver, sender] = waker
         .block_on(pipe(sq, None).kind(fd_kind))

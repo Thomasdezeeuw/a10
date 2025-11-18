@@ -1,27 +1,20 @@
-//! Tests for the I/O operations.
-
 use std::cell::Cell;
 use std::env::temp_dir;
 use std::future::Future;
 use std::io;
-use std::ops::Bound;
 use std::os::fd::{FromRawFd, RawFd};
-use std::panic::{self, AssertUnwindSafe};
 
 use a10::fs::{self, Open, OpenOptions};
-use a10::io::{
-    Buf, BufMut, BufMutSlice, BufSlice, Close, IoMutSlice, IoSlice, ReadBuf, ReadBufPool, Splice,
-    Stderr, Stdout, stderr, stdout,
-};
-use a10::{AsyncFd, Extract, Ring, SubmissionQueue};
+use a10::io::{BufMut, Close, ReadBufPool, Splice, Stderr, Stdout, stderr, stdout};
+use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
-    LOREM_IPSUM_5, LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, block_on, cancel_all, defer,
-    expect_io_errno, fd, init, is_send, is_sync, next, remove_test_file, require_kernel, start_op,
-    syscall, tcp_ipv4_socket, test_queue, tmp_path,
+    BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
+    LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, cancel_all, defer, expect_io_errno, fd, is_send,
+    is_sync, next, remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket,
+    test_queue, tmp_path,
 };
 
-const BUF_SIZE: usize = 4096;
 const NO_OFFSET: u64 = u64::MAX;
 
 #[test]
@@ -41,376 +34,6 @@ fn try_clone() {
     };
     let buf = waker.block_on(r.read_n(buf, DATA.len())).unwrap();
     assert_eq!(&buf.data, DATA);
-}
-
-#[test]
-fn read_buf_pool_is_send_and_sync() {
-    is_send::<ReadBufPool>();
-    is_sync::<ReadBufPool>();
-    is_send::<ReadBuf>();
-    is_sync::<ReadBuf>();
-}
-
-#[test]
-fn read_buf_pool_size_assertion() {
-    assert_eq!(std::mem::size_of::<ReadBufPool>(), 8);
-    assert_eq!(std::mem::size_of::<ReadBuf>(), 24);
-}
-
-#[test]
-fn read_read_buf_pool() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-    assert_eq!(buf.len(), BUF_SIZE);
-    assert!(!buf.is_empty());
-    assert!(
-        &*buf == &test_file.content[..buf.len()],
-        "read content is different"
-    );
-}
-
-#[test]
-fn read_buf() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-    assert_eq!(buf.len(), BUF_SIZE);
-    assert!(!buf.is_empty());
-    assert!(
-        &*buf == &test_file.content[..buf.len()],
-        "read content is different"
-    );
-
-    buf.truncate(1024);
-    assert_eq!(buf.len(), 1024);
-    assert!(!buf.is_empty());
-    assert!(
-        &*buf == &test_file.content[..buf.len()],
-        "read content is different"
-    );
-
-    unsafe { buf.set_len(512) };
-    assert_eq!(buf.len(), 512);
-    assert!(!buf.is_empty());
-    assert!(
-        &*buf == &test_file.content[..buf.len()],
-        "read content is different"
-    );
-    unsafe { buf.set_len(1024) };
-    assert_eq!(buf.len(), 1024);
-    assert!(!buf.is_empty());
-    assert!(
-        &*buf == &test_file.content[..buf.len()],
-        "read content is different"
-    );
-
-    buf.clear();
-    assert_eq!(buf.len(), 0);
-    assert!(buf.is_empty());
-
-    const DATA1: &[u8] = b"hello world";
-    buf.extend_from_slice(DATA1).unwrap();
-    assert_eq!(buf.len(), DATA1.len());
-    assert!(!buf.is_empty());
-    assert_eq!(&*buf, DATA1);
-
-    buf.extend_from_slice(DATA1).unwrap();
-    assert_eq!(buf.len(), 2 * DATA1.len());
-    assert!(!buf.is_empty());
-    assert_eq!(&buf[0..DATA1.len()], DATA1);
-    assert_eq!(&buf[DATA1.len()..2 * DATA1.len()], DATA1);
-
-    let rest = buf.spare_capacity_mut();
-    assert_eq!(rest.len(), BUF_SIZE - (2 * DATA1.len()));
-    rest[0].write(b'!');
-    rest[1].write(b'!');
-    unsafe { buf.set_len(buf.len() + 2) };
-    assert_eq!(&buf[2 * DATA1.len()..], b"!!");
-}
-
-#[test]
-fn read_read_buf_pool_multiple_buffers() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let mut read1 = file.read_at(buf_pool.get(), 0);
-    let mut read2 = file.read_at(buf_pool.get(), 0);
-    let mut read3 = file.read_at(buf_pool.get(), 0);
-    start_op(&mut read1);
-    start_op(&mut read2);
-    start_op(&mut read3);
-    let buf1 = block_on(&mut ring, read1).unwrap();
-    let buf2 = block_on(&mut ring, read2).unwrap();
-
-    for buf in [buf1, buf2] {
-        assert_eq!(buf.len(), BUF_SIZE);
-        assert!(
-            &*buf == &test_file.content[..buf.len()],
-            "read content is different"
-        );
-    }
-}
-
-#[test]
-fn read_read_buf_pool_reuse_buffers() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    for _ in 0..4 {
-        let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-        assert_eq!(buf.len(), BUF_SIZE);
-        assert!(
-            &*buf == &test_file.content[..buf.len()],
-            "read content is different"
-        );
-    }
-}
-
-#[test]
-fn read_read_buf_pool_reuse_same_buffer() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let mut buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-    assert_eq!(buf.len(), BUF_SIZE);
-    assert_eq!(&*buf, &test_file.content[..buf.len()]);
-
-    // When reusing the buffer it shouldn't overwrite the existing data.
-    buf.truncate(100);
-    let mut buf = block_on(&mut ring, file.read_at(buf, 0)).unwrap();
-    assert_eq!(buf.len(), BUF_SIZE);
-    assert_eq!(&buf[0..100], &test_file.content[0..100]);
-    assert_eq!(&buf[100..], &test_file.content[0..BUF_SIZE - 100]);
-
-    // After releasing the buffer to the pool it should "overwrite" everything
-    // again.
-    buf.release();
-    let buf = block_on(&mut ring, file.read_at(buf, 0)).unwrap();
-    assert_eq!(buf.len(), BUF_SIZE);
-    assert_eq!(&*buf, &test_file.content[..buf.len()]);
-}
-
-#[test]
-fn read_read_buf_pool_out_of_buffers() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let test_file = &LOREM_IPSUM_50;
-    let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let futures = (0..8)
-        .map(|_| {
-            let mut read = file.read_at(buf_pool.get(), 0);
-            start_op(&mut read);
-            read
-        })
-        .collect::<Vec<_>>();
-
-    for future in futures {
-        let buf = match block_on(&mut ring, future) {
-            Ok(buf) => buf,
-            Err(err) => {
-                if let Some(libc::ENOBUFS) = err.raw_os_error() {
-                    continue;
-                }
-                panic!("unexpected {err}");
-            }
-        };
-        assert_eq!(buf.len(), BUF_SIZE);
-        assert!(
-            &*buf == &test_file.content[..buf.len()],
-            "read content is different"
-        );
-    }
-}
-
-#[test]
-fn two_read_buf_pools() {
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-    let test_file = &LOREM_IPSUM_50;
-
-    let buf_pool1 = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-    let buf_pool2 = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
-
-    let path = test_file.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    for buf_pool in [buf_pool1, buf_pool2] {
-        let buf = block_on(&mut ring, file.read_at(buf_pool.get(), 0)).unwrap();
-        assert_eq!(buf.len(), BUF_SIZE);
-        assert!(
-            &*buf == &test_file.content[..buf.len()],
-            "read content is different"
-        );
-    }
-}
-
-#[test]
-fn read_buf_remove() {
-    const BUF_SIZE: usize = 64;
-
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
-
-    let path = LOREM_IPSUM_50.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
-    assert!(!buf.is_empty());
-
-    let tests = &[
-        (
-            // RangeToInclusive, `..=end`.
-            Bound::Unbounded,
-            Bound::Included(5),
-        ),
-        (
-            // RangeTo, `..end`.
-            Bound::Unbounded,
-            Bound::Excluded(5),
-        ),
-        (
-            // RangeFull, `..`.
-            Bound::Unbounded,
-            Bound::Unbounded,
-        ),
-        (
-            // RangeFrom, `start..`.
-            Bound::Included(1),
-            Bound::Unbounded,
-        ),
-        (
-            // RangeInclusive, `start..=end`.
-            Bound::Included(1),
-            Bound::Included(4),
-        ),
-        (
-            // Range, `start..end`.
-            Bound::Included(1),
-            Bound::Excluded(5),
-        ),
-        // The following are unused.
-        (Bound::Excluded(1), Bound::Unbounded),
-        (Bound::Excluded(1), Bound::Included(5)),
-        (Bound::Excluded(1), Bound::Excluded(5)),
-    ];
-
-    buf.clear();
-    const DATA: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-    buf.extend_from_slice(&[255; 11]).unwrap(); // Detect errors more easily.
-    for (lower, upper) in tests.iter().copied() {
-        // We'll use the `Vec::drain` implementation as expected value as it's
-        // the API we're trying to match.
-        let mut expected = Vec::from(DATA);
-        expected.drain((lower, upper));
-
-        buf.clear();
-        buf.extend_from_slice(DATA).unwrap();
-        buf.remove((lower, upper));
-
-        assert_eq!(
-            buf.as_slice(),
-            expected,
-            "lower: {lower:?}, upper: {upper:?}"
-        );
-    }
-}
-
-#[test]
-fn read_buf_remove_invalid_range() {
-    const BUF_SIZE: usize = 64;
-
-    require_kernel!(5, 19);
-    init();
-
-    let mut ring = Ring::new(2).expect("failed to create test ring");
-    let sq = ring.sq().clone();
-
-    let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
-
-    let path = LOREM_IPSUM_50.path.into();
-    let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
-
-    let mut buf = block_on(&mut ring, file.read(buf_pool.get())).unwrap();
-    assert!(!buf.is_empty());
-
-    buf.truncate(10);
-    let tests = &[
-        (Bound::Unbounded, Bound::Included(20)),
-        (Bound::Unbounded, Bound::Excluded(20)),
-        (Bound::Included(20), Bound::Unbounded),
-        (Bound::Excluded(20), Bound::Unbounded),
-    ];
-
-    for (lower, upper) in tests.iter().copied() {
-        let result = panic::catch_unwind(AssertUnwindSafe(|| {
-            buf.remove((lower, upper));
-        }));
-        let _ = result.unwrap_err();
-    }
 }
 
 #[test]
@@ -461,37 +84,6 @@ fn write_all_at_extract() {
     assert!(got == expected, "file can't be read back");
 }
 
-// NOTE: this implementation is BROKEN! It's only used to test the write_all
-// method.
-#[derive(Debug)]
-pub(crate) struct BadBuf {
-    pub(crate) calls: Cell<usize>,
-}
-
-impl BadBuf {
-    pub(crate) const DATA: [u8; 30] = [
-        123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
-        200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
-    ];
-}
-
-unsafe impl Buf for BadBuf {
-    unsafe fn parts(&self) -> (*const u8, u32) {
-        let calls = self.calls.get();
-        self.calls.set(calls + 1);
-
-        let ptr = BadBuf::DATA.as_slice().as_ptr();
-        // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
-        // to the WriteAll future already does that for us.
-        match calls {
-            0 => (ptr, 10),
-            1 | 2 => (ptr, 20),
-            3 | 4 => (ptr, 30),
-            _ => (ptr, 0),
-        }
-    }
-}
-
 #[test]
 fn write_all_vectored() {
     let sq = test_queue();
@@ -540,34 +132,6 @@ fn write_all_vectored_at_extract() {
     expected.extend_from_slice(BadBufSlice::DATA2);
     expected.extend_from_slice(BadBufSlice::DATA3);
     assert!(got == expected, "file can't be read back");
-}
-
-// NOTE: this implementation is BROKEN! It's only used to test the
-// write_all_vectored method.
-#[derive(Debug)]
-pub(crate) struct BadBufSlice {
-    pub(crate) calls: Cell<usize>,
-}
-
-impl BadBufSlice {
-    pub(crate) const DATA1: &'static [u8] = &[123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
-    pub(crate) const DATA2: &'static [u8] = &[200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
-    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
-}
-
-unsafe impl BufSlice<3> for BadBufSlice {
-    unsafe fn as_iovecs(&self) -> [IoSlice; 3] {
-        let calls = self.calls.get();
-        self.calls.set(calls + 1);
-        let max_length = if calls == 0 { 5 } else { 10 };
-        unsafe {
-            [
-                IoSlice::new(&Self::DATA1),
-                IoSlice::new(&Self::DATA2),
-                IoSlice::new(&&Self::DATA3[0..max_length]),
-            ]
-        }
-    }
 }
 
 #[test]
@@ -640,24 +204,6 @@ fn read_n_at() {
     assert_eq!(&buf.data, &test_file.content[5..]);
 }
 
-// NOTE: this implementation is BROKEN! It's only used to test the write_all
-// method.
-#[derive(Debug)]
-pub(crate) struct BadReadBuf {
-    pub(crate) data: Vec<u8>,
-}
-
-unsafe impl BufMut for BadReadBuf {
-    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
-        let (ptr, size) = unsafe { self.data.parts_mut() };
-        if size >= 10 { (ptr, 10) } else { (ptr, size) }
-    }
-
-    unsafe fn set_init(&mut self, n: usize) {
-        unsafe { self.data.set_init(n) };
-    }
-}
-
 #[test]
 fn read_n_vectored() {
     let sq = test_queue();
@@ -674,41 +220,6 @@ fn read_n_vectored() {
     let buf = waker.block_on(r.read_n_vectored(buf, DATA.len())).unwrap();
     assert_eq!(&buf.data[0], b"Hello mars! Hi.");
     assert_eq!(&buf.data[1], b"Booo! How are you?");
-}
-
-// NOTE: this implementation is BROKEN! It's only used to test the write_all
-// method.
-#[derive(Debug)]
-pub(crate) struct BadReadBufSlice {
-    pub(crate) data: [Vec<u8>; 2],
-}
-
-unsafe impl BufMutSlice<2> for BadReadBufSlice {
-    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
-        unsafe {
-            let mut iovecs = self.data.as_iovecs_mut();
-            if iovecs[0].len() >= 10 {
-                iovecs[0].set_len(10);
-                iovecs[1].set_len(5);
-            }
-            iovecs
-        }
-    }
-
-    unsafe fn set_init(&mut self, n: usize) {
-        if n == 0 {
-            return;
-        }
-
-        unsafe {
-            if self.as_iovecs_mut()[0].len() == 10 {
-                self.data[0].set_init(10);
-                self.data[1].set_init(n - 10);
-            } else {
-                self.data.set_init(n);
-            }
-        }
-    }
 }
 
 #[test]
@@ -733,23 +244,6 @@ fn read_n_vectored_at() {
         .unwrap();
     assert_eq!(&buf.data[0], &test_file.content[5..105]);
     assert_eq!(&buf.data[1], &test_file.content[105..]);
-}
-
-// NOTE: this implementation is BROKEN! It's only used to test the write_all
-// method.
-struct GrowingBufSlice {
-    data: [Vec<u8>; 2],
-}
-
-unsafe impl BufMutSlice<2> for GrowingBufSlice {
-    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
-        unsafe { self.data.as_iovecs_mut() }
-    }
-
-    unsafe fn set_init(&mut self, n: usize) {
-        unsafe { self.data.set_init(n) };
-        self.data[1].reserve(200);
-    }
 }
 
 #[test]

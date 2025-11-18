@@ -5,6 +5,7 @@
 use std::any::Any;
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
@@ -12,12 +13,13 @@ use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, mem, panic, process, ptr, str};
+use std::{fmt, mem, panic, process, str};
 
+use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
@@ -290,28 +292,15 @@ where
     I: AsyncIterator + Unpin,
     I::Item: fmt::Debug,
 {
-    let result = poll_nop(Pin::new(&mut next(iter)));
-    if !result.is_pending() {
-        panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
-    }
+    start_op(&mut next(iter));
 }
-
-const NOP_WAKER_VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
-    |_| task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE), // clone.
-    |_| {},                                                  // wake.
-    |_| {},                                                  // wake_by_ref.
-    |_| {},                                                  // drop.
-);
-
-/// No-op waker used by [`poll_nop`].
-pub(crate) const NOP_WAKER: task::RawWaker = task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE);
 
 /// Poll the `future` once with a no-op waker.
 pub(crate) fn poll_nop<Fut>(future: Pin<&mut Fut>) -> Poll<Fut::Output>
 where
     Fut: Future,
 {
-    let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
+    let task_waker = task::Waker::noop();
     let mut task_ctx = task::Context::from_waker(&task_waker);
     Future::poll(future, &mut task_ctx)
 }
@@ -322,11 +311,9 @@ pub(crate) fn block_on<Fut>(ring: &mut Ring, future: Fut) -> Fut::Output
 where
     Fut: IntoFuture,
 {
-    // Pin the `Future` to stack.
-    let mut future = future.into_future();
-    let mut future = unsafe { Pin::new_unchecked(&mut future) };
+    let mut future = pin!(future.into_future());
 
-    let waker = nop_waker();
+    let waker = task::Waker::noop();
     let mut task_ctx = task::Context::from_waker(&waker);
     loop {
         match Future::poll(future.as_mut(), &mut task_ctx) {
@@ -334,19 +321,6 @@ where
             // The waking implementation will `unpark` us.
             Poll::Pending => ring.poll(None).expect("failed to poll ring"),
         }
-    }
-}
-
-fn nop_waker() -> task::Waker {
-    static VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
-        |_| task::RawWaker::new(ptr::null(), &VTABLE),
-        |_| {},
-        |_| {},
-        |_| {},
-    );
-    unsafe {
-        let raw_waker = task::RawWaker::new(ptr::null(), &VTABLE);
-        task::Waker::from_raw(raw_waker)
     }
 }
 
@@ -615,3 +589,132 @@ macro_rules! syscall {
 }
 
 pub(crate) use syscall;
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadBuf {
+    pub(crate) calls: Cell<usize>,
+}
+
+impl BadBuf {
+    pub(crate) const DATA: [u8; 30] = [
+        123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
+        200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+}
+
+unsafe impl Buf for BadBuf {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+
+        let ptr = BadBuf::DATA.as_slice().as_ptr();
+        // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
+        // to the WriteAll future already does that for us.
+        match calls {
+            0 => (ptr, 10),
+            1 | 2 => (ptr, 20),
+            3 | 4 => (ptr, 30),
+            _ => (ptr, 0),
+        }
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadReadBuf {
+    pub(crate) data: Vec<u8>,
+}
+
+unsafe impl BufMut for BadReadBuf {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        let (ptr, size) = unsafe { self.data.parts_mut() };
+        if size >= 10 { (ptr, 10) } else { (ptr, size) }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        unsafe { self.data.set_init(n) };
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadReadBufSlice {
+    pub(crate) data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for BadReadBufSlice {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
+        unsafe {
+            let mut iovecs = self.data.as_iovecs_mut();
+            if iovecs[0].len() >= 10 {
+                iovecs[0].set_len(10);
+                iovecs[1].set_len(5);
+            }
+            iovecs
+        }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+
+        unsafe {
+            if self.as_iovecs_mut()[0].len() == 10 {
+                self.data[0].set_init(10);
+                self.data[1].set_init(n - 10);
+            } else {
+                self.data.set_init(n);
+            }
+        }
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+pub(crate) struct GrowingBufSlice {
+    pub(crate) data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for GrowingBufSlice {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
+        unsafe { self.data.as_iovecs_mut() }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        unsafe { self.data.set_init(n) };
+        self.data[1].reserve(200);
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the
+// write_all_vectored method.
+#[derive(Debug)]
+pub(crate) struct BadBufSlice {
+    pub(crate) calls: Cell<usize>,
+}
+
+impl BadBufSlice {
+    pub(crate) const DATA1: &'static [u8] = &[123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
+    pub(crate) const DATA2: &'static [u8] = &[200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
+    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+}
+
+unsafe impl BufSlice<3> for BadBufSlice {
+    unsafe fn as_iovecs(&self) -> [IoSlice; 3] {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+        let max_length = if calls == 0 { 5 } else { 10 };
+        unsafe {
+            [
+                IoSlice::new(&Self::DATA1),
+                IoSlice::new(&Self::DATA2),
+                IoSlice::new(&&Self::DATA3[0..max_length]),
+            ]
+        }
+    }
+}

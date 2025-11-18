@@ -1,5 +1,3 @@
-//! Tests for the filesystem operations.
-
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
 use std::{panic, str};

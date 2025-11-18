@@ -9,10 +9,10 @@ use std::{env, fmt, io, panic, process, ptr, task, thread};
 
 use a10::Ring;
 use a10::fd;
-use a10::process::{ReceiveSignal, ReceiveSignals, Signal, Signals};
+use a10::process::{Signal, Signals};
 
 mod util;
-use util::{NOP_WAKER, is_send, is_sync, poll_nop, syscall};
+use util::{poll_nop, syscall};
 
 const SIGNALS: [Signal; 30] = [
     Signal::HUP,
@@ -84,13 +84,6 @@ fn main() {
     let start = Instant::now();
     println!("\nrunning {} tests", (2 * (3 * SIGNALS.len()) + 1));
 
-    is_send::<Signals>();
-    is_sync::<Signals>();
-    is_send::<ReceiveSignal>();
-    is_sync::<ReceiveSignal>();
-    is_send::<ReceiveSignals>();
-    is_sync::<ReceiveSignals>();
-
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
     harness.run_tests();
@@ -103,16 +96,15 @@ fn main() {
     harness.fd_kind = fd::Kind::Direct;
     harness.run_tests();
 
-    let mut passed = harness.passed;
-    let mut failed = harness.failed;
-
     // Final test, make sure the cleanup is done properly.
-    drop(harness);
-    test_cleanup(quiet, &mut passed, &mut failed);
+    drop(harness.signals.take());
+    harness.test_cleanup();
 
     println!(
-        "\ntest result: ok. {passed} passed; {failed} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n",
-        start.elapsed().as_secs_f64()
+        "\ntest result: ok. {} passed; {} failed; 0 ignored; 0 measured; 0 filtered out; finished in {:.2?}s\n",
+        harness.passed,
+        harness.failed,
+        start.elapsed().as_secs_f64(),
     );
 }
 
@@ -145,37 +137,35 @@ impl TestHarness {
         self.test_receive_signals();
     }
 
-    fn test_single_threaded(&mut self) {
-        let pid = process::id();
+    fn run_test<F>(&mut self, test_name: &str, mut test: F)
+    where
+        F: FnMut(&mut Ring, &Signals, Signal),
+    {
         let signals = self.signals.as_ref().unwrap();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
+            print_test_start(
+                self.quiet,
+                format_args!("{test_name} ({:?}, {name})", self.fd_kind),
+            );
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
             if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("single_threaded ({:?}, {name})", self.fd_kind),
-                );
                 print_test_ignored(self.quiet);
                 continue;
             }
-
-            print_test_start(
-                self.quiet,
-                format_args!("single_threaded ({:?}, {name})", self.fd_kind),
-            );
-            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                send_signal(pid, signal).unwrap();
-                receive_signal(&mut self.ring, &signals, signal);
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                test(&mut self.ring, signals, signal);
             }));
-            if res.is_ok() {
-                print_test_ok(self.quiet);
-                self.passed += 1
-            } else {
-                print_test_failed(self.quiet);
-                self.failed += 1
-            };
+            print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
         }
+    }
+
+    fn test_single_threaded(&mut self) {
+        let pid = process::id();
+        self.run_test("single_threaded", |ring, signals, signal| {
+            send_signal(pid, signal).unwrap();
+            receive_signal(ring, signals, signal);
+        });
     }
 
     fn test_multi_threaded(&mut self) {
@@ -202,35 +192,10 @@ impl TestHarness {
             }
         });
 
-        let signals = self.signals.as_ref().unwrap();
-        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
-            // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("multi_threaded ({:?}, {name})", self.fd_kind),
-                );
-                print_test_ignored(self.quiet);
-                continue;
-            }
-
-            print_test_start(
-                self.quiet,
-                format_args!("multi_threaded ({:?}, {name})", self.fd_kind),
-            );
-            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                receive_signal(&mut self.ring, signals, signal);
-            }));
-            if res.is_ok() {
-                print_test_ok(self.quiet);
-                self.passed += 1
-            } else {
-                print_test_failed(self.quiet);
-                self.failed += 1
-            };
-            barrier.wait();
-        }
+        self.run_test("multi_threaded", |ring, signals, signal| {
+            receive_signal(ring, signals, signal);
+            barrier.wait(); // Send the next signal.
+        });
 
         handle.join().unwrap();
     }
@@ -238,25 +203,20 @@ impl TestHarness {
     fn test_receive_signals(&mut self) {
         let pid = process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
-        let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
+        let task_waker = task::Waker::noop();
         let mut task_ctx = task::Context::from_waker(&task_waker);
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
-            // thread sanitizer can't deal with `SIGSYS` signal being send.
-            #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
-                print_test_start(
-                    self.quiet,
-                    format_args!("receive_signals ({:?}, {name})", self.fd_kind),
-                );
-                print_test_ignored(self.quiet);
-                continue;
-            }
-
             print_test_start(
                 self.quiet,
                 format_args!("receive_signals ({:?}, {name})", self.fd_kind),
             );
-            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            // thread sanitizer can't deal with `SIGSYS` signal being send.
+            #[cfg(feature = "nightly")]
+            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                print_test_ignored(self.quiet);
+                continue;
+            }
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, signal).unwrap();
 
                 // Check if the signals can be received.
@@ -268,35 +228,23 @@ impl TestHarness {
                 };
                 assert_eq!(signal_info.signal(), signal);
             }));
-            if res.is_ok() {
-                print_test_ok(self.quiet);
-                self.passed += 1
-            } else {
-                print_test_failed(self.quiet);
-                self.failed += 1
-            };
+            print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
         }
 
         self.signals = Some(receive_signal.into_inner());
     }
-}
 
-fn test_cleanup(quiet: bool, passed: &mut usize, failed: &mut usize) {
-    print_test_start(quiet, format_args!("cleanup"));
-    let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-        // After `Signals` is dropped all signals should be unblocked.
-        let set = blocked_signalset().unwrap();
-        for signal in SIGNALS.into_iter() {
-            assert!(!in_signalset(&set, signal_to_os(signal)));
-        }
-    }));
-    if res.is_ok() {
-        print_test_ok(quiet);
-        *passed += 1
-    } else {
-        print_test_failed(quiet);
-        *failed += 1
-    };
+    fn test_cleanup(&mut self) {
+        print_test_start(self.quiet, format_args!("cleanup"));
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            // After `Signals` is dropped all signals should be unblocked.
+            let set = blocked_signalset().unwrap();
+            for signal in SIGNALS.into_iter() {
+                assert!(!in_signalset(&set, signal_to_os(signal)));
+            }
+        }));
+        print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
+    }
 }
 
 fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
@@ -349,23 +297,22 @@ fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
     }
 }
 
-fn print_test_ok(quiet: bool) {
-    if quiet { print!(".") } else { print!("ok\n") }
-}
-
-fn print_test_failed(quiet: bool) {
-    if quiet {
-        print!("F")
+fn print_test_result(
+    result: thread::Result<()>,
+    quiet: bool,
+    passed: &mut usize,
+    failed: &mut usize,
+) {
+    if result.is_ok() {
+        print!("{}", if quiet { "." } else { "ok\n" });
+        *passed += 1
     } else {
-        print!("FAILED\n")
-    }
+        print!("{}", if quiet { "F" } else { "FAILED\n" });
+        *failed += 1
+    };
 }
 
 #[cfg(feature = "nightly")]
 fn print_test_ignored(quiet: bool) {
-    if quiet {
-        print!("i")
-    } else {
-        print!("ignored\n")
-    }
+    print!("{}", if quiet { "i" } else { "ignored\n" });
 }

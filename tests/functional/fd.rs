@@ -1,9 +1,39 @@
-//! Tests for the usage of direct descriptors.
-
-use a10::fd;
+use a10::fd::{self, AsyncFd, Kind, ToDirect, ToFd};
 use a10::fs::OpenOptions;
 
-use crate::util::{LOREM_IPSUM_5, Waker, require_kernel, test_queue};
+use crate::util::{
+    LOREM_IPSUM_5, Waker, expect_io_errno, is_send, is_sync, require_kernel, test_queue,
+};
+
+#[test]
+fn async_fd_size() {
+    assert_eq!(std::mem::size_of::<AsyncFd>(), 16);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), 16);
+}
+
+#[test]
+fn async_fd_is_send_and_sync() {
+    is_send::<AsyncFd>();
+    is_sync::<AsyncFd>();
+}
+
+#[test]
+fn kind_is_send_and_sync() {
+    is_send::<Kind>();
+    is_sync::<Kind>();
+}
+
+#[test]
+fn to_fd_is_send_and_sync() {
+    is_send::<ToFd>();
+    is_sync::<ToFd>();
+}
+
+#[test]
+fn to_direct_is_send_and_sync() {
+    is_send::<ToDirect>();
+    is_sync::<ToDirect>();
+}
 
 #[test]
 fn to_direct_descriptor() {
@@ -79,10 +109,8 @@ fn direct_to_direct_descriptor() {
         .open(sq, LOREM_IPSUM_5.path.into());
     let direct_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    let err = waker
-        .block_on(direct_fd.to_direct_descriptor())
-        .unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::EINVAL));
+    let res = waker.block_on(direct_fd.to_direct_descriptor());
+    expect_io_errno(res, libc::EINVAL);
 }
 
 #[test]
@@ -97,6 +125,6 @@ fn file_to_file_descriptor() {
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     let regular_fd = waker.block_on(open_file).unwrap();
     // This should panic.
-    let err = waker.block_on(regular_fd.to_file_descriptor()).unwrap_err();
-    assert_eq!(err.raw_os_error(), Some(libc::EBADF));
+    let res = waker.block_on(regular_fd.to_file_descriptor());
+    expect_io_errno(res, libc::EBADF);
 }
