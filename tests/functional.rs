@@ -6,6 +6,8 @@ mod util;
 mod config;
 #[path = "functional/fd.rs"]
 mod fd;
+#[path = "functional/io.rs"]
+mod io;
 #[path = "functional/mem.rs"]
 mod mem;
 #[path = "functional/msg.rs"]
@@ -16,5 +18,7 @@ mod net;
 mod poll;
 #[path = "functional/process.rs"]
 mod process;
+#[path = "functional/read_buf.rs"]
+mod read_buf;
 #[path = "functional/ring.rs"]
 mod ring;

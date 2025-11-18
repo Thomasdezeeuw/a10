@@ -7,5 +7,4 @@ mod util;
 #[path = "async_fd"] // rustfmt can't find the files.
 mod async_fd {
     mod fs;
-    mod io;
 }
