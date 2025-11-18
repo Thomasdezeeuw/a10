@@ -4,5 +4,6 @@ mod util;
 
 mod functional {
     mod config;
+    mod msg;
     mod ring;
 }

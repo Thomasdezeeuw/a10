@@ -23,37 +23,6 @@ use util::{
 const DATA: &[u8] = b"Hello, World!";
 
 #[test]
-fn message_sending() {
-    require_kernel!(5, 18);
-
-    const DATA1: u32 = 123;
-    const DATA2: u32 = u32::MAX;
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    is_send::<msg::Listener>();
-    is_sync::<msg::Listener>();
-    is_send::<msg::Sender>();
-    is_sync::<msg::Sender>();
-    is_send::<msg::SendMsg>();
-    is_sync::<msg::SendMsg>();
-
-    let (listener, sender) = msg::listener(sq.clone()).unwrap();
-    let mut listener = pin!(listener);
-    start_mulitshot_op(&mut listener);
-
-    // Send some messages.
-    sender.try_send(DATA1).unwrap();
-    waker.block_on(pin!(sender.send(DATA2))).unwrap();
-
-    assert_eq!(waker.block_on(next(listener.as_mut())), Some(DATA1));
-    assert_eq!(waker.block_on(next(listener.as_mut())), Some(DATA2));
-
-    assert!(poll_nop(Pin::new(&mut next(listener.as_mut()))).is_pending());
-}
-
-#[test]
 fn test_oneshot_poll() {
     let sq = test_queue();
     let waker = Waker::new();
