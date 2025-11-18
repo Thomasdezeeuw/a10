@@ -1,23 +1,68 @@
-//! Tests for [`a10::Ring`].
-
-#![cfg_attr(feature = "nightly", feature(async_iterator))]
+//! NOTE: see `tests/signals.rs` for testing of signal handling.
 
 use std::pin::Pin;
 use std::process::Command;
 
-use a10::process::{self, ChildStatus, Signal, WaitOption};
+use a10::process::{
+    self, ChildStatus, ReceiveSignal, ReceiveSignals, Signal, SignalInfo, SignalSet, Signals,
+    ToSignalsDirect, WaitId, WaitOption,
+};
 
-mod util;
-use util::{Waker, cancel, is_send, is_sync, poll_nop, require_kernel, test_queue};
+use crate::util::{Waker, cancel, is_send, is_sync, poll_nop, require_kernel, test_queue};
+
+#[test]
+fn signal_is_send_and_sync() {
+    is_send::<Signal>();
+    is_sync::<Signal>();
+}
+
+#[test]
+fn signal_set_is_send_and_sync() {
+    is_send::<SignalSet>();
+    is_sync::<SignalSet>();
+}
+
+#[test]
+fn signals_is_send_and_sync() {
+    is_send::<Signals>();
+    is_sync::<Signals>();
+}
+
+#[test]
+fn signal_info_is_send_and_sync() {
+    is_send::<SignalInfo>();
+    is_sync::<SignalInfo>();
+}
+
+#[test]
+fn to_signals_direct_is_send_and_sync() {
+    is_send::<ToSignalsDirect>();
+    is_sync::<ToSignalsDirect>();
+}
+
+#[test]
+fn wait_id_is_send_and_sync() {
+    is_send::<WaitId>();
+    is_sync::<WaitId>();
+}
+
+#[test]
+fn receive_signal_is_send_and_sync() {
+    is_send::<ReceiveSignal>();
+    is_sync::<ReceiveSignal>();
+}
+
+#[test]
+fn receive_signals_is_send_and_sync() {
+    is_send::<ReceiveSignals>();
+    is_sync::<ReceiveSignals>();
+}
 
 #[test]
 fn process_wait_on() {
     require_kernel!(6, 7);
     let sq = test_queue();
     let waker = Waker::new();
-
-    is_send::<process::WaitId>();
-    is_sync::<process::WaitId>();
 
     let process = Command::new("true").spawn().unwrap();
     let pid = process.id();

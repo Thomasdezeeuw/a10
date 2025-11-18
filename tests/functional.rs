@@ -7,5 +7,6 @@ mod functional {
     mod mem;
     mod msg;
     mod poll;
+    mod process;
     mod ring;
 }

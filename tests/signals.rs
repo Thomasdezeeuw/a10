@@ -9,10 +9,10 @@ use std::{env, fmt, io, panic, process, ptr, task, thread};
 
 use a10::Ring;
 use a10::fd;
-use a10::process::{ReceiveSignal, ReceiveSignals, Signal, Signals};
+use a10::process::{Signal, Signals};
 
 mod util;
-use util::{NOP_WAKER, is_send, is_sync, poll_nop, syscall};
+use util::{NOP_WAKER, poll_nop, syscall};
 
 const SIGNALS: [Signal; 30] = [
     Signal::HUP,
@@ -83,13 +83,6 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
 fn main() {
     let start = Instant::now();
     println!("\nrunning {} tests", (2 * (3 * SIGNALS.len()) + 1));
-
-    is_send::<Signals>();
-    is_sync::<Signals>();
-    is_send::<ReceiveSignal>();
-    is_sync::<ReceiveSignal>();
-    is_send::<ReceiveSignals>();
-    is_sync::<ReceiveSignals>();
 
     let quiet = env::args().any(|arg| matches!(&*arg, "-q" | "--quiet"));
     let mut harness = TestHarness::setup(quiet);
