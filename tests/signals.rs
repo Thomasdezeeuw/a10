@@ -321,9 +321,5 @@ fn print_test_result(
 
 #[cfg(feature = "nightly")]
 fn print_test_ignored(quiet: bool) {
-    if quiet {
-        print!("i")
-    } else {
-        print!("ignored\n")
-    }
+    print!("{}", if quiet { "i" } else { "ignored\n" });
 }
