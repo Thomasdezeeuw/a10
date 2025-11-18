@@ -5,6 +5,7 @@
 use std::any::Any;
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
+use std::cell::Cell;
 use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
@@ -18,6 +19,7 @@ use std::task::{self, Poll};
 use std::thread::{self, Thread};
 use std::{fmt, mem, panic, process, str};
 
+use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
 
@@ -587,3 +589,132 @@ macro_rules! syscall {
 }
 
 pub(crate) use syscall;
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadBuf {
+    pub(crate) calls: Cell<usize>,
+}
+
+impl BadBuf {
+    pub(crate) const DATA: [u8; 30] = [
+        123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
+        200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    ];
+}
+
+unsafe impl Buf for BadBuf {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+
+        let ptr = BadBuf::DATA.as_slice().as_ptr();
+        // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
+        // to the WriteAll future already does that for us.
+        match calls {
+            0 => (ptr, 10),
+            1 | 2 => (ptr, 20),
+            3 | 4 => (ptr, 30),
+            _ => (ptr, 0),
+        }
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadReadBuf {
+    pub(crate) data: Vec<u8>,
+}
+
+unsafe impl BufMut for BadReadBuf {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        let (ptr, size) = unsafe { self.data.parts_mut() };
+        if size >= 10 { (ptr, 10) } else { (ptr, size) }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        unsafe { self.data.set_init(n) };
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+#[derive(Debug)]
+pub(crate) struct BadReadBufSlice {
+    pub(crate) data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for BadReadBufSlice {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
+        unsafe {
+            let mut iovecs = self.data.as_iovecs_mut();
+            if iovecs[0].len() >= 10 {
+                iovecs[0].set_len(10);
+                iovecs[1].set_len(5);
+            }
+            iovecs
+        }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        if n == 0 {
+            return;
+        }
+
+        unsafe {
+            if self.as_iovecs_mut()[0].len() == 10 {
+                self.data[0].set_init(10);
+                self.data[1].set_init(n - 10);
+            } else {
+                self.data.set_init(n);
+            }
+        }
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the write_all
+// method.
+pub(crate) struct GrowingBufSlice {
+    pub(crate) data: [Vec<u8>; 2],
+}
+
+unsafe impl BufMutSlice<2> for GrowingBufSlice {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; 2] {
+        unsafe { self.data.as_iovecs_mut() }
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        unsafe { self.data.set_init(n) };
+        self.data[1].reserve(200);
+    }
+}
+
+// NOTE: this implementation is BROKEN! It's only used to test the
+// write_all_vectored method.
+#[derive(Debug)]
+pub(crate) struct BadBufSlice {
+    pub(crate) calls: Cell<usize>,
+}
+
+impl BadBufSlice {
+    pub(crate) const DATA1: &'static [u8] = &[123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
+    pub(crate) const DATA2: &'static [u8] = &[200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
+    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+}
+
+unsafe impl BufSlice<3> for BadBufSlice {
+    unsafe fn as_iovecs(&self) -> [IoSlice; 3] {
+        let calls = self.calls.get();
+        self.calls.set(calls + 1);
+        let max_length = if calls == 0 { 5 } else { 10 };
+        unsafe {
+            [
+                IoSlice::new(&Self::DATA1),
+                IoSlice::new(&Self::DATA2),
+                IoSlice::new(&&Self::DATA3[0..max_length]),
+            ]
+        }
+    }
+}
