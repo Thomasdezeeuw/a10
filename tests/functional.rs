@@ -6,6 +6,8 @@ mod util;
 mod config;
 #[path = "functional/fd.rs"]
 mod fd;
+#[path = "functional/fs.rs"]
+mod fs;
 #[path = "functional/io.rs"]
 mod io;
 #[path = "functional/mem.rs"]
