@@ -311,24 +311,12 @@ fn print_test_result(
     failed: &mut usize,
 ) {
     if result.is_ok() {
-        print_test_ok(quiet);
+        print!("{}", if quiet { "." } else { "ok\n" });
         *passed += 1
     } else {
-        print_test_failed(quiet);
+        print!("{}", if quiet { "F" } else { "FAILED\n" });
         *failed += 1
     };
-}
-
-fn print_test_ok(quiet: bool) {
-    if quiet { print!(".") } else { print!("ok\n") }
-}
-
-fn print_test_failed(quiet: bool) {
-    if quiet {
-        print!("F")
-    } else {
-        print!("FAILED\n")
-    }
 }
 
 #[cfg(feature = "nightly")]
