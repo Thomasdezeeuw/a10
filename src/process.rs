@@ -297,7 +297,7 @@ impl Drop for Signals {
 
 operation!(
     /// [`Future`] behind [`Signals::to_direct_descriptor`].
-    pub struct ToSignalsDirect(sys::process::ToSignalsDirectOp) -> io::Result<Signals>;
+    pub struct ToSignalsDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
 );
 
 fd_operation!(
