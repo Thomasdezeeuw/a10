@@ -4,6 +4,8 @@ mod util;
 
 #[path = "functional/config.rs"]
 mod config;
+#[path = "functional/fd.rs"]
+mod fd;
 #[path = "functional/mem.rs"]
 mod mem;
 #[path = "functional/msg.rs"]

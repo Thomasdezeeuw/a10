@@ -1,9 +1,39 @@
-//! Tests for the usage of direct descriptors.
-
-use a10::fd;
+use a10::fd::{self, AsyncFd, Kind, ToDirect, ToFd};
 use a10::fs::OpenOptions;
 
-use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, require_kernel, test_queue};
+use crate::util::{
+    LOREM_IPSUM_5, Waker, expect_io_errno, is_send, is_sync, require_kernel, test_queue,
+};
+
+#[test]
+fn async_fd_size() {
+    assert_eq!(std::mem::size_of::<AsyncFd>(), 16);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), 16);
+}
+
+#[test]
+fn async_fd_is_send_and_sync() {
+    is_send::<AsyncFd>();
+    is_sync::<AsyncFd>();
+}
+
+#[test]
+fn kind_is_send_and_sync() {
+    is_send::<Kind>();
+    is_sync::<Kind>();
+}
+
+#[test]
+fn to_fd_is_send_and_sync() {
+    is_send::<ToFd>();
+    is_sync::<ToFd>();
+}
+
+#[test]
+fn to_direct_is_send_and_sync() {
+    is_send::<ToDirect>();
+    is_sync::<ToDirect>();
+}
 
 #[test]
 fn to_direct_descriptor() {
