@@ -5,7 +5,7 @@ use crate::io::NO_OFFSET;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::FdIter;
 use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
+use crate::{AsyncFd, SubmissionQueue, asan, msan};
 
 pub(crate) struct WaitIdOp;
 
@@ -46,45 +46,14 @@ impl io_uring::Op for WaitIdOp {
     }
 }
 
-pub(crate) struct ToSignalsDirectOp;
+impl io_uring::fd::DirectFdMapper for Signals {
+    type Output = Self;
 
-impl io_uring::Op for ToSignalsDirectOp {
-    type Output = Signals;
-    type Resources = (Signals, Box<RawFd>);
-    type Args = ();
-
-    #[allow(clippy::cast_sign_loss)]
-    fn fill_submission(
-        (_, fd): &mut Self::Resources,
-        (): &mut Self::Args,
-        submission: &mut sq::Submission,
-    ) {
-        submission.0.opcode = libc::IORING_OP_FILES_UPDATE as u8;
-        submission.0.fd = -1;
-        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: libc::IORING_FILE_INDEX_ALLOC as u64,
-        };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **fd).addr() as u64,
-        };
-        asan::poison_box(fd);
-        submission.0.len = 1;
-    }
-
-    fn map_ok(
-        sq: &SubmissionQueue,
-        (mut signals, dfd): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
-        asan::unpoison_box(&dfd);
-        msan::unpoison_box(&dfd);
-        debug_assert!(n == 1);
-        // SAFETY: the kernel ensures that `dfd` is valid.
-        let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq.clone()) };
+    fn map(mut self, dfd: AsyncFd) -> Self::Output {
         // SAFETY: since we used the original descriptor to make this direct
         // descriptor we're ensure that it still a signalfd.
-        unsafe { signals.set_fd(dfd) }
-        signals
+        unsafe { self.set_fd(dfd) }
+        self
     }
 }
 
