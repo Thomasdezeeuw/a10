@@ -12,7 +12,7 @@ use a10::fd;
 use a10::process::{Signal, Signals};
 
 mod util;
-use util::{NOP_WAKER, poll_nop, syscall};
+use util::{poll_nop, syscall};
 
 const SIGNALS: [Signal; 30] = [
     Signal::HUP,
@@ -203,7 +203,7 @@ impl TestHarness {
     fn test_receive_signals(&mut self) {
         let pid = process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
-        let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
+        let task_waker = task::Waker::noop();
         let mut task_ctx = task::Context::from_waker(&task_waker);
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(

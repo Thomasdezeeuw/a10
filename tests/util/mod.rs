@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, mem, panic, process, ptr, str};
+use std::{fmt, mem, panic, process, str};
 
 use a10::net::{Domain, Protocol, Type, socket};
 use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
@@ -296,22 +296,12 @@ where
     }
 }
 
-const NOP_WAKER_VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
-    |_| task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE), // clone.
-    |_| {},                                                  // wake.
-    |_| {},                                                  // wake_by_ref.
-    |_| {},                                                  // drop.
-);
-
-/// No-op waker used by [`poll_nop`].
-pub(crate) const NOP_WAKER: task::RawWaker = task::RawWaker::new(ptr::null(), &NOP_WAKER_VTABLE);
-
 /// Poll the `future` once with a no-op waker.
 pub(crate) fn poll_nop<Fut>(future: Pin<&mut Fut>) -> Poll<Fut::Output>
 where
     Fut: Future,
 {
-    let task_waker = unsafe { task::Waker::from_raw(NOP_WAKER) };
+    let task_waker = task::Waker::noop();
     let mut task_ctx = task::Context::from_waker(&task_waker);
     Future::poll(future, &mut task_ctx)
 }
@@ -334,19 +324,6 @@ where
             // The waking implementation will `unpark` us.
             Poll::Pending => ring.poll(None).expect("failed to poll ring"),
         }
-    }
-}
-
-fn nop_waker() -> task::Waker {
-    static VTABLE: task::RawWakerVTable = task::RawWakerVTable::new(
-        |_| task::RawWaker::new(ptr::null(), &VTABLE),
-        |_| {},
-        |_| {},
-        |_| {},
-    );
-    unsafe {
-        let raw_waker = task::RawWaker::new(ptr::null(), &VTABLE);
-        task::Waker::from_raw(raw_waker)
     }
 }
 
