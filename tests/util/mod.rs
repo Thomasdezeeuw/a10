@@ -7,7 +7,7 @@ use std::any::Any;
 use std::async_iter::AsyncIterator;
 use std::cell::Cell;
 use std::ffi::CStr;
-use std::fs::{remove_dir, remove_file};
+use std::fs::{remove_dir_all, remove_file};
 use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -374,11 +374,20 @@ macro_rules! op_async_iter {
     };
 }
 
-op_async_iter!(a10::msg::Listener => u32);
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
+op_async_iter!(a10::msg::Listener => u32);
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
 op_async_iter!(a10::poll::MultishotPoll => io::Result<a10::poll::Event>);
+
+#[cfg(not(feature = "nightly"))]
+impl<'w> AsyncIterator for a10::fs::notify::Events<'w> {
+    type Item = io::Result<&'w a10::fs::notify::Event>;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_next(ctx)
+    }
+}
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {
@@ -429,7 +438,7 @@ pub(crate) fn remove_test_file(path: &Path) {
 }
 
 pub(crate) fn remove_test_dir(path: &Path) {
-    match remove_dir(path) {
+    match remove_dir_all(path) {
         Ok(()) => {}
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => panic!("unexpected error removing test directory: {err}"),

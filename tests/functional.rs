@@ -8,6 +8,8 @@ mod config;
 mod fd;
 #[path = "functional/fs.rs"]
 mod fs;
+#[path = "functional/fs_notify.rs"]
+mod fs_notify;
 #[path = "functional/io.rs"]
 mod io;
 #[path = "functional/mem.rs"]
