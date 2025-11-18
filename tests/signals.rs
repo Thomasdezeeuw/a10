@@ -240,7 +240,7 @@ impl TestHarness {
                 print_test_ignored(self.quiet);
                 continue;
             }
-            let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
                 send_signal(pid, signal).unwrap();
 
                 // Check if the signals can be received.
@@ -252,13 +252,7 @@ impl TestHarness {
                 };
                 assert_eq!(signal_info.signal(), signal);
             }));
-            if res.is_ok() {
-                print_test_ok(self.quiet);
-                self.passed += 1
-            } else {
-                print_test_failed(self.quiet);
-                self.failed += 1
-            };
+            print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
         }
 
         self.signals = Some(receive_signal.into_inner());
@@ -266,20 +260,14 @@ impl TestHarness {
 
     fn test_cleanup(&mut self) {
         print_test_start(self.quiet, format_args!("cleanup"));
-        let res = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             // After `Signals` is dropped all signals should be unblocked.
             let set = blocked_signalset().unwrap();
             for signal in SIGNALS.into_iter() {
                 assert!(!in_signalset(&set, signal_to_os(signal)));
             }
         }));
-        if res.is_ok() {
-            print_test_ok(self.quiet);
-            self.passed += 1
-        } else {
-            print_test_failed(self.quiet);
-            self.failed += 1
-        };
+        print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
     }
 }
 
@@ -331,6 +319,21 @@ fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
     if !quiet {
         print!("test {name} ... ");
     }
+}
+
+fn print_test_result(
+    result: thread::Result<()>,
+    quiet: bool,
+    passed: &mut usize,
+    failed: &mut usize,
+) {
+    if result.is_ok() {
+        print_test_ok(quiet);
+        *passed += 1
+    } else {
+        print_test_failed(quiet);
+        *failed += 1
+    };
 }
 
 fn print_test_ok(quiet: bool) {
