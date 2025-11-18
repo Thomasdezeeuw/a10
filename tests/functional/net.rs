@@ -1,5 +1,3 @@
-//! Tests for the networking operations.
-
 use std::cell::Cell;
 use std::io::{self, Read, Write};
 use std::mem::{self, size_of};
@@ -13,21 +11,27 @@ use std::ptr;
 use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
-    socket, Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
+    Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
     RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt,
-    SocketOption, Type,
+    SocketOption, Type, socket,
 };
-use a10::{fd, AsyncFd, Extract, Ring};
+use a10::{AsyncFd, Extract, Ring, fd};
 
 use crate::util::{
-    bind_and_listen_ipv4, bind_ipv4, block_on, cancel, expect_io_errno, expect_io_error_kind, fd,
-    init, is_send, is_sync, new_socket, next, require_kernel, start_mulitshot_op, start_op,
-    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket, BadBuf, BadBufSlice, BadReadBuf,
-    BadReadBufSlice, Waker,
+    BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
+    block_on, cancel, expect_io_errno, expect_io_error_kind, fd, init, is_send, is_sync,
+    new_socket, next, require_kernel, start_mulitshot_op, start_op, syscall, tcp_ipv4_socket,
+    test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
+
+#[test]
+fn socket_is_send_and_sync() {
+    is_send::<Socket>();
+    is_sync::<Socket>();
+}
 
 #[test]
 fn bind_is_send_and_sync() {

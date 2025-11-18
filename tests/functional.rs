@@ -10,6 +10,8 @@ mod fd;
 mod mem;
 #[path = "functional/msg.rs"]
 mod msg;
+#[path = "functional/net.rs"]
+mod net;
 #[path = "functional/poll.rs"]
 mod poll;
 #[path = "functional/process.rs"]

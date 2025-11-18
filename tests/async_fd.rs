@@ -8,5 +8,4 @@ mod util;
 mod async_fd {
     mod fs;
     mod io;
-    mod net;
 }
