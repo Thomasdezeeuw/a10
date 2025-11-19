@@ -279,6 +279,13 @@ impl fmt::Debug for Submission {
             }
             libc::IORING_OP_READ => io_op(&mut f, &self.0, "IORING_OP_READ"),
             libc::IORING_OP_READV => io_op(&mut f, &self.0, "IORING_OP_READV"),
+            libc::IORING_OP_READ_MULTISHOT => {
+                let buf_group = unsafe { self.0.__bindgen_anon_4.buf_group };
+                f.field("opcode", &"IORING_OP_READ_MULTISHOT")
+                    .field("fd", &self.0.fd)
+                    .field("flags", &self.0.flags)
+                    .field("buf_group", &buf_group);
+            }
             libc::IORING_OP_WRITE => io_op(&mut f, &self.0, "IORING_OP_WRITE"),
             libc::IORING_OP_WRITEV => io_op(&mut f, &self.0, "IORING_OP_WRITEV"),
             libc::IORING_OP_RENAMEAT => {
