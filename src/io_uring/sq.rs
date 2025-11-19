@@ -338,6 +338,45 @@ impl fmt::Debug for Submission {
                     .field("file_index", unsafe { &self.0.__bindgen_anon_5.file_index })
                     .field("ioprio", &self.0.ioprio);
             }
+            libc::IORING_OP_URING_CMD => {
+                f.field("opcode", &"IORING_OP_URING_CMD")
+                    .field("fd", &self.0.fd);
+
+                match unsafe { self.0.__bindgen_anon_1.__bindgen_anon_1.cmd_op } {
+                    libc::SOCKET_URING_OP_GETSOCKOPT => f
+                        .field("cmd_op", &"SOCKET_URING_OP_GETSOCKOPT")
+                        .field(
+                            "level",
+                            &crate::net::Level(unsafe {
+                                self.0.__bindgen_anon_2.__bindgen_anon_1.level
+                            }),
+                        )
+                        .field(
+                            "name",
+                            &crate::net::Level(unsafe {
+                                self.0.__bindgen_anon_2.__bindgen_anon_1.optname
+                            }),
+                        )
+                        .field("len", unsafe { &self.0.__bindgen_anon_5.optlen }),
+                    libc::SOCKET_URING_OP_SETSOCKOPT => f
+                        .field("cmd_op", &"SOCKET_URING_OP_SETSOCKOPT")
+                        .field(
+                            "level",
+                            &crate::net::Level(unsafe {
+                                self.0.__bindgen_anon_2.__bindgen_anon_1.level
+                            }),
+                        )
+                        .field(
+                            "name",
+                            &crate::net::Level(unsafe {
+                                self.0.__bindgen_anon_2.__bindgen_anon_1.optname
+                            }),
+                        )
+                        .field("len", unsafe { &self.0.__bindgen_anon_5.optlen })
+                        .field("value", unsafe { &*self.0.__bindgen_anon_6.optval }),
+                    op => f.field("cmd_op", &op),
+                };
+            }
             libc::IORING_OP_ASYNC_CANCEL => {
                 f.field("opcode", &"IORING_OP_ASYNC_CANCEL");
                 let cancel_flags = unsafe { self.0.__bindgen_anon_3.cancel_flags };
