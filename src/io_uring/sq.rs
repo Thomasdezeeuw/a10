@@ -316,6 +316,12 @@ impl fmt::Debug for Submission {
                     .field("fd", &self.0.fd)
                     .field("how", &self.0.len);
             }
+            libc::IORING_OP_BIND => {
+                f.field("opcode", &"IORING_OP_BIND")
+                    .field("fd", &self.0.fd)
+                    .field("addr", unsafe { &self.0.__bindgen_anon_2.addr })
+                    .field("addr_size", unsafe { &self.0.__bindgen_anon_1.addr2 });
+            }
             libc::IORING_OP_ACCEPT => {
                 f.field("opcode", &"IORING_OP_ACCEPT")
                     .field("fd", &self.0.fd)
