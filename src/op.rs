@@ -889,7 +889,7 @@ macro_rules! new_operation {
 
         impl<$( $( $lifetime, )* $( $( $resources: $( $trait + )? ::std::fmt::Debug, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::fmt::Debug for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                self.0.fmt_dbg(::std::stringify!("a10::", $name), f)
+                self.0.fmt_dbg(::std::concat!("a10::", ::std::stringify!($name)), f)
             }
         }
     };
