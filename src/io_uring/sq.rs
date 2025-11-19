@@ -393,6 +393,11 @@ impl fmt::Debug for Submission {
                     .field("len", unsafe { &self.0.__bindgen_anon_2.addr })
                     .field("mode", &self.0.len);
             }
+            libc::IORING_OP_FTRUNCATE => {
+                f.field("opcode", &"IORING_OP_FTRUNCATE")
+                    .field("fd", &self.0.fd)
+                    .field("len", unsafe { &self.0.__bindgen_anon_1.off });
+            }
             libc::IORING_OP_UNLINKAT => {
                 f.field("opcode", &"IORING_OP_UNLINKAT")
                     .field("dirfd", &self.0.fd)
