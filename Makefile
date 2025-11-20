@@ -19,7 +19,7 @@ test_sanitizers:
 # Run with `make test_sanitizer sanitizer=$sanitizer`, or use `test_sanitizers`.
 test_sanitizer:
 	RUSTDOCFLAGS=-Zsanitizer=$(sanitizer) RUSTFLAGS=-Zsanitizer=$(sanitizer) \
-	ASAN_OPTIONS=poison_history_size=10 \
+	ASAN_OPTIONS=poison_history_size=1000 \
 	cargo test -Zbuild-std --target x86_64-unknown-linux-gnu --features nightly
 
 check:
