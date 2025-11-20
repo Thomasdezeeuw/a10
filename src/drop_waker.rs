@@ -120,16 +120,6 @@ impl<T, U> DropWake for (T, U) {
     }
 }
 
-impl<T, U, V> DropWake for (T, U, V) {
-    fn into_waker_data(self) -> *const () {
-        Box::<(T, U, V)>::from(self).into_waker_data()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        unsafe { Box::<(T, U, V)>::drop_from_waker_data(data) };
-    }
-}
-
 impl<B> DropWake for Buffer<B> {
     fn into_waker_data(self) -> *const () {
         Box::<B>::from(self.buf).into_waker_data()
