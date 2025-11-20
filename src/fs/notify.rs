@@ -323,6 +323,8 @@ impl<'w> Events<'w> {
                         continue; // Continue to the next event.
                     }
 
+                    // TODO: watch files/directories added if recursive.
+
                     if mask & libc::IN_Q_OVERFLOW != 0 {
                         log::warn!("inotify event queue overflowed");
                         continue;

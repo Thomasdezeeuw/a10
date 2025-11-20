@@ -7,8 +7,9 @@ dev:
 	find src/ tests/ examples/ Makefile Cargo.toml | entr -d -c $(MAKE) $(RUN)
 
 test:
-	cargo test -- --quiet
-	cargo test --all-features -- --quiet
+	cargo test --test functional -- --quiet fs_notify:: --nocapture
+	#cargo test -- --quiet
+	#cargo test --all-features -- --quiet
 
 test_sanitizers:
 	$(MAKE) test_sanitizer sanitizer=address

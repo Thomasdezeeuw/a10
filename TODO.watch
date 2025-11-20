@@ -1,0 +1,56 @@
+//! # Examples
+//!
+//! ```
+//! # #![feature(never_type)]
+//! use std::io;
+//! use std::path::{Path, PathBuf};
+//!
+//! use heph_rt::fs::{watch, Watch};
+//! use heph_rt::Access;
+//! use heph::actor;
+//!
+//! async fn actor<RT: Access>(ctx: actor::Context<!, RT>, path: PathBuf) -> io::Result<()> {
+//!     // Create our watch.
+//!     let mut watch = Watch::new(ctx.runtime_ref())?;
+//!
+//!     let file_name = Path::new("file.txt");
+//!     let file_path = path.join(file_name);
+//!
+//!     // Watch a directory at `path`, generating events for everything that is
+//!     // supported and watch the directory recursively.
+//!     watch.watch_directory(path, watch::Interest::ALL, watch::Recursive::All)?;
+//!
+//!     // Let's pretend another program (or elsewhere in the code) we created a
+//!     // file in the watched directory.
+//!     std::fs::write(&file_path, b"Hello, World!")?;
+//!
+//!     // Wait for filesystem events.
+//!     let mut events = watch.events().await?;
+//!     // Process the event one at a time.
+//!     while let Some(event) = events.next() {
+//!         // Get the path relative to the watched directory.
+//!         let relative_to_dir_path = event.file_path();
+//!         assert_eq!(relative_to_dir_path, file_name);
+//!         // Or get the full path.
+//!         let path = events.path_for(event);
+//!         assert_eq!(path, file_path);
+//!
+//!         // We can also check what happened to the directory, in this case we
+//!         // expect a file creation event.
+//!         assert!(event.file_created());
+//!     }
+//!
+//!     Ok(())
+//! }
+//! # _ = actor::<heph_rt::ThreadLocal>; // Silence dead code warnings.
+//! ```
+
+
+Fix the following:
+
+    ///
+    /// # Notes
+    ///
+    /// `Watch` doesn't automatically watch directories added to a watched
+    /// directory. To watch new directories you have to manually setup a watch
+    /// for the newly created directory.

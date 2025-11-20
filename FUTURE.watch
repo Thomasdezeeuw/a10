@@ -1,0 +1,43 @@
+// NEEDED: inotify_add_watch using direct fd.
+impl Watcher {
+    /// Convert from using a regular file descriptor to using a direct descriptor.
+    ///
+    /// See [`AsyncFd::to_direct_descriptor`].
+    pub fn to_direct_descriptor(self) -> ToDirect {
+        debug_assert!(
+            matches!(self.fd.kind(), fd::Kind::File),
+            "can't covert a direct descriptor to a different direct descriptor"
+        );
+        let sq = self.fd.sq().clone();
+        let fd = self.fd.fd();
+        ToDirect(Operation::new(sq, (self, Box::new(fd)), ()))
+    }
+
+    /// Change the file descriptor on the watcher.
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure `fd` is a valid inotify descriptor.
+    pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
+        self.fd = fd;
+    }
+}
+
+
+operation!(
+    /// [`Future`] behind [`Watcher::to_direct_descriptor`].
+    pub struct ToDirect(sys::fd::ToDirectOp<Watcher>) -> io::Result<Watcher>;
+);
+
+
+// In src/io_uring/fs.rs
+impl io_uring::fd::DirectFdMapper for fs::Watcher {
+    type Output = Self;
+
+    fn map(mut self, dfd: AsyncFd) -> Self::Output {
+        // SAFETY: since we used the original descriptor to make this direct
+        // descriptor we're ensure that it still a signalfd.
+        unsafe { self.set_fd(dfd) }
+        self
+    }
+}
