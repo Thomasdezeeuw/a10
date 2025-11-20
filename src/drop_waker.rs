@@ -4,7 +4,9 @@
 
 use std::cell::UnsafeCell;
 use std::ffi::CString;
-use std::{ptr, task};
+use std::mem::needs_drop;
+use std::os::fd::RawFd;
+use std::{mem, ptr, task};
 
 use crate::fd;
 use crate::io::{Buffer, ReadBufPool};
@@ -90,8 +92,6 @@ impl DropWake for ReadBufPool {
     }
 }
 
-// Don't need to be deallocated.
-
 impl DropWake for () {
     fn into_waker_data(self) -> *const () {
         ptr::null()
@@ -108,18 +108,6 @@ impl DropWake for fd::Kind {
     unsafe fn drop_from_waker_data(_: *const ()) {}
 }
 
-// Uses a `Box` to get a single pointer.
-
-impl<T, U> DropWake for (T, U) {
-    fn into_waker_data(self) -> *const () {
-        Box::<(T, U)>::from(self).into_waker_data()
-    }
-
-    unsafe fn drop_from_waker_data(data: *const ()) {
-        unsafe { Box::<(T, U)>::drop_from_waker_data(data) };
-    }
-}
-
 impl<B> DropWake for Buffer<B> {
     fn into_waker_data(self) -> *const () {
         Box::<B>::from(self.buf).into_waker_data()
@@ -127,5 +115,54 @@ impl<B> DropWake for Buffer<B> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         unsafe { Box::<B>::drop_from_waker_data(data) };
+    }
+}
+
+impl DropWake for (Box<[RawFd; 2]>, fd::Kind) {
+    fn into_waker_data(self) -> *const () {
+        const _: () = assert!(!needs_drop::<fd::Kind>());
+        self.0.into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        unsafe { Box::<[RawFd; 2]>::drop_from_waker_data(data) };
+    }
+}
+
+impl DropWake for (CString, fd::Kind) {
+    fn into_waker_data(self) -> *const () {
+        self.0.into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        unsafe { CString::drop_from_waker_data(data) };
+    }
+}
+
+impl DropWake for (CString, CString) {
+    fn into_waker_data(self) -> *const () {
+        Box::new(self).into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        unsafe { Box::<Self>::drop_from_waker_data(data) };
+    }
+}
+
+impl<T, U> DropWake for (T, Box<U>) {
+    fn into_waker_data(self) -> *const () {
+        if mem::size_of::<T>() == 0 {
+            self.1.into_waker_data()
+        } else {
+            Box::new(self).into_waker_data()
+        }
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        if mem::size_of::<T>() == 0 {
+            unsafe { Box::<U>::drop_from_waker_data(data) }
+        } else {
+            unsafe { Box::<Self>::drop_from_waker_data(data) }
+        }
     }
 }
