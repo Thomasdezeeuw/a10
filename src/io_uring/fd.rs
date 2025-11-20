@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
+use crate::drop_waker::DropWake;
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{FdOperation, fd_operation};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
@@ -78,7 +79,10 @@ fd_operation!(
 
 pub(crate) struct ToDirectOp<M = ()>(PhantomData<*const M>);
 
-impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M> {
+impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M>
+where
+    (M, Box<RawFd>): DropWake,
+{
     type Output = M::Output;
     type Resources = (M, Box<RawFd>);
     type Args = ();
@@ -97,7 +101,10 @@ impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M> {
     }
 }
 
-impl<M: DirectFdMapper> io_uring::Op for ToDirectOp<M> {
+impl<M: DirectFdMapper> io_uring::Op for ToDirectOp<M>
+where
+    (M, Box<RawFd>): DropWake,
+{
     type Output = M::Output;
     type Resources = (M, Box<RawFd>);
     type Args = ();
