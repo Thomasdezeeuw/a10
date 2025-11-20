@@ -346,43 +346,43 @@ impl fmt::Debug for Submission {
                     .field("ioprio", &self.0.ioprio);
             }
             libc::IORING_OP_URING_CMD => {
+                fn sockopt(
+                    f: &mut fmt::DebugStruct<'_, '_>,
+                    submission: &libc::io_uring_sqe,
+                    name: &str,
+                ) {
+                    let level = crate::net::Level(unsafe {
+                        submission.__bindgen_anon_2.__bindgen_anon_1.level
+                    });
+                    let opt = unsafe { submission.__bindgen_anon_2.__bindgen_anon_1.optname };
+                    f.field("cmd_op", &name).field("level", &level);
+                    match level {
+                        // NOTE: Unix also uses `Level::SOCKET`, so
+                        // can't use `UnixOpt`.
+                        crate::net::Level::SOCKET => f.field("name", &crate::net::SocketOpt(opt)),
+                        crate::net::Level::IPV4 => f.field("name", &crate::net::IPv4Opt(opt)),
+                        crate::net::Level::IPV6 => f.field("name", &crate::net::IPv6Opt(opt)),
+                        crate::net::Level::TCP => f.field("name", &crate::net::TcpOpt(opt)),
+                        crate::net::Level::UDP => f.field("name", &crate::net::UdpOpt(opt)),
+                        _ => f.field("name", &crate::net::Opt(opt)),
+                    };
+                    f.field("len", unsafe { &submission.__bindgen_anon_5.optlen });
+                }
+
                 f.field("opcode", &"IORING_OP_URING_CMD")
                     .field("fd", &self.0.fd);
-
                 match unsafe { self.0.__bindgen_anon_1.__bindgen_anon_1.cmd_op } {
-                    libc::SOCKET_URING_OP_GETSOCKOPT => f
-                        .field("cmd_op", &"SOCKET_URING_OP_GETSOCKOPT")
-                        .field(
-                            "level",
-                            &crate::net::Level(unsafe {
-                                self.0.__bindgen_anon_2.__bindgen_anon_1.level
-                            }),
-                        )
-                        .field(
-                            "name",
-                            &crate::net::Level(unsafe {
-                                self.0.__bindgen_anon_2.__bindgen_anon_1.optname
-                            }),
-                        )
-                        .field("len", unsafe { &self.0.__bindgen_anon_5.optlen }),
-                    libc::SOCKET_URING_OP_SETSOCKOPT => f
-                        .field("cmd_op", &"SOCKET_URING_OP_SETSOCKOPT")
-                        .field(
-                            "level",
-                            &crate::net::Level(unsafe {
-                                self.0.__bindgen_anon_2.__bindgen_anon_1.level
-                            }),
-                        )
-                        .field(
-                            "name",
-                            &crate::net::Level(unsafe {
-                                self.0.__bindgen_anon_2.__bindgen_anon_1.optname
-                            }),
-                        )
-                        .field("len", unsafe { &self.0.__bindgen_anon_5.optlen })
-                        .field("value", unsafe { &*self.0.__bindgen_anon_6.optval }),
-                    op => f.field("cmd_op", &op),
-                };
+                    libc::SOCKET_URING_OP_GETSOCKOPT => {
+                        sockopt(&mut f, &self.0, "SOCKET_URING_OP_GETSOCKOPT");
+                    }
+                    libc::SOCKET_URING_OP_SETSOCKOPT => {
+                        sockopt(&mut f, &self.0, "SOCKET_URING_OP_SETSOCKOPT");
+                        f.field("value", unsafe { &*self.0.__bindgen_anon_6.optval });
+                    }
+                    op => {
+                        f.field("cmd_op", &op);
+                    }
+                }
             }
             libc::IORING_OP_ASYNC_CANCEL => {
                 f.field("opcode", &"IORING_OP_ASYNC_CANCEL");
