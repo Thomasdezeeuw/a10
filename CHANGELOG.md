@@ -1,18 +1,85 @@
-# v0.3.0 (unreleased)
+# v0.3.0
 
-* Complete rewrite of the internals in an attempt to make it easier to port.
+* Complete rewrite of the internals to make it easier to port.
 * The methods on `Config` are now implementation specific.
+* Removed the `D: Descriptor` generic parameter from `AsyncFd`, this is now
+  handled internally.
+* The `Descriptor` trait, `File` and `Direct` enums are now replaced by
+  `fd::Kind`.
+* Futures that create `AsyncFd`, such as `net::Socket` and `fs::OpenOptions` now
+  have a `kind` method that sets the fd kind.
 * Removed the `AsFd` implementation for `Ring` as that might not always be
   possible to provide.
 * The `net::SocketAddress` is now implemented for the socket address types for
-  in the standard library, not in libc.
+  in the standard library, not in libc. It's now implemented for `SocketAddr`,
+  `SocketAddrV4`, `SocketAddrV6` and `unix::net::addr::SocketAddr`.
 * `net::Connect` no longer implements `Extract` as all socket address types in
   the library are `Copy`.
 * The `BufSlice` and `BufMutSlice` types now use `IoSlice` and `IoMutSlice` as
   wrapper around `libc::iovec`.
-* The `msg` module now uses the `MsgData` type as type for message data, instead
-  of `u32` (though `MsgData` is also `u32`).
+* The `msg` module now uses the `Message` type as type for message data, instead
+  of `u32` (though `Message` is also `u32`).
 * `process::ReceiveSignals` is now a proper `AsyncIter`.
+* More implementations for `Buf` were added for `Cow<'static, [u8]>`,
+  `Cow<'static, str>`, `Box<str>`, `Arc<[u8]>` and `Arc<str>`.
+* `Ring::submission_queue` has been renamed to `Ring::sq`, because it's shorter.
+* All types from external crates have been removed from the public API (that was
+  mainly `libc`).
+  * `Signals` methods now accept `SignalSet` instead of `libc::sigset_t`.
+  * `Signals` and `ReceiveSignals` now returns `SignalInfo` instead of
+    `libc::signalfd_siginfo`.
+  * `process::wait` and `process:wait_on` now accepts `WaitOption` instead of
+    `c_int`.
+  * `process::wait` and `process:wait_on` now returns `WaitInfo` instead of
+    `libc::siginfo_t`.
+  * `process::Signals` now accepts `SignalSet` and `Signal` in created of
+    `libc::sigset_t`.
+  * `process::Signals::receive_signals` returns `SignalInfo` instead of
+    `libc::signalfd_siginfo`.
+  * `poll::multishot_poll` and `poll::oneshot_poll` now accepts `Interest`
+    instead of `c_int`.
+  * `AsyncFd::advise` now accepts `fs::AdviseFlag` instead of `c_int`.
+  * `AsyncFd::allocate` now accepts `fs::AllocateFlag` instead of `c_int`.
+  * `AsyncFd::multishot_accept4` now accepts `net::AcceptFlag` instead of
+    `c_int`.
+  * `AsyncFd::multishot_recv` now accepts `net::RecvFlag` instead of `c_int`.
+  * `AsyncFd::recv` and related functions now accepts `RecvFlag` instead of
+    `c_int`.
+  * `AsyncFd::send` and related functions now accepts `SendFlag` instead of
+    `c_int`.
+  * `AsyncFd::accept4` now accepts `AcceptFlag` instead of `c_int`.
+  * `AsyncFd::splice` and related function now accepts `SpliceFlag` instead of
+    `c_int`.
+  * `AsyncFd::set_socket_option` and `AsyncFd::socket_option` now accepts
+    `net::Level` and `net::Opt` instead of `c_int`.
+  * `net::socket` now accepts `Domain`, `Type` and `Protocol` instead of
+    `c_int`s.
+  * `mem::advise` now accepts `AdviseFlag` instead of `c_int`.
+* `AsyncFd` also gained a number of new methods:
+  * `AsyncFd::kind` returns the `fd::Kind`.
+  * `AsyncFd::multishot_read` multishot read, similar to multishot recv.
+  * `AsyncFd::send_all_zc` send all bytes using zero-copy I/O.
+  * `AsyncFd::send_all_vectored_zc` send all using zero-copy vectored I/O.
+  * `AsyncFd::bind` the `bind(2)` system call.
+  * `AsyncFd::listen` the `listen(2)` system call.
+  * `AsyncFd::connect` the `connect(2)` system call.
+* The buffer traits have some new methods:
+  * `Buf::len` returns the length.
+  * `Buf::is_empty` returns true if the buffer is empty.
+  * `Buf::as_slice` returns the buffer as slices.
+  * `BufMut::extend_from_slice` and `BufMutSlice::extend_from_slice` extends the
+    buffer with a slice.
+  * `BufSlice::total_len` returns the total length.
+* New `pipe` module that wraps the `pipe(2)` system call.
+* The `msg` module was redesigned. It nows uses a `Listen` and `Sender`.
+  * `msg_listener` was renamed to `msg::listener`.
+  * `MsgListener` was renamed to `msg::Listener`.
+  * `send_msg` and `try_send_msg` were merged into `msg::Listener`.
+  * `MsgToken` was removed, it's now part of `msg::Sender`.
+* Various types were renamed:
+  * `CancelOp` to `CancelOperation`
+  * `poll::PollEvent` to `poll::Event`.
+  * `process::ToSignalsDirect` to `process::ToDirect`.
 
 # v0.2.2
 
