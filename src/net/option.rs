@@ -142,6 +142,24 @@ new_option! {
         }
     }
 
+    /// CPU affinity.
+    #[doc(alias = "SO_INCOMING_CPU")]
+    pub IncomingCpu {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::INCOMING_CPU;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<u32> {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            let value = unsafe { storage.assume_init() };
+            if value.is_negative() { None } else { Some(value as u32) }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value as libc::c_int
+        }
+    }
+
     /// Allow reuse of local addresses.
     #[doc(alias = "SO_REUSEADDR")]
     pub ReuseAddress {

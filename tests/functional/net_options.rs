@@ -97,6 +97,11 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
 }
 
 #[test]
+fn socket_option_incoming_cpu() {
+    test_get_set_socket_option::<option::IncomingCpu>(None, 0, Some(0));
+}
+
+#[test]
 fn socket_option_reuse_address() {
     test_get_set_socket_option::<option::ReuseAddress>(false, true, true);
 }
