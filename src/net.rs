@@ -1100,7 +1100,7 @@ fd_operation! {
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
 
     /// [`Future`] behind [`AsyncFd::socket_option2`].
-    pub struct SocketOption2<T: GetSocketOption>(sys::net::SocketOption2Op<T>) -> io::Result<T>;
+    pub struct SocketOption2<T: GetSocketOption>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
 
     /// [`Future`] behind [`AsyncFd::set_socket_option`].
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
@@ -1366,12 +1366,56 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'
 pub trait SocketAddress: private::SocketAddress + Sized {}
 
 /// Trait that defines how get or set a socket option.
-pub trait GetSocketOption: private::GetSocketOption + Sized {}
+///
+/// See [`AsyncFd::socket_option2`].
+pub trait GetSocketOption: private::GetSocketOption + Sized {
+    /// Returned output.
+    type Output: Sized;
+    /// Type used by the OS.
+    ///
+    /// Often this is an `i32` (`libc::c_int`), which can be mean different
+    /// things depending on the socket retrieved.
+    #[doc(hidden)]
+    type Storage: Sized;
+
+    /// Level to use, see [`Level`].
+    #[doc(hidden)]
+    const LEVEL: Level;
+    /// Option to reitreve, see [`Opt`].
+    #[doc(hidden)]
+    const OPT: Opt;
+
+    /// Returns a mutable raw pointer and length to `storage`.
+    ///
+    /// Default implementation casts a the pointer to `storage` and returns the
+    /// size of `Storage` as length.
+    ///
+    /// # Safety
+    ///
+    /// Only initialised bytes may be written to the pointer returned.
+    #[doc(hidden)]
+    unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as u32,
+        )
+    }
+
+    /// Initialise the value from `storage`, to which at least `length` bytes
+    /// have been written (by the kernel).
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that at least `length` bytes have been written to
+    /// `address`.
+    #[doc(hidden)]
+    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output;
+}
 
 mod private {
     use std::mem::MaybeUninit;
 
-    use super::{Domain, Level, Opt};
+    use super::Domain;
 
     pub trait SocketAddress {
         type Storage: Sized;
@@ -1415,31 +1459,9 @@ mod private {
     }
 
     pub trait GetSocketOption {
-        const LEVEL: Level;
-        const OPT: Opt;
-
-        type Storage: Sized;
-
-        /// Returns a mutable raw pointer and length to `storage`.
-        ///
-        /// # Safety
-        ///
-        /// Only initialised bytes may be written to the pointer returned.
-        unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut libc::c_void, u32) {
-            (
-                storage.as_mut_ptr().cast(),
-                size_of::<Self::Storage>() as u32,
-            )
-        }
-
-        /// Initialise the value from `storage`, to which at least `length`
-        /// bytes have been written (by the kernel).
-        ///
-        /// # Safety
-        ///
-        /// Caller must ensure that at least `length` bytes have been written to
-        /// `address`.
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self;
+        // Just here to ensure it can't be implemented outside of the crate.
+        // Because need `Output` to be public we need to have the methods on the
+        // public trait, otherwise they would be moved here.
     }
 }
 

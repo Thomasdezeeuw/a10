@@ -675,7 +675,7 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
 pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
 
 impl<T: GetSocketOption> io_uring::FdOp for SocketOption2Op<T> {
-    type Output = T;
+    type Output = T::Output;
     type Resources = OptionStorage<Box<MaybeUninit<T::Storage>>>;
     type Args = (Level, Opt);
 
