@@ -95,33 +95,26 @@ mod private {
     }
 }
 
-/// Get and clear the pending socket error.
-#[doc(alias = "SO_ERROR")]
-#[doc(alias = "take_error")] // Used by types in std lib.
-#[allow(missing_debug_implementations)]
-pub enum Error {}
+new_option! {
+    /// Get and clear the pending socket error.
+    #[doc(alias = "SO_ERROR")]
+    #[doc(alias = "take_error")] // Used by types in std lib.
+    pub Error {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::ERROR;
 
-impl Get for Error {
-    const LEVEL: Level = Level::SOCKET;
-    const OPT: Opt = SocketOpt::ERROR.into_opt();
-
-    type Output = Option<io::Error>;
-    type Storage = libc::c_int;
-
-    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self::Output {
-        assert!(length == size_of::<Self::Storage>() as u32);
-        let errno = unsafe { storage.assume_init() };
-        if errno == 0 {
-            None
-        } else {
-            Some(io::Error::from_raw_os_error(errno))
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<io::Error> {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            let errno = unsafe { storage.assume_init() };
+            if errno == 0 {
+                None
+            } else {
+                Some(io::Error::from_raw_os_error(errno))
+            }
         }
     }
-}
 
-impl private::Get for Error {}
-
-new_option! {
     /// Allow reuse of local addresses.
     #[doc(alias = "SO_REUSEADDR")]
     pub ReuseAddress {
