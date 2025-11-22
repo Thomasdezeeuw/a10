@@ -1,3 +1,14 @@
+# v0.3.1
+
+* **BREAKING**: `IoMutSlice::new` was made private, it was never meant to be
+  public.
+  <https://github.com/Thomasdezeeuw/a10/pull/200>.
+* Added `AsyncFd::set_socket_option2` and `AsyncFd::socket_option2`, which
+  provide a type safe interface around `AsyncFd::(set_)socket_option`
+  <https://github.com/Thomasdezeeuw/a10/pull/201>.
+* The `io` module documentation was expanded and improved
+  <https://github.com/Thomasdezeeuw/a10/pull/202>.
+
 # v0.3.0
 
 * Complete rewrite of the internals to make it easier to port.
