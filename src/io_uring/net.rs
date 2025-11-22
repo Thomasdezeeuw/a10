@@ -6,8 +6,8 @@ use std::{ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, Protocol, RecvFlag, SendCall,
-    SendFlag, SocketAddress, Type,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
+    SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
@@ -672,6 +672,52 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
     }
 }
 
+pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
+
+impl<T: option::Get> io_uring::FdOp for SocketOption2Op<T> {
+    type Output = T::Output;
+    type Resources = OptionStorage<Box<MaybeUninit<T::Storage>>>;
+    type Args = (Level, Opt);
+
+    #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
+    fn fill_submission(
+        fd: &AsyncFd,
+        value: &mut Self::Resources,
+        (level, optname): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_1__bindgen_ty_1 {
+                cmd_op: libc::SOCKET_URING_OP_GETSOCKOPT,
+                __pad1: 0,
+            },
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
+                level: level.0,
+                optname: optname.0,
+            },
+        };
+        // SAFETY: the kernel will initiase the value for us.
+        let (optval, optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 { optlen };
+        submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
+            optval: ManuallyDrop::new(optval.addr() as u64),
+        };
+        asan::poison_box(&value.0);
+    }
+
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&value.0);
+        msan::unpoison_box(&value.0);
+        // SAFETY: the kernel initialised the value for us as part of the
+        // getsockopt call.
+        unsafe { T::init(*value.0, n) }
+    }
+}
+
 pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 
 impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
@@ -726,6 +772,49 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
         asan::unpoison_box(&value);
         debug_assert!(n == 0);
         *value
+    }
+}
+
+pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
+
+impl<T: option::Set> io_uring::FdOp for SetSocketOption2Op<T> {
+    type Output = ();
+    type Resources = Box<T::Storage>;
+    type Args = (Level, Opt);
+
+    #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
+    fn fill_submission(
+        fd: &AsyncFd,
+        value: &mut Self::Resources,
+        (level, optname): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_1__bindgen_ty_1 {
+                cmd_op: libc::SOCKET_URING_OP_SETSOCKOPT,
+                __pad1: 0,
+            },
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
+                level: level.0,
+                optname: optname.0,
+            },
+        };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            optlen: size_of::<T::Storage>() as u32,
+        };
+        submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
+            optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as u64),
+        };
+        asan::poison_box(value);
+    }
+
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&value);
+        debug_assert!(n == 0);
     }
 }
 

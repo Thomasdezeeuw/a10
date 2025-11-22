@@ -25,6 +25,8 @@ use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operati
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
+pub mod option;
+
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
 pub const fn socket(
@@ -571,6 +573,8 @@ impl AsyncFd {
 
     /// Get socket option.
     ///
+    /// Also see [`AsyncFd::socket_option2`] for a type safe variant.
+    ///
     /// At the time of writing this limited to the `SOL_SOCKET` level for
     /// io_uring.
     ///
@@ -588,7 +592,20 @@ impl AsyncFd {
         SocketOption(FdOperation::new(self, value, (level, optname.into())))
     }
 
+    /// Get socket option.
+    #[doc = man_link!(getsockopt(2))]
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
+    where
+        T: option::Get,
+    {
+        let value = OptionStorage(Box::new_uninit());
+        SocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
+    }
+
     /// Set socket option.
+    ///
+    /// Also see [`AsyncFd::set_socket_option2`] for a type safe variant.
     ///
     /// At the time of writing this limited to the `SOL_SOCKET` level.
     ///
@@ -605,6 +622,17 @@ impl AsyncFd {
     ) -> SetSocketOption<'fd, T> {
         let value = Box::new(optvalue);
         SetSocketOption(FdOperation::new(self, value, (level, optname.into())))
+    }
+
+    /// Set socket option.
+    #[doc = man_link!(setsockopt(2))]
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option2<'fd, T>(&'fd self, value: T::Value) -> SetSocketOption2<'fd, T>
+    where
+        T: option::Set,
+    {
+        let value = Box::new(T::as_storage(value));
+        SetSocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -1031,6 +1059,14 @@ macro_rules! impl_from {
         $into: ident <- $( $from: ty ),+ $(,)?
     ) => {
         $(
+        impl $from {
+            /// Constant version of the `From` implementation.
+            #[allow(dead_code)]
+            const fn into_opt(self) -> $into {
+                $into(self.0)
+            }
+        }
+
         impl From<$from> for $into {
             fn from(option: $from) -> $into {
                 $into(option.0)
@@ -1084,9 +1120,15 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::socket_option`].
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
 
+    /// [`Future`] behind [`AsyncFd::socket_option2`].
+    pub struct SocketOption2<T: option::Get>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
+
     /// [`Future`] behind [`AsyncFd::set_socket_option`].
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
       impl Extract -> io::Result<T>;
+
+    /// [`Future`] behind [`AsyncFd::set_socket_option2`].
+    pub struct SetSocketOption2<T: option::Set>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::shutdown`].
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
@@ -1672,5 +1714,16 @@ pub(crate) struct AddressStorage<A>(pub(crate) A);
 impl<A> fmt::Debug for AddressStorage<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Address").finish()
+    }
+}
+
+/// Implement [`fmt::Debug`] for [`SockOpt::Storage`].
+///
+/// [`SockOpt::Storage`]: private::SockOpt::Storage
+pub(crate) struct OptionStorage<T>(pub(crate) T);
+
+impl<T> fmt::Debug for OptionStorage<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Option").finish()
     }
 }
