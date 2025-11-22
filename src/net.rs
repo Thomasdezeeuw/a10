@@ -21,6 +21,7 @@ use crate::extract::{Extract, Extractor};
 use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
+use crate::net::options::{GetSocketOption, SetSocketOptionValue};
 use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
@@ -1389,75 +1390,6 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'
 /// all of them A10 uses this trait.
 pub trait SocketAddress: private::SocketAddress + Sized {}
 
-/// Trait that defines how get the value of a socket option.
-///
-/// See [`AsyncFd::socket_option2`].
-pub trait GetSocketOption: private::GetSocketOption + Sized {
-    /// Returned output.
-    type Output: Sized;
-    /// Type used by the OS.
-    ///
-    /// Often this is an `i32` (`libc::c_int`), which can be mean different
-    /// things depending on the socket retrieved.
-    #[doc(hidden)]
-    type Storage: Sized;
-
-    /// Level to use, see [`Level`].
-    #[doc(hidden)]
-    const LEVEL: Level;
-    /// Option to reitreve, see [`Opt`].
-    #[doc(hidden)]
-    const OPT: Opt;
-
-    /// Returns a mutable raw pointer and length to `storage`.
-    ///
-    /// Default implementation casts a the pointer to `storage` and returns the
-    /// size of `Storage` as length.
-    ///
-    /// # Safety
-    ///
-    /// Only initialised bytes may be written to the pointer returned.
-    #[doc(hidden)]
-    unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
-        (
-            storage.as_mut_ptr().cast(),
-            size_of::<Self::Storage>() as u32,
-        )
-    }
-
-    /// Initialise the value from `storage`, to which at least `length` bytes
-    /// have been written (by the kernel).
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure that at least `length` bytes have been written to
-    /// `address`.
-    #[doc(hidden)]
-    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output;
-}
-
-/// Trait that defines how set the value of a socket option.
-///
-/// See [`AsyncFd::set_socket_option2`].
-pub trait SetSocketOptionValue: private::SetSocketOptionValue + Sized {
-    /// Value to set.
-    type Value: Sized;
-    /// Type used by the OS.
-    #[doc(hidden)]
-    type Storage: Sized;
-
-    /// Level to use, see [`Level`].
-    #[doc(hidden)]
-    const LEVEL: Level;
-    /// Option to reitreve, see [`Opt`].
-    #[doc(hidden)]
-    const OPT: Opt;
-
-    /// Returns the value as storage for the OS to read.
-    #[doc(hidden)]
-    fn as_storage(value: Self::Value) -> Self::Storage;
-}
-
 mod private {
     use std::mem::MaybeUninit;
 
@@ -1502,16 +1434,6 @@ mod private {
 
         /// Return the correct domain for the address.
         fn domain(&self) -> Domain;
-    }
-
-    pub trait GetSocketOption {
-        // Just here to ensure it can't be implemented outside of the crate.
-        // Because need `Output` to be public we need to have the methods on the
-        // public trait, otherwise they would be moved here.
-    }
-
-    pub trait SetSocketOptionValue {
-        // Just here to ensure it can't be implemented outside of the crate.
     }
 }
 

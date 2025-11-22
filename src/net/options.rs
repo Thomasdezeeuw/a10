@@ -8,10 +8,88 @@
 use std::io;
 use std::mem::MaybeUninit;
 
-use crate::net::{Level, Opt, SocketOpt, private};
+use crate::net::{Level, Opt, SocketOpt};
 
-#[doc(no_inline)]
-pub use crate::net::{GetSocketOption, SetSocketOptionValue};
+/// Trait that defines how get the value of a socket option.
+///
+/// See [`AsyncFd::socket_option2`].
+pub trait GetSocketOption: private::GetSocketOption + Sized {
+    /// Returned output.
+    type Output: Sized;
+    /// Type used by the OS.
+    ///
+    /// Often this is an `i32` (`libc::c_int`), which can be mean different
+    /// things depending on the socket retrieved.
+    #[doc(hidden)]
+    type Storage: Sized;
+
+    /// Level to use, see [`Level`].
+    #[doc(hidden)]
+    const LEVEL: Level;
+    /// Option to reitreve, see [`Opt`].
+    #[doc(hidden)]
+    const OPT: Opt;
+
+    /// Returns a mutable raw pointer and length to `storage`.
+    ///
+    /// Default implementation casts a the pointer to `storage` and returns the
+    /// size of `Storage` as length.
+    ///
+    /// # Safety
+    ///
+    /// Only initialised bytes may be written to the pointer returned.
+    #[doc(hidden)]
+    unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
+        (
+            storage.as_mut_ptr().cast(),
+            size_of::<Self::Storage>() as u32,
+        )
+    }
+
+    /// Initialise the value from `storage`, to which at least `length` bytes
+    /// have been written (by the kernel).
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that at least `length` bytes have been written to
+    /// `address`.
+    #[doc(hidden)]
+    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output;
+}
+
+/// Trait that defines how set the value of a socket option.
+///
+/// See [`AsyncFd::set_socket_option2`].
+pub trait SetSocketOptionValue: private::SetSocketOptionValue + Sized {
+    /// Value to set.
+    type Value: Sized;
+    /// Type used by the OS.
+    #[doc(hidden)]
+    type Storage: Sized;
+
+    /// Level to use, see [`Level`].
+    #[doc(hidden)]
+    const LEVEL: Level;
+    /// Option to reitreve, see [`Opt`].
+    #[doc(hidden)]
+    const OPT: Opt;
+
+    /// Returns the value as storage for the OS to read.
+    #[doc(hidden)]
+    fn as_storage(value: Self::Value) -> Self::Storage;
+}
+
+mod private {
+    pub trait GetSocketOption {
+        // Just here to ensure it can't be implemented outside of the crate.
+        // Because need `Output` to be public we need to have the methods on the
+        // public trait, otherwise they would be moved here.
+    }
+
+    pub trait SetSocketOptionValue {
+        // Just here to ensure it can't be implemented outside of the crate.
+    }
+}
 
 /// Get and clear the pending socket error.
 #[doc(alias = "SO_ERROR")]

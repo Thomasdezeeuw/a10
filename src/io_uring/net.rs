@@ -5,9 +5,10 @@ use std::{ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
+use crate::net::options::{GetSocketOption, SetSocketOptionValue};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, GetSocketOption, Level, NoAddress, Opt, OptionStorage,
-    Protocol, RecvFlag, SendCall, SendFlag, SetSocketOptionValue, SocketAddress, Type,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
+    SendCall, SendFlag, SocketAddress, Type,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
