@@ -154,3 +154,76 @@ impl Set for ReuseAddress {
 }
 
 impl private::Set for ReuseAddress {}
+
+macro_rules! new_option {
+    (
+        $(
+        $(#[$type_meta:meta])*
+        $type_vis: vis $type_name: ident {
+            type Storage = $storage: ty;
+            const LEVEL = $level: expr;
+            const OPT = $opt: expr;
+
+            // option::Get implementation.
+            $(
+            $(
+            unsafe fn as_mut_ptr($as_mut_ptr_storage: ident: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) $as_mut_ptr: block
+            )?
+
+            unsafe fn init($init_storage: ident: MaybeUninit<Self::Storage>, $init_length: ident: u32) -> $output: ty $init: block
+            )?
+
+            // option::Set implementation.
+            $(
+            fn as_storage($as_storage_value: ident: $value: ty) -> Self::Storage $as_storage: block
+            )?
+        }
+        )+
+    ) => {
+        $(
+        $(#[$type_meta])*
+        #[allow(missing_debug_implementations)]
+        pub enum $type_name {}
+
+        $(
+        impl Get for $type_name {
+            type Output = $output;
+            type Storage = $storage;
+
+            const LEVEL: Level = $level;
+            const OPT: Opt = $opt.into_opt();
+
+            $(
+            unsafe fn as_mut_ptr($as_mut_ptr_storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
+                $as_mut_ptr
+            }
+            )?
+
+            unsafe fn init($init_storage: MaybeUninit<Self::Storage>, $init_length: u32) -> Self::Output {
+                $init
+            }
+        }
+
+        impl private::Get for $type_name {}
+        )?
+
+        $(
+        impl Set for $type_name {
+            type Value = $value;
+            type Storage = $storage;
+
+            const LEVEL: Level = $level;
+            const OPT: Opt = $opt.into_opt();
+
+            fn as_storage($as_storage_value: Self::Value) -> Self::Storage {
+                $as_storage
+            }
+        }
+
+        impl private::Set for $type_name {}
+        )?
+        )+
+    };
+}
+
+use new_option;
