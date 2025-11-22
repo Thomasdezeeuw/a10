@@ -8,7 +8,7 @@
 use std::io;
 use std::mem::MaybeUninit;
 
-use crate::net::{Level, Opt, SocketOpt};
+use crate::net::{self, Level, Opt, SocketOpt};
 
 /// Trait that defines how get the value of a socket option.
 ///
@@ -107,6 +107,19 @@ new_option! {
         unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
             assert!(length == size_of::<Self::Storage>() as u32);
             unsafe { storage.assume_init() >= 1 }
+        }
+    }
+
+    /// Domain.
+    #[doc(alias = "SO_DOMAIN")]
+    pub Domain {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::DOMAIN;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Domain {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Domain(storage.assume_init()) }
         }
     }
 

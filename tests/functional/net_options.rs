@@ -73,6 +73,11 @@ fn socket_option_accept() {
 }
 
 #[test]
+fn socket_option_domain() {
+    test_socket_option::<option::Domain, _>(|got| assert_eq!(got, Domain::IPV4));
+}
+
+#[test]
 fn socket_option_error() {
     test_socket_option::<option::Error, _>(|got| assert!(got.is_none()));
 }
