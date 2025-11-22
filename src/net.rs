@@ -25,6 +25,8 @@ use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operati
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
+pub mod options;
+
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
 pub const fn socket(
