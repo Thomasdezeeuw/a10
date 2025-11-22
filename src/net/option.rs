@@ -152,11 +152,11 @@ new_option! {
         unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<u32> {
             assert!(length == size_of::<Self::Storage>() as u32);
             let value = unsafe { storage.assume_init() };
-            if value.is_negative() { None } else { Some(value as u32) }
+            if value.is_negative() { None } else { Some(value.cast_unsigned()) }
         }
 
         fn as_storage(value: u32) -> Self::Storage {
-            value as libc::c_int
+            value.cast_signed()
         }
     }
 
@@ -175,6 +175,31 @@ new_option! {
 
         fn as_storage(value: bool) -> Self::Storage {
             value.into()
+        }
+    }
+
+    /// Linger option.
+    #[doc(alias = "SO_LINGER")]
+    pub Linger {
+        type Storage = libc::linger;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::LINGER;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<u32> {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            let linger = unsafe { storage.assume_init() };
+            if linger.l_onoff > 0 {
+                Some(linger.l_linger.cast_unsigned())
+            } else {
+                None
+            }
+        }
+
+        fn as_storage(value: Option<u32>) -> Self::Storage {
+            libc::linger {
+                l_onoff: value.is_some().into(),
+                l_linger: value.unwrap_or(0).cast_signed(),
+            }
         }
     }
 
