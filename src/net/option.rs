@@ -13,6 +13,8 @@ use crate::net::{Level, Opt, SocketOpt};
 /// Trait that defines how get the value of a socket option.
 ///
 /// See [`AsyncFd::socket_option2`].
+///
+/// [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
 pub trait Get: private::Get + Sized {
     /// Returned output.
     type Output: Sized;
@@ -60,6 +62,8 @@ pub trait Get: private::Get + Sized {
 /// Trait that defines how set the value of a socket option.
 ///
 /// See [`AsyncFd::set_socket_option2`].
+///
+/// [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
 pub trait Set: private::Set + Sized {
     /// Value to set.
     type Value: Sized;
