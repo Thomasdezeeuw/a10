@@ -21,12 +21,12 @@ use crate::extract::{Extract, Extractor};
 use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
-use crate::net::options::{GetSocketOption, SetSocketOptionValue};
+use crate::net::option::{GetSocketOption, SetSocketOptionValue};
 use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
-pub mod options;
+pub mod option;
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]

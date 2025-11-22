@@ -1,4 +1,4 @@
-use a10::net::options::{Error, GetSocketOption, ReuseAddress};
+use a10::net::option::{Error, GetSocketOption, ReuseAddress};
 use a10::net::{Domain, Level, SetSocketOption, SocketOpt, SocketOption, Type};
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
