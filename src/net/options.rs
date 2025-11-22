@@ -37,3 +37,23 @@ impl GetSocketOption for Error {
 }
 
 impl private::GetSocketOption for Error {}
+
+/// Allow reuse of local addresses.
+#[doc(alias = "SO_REUSEADDR")]
+#[allow(missing_debug_implementations)]
+pub enum ReuseAddress {}
+
+impl GetSocketOption for ReuseAddress {
+    const LEVEL: Level = Level::SOCKET;
+    const OPT: Opt = SocketOpt::REUSE_ADDR.into_opt();
+
+    type Output = bool;
+    type Storage = libc::c_int;
+
+    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self::Output {
+        assert!(length == size_of::<Self::Storage>() as u32);
+        unsafe { storage.assume_init() >= 1 }
+    }
+}
+
+impl private::GetSocketOption for ReuseAddress {}

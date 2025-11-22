@@ -1,4 +1,4 @@
-use a10::net::options::Error;
+use a10::net::options::{Error, ReuseAddress};
 use a10::net::{Domain, GetSocketOption, Level, SetSocketOption, SocketOpt, SocketOption, Type};
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
@@ -54,6 +54,11 @@ fn socket_option() {
 #[test]
 fn socket_option_error() {
     test_socket_option::<Error, _>(|got| assert!(got.is_none()));
+}
+
+#[test]
+fn socket_option_reuse_address() {
+    test_socket_option::<ReuseAddress, _>(|got| assert!(!got));
 }
 
 fn test_socket_option<T: GetSocketOption, F: FnOnce(T::Output)>(assert: F) {
