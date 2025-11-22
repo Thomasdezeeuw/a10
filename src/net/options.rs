@@ -1,8 +1,9 @@
 //! Socket options.
 //!
-//! See [`AsyncFd::socket_option2`].
+//! See [`AsyncFd::socket_option2`] and [`AsyncFd::set_socket_option2`].
 //!
 //! [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
+//! [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
 
 use std::io;
 use std::mem::MaybeUninit;
@@ -10,7 +11,7 @@ use std::mem::MaybeUninit;
 use crate::net::{Level, Opt, SocketOpt, private};
 
 #[doc(no_inline)]
-pub use crate::net::GetSocketOption;
+pub use crate::net::{GetSocketOption, SetSocketOptionValue};
 
 /// Get and clear the pending socket error.
 #[doc(alias = "SO_ERROR")]

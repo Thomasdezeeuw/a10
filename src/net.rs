@@ -605,6 +605,8 @@ impl AsyncFd {
 
     /// Set socket option.
     ///
+    /// Also see [`AsyncFd::set_socket_option2`] for a type safe variant.
+    ///
     /// At the time of writing this limited to the `SOL_SOCKET` level.
     ///
     /// # Safety
@@ -620,6 +622,17 @@ impl AsyncFd {
     ) -> SetSocketOption<'fd, T> {
         let value = Box::new(optvalue);
         SetSocketOption(FdOperation::new(self, value, (level, optname.into())))
+    }
+
+    /// Set socket option.
+    #[doc = man_link!(setsockopt(2))]
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option2<'fd, T>(&'fd self, value: T::Value) -> SetSocketOption2<'fd, T>
+    where
+        T: SetSocketOptionValue,
+    {
+        let value = Box::new(T::as_storage(value));
+        SetSocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -1114,6 +1127,9 @@ fd_operation! {
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
       impl Extract -> io::Result<T>;
 
+    /// [`Future`] behind [`AsyncFd::set_socket_option2`].
+    pub struct SetSocketOption2<T: SetSocketOptionValue>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
+
     /// [`Future`] behind [`AsyncFd::shutdown`].
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
@@ -1373,7 +1389,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'
 /// all of them A10 uses this trait.
 pub trait SocketAddress: private::SocketAddress + Sized {}
 
-/// Trait that defines how get or set a socket option.
+/// Trait that defines how get the value of a socket option.
 ///
 /// See [`AsyncFd::socket_option2`].
 pub trait GetSocketOption: private::GetSocketOption + Sized {
@@ -1418,6 +1434,28 @@ pub trait GetSocketOption: private::GetSocketOption + Sized {
     /// `address`.
     #[doc(hidden)]
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output;
+}
+
+/// Trait that defines how set the value of a socket option.
+///
+/// See [`AsyncFd::set_socket_option2`].
+pub trait SetSocketOptionValue: private::SetSocketOptionValue + Sized {
+    /// Value to set.
+    type Value: Sized;
+    /// Type used by the OS.
+    #[doc(hidden)]
+    type Storage: Sized;
+
+    /// Level to use, see [`Level`].
+    #[doc(hidden)]
+    const LEVEL: Level;
+    /// Option to reitreve, see [`Opt`].
+    #[doc(hidden)]
+    const OPT: Opt;
+
+    /// Returns the value as storage for the OS to read.
+    #[doc(hidden)]
+    fn as_storage(value: Self::Value) -> Self::Storage;
 }
 
 mod private {
@@ -1470,6 +1508,10 @@ mod private {
         // Just here to ensure it can't be implemented outside of the crate.
         // Because need `Output` to be public we need to have the methods on the
         // public trait, otherwise they would be moved here.
+    }
+
+    pub trait SetSocketOptionValue {
+        // Just here to ensure it can't be implemented outside of the crate.
     }
 }
 
