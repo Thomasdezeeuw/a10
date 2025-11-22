@@ -1,3 +1,5 @@
+use std::fmt;
+
 use a10::net::option::{self, Error, ReuseAddress};
 use a10::net::{Domain, Level, SetSocketOption, SocketOpt, SocketOption, Type};
 
@@ -56,11 +58,6 @@ fn socket_option_error() {
     test_socket_option::<Error, _>(|got| assert!(got.is_none()));
 }
 
-#[test]
-fn socket_option_reuse_address() {
-    test_socket_option::<ReuseAddress, _>(|got| assert!(!got));
-}
-
 fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
     require_kernel!(6, 7);
 
@@ -73,4 +70,36 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
         .block_on(socket.socket_option2::<T>())
         .expect("failed to get socket option");
     assert(got);
+}
+
+#[test]
+fn socket_option_reuse_address() {
+    test_get_set_socket_option::<ReuseAddress>(false, true, true);
+}
+
+fn test_get_set_socket_option<T>(expected_initial: T::Output, set: T::Value, expected: T::Output)
+where
+    T: option::Get + option::Set,
+    T::Output: Eq + fmt::Debug,
+{
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
+
+    let got_initial = waker
+        .block_on(socket.socket_option2::<T>())
+        .expect("failed to get initial socket option");
+    assert_eq!(got_initial, expected_initial);
+
+    waker
+        .block_on(socket.set_socket_option2::<T>(set))
+        .expect("failed to set socket option");
+
+    let got = waker
+        .block_on(socket.socket_option2::<T>())
+        .expect("failed to get socket option");
+    assert_eq!(got, expected);
 }

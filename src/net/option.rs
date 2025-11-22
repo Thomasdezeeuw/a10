@@ -136,3 +136,17 @@ impl Get for ReuseAddress {
 }
 
 impl private::Get for ReuseAddress {}
+
+impl Set for ReuseAddress {
+    const LEVEL: Level = Level::SOCKET;
+    const OPT: Opt = SocketOpt::REUSE_ADDR.into_opt();
+
+    type Value = bool;
+    type Storage = libc::c_int;
+
+    fn as_storage(value: Self::Value) -> Self::Storage {
+        value.into()
+    }
+}
+
+impl private::Set for ReuseAddress {}
