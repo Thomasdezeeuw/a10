@@ -155,6 +155,25 @@ impl Set for ReuseAddress {
 
 impl private::Set for ReuseAddress {}
 
+new_option! {
+    /// Allow multiple sockets to be bound to an identical socket address.
+    #[doc(alias = "SO_REUSEPORT")]
+    pub ReusePort {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::REUSE_PORT;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
+        }
+    }
+}
+
 macro_rules! new_option {
     (
         $(

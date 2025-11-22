@@ -1,6 +1,6 @@
 use std::fmt;
 
-use a10::net::option::{self, Error, ReuseAddress};
+use a10::net::option::{self, Error, ReuseAddress, ReusePort};
 use a10::net::{Domain, Level, SetSocketOption, SocketOpt, SocketOption, Type};
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
@@ -75,6 +75,11 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
 #[test]
 fn socket_option_reuse_address() {
     test_get_set_socket_option::<ReuseAddress>(false, true, true);
+}
+
+#[test]
+fn socket_option_reuse_port() {
+    test_get_set_socket_option::<ReusePort>(false, true, true);
 }
 
 fn test_get_set_socket_option<T>(expected_initial: T::Output, set: T::Value, expected: T::Output)
