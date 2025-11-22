@@ -54,6 +54,11 @@ fn socket_option() {
 }
 
 #[test]
+fn socket_option_accept() {
+    test_socket_option::<option::Accept, _>(|got| assert!(!got));
+}
+
+#[test]
 fn socket_option_error() {
     test_socket_option::<Error, _>(|got| assert!(got.is_none()));
 }
