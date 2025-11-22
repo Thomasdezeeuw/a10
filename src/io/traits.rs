@@ -284,7 +284,7 @@ impl IoMutSlice {
     /// # Safety
     ///
     /// Caller must ensure that `buf` outlives the returned `IoMutSlice`.
-    pub unsafe fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
+    pub(crate) unsafe fn new<B: BufMut>(buf: &mut B) -> IoMutSlice {
         IoMutSlice(crate::sys::io::IoMutSlice::new(buf))
     }
 
