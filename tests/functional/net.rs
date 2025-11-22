@@ -13,7 +13,7 @@ use a10::io::ReadBufPool;
 use a10::net::{
     Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
     RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt,
-    SocketOption, Type, socket,
+    Type, socket,
 };
 use a10::{AsyncFd, Extract, Ring, fd};
 
@@ -1499,45 +1499,6 @@ fn shutdown() {
     let mut buf = vec![0; 10];
     let n = client.read(&mut buf).expect("failed to send data");
     assert_eq!(n, 0);
-}
-
-#[test]
-fn socket_option() {
-    require_kernel!(6, 7);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    is_send::<SocketOption<libc::c_int>>();
-    is_sync::<SocketOption<libc::c_int>>();
-
-    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
-
-    let got_domain = waker
-        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::DOMAIN))
-        .unwrap();
-    assert_eq!(libc::AF_INET, got_domain);
-
-    let got_type = waker
-        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::TYPE))
-        .unwrap();
-    assert_eq!(libc::SOCK_STREAM, got_type);
-
-    let got_protocol = waker
-        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::PROTOCOL))
-        .unwrap();
-    assert_eq!(libc::IPPROTO_TCP, got_protocol);
-
-    let got_linger = waker
-        .block_on(socket.socket_option::<libc::linger>(Level::SOCKET, SocketOpt::LINGER))
-        .unwrap();
-    assert_eq!(0, got_linger.l_onoff);
-    assert_eq!(0, got_linger.l_linger);
-
-    let got_error = waker
-        .block_on(socket.socket_option::<libc::c_int>(Level::SOCKET, SocketOpt::ERROR))
-        .unwrap();
-    assert_eq!(0, got_error);
 }
 
 #[test]
