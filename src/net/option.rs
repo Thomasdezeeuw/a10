@@ -211,6 +211,19 @@ new_option! {
             value.into()
         }
     }
+
+    /// Retrieves the socket protocol.
+    #[doc(alias = "SO_PROTOCOL")]
+    pub Protocol {
+        type Storage = u32;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::PROTOCOL;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Protocol {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Protocol(storage.assume_init()) }
+        }
+    }
 }
 
 macro_rules! new_option {

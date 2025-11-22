@@ -1,8 +1,8 @@
 use std::fmt;
 
 use a10::net::{
-    Domain, Level, SetSocketOption, SetSocketOption2, SocketOpt, SocketOption, SocketOption2, Type,
-    option,
+    Domain, Level, Protocol, SetSocketOption, SetSocketOption2, SocketOpt, SocketOption,
+    SocketOption2, Type, option,
 };
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
@@ -82,13 +82,23 @@ fn socket_option_error() {
     test_socket_option::<option::Error, _>(|got| assert!(got.is_none()));
 }
 
+#[test]
+fn socket_option_protocol() {
+    test_socket_option::<option::Protocol, _>(|got| assert_eq!(got, Protocol::TCP));
+}
+
 fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
     require_kernel!(6, 7);
 
     let sq = test_queue();
     let waker = Waker::new();
 
-    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
+    let socket = waker.block_on(new_socket(
+        sq,
+        Domain::IPV4,
+        Type::STREAM,
+        Some(Protocol::TCP),
+    ));
 
     let got = waker
         .block_on(socket.socket_option2::<T>())
