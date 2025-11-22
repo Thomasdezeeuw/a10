@@ -1,4 +1,5 @@
-use a10::net::{Domain, Level, SetSocketOption, SocketOpt, SocketOption, Type};
+use a10::net::options::Error;
+use a10::net::{Domain, GetSocketOption, Level, SetSocketOption, SocketOpt, SocketOption, Type};
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
 
@@ -48,4 +49,23 @@ fn socket_option() {
         .block_on(socket.socket_option::<libc::c_int>(Level::SOCKET, SocketOpt::ERROR))
         .unwrap();
     assert_eq!(0, got_error);
+}
+
+#[test]
+fn socket_option_error() {
+    test_socket_option::<Error, _>(|got| assert!(got.is_none()));
+}
+
+fn test_socket_option<T: GetSocketOption, F: FnOnce(T::Output)>(assert: F) {
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
+
+    let got = waker
+        .block_on(socket.socket_option2::<T>())
+        .expect("failed to get socket option");
+    assert(got);
 }

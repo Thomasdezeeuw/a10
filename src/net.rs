@@ -1046,6 +1046,14 @@ macro_rules! impl_from {
         $into: ident <- $( $from: ty ),+ $(,)?
     ) => {
         $(
+        impl $from {
+            /// Constant version of the `From` implementation.
+            #[allow(dead_code)]
+            const fn into_opt(self) -> $into {
+                $into(self.0)
+            }
+        }
+
         impl From<$from> for $into {
             fn from(option: $from) -> $into {
                 $into(option.0)
