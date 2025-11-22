@@ -224,6 +224,19 @@ new_option! {
             unsafe { net::Protocol(storage.assume_init()) }
         }
     }
+
+    /// Type.
+    #[doc(alias = "SO_TYPE")]
+    pub Type {
+        type Storage = u32;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::TYPE;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Type {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Type(storage.assume_init()) }
+        }
+    }
 }
 
 macro_rules! new_option {

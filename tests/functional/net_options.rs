@@ -87,6 +87,11 @@ fn socket_option_protocol() {
     test_socket_option::<option::Protocol, _>(|got| assert_eq!(got, Protocol::TCP));
 }
 
+#[test]
+fn socket_option_type() {
+    test_socket_option::<option::Type, _>(|got| assert_eq!(got, Type::STREAM));
+}
+
 fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
     require_kernel!(6, 7);
 
