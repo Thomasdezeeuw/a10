@@ -111,6 +111,11 @@ fn socket_option_reuse_port() {
     test_get_set_socket_option::<option::ReusePort>(false, true, true);
 }
 
+#[test]
+fn socket_option_keep_alive() {
+    test_get_set_socket_option::<option::KeepAlive>(false, true, true);
+}
+
 fn test_get_set_socket_option<T>(expected_initial: T::Output, set: T::Value, expected: T::Output)
 where
     T: option::Get + option::Set,

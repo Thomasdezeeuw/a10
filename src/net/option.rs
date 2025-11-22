@@ -160,6 +160,24 @@ new_option! {
         }
     }
 
+    /// Enable sending of keep-alive messages on connection-oriented
+    /// sockets.
+    #[doc(alias = "SO_KEEPALIVE")]
+    pub KeepAlive {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::KEEP_ALIVE;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
+        }
+    }
+
     /// Allow reuse of local addresses.
     #[doc(alias = "SO_REUSEADDR")]
     pub ReuseAddress {
