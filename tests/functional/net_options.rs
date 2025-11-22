@@ -1,19 +1,34 @@
 use std::fmt;
 
-use a10::net::{Domain, Level, SetSocketOption, SocketOpt, SocketOption, Type, option};
+use a10::net::{
+    Domain, Level, SetSocketOption, SetSocketOption2, SocketOpt, SocketOption, SocketOption2, Type,
+    option,
+};
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
 
 #[test]
-fn async_fd_socket_options_is_send_and_sync() {
+fn async_fd_socket_option_is_send_and_sync() {
     is_send::<SocketOption<libc::c_int>>();
     is_sync::<SocketOption<libc::c_int>>();
 }
 
 #[test]
-fn async_fd_set_socket_options_is_send_and_sync() {
+fn async_fd_set_socket_option_is_send_and_sync() {
     is_send::<SetSocketOption<libc::c_int>>();
     is_sync::<SetSocketOption<libc::c_int>>();
+}
+
+#[test]
+fn async_fd_socket_option2_is_send_and_sync() {
+    is_send::<SocketOption2<option::ReuseAddress>>();
+    is_sync::<SocketOption2<option::ReuseAddress>>();
+}
+
+#[test]
+fn async_fd_set_socket_options_is_send_and_sync() {
+    is_send::<SetSocketOption2<option::ReuseAddress>>();
+    is_sync::<SetSocketOption2<option::ReuseAddress>>();
 }
 
 #[test]
