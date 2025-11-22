@@ -571,6 +571,8 @@ impl AsyncFd {
 
     /// Get socket option.
     ///
+    /// Also see [`AsyncFd::socket_option2`] for a type safe variant.
+    ///
     /// At the time of writing this limited to the `SOL_SOCKET` level for
     /// io_uring.
     ///
@@ -586,6 +588,17 @@ impl AsyncFd {
     ) -> SocketOption<'fd, T> {
         let value = Box::new_uninit();
         SocketOption(FdOperation::new(self, value, (level, optname.into())))
+    }
+
+    /// Get socket option.
+    #[doc = man_link!(getsockopt(2))]
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
+    where
+        T: GetSocketOption,
+    {
+        let value = OptionStorage(Box::new_uninit());
+        SocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
     }
 
     /// Set socket option.
@@ -1084,6 +1097,9 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::socket_option`].
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
 
+    /// [`Future`] behind [`AsyncFd::socket_option2`].
+    pub struct SocketOption2<T: GetSocketOption>(sys::net::SocketOption2Op<T>) -> io::Result<T>;
+
     /// [`Future`] behind [`AsyncFd::set_socket_option`].
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
       impl Extract -> io::Result<T>;
@@ -1347,10 +1363,13 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'
 /// all of them A10 uses this trait.
 pub trait SocketAddress: private::SocketAddress + Sized {}
 
+/// Trait that defines how get or set a socket option.
+pub trait GetSocketOption: private::GetSocketOption + Sized {}
+
 mod private {
     use std::mem::MaybeUninit;
 
-    use super::Domain;
+    use super::{Domain, Level, Opt};
 
     pub trait SocketAddress {
         type Storage: Sized;
@@ -1391,6 +1410,34 @@ mod private {
 
         /// Return the correct domain for the address.
         fn domain(&self) -> Domain;
+    }
+
+    pub trait GetSocketOption {
+        const LEVEL: Level;
+        const OPT: Opt;
+
+        type Storage: Sized;
+
+        /// Returns a mutable raw pointer and length to `storage`.
+        ///
+        /// # Safety
+        ///
+        /// Only initialised bytes may be written to the pointer returned.
+        unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut libc::c_void, u32) {
+            (
+                storage.as_mut_ptr().cast(),
+                size_of::<Self::Storage>() as u32,
+            )
+        }
+
+        /// Initialise the value from `storage`, to which at least `length`
+        /// bytes have been written (by the kernel).
+        ///
+        /// # Safety
+        ///
+        /// Caller must ensure that at least `length` bytes have been written to
+        /// `address`.
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self;
     }
 }
 
@@ -1672,5 +1719,16 @@ pub(crate) struct AddressStorage<A>(pub(crate) A);
 impl<A> fmt::Debug for AddressStorage<A> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Address").finish()
+    }
+}
+
+/// Implement [`fmt::Debug`] for [`SockOpt::Storage`].
+///
+/// [`SockOpt::Storage`]: private::SockOpt::Storage
+pub(crate) struct OptionStorage<T>(pub(crate) T);
+
+impl<T> fmt::Debug for OptionStorage<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Option").finish()
     }
 }

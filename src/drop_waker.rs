@@ -10,7 +10,7 @@ use std::{mem, ptr, task};
 
 use crate::fd;
 use crate::io::{Buffer, ReadBufPool};
-use crate::net::AddressStorage;
+use crate::net::{AddressStorage, OptionStorage};
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
 ///
@@ -79,6 +79,16 @@ impl<A> DropWake for AddressStorage<Box<A>> {
 
     unsafe fn drop_from_waker_data(data: *const ()) {
         unsafe { Box::<A>::drop_from_waker_data(data) };
+    }
+}
+
+impl<T> DropWake for OptionStorage<Box<T>> {
+    fn into_waker_data(self) -> *const () {
+        self.0.into_waker_data()
+    }
+
+    unsafe fn drop_from_waker_data(data: *const ()) {
+        unsafe { Box::<T>::drop_from_waker_data(data) };
     }
 }
 
