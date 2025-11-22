@@ -5,10 +5,9 @@ use std::{ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
-use crate::net::option::{GetSocketOption, SetSocketOptionValue};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type,
+    SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
@@ -675,7 +674,7 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
 
 pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
 
-impl<T: GetSocketOption> io_uring::FdOp for SocketOption2Op<T> {
+impl<T: option::Get> io_uring::FdOp for SocketOption2Op<T> {
     type Output = T::Output;
     type Resources = OptionStorage<Box<MaybeUninit<T::Storage>>>;
     type Args = (Level, Opt);
@@ -778,7 +777,7 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
 
 pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
 
-impl<T: SetSocketOptionValue> io_uring::FdOp for SetSocketOption2Op<T> {
+impl<T: option::Set> io_uring::FdOp for SetSocketOption2Op<T> {
     type Output = ();
     type Resources = Box<T::Storage>;
     type Args = (Level, Opt);

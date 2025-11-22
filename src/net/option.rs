@@ -13,7 +13,7 @@ use crate::net::{Level, Opt, SocketOpt};
 /// Trait that defines how get the value of a socket option.
 ///
 /// See [`AsyncFd::socket_option2`].
-pub trait GetSocketOption: private::GetSocketOption + Sized {
+pub trait Get: private::Get + Sized {
     /// Returned output.
     type Output: Sized;
     /// Type used by the OS.
@@ -60,7 +60,7 @@ pub trait GetSocketOption: private::GetSocketOption + Sized {
 /// Trait that defines how set the value of a socket option.
 ///
 /// See [`AsyncFd::set_socket_option2`].
-pub trait SetSocketOptionValue: private::SetSocketOptionValue + Sized {
+pub trait Set: private::Set + Sized {
     /// Value to set.
     type Value: Sized;
     /// Type used by the OS.
@@ -80,13 +80,13 @@ pub trait SetSocketOptionValue: private::SetSocketOptionValue + Sized {
 }
 
 mod private {
-    pub trait GetSocketOption {
+    pub trait Get {
         // Just here to ensure it can't be implemented outside of the crate.
         // Because need `Output` to be public we need to have the methods on the
         // public trait, otherwise they would be moved here.
     }
 
-    pub trait SetSocketOptionValue {
+    pub trait Set {
         // Just here to ensure it can't be implemented outside of the crate.
     }
 }
@@ -97,7 +97,7 @@ mod private {
 #[allow(missing_debug_implementations)]
 pub enum Error {}
 
-impl GetSocketOption for Error {
+impl Get for Error {
     const LEVEL: Level = Level::SOCKET;
     const OPT: Opt = SocketOpt::ERROR.into_opt();
 
@@ -115,14 +115,14 @@ impl GetSocketOption for Error {
     }
 }
 
-impl private::GetSocketOption for Error {}
+impl private::Get for Error {}
 
 /// Allow reuse of local addresses.
 #[doc(alias = "SO_REUSEADDR")]
 #[allow(missing_debug_implementations)]
 pub enum ReuseAddress {}
 
-impl GetSocketOption for ReuseAddress {
+impl Get for ReuseAddress {
     const LEVEL: Level = Level::SOCKET;
     const OPT: Opt = SocketOpt::REUSE_ADDR.into_opt();
 
@@ -135,4 +135,4 @@ impl GetSocketOption for ReuseAddress {
     }
 }
 
-impl private::GetSocketOption for ReuseAddress {}
+impl private::Get for ReuseAddress {}

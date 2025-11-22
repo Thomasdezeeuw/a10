@@ -21,7 +21,6 @@ use crate::extract::{Extract, Extractor};
 use crate::io::{
     Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
 };
-use crate::net::option::{GetSocketOption, SetSocketOptionValue};
 use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
@@ -598,7 +597,7 @@ impl AsyncFd {
     #[doc(alias = "getsockopt")]
     pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
     where
-        T: GetSocketOption,
+        T: option::Get,
     {
         let value = OptionStorage(Box::new_uninit());
         SocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
@@ -630,7 +629,7 @@ impl AsyncFd {
     #[doc(alias = "setsockopt")]
     pub fn set_socket_option2<'fd, T>(&'fd self, value: T::Value) -> SetSocketOption2<'fd, T>
     where
-        T: SetSocketOptionValue,
+        T: option::Set,
     {
         let value = Box::new(T::as_storage(value));
         SetSocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
@@ -1122,14 +1121,14 @@ fd_operation! {
     pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
 
     /// [`Future`] behind [`AsyncFd::socket_option2`].
-    pub struct SocketOption2<T: GetSocketOption>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
+    pub struct SocketOption2<T: option::Get>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
 
     /// [`Future`] behind [`AsyncFd::set_socket_option`].
     pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
       impl Extract -> io::Result<T>;
 
     /// [`Future`] behind [`AsyncFd::set_socket_option2`].
-    pub struct SetSocketOption2<T: SetSocketOptionValue>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
+    pub struct SetSocketOption2<T: option::Set>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::shutdown`].
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
