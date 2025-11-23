@@ -2,7 +2,7 @@
 
 use std::cmp::min;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{fmt, io, mem};
 
@@ -23,9 +23,9 @@ impl<I: Implementation> Queue<I> {
     }
 
     pub(crate) fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        self.shared.is_polling.store(true, Ordering::Release);
-        let result = self.completions.poll(&self.shared.data, timeout);
-        self.shared.is_polling.store(false, Ordering::Release);
+        // If we don't wait we don't have to set polling.
+        let polling = (timeout != Some(Duration::ZERO)).then_some(&self.shared.is_polling);
+        let result = self.completions.poll(&self.shared.data, timeout, polling);
         let completions = result?;
 
         for completion in completions {
@@ -125,6 +125,7 @@ pub(crate) trait Completions: fmt::Debug {
         &'a mut self,
         shared: &Self::Shared,
         timeout: Option<Duration>,
+        is_polling: Option<&AtomicBool>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>>;
 
     /// Return the currently available number of places in the submission queue.

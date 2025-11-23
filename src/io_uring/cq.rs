@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, BorrowedFd};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
@@ -75,7 +75,12 @@ impl Completions {
 
     /// Make the `io_uring_enter` system call.
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn enter(&mut self, shared: &io_uring::Shared, timeout: Option<Duration>) -> io::Result<()> {
+    fn enter(
+        &mut self,
+        shared: &io_uring::Shared,
+        timeout: Option<Duration>,
+        is_polling: Option<&AtomicBool>,
+    ) -> io::Result<()> {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
@@ -102,6 +107,9 @@ impl Completions {
         let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
         log::debug!(submissions = submissions; "waiting for completion events");
+        if let Some(is_polling) = is_polling {
+            is_polling.store(true, Ordering::Release);
+        }
         let result = syscall!(io_uring_enter2(
             shared.rfd.as_raw_fd(),
             submissions,
@@ -110,6 +118,9 @@ impl Completions {
             ptr::from_ref(&args).cast(),
             size_of::<libc::io_uring_getevents_arg>(),
         ));
+        if let Some(is_polling) = is_polling {
+            is_polling.store(false, Ordering::Release);
+        }
         match result {
             Ok(_) => Ok(()),
             // Hit timeout or got interrupted, we can ignore it.
@@ -140,13 +151,14 @@ impl crate::cq::Completions for Completions {
         &'a mut self,
         shared: &Self::Shared,
         timeout: Option<Duration>,
+        is_polling: Option<&AtomicBool>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>> {
         let head = self.completion_head();
         let mut tail = self.completion_tail();
         if head == tail && !matches!(timeout, Some(Duration::ZERO)) {
             // If we have no completions and we have no, or a non-zero, timeout
             // we make a system call to wait for completion events.
-            self.enter(shared, timeout)?;
+            self.enter(shared, timeout, is_polling)?;
             // NOTE: we're the only onces writing to the completion `head` so we
             // don't need to read it again.
             tail = self.completion_tail();

@@ -24,6 +24,7 @@ impl crate::cq::Completions for Completions {
         &'a mut self,
         shared: &Self::Shared,
         timeout: Option<Duration>,
+        is_polling: Option<&AtomicBool>,
     ) -> io::Result<impl Iterator<Item = &'a Self::Event>> {
         self.events.clear();
 
@@ -45,6 +46,9 @@ impl crate::cq::Completions for Completions {
         };
         drop(change_list); // Unlock, to not block others.
 
+        if let Some(is_polling) = is_polling {
+            is_polling.store(true, Ordering::Release);
+        }
         let result = syscall!(kevent(
             shared.kq.as_raw_fd(),
             // SAFETY: casting `Event` to `libc::kevent` is safe due to
@@ -60,6 +64,9 @@ impl crate::cq::Completions for Completions {
                 .map(|s| s as *const _)
                 .unwrap_or(ptr::null_mut()),
         ));
+        if let Some(is_polling) = is_polling {
+            is_polling.store(false, Ordering::Release);
+        }
         let mut result_err = None;
         match result {
             // SAFETY: `kevent` ensures that `n` events are written.
