@@ -328,8 +328,12 @@ unsafe impl BufMut for ReadBuf {
         }
     }
 
-    unsafe fn set_init(&mut self, _: usize) {
-        panic!("Don't call a10::Buf::set_init");
+    unsafe fn set_init(&mut self, n: usize) {
+        if let Some(ptr) = self.owned {
+            self.owned = Some(change_size(ptr, ptr.len() + n));
+        } else {
+            // Not doing anything.
+        }
     }
 
     fn buffer_group(&self) -> Option<BufGroupId> {
