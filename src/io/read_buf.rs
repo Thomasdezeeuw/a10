@@ -324,7 +324,7 @@ unsafe impl BufMut for ReadBuf {
             let len = (self.capacity() - ptr.len()) as u32;
             unsafe { (ptr.cast::<u8>().add(ptr.len()).as_ptr(), len) }
         } else {
-            (ptr::null_mut(), self.capacity() as u32)
+            (ptr::null_mut(), 0)
         }
     }
 
