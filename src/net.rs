@@ -743,6 +743,8 @@ new_flag!(
     /// See [`Opt`].
     #[doc = man_link!(socket(7))]
     pub struct SocketOpt(u32) {
+        /// Returns the address of the peer connected to the socket.
+        PEER_NAME = libc::SO_PEERNAME,
         /// Returns a value indicating whether or not this socket has been
         /// marked to accept connections with `listen(2)`.
         ACCEPT_CONN = libc::SO_ACCEPTCONN,

@@ -366,7 +366,8 @@ impl fmt::Debug for Submission {
                         crate::net::Level::UDP => f.field("name", &crate::net::UdpOpt(opt)),
                         _ => f.field("name", &crate::net::Opt(opt)),
                     };
-                    f.field("len", unsafe { &submission.__bindgen_anon_5.optlen });
+                    f.field("value", unsafe { &*submission.__bindgen_anon_6.optval })
+                        .field("len", unsafe { &submission.__bindgen_anon_5.optlen });
                 }
 
                 f.field("opcode", &"IORING_OP_URING_CMD")
@@ -377,7 +378,6 @@ impl fmt::Debug for Submission {
                     }
                     libc::SOCKET_URING_OP_SETSOCKOPT => {
                         sockopt(&mut f, &self.0, "SOCKET_URING_OP_SETSOCKOPT");
-                        f.field("value", unsafe { &*self.0.__bindgen_anon_6.optval });
                     }
                     op => {
                         f.field("cmd_op", &op);
