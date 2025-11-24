@@ -1,8 +1,9 @@
 use std::fmt;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
 use a10::net::{
-    Domain, Level, Protocol, SetSocketOption, SetSocketOption2, SocketOpt, SocketOption,
-    SocketOption2, Type, option,
+    Domain, Level, Protocol, SetSocketOption, SetSocketOption2, SocketAddress, SocketOpt,
+    SocketOption, SocketOption2, Type, option,
 };
 
 use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
@@ -65,6 +66,63 @@ fn socket_option() {
         .block_on(socket.socket_option::<libc::c_int>(Level::SOCKET, SocketOpt::ERROR))
         .unwrap();
     assert_eq!(0, got_error);
+}
+
+#[test]
+fn socket_option_peer_name_ip() {
+    test_socket_peer_name(Ipv4Addr::LOCALHOST.into(), |port| {
+        SocketAddr::new(Ipv4Addr::LOCALHOST.into(), port)
+    });
+}
+
+#[test]
+fn socket_option_peer_name_ip6() {
+    test_socket_peer_name(Ipv6Addr::LOCALHOST.into(), |port| {
+        SocketAddr::new(Ipv6Addr::LOCALHOST.into(), port)
+    });
+}
+
+#[test]
+fn socket_option_peer_name_ipv4() {
+    test_socket_peer_name(Ipv4Addr::LOCALHOST.into(), |port| {
+        SocketAddrV4::new(Ipv4Addr::LOCALHOST, port)
+    });
+}
+
+#[test]
+fn socket_option_peer_name_ipv6() {
+    test_socket_peer_name(Ipv6Addr::LOCALHOST.into(), |port| {
+        SocketAddrV6::new(Ipv6Addr::LOCALHOST, port, 0, 0)
+    });
+}
+
+fn test_socket_peer_name<A, F>(address: IpAddr, expected: F)
+where
+    A: SocketAddress + Eq + fmt::Debug,
+    F: FnOnce(u16) -> A,
+{
+    require_kernel!(6, 7);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let listener = std::net::TcpListener::bind(SocketAddr::new(address, 0)).unwrap();
+    let address = listener.local_addr().unwrap();
+
+    let socket = waker.block_on(new_socket(
+        sq,
+        Domain::for_address(&address),
+        Type::STREAM,
+        Some(Protocol::TCP),
+    ));
+
+    waker.block_on(socket.connect(address)).unwrap();
+
+    let got = waker
+        .block_on(socket.socket_option2::<option::PeerName<A>>())
+        .expect("failed to get socket option");
+    let expected = expected(address.port());
+    assert_eq!(got, expected);
 }
 
 #[test]

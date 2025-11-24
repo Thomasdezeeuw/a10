@@ -6,9 +6,10 @@
 //! [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
 
 use std::io;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
-use crate::net::{self, Level, Opt, SocketOpt};
+use crate::net::{self, Level, Opt, SocketAddress, SocketOpt};
 
 /// Trait that defines how get the value of a socket option.
 ///
@@ -94,6 +95,30 @@ mod private {
         // Just here to ensure it can't be implemented outside of the crate.
     }
 }
+
+/// Returns the address of the peer connected to the socket.
+#[doc(alias = "SO_PEERNAME")]
+#[allow(missing_debug_implementations)]
+pub struct PeerName<A>(PhantomData<fn() -> A>);
+
+impl<A: SocketAddress> Get for PeerName<A> {
+    type Output = A;
+    type Storage = A::Storage;
+
+    const LEVEL: Level = Level::SOCKET;
+    const OPT: Opt = SocketOpt::PEER_NAME.into_opt();
+
+    unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
+        let (ptr, length) = unsafe { A::as_mut_ptr(storage) };
+        (ptr.cast(), length)
+    }
+
+    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output {
+        unsafe { A::init(storage, length) }
+    }
+}
+
+impl<A: SocketAddress> private::Get for PeerName<A> {}
 
 new_option! {
     /// Returns a value indicating whether or not this socket has been
