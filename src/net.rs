@@ -170,6 +170,25 @@ impl AsyncFd {
         Connect(FdOperation::new(self, storage, ()))
     }
 
+    /// Returns the current address to which the socket is bound.
+    #[doc = man_link!(getsockname(2))]
+    #[doc(alias = "getsockname")]
+    pub fn local_addr<'fd, A: SocketAddress>(&'fd self) -> SocketName<'fd, A> {
+        self.socket_name(Name::Local)
+    }
+
+    /// Returns the address of the peer connected to the socket.
+    #[doc = man_link!(getpeername(2))]
+    #[doc(alias = "getpeername")]
+    pub fn peer_addr<'fd, A: SocketAddress>(&'fd self) -> SocketName<'fd, A> {
+        self.socket_name(Name::Peer)
+    }
+
+    fn socket_name<'fd, A: SocketAddress>(&'fd self, name: Name) -> SocketName<'fd, A> {
+        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        SocketName(FdOperation::new(self, address, name))
+    }
+
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
@@ -646,6 +665,12 @@ impl AsyncFd {
     pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
         Shutdown(FdOperation::new(self, (), how))
     }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub(crate) enum Name {
+    Local,
+    Peer,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1167,6 +1192,9 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::connect`].
     pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::peer_addr`] and [`AsyncFd::local_addr`].
+    pub struct SocketName<A: SocketAddress>(sys::net::SocketNameOp<A>) -> io::Result<A>;
 
     /// [`Future`] behind [`AsyncFd::recv`].
     pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
