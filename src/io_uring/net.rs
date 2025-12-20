@@ -6,8 +6,8 @@ use std::{ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
@@ -134,6 +134,60 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
     fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
         asan::unpoison_box(&address.0);
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) struct SocketNameOp<A>(PhantomData<*const A>);
+
+impl<A: SocketAddress> io_uring::FdOp for SocketNameOp<A> {
+    type Output = A;
+    type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
+    type Args = Name;
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        name: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
+        let address_length = &mut (resources.0).1;
+        *address_length = length;
+        submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_1__bindgen_ty_1 {
+                cmd_op: libc::SOCKET_URING_OP_GETSOCKNAME,
+                __pad1: 0,
+            },
+        };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            optlen: match name {
+                Name::Local => 1,
+                Name::Peer => 0,
+            },
+        };
+        submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
+            __bindgen_anon_1: ManuallyDrop::new(libc::io_uring_sqe__bindgen_ty_6__bindgen_ty_1 {
+                addr3: ptr::from_mut(address_length).addr() as u64,
+                __pad2: [0; 1],
+            }),
+        };
+        asan::poison_box(&resources.0);
+    }
+
+    fn map_ok(_: &AsyncFd, resources: Self::Resources, _: cq::OpReturn) -> Self::Output {
+        asan::unpoison_box(&resources.0);
+        msan::unpoison_region(
+            ptr::from_ref(&(resources.0).1).cast(),
+            size_of::<libc::socklen_t>(),
+        );
+        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
+        // SAFETY: the kernel has written the address for us.
+        unsafe { A::init((resources.0).0, (resources.0).1) }
     }
 }
 
