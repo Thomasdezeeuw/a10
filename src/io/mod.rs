@@ -62,7 +62,7 @@ mod read_buf;
 mod traits;
 
 pub use read_buf::{ReadBuf, ReadBufPool};
-pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
+pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
 #[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.

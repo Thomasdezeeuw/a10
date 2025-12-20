@@ -509,6 +509,8 @@ unsafe impl Buf for Box<str> {
     }
 }
 
+/// If rustc complains about "implementation of `Buf` is not general enough",
+/// try [`StaticBuf`].
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
 // can't be deallocated, so it's safe to implement `Buf`.
 unsafe impl Buf for &'static [u8] {
@@ -529,6 +531,8 @@ unsafe impl Buf for &'static [u8] {
     }
 }
 
+/// If rustc complains about "implementation of `Buf` is not general enough",
+/// try [`StaticBuf`].
 // SAFETY: because the reference has a `'static` lifetime we know the bytes
 // can't be deallocated, so it's safe to implement `Buf`.
 unsafe impl Buf for &'static str {
@@ -777,3 +781,45 @@ buf_slice_for_tuple!(5, A.0, B.1, C.2, D.3, E.4);
 buf_slice_for_tuple!(6, A.0, B.1, C.2, D.3, E.4, F.5);
 buf_slice_for_tuple!(7, A.0, B.1, C.2, D.3, E.4, F.5, G.6);
 buf_slice_for_tuple!(8, A.0, B.1, C.2, D.3, E.4, F.5, G.6, I.7);
+
+/// Buffer using static data.
+///
+/// Wrapper around types such as `&'static [u8]` and `&'static str`.
+///
+/// This type really shouldn't exist. This only exists to work around
+/// "implementation of `Buf` is not general enough" errors. Where rustc
+/// complains that "`&'0 T` must implement `Buf`, for any lifetime `'0`, but
+/// `Buf` is actually implemented for the type `&'static T`".
+#[derive(Copy, Clone, Debug)]
+pub struct StaticBuf(&'static [u8]);
+
+impl From<&'static [u8]> for StaticBuf {
+    fn from(buf: &'static [u8]) -> StaticBuf {
+        StaticBuf(buf)
+    }
+}
+
+impl From<&'static str> for StaticBuf {
+    fn from(buf: &'static str) -> StaticBuf {
+        StaticBuf(buf.as_bytes())
+    }
+}
+
+// SAFETY: See `Buf` implementation for `&'static [u8]`.
+unsafe impl Buf for StaticBuf {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        unsafe { self.0.parts() }
+    }
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    fn as_slice(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
