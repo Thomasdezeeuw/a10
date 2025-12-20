@@ -121,6 +121,22 @@ pub struct io_uring_sqe__bindgen_ty_6__bindgen_ty_1 {
     pub __pad2: [__u64; 1usize],
 }
 #[repr(C)]
+#[derive(Copy, Clone)]
+pub struct io_uring_sqe__bindgen_ty_6__bindgen_ty_2 {
+    pub attr_ptr: __u64,
+    pub attr_type_mask: __u64,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct io_uring_attr_pi {
+    pub flags: __u16,
+    pub app_tag: __u16,
+    pub len: __u32,
+    pub addr: __u64,
+    pub seed: __u64,
+    pub rsvd: __u64,
+}
+#[repr(C)]
 pub struct io_uring_cqe {
     pub user_data: __u64,
     pub res: __s32,
@@ -479,6 +495,7 @@ pub struct io_uring_cqe_iter {
     pub head: ::std::os::raw::c_uint,
     pub tail: ::std::os::raw::c_uint,
 }
+pub const IORING_RW_ATTR_FLAG_PI: u32 = 1;
 pub const IORING_FILE_INDEX_ALLOC: i32 = -1;
 pub const IORING_SETUP_IOPOLL: u32 = 1;
 pub const IORING_SETUP_SQPOLL: u32 = 2;
@@ -744,6 +761,17 @@ const _: () = {
 };
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
+    ["Size of io_uring_sqe__bindgen_ty_6__bindgen_ty_2"]
+        [::std::mem::size_of::<io_uring_sqe__bindgen_ty_6__bindgen_ty_2>() - 16usize];
+    ["Alignment of io_uring_sqe__bindgen_ty_6__bindgen_ty_2"]
+        [::std::mem::align_of::<io_uring_sqe__bindgen_ty_6__bindgen_ty_2>() - 8usize];
+    ["Offset of field: io_uring_sqe__bindgen_ty_6__bindgen_ty_2::attr_ptr"]
+        [::std::mem::offset_of!(io_uring_sqe__bindgen_ty_6__bindgen_ty_2, attr_ptr) - 0usize];
+    ["Offset of field: io_uring_sqe__bindgen_ty_6__bindgen_ty_2::attr_type_mask"]
+        [::std::mem::offset_of!(io_uring_sqe__bindgen_ty_6__bindgen_ty_2, attr_type_mask) - 8usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
     ["Size of io_uring_sqe__bindgen_ty_6"]
         [::std::mem::size_of::<io_uring_sqe__bindgen_ty_6>() - 16usize];
     ["Alignment of io_uring_sqe__bindgen_ty_6"]
@@ -768,6 +796,23 @@ const _: () = {
         [::std::mem::offset_of!(io_uring_sqe, user_data) - 32usize];
     ["Offset of field: io_uring_sqe::personality"]
         [::std::mem::offset_of!(io_uring_sqe, personality) - 42usize];
+};
+#[allow(clippy::unnecessary_operation, clippy::identity_op)]
+const _: () = {
+    ["Size of io_uring_attr_pi"][::std::mem::size_of::<io_uring_attr_pi>() - 32usize];
+    ["Alignment of io_uring_attr_pi"][::std::mem::align_of::<io_uring_attr_pi>() - 8usize];
+    ["Offset of field: io_uring_attr_pi::flags"]
+        [::std::mem::offset_of!(io_uring_attr_pi, flags) - 0usize];
+    ["Offset of field: io_uring_attr_pi::app_tag"]
+        [::std::mem::offset_of!(io_uring_attr_pi, app_tag) - 2usize];
+    ["Offset of field: io_uring_attr_pi::len"]
+        [::std::mem::offset_of!(io_uring_attr_pi, len) - 4usize];
+    ["Offset of field: io_uring_attr_pi::addr"]
+        [::std::mem::offset_of!(io_uring_attr_pi, addr) - 8usize];
+    ["Offset of field: io_uring_attr_pi::seed"]
+        [::std::mem::offset_of!(io_uring_attr_pi, seed) - 16usize];
+    ["Offset of field: io_uring_attr_pi::rsvd"]
+        [::std::mem::offset_of!(io_uring_attr_pi, rsvd) - 24usize];
 };
 pub const IOSQE_FIXED_FILE_BIT: io_uring_sqe_flags_bit = 0;
 pub const IOSQE_IO_DRAIN_BIT: io_uring_sqe_flags_bit = 1;
@@ -1301,6 +1346,7 @@ pub const SOCKET_URING_OP_SIOCOUTQ: io_uring_socket_op = 1;
 pub const SOCKET_URING_OP_GETSOCKOPT: io_uring_socket_op = 2;
 pub const SOCKET_URING_OP_SETSOCKOPT: io_uring_socket_op = 3;
 pub const SOCKET_URING_OP_TX_TIMESTAMP: io_uring_socket_op = 4;
+pub const SOCKET_URING_OP_GETSOCKNAME: io_uring_socket_op = 5;
 #[allow(clippy::unnecessary_operation, clippy::identity_op)]
 const _: () = {
     ["Size of io_uring_zcrx_rqe"][::std::mem::size_of::<io_uring_zcrx_rqe>() - 16usize];
@@ -1578,6 +1624,7 @@ pub union io_uring_sqe__bindgen_ty_5 {
 #[repr(C)]
 pub union io_uring_sqe__bindgen_ty_6 {
     pub __bindgen_anon_1: ::std::mem::ManuallyDrop<io_uring_sqe__bindgen_ty_6__bindgen_ty_1>,
+    pub __bindgen_anon_2: ::std::mem::ManuallyDrop<io_uring_sqe__bindgen_ty_6__bindgen_ty_2>,
     pub optval: ::std::mem::ManuallyDrop<__u64>,
     pub cmd: ::std::mem::ManuallyDrop<[__u8; 0usize]>,
 }
