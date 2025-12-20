@@ -12,8 +12,8 @@ use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
-    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketOpt,
-    Type, socket,
+    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketName,
+    SocketOpt, Type, socket,
 };
 use a10::{AsyncFd, Extract, Ring, fd};
 
@@ -394,6 +394,39 @@ fn connect() {
     drop(stream);
     let n = client.read(&mut buf).expect("failed to read");
     assert_eq!(n, 0);
+}
+
+#[test]
+fn socket_name() {
+    require_kernel!(6, 19);
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    is_send::<SocketName<SocketAddr>>();
+    is_sync::<SocketName<SocketAddr>>();
+
+    // Bind a socket.
+    let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
+    let expected_peer_addr = listener.local_addr().unwrap();
+
+    // Create a socket and connect the listener.
+    let stream = waker.block_on(tcp_ipv4_socket(sq));
+    waker
+        .block_on(stream.connect(expected_peer_addr))
+        .expect("failed to connect");
+
+    let (_client, expected_local_addr) = listener.accept().expect("failed to accept connection");
+
+    let got_local_addr: SocketAddr = waker
+        .block_on(stream.local_addr())
+        .expect("failed to get local addr");
+    assert_eq!(got_local_addr, expected_local_addr);
+
+    let got_peer_addr: SocketAddr = waker
+        .block_on(stream.peer_addr())
+        .expect("failed to get peer addr");
+    assert_eq!(got_peer_addr, expected_peer_addr);
 }
 
 #[test]
