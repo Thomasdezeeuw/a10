@@ -820,6 +820,6 @@ unsafe impl Buf for StaticBuf {
     }
 
     fn as_slice(&self) -> &[u8] {
-        self.0.as_slice()
+        Buf::as_slice(&self.0)
     }
 }
