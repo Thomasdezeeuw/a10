@@ -13,6 +13,9 @@ use crate::op::OpState;
 use crate::op::{fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
+pub mod notify;
+pub use notify::Watcher;
+
 /// Options used to configure how a file ([`AsyncFd`]) is opened.
 #[derive(Clone, Debug)]
 #[must_use = "no file is opened until `a10::fs::OpenOptions::open` or `open_temp_file` is called"]
