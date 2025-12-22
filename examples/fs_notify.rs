@@ -1,0 +1,63 @@
+//! fs_notify - watch for file system changes.
+//!
+//! Run with:
+//! $ cargo run --example fs_notify -- -r examples/ src/
+//! $ touch src/lib.rs examples/fs_notify.rs
+
+use std::env::args;
+use std::future::poll_fn;
+use std::io;
+use std::path::PathBuf;
+use std::pin::pin;
+
+use a10::fs;
+use a10::fs::notify::{Interest, Recursive};
+
+mod runtime;
+
+fn main() -> io::Result<()> {
+    // Create a new I/O uring.
+    let mut ring = a10::Ring::new(1)?;
+    // Get an owned reference to the submission queue.
+    let sq = ring.sq().clone();
+
+    // Create a new file system watcher.
+    let mut watcher = fs::notify::Watcher::new(sq)?;
+
+    // Collect the files we want to concatenate.
+    let mut recursive = false;
+    for arg in args().skip(1) {
+        if arg == "-r" || arg == "--recursive" {
+            recursive = true;
+            continue;
+        }
+
+        watcher.watch(
+            PathBuf::from(arg),
+            Interest::ALL,
+            if recursive {
+                Recursive::All
+            } else {
+                Recursive::No
+            },
+        )?;
+    }
+
+    // Run our watch program.
+    runtime::block_on(&mut ring, watch(watcher))
+}
+
+async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
+    let mut events = pin!(watcher.events());
+    // Poll for file system events (the ergonomics for this  should be improved
+    // once the `AsyncIterator` trait is stabilised).
+    while let Some(result) = poll_fn(|ctx| events.as_mut().poll_next(ctx)).await {
+        let event = result?;
+        let path = events.path_for(&event);
+        println!(
+            "Got a file system event for '{}': {event:?}",
+            path.display()
+        );
+    }
+    Ok(())
+}
