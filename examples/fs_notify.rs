@@ -25,22 +25,13 @@ fn main() -> io::Result<()> {
     let mut watcher = fs::notify::Watcher::new(sq)?;
 
     // Collect the files we want to concatenate.
-    let mut recursive = false;
+    let mut recursive = Recursive::No;
     for arg in args().skip(1) {
         if arg == "-r" || arg == "--recursive" {
-            recursive = true;
+            recursive = Recursive::All;
             continue;
         }
-
-        watcher.watch(
-            PathBuf::from(arg),
-            Interest::ALL,
-            if recursive {
-                Recursive::All
-            } else {
-                Recursive::No
-            },
-        )?;
+        watcher.watch(PathBuf::from(arg), Interest::ALL, recursive)?;
     }
 
     // Run our watch program.
