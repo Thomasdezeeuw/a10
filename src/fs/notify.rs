@@ -33,12 +33,12 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr, OsString};
+use std::mem::replace;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::io::Read;
 use crate::{AsyncFd, SubmissionQueue, new_flag, syscall};
 
@@ -56,9 +56,6 @@ pub struct Watcher {
     /// The watch descriptors (wds) and the path to the file or directory they
     /// are watching.
     watching: HashMap<WatchFd, PathBufWithNull>,
-    /// Buffer used by [`Events`], needed to allow `&Event` to have the lifetime
-    /// `'w` (connected to `Watcher`).
-    buf: Option<Vec<u8>>,
 }
 
 /// A valid [`PathBuf`] null terminated string, encoding is OS specific.
@@ -78,7 +75,6 @@ impl Watcher {
         let fd = unsafe { AsyncFd::from_raw_fd(ifd, sq) };
         Ok(Watcher {
             fd,
-            buf: Some(Vec::new()),
             watching: HashMap::new(),
         })
     }
@@ -141,16 +137,11 @@ impl Watcher {
 
     /// Wait for filesystem events.
     pub fn events<'w>(&'w mut self) -> Events<'w> {
-        let mut buf = self.buf.take().unwrap_or_default();
-        buf.clear();
-        buf.reserve(BUF_SIZE);
         Events {
             watching: &mut self.watching,
             // NOTE: would be nice to use multishot read here, but as of Linux
             // 6.17 that doesn't work.
-            read: self.fd.read(buf),
-            buf: &mut self.buf,
-            processed: 0,
+            state: EventsState::Reading(self.fd.read(Vec::with_capacity(BUF_SIZE))),
         }
     }
 }
@@ -239,12 +230,24 @@ pub enum Recursive {
 #[must_use = "`AsyncIterator`s do nothing unless polled"]
 #[derive(Debug)]
 pub struct Events<'w> {
+    /// See [`Watcher::watching`].
     watching: &'w mut HashMap<WatchFd, PathBufWithNull>,
-    read: Read<'w, Vec<u8>>,
-    /// This will be `None` when `read` is complete (and shouldn't be polled
-    /// again).
-    buf: &'w mut Option<Vec<u8>>,
-    processed: usize,
+    state: EventsState<'w>,
+}
+
+/// State of [`Events`].
+#[derive(Debug)]
+enum EventsState<'w> {
+    /// Currently reading.
+    Reading(Read<'w, Vec<u8>>),
+    /// Processing read events.
+    Processing {
+        buf: Vec<u8>,
+        processed: usize,
+        fd: &'w AsyncFd,
+    },
+    /// No more events.
+    Done,
 }
 
 impl<'w> Events<'w> {
@@ -286,84 +289,104 @@ impl<'w> Events<'w> {
         mut self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
     ) -> Poll<Option<io::Result<&'w Event>>> {
+        let this = &mut *self;
         loop {
-            let this = &mut *self;
-            if let Some(buf) = this.buf.as_ref()
-                && this.processed < buf.len()
-            {
-                // SAFETY: the kernel writes zero or more `inotify_event` to
-                // `buf` so we should always be get an inotify_event we reach
-                // this code.
-                debug_assert!(buf.len() >= this.processed + size_of::<libc::inotify_event>());
-                #[allow(clippy::cast_ptr_alignment)]
-                let event_ptr = unsafe {
-                    buf.as_ptr()
-                        .byte_add(this.processed)
-                        .cast::<libc::inotify_event>()
-                };
+            match &mut this.state {
+                EventsState::Processing { buf, processed, .. } => {
+                    if buf.len() > *processed {
+                        // SAFETY: the kernel writes zero or more `inotify_event` to
+                        // `buf` so we should always be get an inotify_event we reach
+                        // this code.
+                        debug_assert!(buf.len() >= *processed + size_of::<libc::inotify_event>());
+                        #[allow(clippy::cast_ptr_alignment)]
+                        let event_ptr = unsafe {
+                            buf.as_ptr()
+                                .byte_add(*processed)
+                                .cast::<libc::inotify_event>()
+                        };
 
-                // Length of the events' path is dynamic.
-                let len = unsafe { (&*event_ptr).len as usize };
-                this.processed += size_of::<libc::inotify_event>() + len;
-                debug_assert!(buf.len() >= this.processed);
+                        // Length of the events' path is dynamic.
+                        let len = unsafe { (&*event_ptr).len as usize };
+                        *processed += size_of::<libc::inotify_event>() + len;
+                        debug_assert!(buf.len() >= *processed);
 
-                // `IN_IGNORED` means the file is no longer watched. An
-                // event before this should contain the information why
-                // (e.g. the file was deleted).
-                let mask = unsafe { (&*event_ptr).mask };
-                if mask & libc::IN_IGNORED != 0 {
-                    let wd = unsafe { (&*event_ptr).wd };
-                    _ = this.watching.remove(&wd);
-                    continue; // Continue to the next event.
+                        // `IN_IGNORED` means the file is no longer watched. An
+                        // event before this should contain the information why
+                        // (e.g. the file was deleted).
+                        let mask = unsafe { (&*event_ptr).mask };
+                        if mask & libc::IN_IGNORED != 0 {
+                            let wd = unsafe { (&*event_ptr).wd };
+                            _ = this.watching.remove(&wd);
+                            continue; // Continue to the next event.
+                        }
+
+                        if mask & libc::IN_Q_OVERFLOW != 0 {
+                            log::warn!("inotify event queue overflowed");
+                            continue;
+                        }
+
+                        // The path can contain null bytes as padding for alignment,
+                        // remove those.
+                        let path = unsafe {
+                            slice::from_raw_parts(
+                                event_ptr
+                                    .byte_add(size_of::<libc::inotify_event>())
+                                    .cast::<u8>(),
+                                len,
+                            )
+                        };
+                        let path_len = path.iter().rposition(|b| *b != 0).map_or(len, |n| n + 1);
+
+                        // SAFETY: this is not really safe. This should use
+                        // `ptr::from_raw_parts`, but that's unstable (has been
+                        // since 2021)
+                        // <https://github.com/rust-lang/rust/issues/81513>.
+                        #[allow(clippy::cast_ptr_alignment)]
+                        let event: &'w Event = unsafe {
+                            &*(ptr::slice_from_raw_parts(event_ptr.cast::<u8>(), path_len)
+                                as *const Event)
+                        };
+                        return Poll::Ready(Some(Ok(event)));
+                    }
+
+                    // Processed all events in the buffer, switch to reading
+                    // again.
+                    let (mut buf, fd) = match replace(&mut this.state, EventsState::Done) {
+                        EventsState::Processing {
+                            buf,
+                            processed: _,
+                            fd,
+                        } => (buf, fd),
+                        EventsState::Reading(_) | EventsState::Done => unreachable!(),
+                    };
+                    buf.clear();
+                    this.state = EventsState::Reading(fd.read(buf));
+                    // Going to start the read in the next loop iteration.
                 }
+                EventsState::Reading(read) => {
+                    match Pin::new(&mut *read).poll(ctx) {
+                        Poll::Ready(Ok(buf)) => {
+                            if buf.is_empty() {
+                                this.state = EventsState::Done;
+                                return Poll::Ready(None);
+                            }
 
-                if mask & libc::IN_Q_OVERFLOW != 0 {
-                    log::warn!("inotify event queue overflowed");
-                    continue;
+                            this.state = EventsState::Processing {
+                                buf,
+                                processed: 0,
+                                fd: read.fd(),
+                            };
+                            // Processing the events in the next loop iteration.
+                        }
+                        Poll::Ready(Err(err)) => {
+                            // Ensure that we don't poll the read future again.
+                            this.state = EventsState::Done;
+                            return Poll::Ready(Some(Err(err)));
+                        }
+                        Poll::Pending => return Poll::Pending,
+                    }
                 }
-
-                // The path can contain null bytes as padding for alignment,
-                // remove those.
-                let path = unsafe {
-                    slice::from_raw_parts(
-                        event_ptr
-                            .byte_add(size_of::<libc::inotify_event>())
-                            .cast::<u8>(),
-                        len,
-                    )
-                };
-                let path_len = path.iter().rposition(|b| *b != 0).map_or(len, |n| n + 1);
-
-                // SAFETY: this is not really safe. This should use
-                // `ptr::from_raw_parts`, but that's unstable (has been
-                // since 2021)
-                // <https://github.com/rust-lang/rust/issues/81513>.
-                #[allow(clippy::cast_ptr_alignment)]
-                let event: &'w Event = unsafe {
-                    &*(ptr::slice_from_raw_parts(event_ptr.cast::<u8>(), path_len) as *const Event)
-                };
-                return Poll::Ready(Some(Ok(event)));
-            }
-
-            // Make sure that we never poll the read future if it's completed.
-            if let Some(mut buf) = this.buf.take() {
-                buf.clear();
-                buf.reserve(BUF_SIZE);
-                this.read = this.read.fd().read(buf);
-            }
-
-            match Pin::new(&mut this.read).poll(ctx) {
-                Poll::Ready(Ok(buf)) => {
-                    this.processed = 0;
-                    *this.buf = Some(buf);
-                    // Process the event in the next loop iteration.
-                }
-                Poll::Ready(Err(err)) => {
-                    // Ensure that we don't poll the read future again.
-                    *this.buf = Some(Vec::new());
-                    return Poll::Ready(Some(Err(err)));
-                }
-                Poll::Pending => return Poll::Pending,
+                EventsState::Done => return Poll::Ready(None),
             }
         }
     }
@@ -375,16 +398,6 @@ impl<'w> std::async_iter::AsyncIterator for Events<'w> {
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
         self.poll_next(ctx)
-    }
-}
-
-impl<'w> Cancel for Events<'w> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.read.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.read.cancel()
     }
 }
 
