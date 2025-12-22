@@ -99,11 +99,8 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        // Watch the path only if it is a directory, otherwise return an error.
-        self.watch_path(dir.clone(), interest.0 | libc::IN_ONLYDIR)?;
-
         if let Recursive::All = recursive {
-            for entry in std::fs::read_dir(dir)? {
+            for entry in std::fs::read_dir(&dir)? {
                 let entry = entry?;
                 if entry.file_type()?.is_dir() {
                     let path = entry.path();
@@ -111,7 +108,9 @@ impl Watcher {
                 }
             }
         }
-        Ok(())
+
+        // Watch the path only if it is a directory, otherwise return an error.
+        self.watch_path(dir.clone(), interest.0 | libc::IN_ONLYDIR)
     }
 
     /// Watch a file.
