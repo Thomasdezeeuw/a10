@@ -24,7 +24,7 @@ fn main() -> io::Result<()> {
     // Create a new file system watcher.
     let mut watcher = fs::notify::Watcher::new(sq)?;
 
-    // Collect the files we want to concatenate.
+    // Add all the files we want to watch.
     let mut recursive = Recursive::No;
     for arg in args().skip(1) {
         if arg == "-r" || arg == "--recursive" {
