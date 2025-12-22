@@ -30,6 +30,10 @@
 //!
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
 
+// NOTE: currently `Watcher` always uses a regular file descriptor as
+// `inotify_add_watch` (in `Watcher::watch_path`) only works with regular file
+// descriptors, not direct ones.
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::{CString, OsStr, OsString};
