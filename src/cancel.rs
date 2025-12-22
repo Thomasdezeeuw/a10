@@ -117,6 +117,10 @@ impl CancelOperation {
             CancelOperation(CancelOperationState::Done)
         }
     }
+
+    pub(crate) const fn done() -> CancelOperation {
+        CancelOperation(CancelOperationState::Done)
+    }
 }
 
 /// State of `CancelOperation`.
