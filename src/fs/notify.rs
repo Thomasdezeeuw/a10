@@ -28,6 +28,12 @@
 //! mount point. If the filesystem is subsequently unmounted, events will
 //! subsequently be generated for the directory and the objects it contains.
 //!
+//! `inotify` events only carry path information relative to the watched
+//! file/directory, meaning that for events on watched files and directories
+//! themselves the path information ([`Event::file_path`]) is empty. To get the
+//! full path to files/directories you can use [`Events::path_for`], but note
+//! that this has a number of gotchas, see its documentation for more.
+//!
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
 
 // NOTE: currently `Watcher` always uses a regular file descriptor as
@@ -293,13 +299,30 @@ impl<'w> Events<'w> {
     ///
     /// # Notes
     ///
-    /// Internally we keep track of which paths are watched. If a path is
-    /// deleted it is removed from this internal bookkeeping, meaning that this
-    /// will return the same value as [`Event::file_path`] (which is empty for
-    /// files).
+    /// The return value here depends on the path passed to the `watch*`
+    /// functions on `Watcher`, e.g. [`Watcher::watch_directory`]. When a
+    /// relative path is passed to the `watch` function this will return a
+    /// relative path, if an absolute path is passed this will return an
+    /// absolute path.
     ///
-    /// To ensure that you always get the full path call this method **before**
-    /// calling [`Events::poll_next`] when processing events.
+    /// Some examples:
+    ///
+    /// | Watched path   | File triggering event | Returned value         |
+    /// |----------------|-----------------------|------------------------|
+    /// | `src`          | `file.rs`             | `src/file.rs`          |
+    /// | `./src`        | `some/file.rs`        | `./src/some/file.rs`   |
+    /// | `/path/to/src` | `file.rs`             | `/path/to/src/file.rs` |
+    ///
+    /// Internally we keep track of which paths are watched, for which we use
+    /// the path as it's passed to `watch` function. To ensure consistent paths
+    /// you can canonicalize the paths, using [`Path::canonicalize`], before
+    /// calling the watch function.
+    ///
+    /// If a file is deleted from the file system it is removed from our
+    /// internal bookkeeping, meaning that this will return the same value as
+    /// [`Event::file_path`] (which is empty for files). To ensure that you
+    /// always get the full path call this method **before** calling
+    /// [`Events::poll_next`] when processing events.
     pub fn path_for<'a>(&'a self, event: &'a Event) -> Cow<'a, Path> {
         let file_path = event.file_path();
         match self.watched_path(&event.event.wd) {
@@ -450,10 +473,8 @@ impl Event {
     ///
     /// This will only be non-empty for events triggered by files/directories in
     /// watched directories. It be empty for events on watched files and
-    /// directories themselves.
-    ///
-    /// See [`Events::path_for`] to the get the full path for watched files and
-    /// directories.
+    /// directories themselves. See [`Events::path_for`] to the get the full
+    /// path for watched files and directories.
     pub fn file_path(&self) -> &Path {
         // SAFETY: the path comes from the OS, so it should be a valid OS
         // string.
