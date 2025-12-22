@@ -85,6 +85,10 @@ impl Watcher {
 
     /// Watch a directory.
     ///
+    /// If `dir` is a not a directory this returns an error. See
+    /// [`Watcher::watch`] if you want to watch a path and don't care if it's a
+    /// file or directory.
+    ///
     /// If `recursive` is `Recursive::All` it recursively watches all
     /// directories in `dir`.
     ///
@@ -99,23 +103,54 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        if let Recursive::All = recursive {
-            for entry in std::fs::read_dir(&dir)? {
-                let entry = entry?;
-                if entry.file_type()?.is_dir() {
-                    let path = entry.path();
-                    self.watch_directory(path, interest, Recursive::All)?;
-                }
-            }
-        }
-
-        // Watch the path only if it is a directory, otherwise return an error.
-        self.watch_path(dir.clone(), interest.0 | libc::IN_ONLYDIR)
+        self.watch_path_recursive(dir, interest, recursive, true)
     }
 
     /// Watch a file.
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
         self.watch_path(file, interest.0)
+    }
+
+    /// Watch a directory or file.
+    ///
+    /// See [`Watcher::watch_directory`] for the usage of `recursive`, for files
+    /// it's ignored.
+    pub fn watch(
+        &mut self,
+        dir: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+    ) -> io::Result<()> {
+        self.watch_path_recursive(dir, interest, recursive, false)
+    }
+
+    fn watch_path_recursive(
+        &mut self,
+        dir: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+        dir_only: bool,
+    ) -> io::Result<()> {
+        if let Recursive::All = recursive {
+            match std::fs::read_dir(&dir) {
+                Ok(read_dir) => {
+                    for result in read_dir {
+                        let entry = result?;
+                        if entry.file_type()?.is_dir() {
+                            let path = entry.path();
+                            self.watch_directory(path, interest, Recursive::All)?;
+                        }
+                    }
+                }
+                Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
+                    // Ignore the error.
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
+        self.watch_path(dir, mask)
     }
 
     fn watch_path(&mut self, path: PathBuf, mask: u32) -> io::Result<()> {

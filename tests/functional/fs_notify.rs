@@ -876,6 +876,38 @@ fn watched_file_all() {
     );
 }
 
+#[test]
+fn watch_recursive_not_directory() {
+    test_fs_watcher(
+        |watcher, dir| {
+            let path = dir.join(FILE_NAME);
+            std::fs::write(&path, DATA)?;
+            // Recursive should be ignored for watching files.
+            watcher.watch(path.clone(), Interest::ALL, Recursive::All)?;
+            Ok((path, ()))
+        },
+        |path, ()| {
+            let mut file = std::fs::OpenOptions::new().write(true).open(&path)?;
+            std::io::Write::write(&mut file, b"\nHello, again!")?;
+            Ok((path, file))
+        },
+        |path, _file| {
+            vec![
+                ExpectEvent {
+                    full_path: path.clone(),
+                    opened: true,
+                    ..Default::default()
+                },
+                ExpectEvent {
+                    full_path: path.clone(),
+                    modified: true,
+                    ..Default::default()
+                },
+            ]
+        },
+    );
+}
+
 fn test_fs_watcher<T, U>(
     watch: impl Fn(&mut fs::Watcher, PathBuf) -> io::Result<(PathBuf, T)>,
     trigger: impl Fn(PathBuf, T) -> io::Result<(PathBuf, U)>,
