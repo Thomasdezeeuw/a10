@@ -438,8 +438,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub(crate) const fn mask(&self) -> u32 {
-        self.inner.stx_mask
+    /// Which field(s) of the metadata are filled (based on the provided
+    /// interest).
+    pub const fn filled(&self) -> MetadataInterest {
+        MetadataInterest(self.inner.stx_mask)
     }
 
     /// Returns the file type for this metadata.
