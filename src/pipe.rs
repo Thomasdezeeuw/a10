@@ -58,7 +58,7 @@ impl Pipe {
     ///
     /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
-        if let Some(resources) = self.0.update_args() {
+        if let Some(resources) = self.0.update_resources() {
             resources.1 = kind;
         }
         self

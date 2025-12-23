@@ -11,15 +11,6 @@ use std::{fmt, io, mem, str};
 use crate::op::{FdOperation, Operation, fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
-/// Flags needed to fill [`Metadata`].
-pub(crate) const METADATA_FLAGS: u32 = libc::STATX_TYPE
-    | libc::STATX_MODE
-    | libc::STATX_SIZE
-    | libc::STATX_BLOCKS
-    | libc::STATX_ATIME
-    | libc::STATX_MTIME
-    | libc::STATX_BTIME;
-
 /// Options used to configure how a file ([`AsyncFd`]) is opened.
 #[derive(Clone, Debug)]
 #[must_use = "no file is opened until `a10::fs::OpenOptions::open` or `open_temp_file` is called"]
@@ -285,7 +276,14 @@ impl AsyncFd {
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
         // SAFETY: fully zeroed `libc::statx` is a valid value.
         let metadata = unsafe { Box::new(mem::zeroed()) };
-        Stat(FdOperation::new(self, metadata, ()))
+        let interest = MetadataInterest::TYPE
+            | MetadataInterest::MODE
+            | MetadataInterest::ACCESSED_TIME
+            | MetadataInterest::MODIFIED_TIME
+            | MetadataInterest::CREATED_TIME
+            | MetadataInterest::SIZE
+            | MetadataInterest::BLOCKS;
+        Stat(FdOperation::new(self, metadata, interest))
     }
 
     /// Predeclare an access pattern for file data.
@@ -348,6 +346,24 @@ pub(crate) enum SyncDataFlag {
 }
 
 new_flag!(
+    /// Interest in specific metadata.
+    pub struct MetadataInterest(u32) impl BitOr {
+        /// Enables [`Metadata::file_type`] and related `is_*` methods.
+        TYPE = libc::STATX_TYPE,
+        /// Enables [`Metadata::len`].
+        SIZE = libc::STATX_SIZE,
+        /// Enables [`Metadata::block_size`].
+        BLOCKS = libc::STATX_BLOCKS,
+        /// Enables [`Metadata::permissions`].
+        MODE = libc::STATX_MODE,
+        /// Enables [`Metadata::modified`].
+        MODIFIED_TIME = libc::STATX_MTIME,
+        /// Enables [`Metadata::accessed`].
+        ACCESSED_TIME = libc::STATX_ATIME,
+        /// Enables [`Metadata::created`].
+        CREATED_TIME = libc::STATX_BTIME,
+    }
+
     /// Advise about data access.
     ///
     /// See [`AsyncFd::advise`].
@@ -401,6 +417,18 @@ fd_operation!(
     pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
 );
 
+impl<'fd> Stat<'fd> {
+    /// Set which field(s) of the metadata the kernel should fill.
+    ///
+    /// Defaults to filling some basic fields.
+    pub fn only(mut self, mask: MetadataInterest) -> Self {
+        if let Some(args) = self.0.update_args() {
+            *args = mask;
+        }
+        self
+    }
+}
+
 /// Metadata information about a file.
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
@@ -410,8 +438,10 @@ pub struct Metadata {
 }
 
 impl Metadata {
-    pub(crate) const fn mask(&self) -> u32 {
-        self.inner.stx_mask
+    /// Which field(s) of the metadata are filled (based on the provided
+    /// interest).
+    pub const fn filled(&self) -> MetadataInterest {
+        MetadataInterest(self.inner.stx_mask)
     }
 
     /// Returns the file type for this metadata.
