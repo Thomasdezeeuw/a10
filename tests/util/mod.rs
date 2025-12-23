@@ -609,10 +609,13 @@ unsafe impl Buf for BadBuf {
         // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
         // to the WriteAll future already does that for us.
         match calls {
-            0 => (ptr, 10),
-            1 | 2 => (ptr, 20),
-            3 | 4 => (ptr, 30),
-            _ => (ptr, 0),
+            // Per system/io_uring call we call `Buf::parts` for:
+            // 1. passing to the kernel,
+            // 2. to poison the memory,
+            // 3. to unpoison the memory (once the call is clomplete).
+            0..3 => (ptr, 10),
+            3..6 => (ptr, 20),
+            _ => (ptr, 30),
         }
     }
 }
