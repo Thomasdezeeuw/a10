@@ -6,7 +6,7 @@
 use std::ffi::{CString, c_void};
 use std::mem;
 
-use crate::io::{Buf, BufMut, IoMutSlice, IoSlice};
+use crate::io::{IoMutSlice, IoSlice};
 
 // TODO: replace with `std::ffi::c_size_t` once stable
 // <https://github.com/rust-lang/rust/issues/88345>.
@@ -36,18 +36,6 @@ pub(crate) fn poison<T: Sized>(addr: *const T) {
         // Don't poison zero sized types.
         poison_region(addr.cast(), mem::size_of::<T>());
     }
-}
-
-/// Mark the bytes of buf `B` as unaddressable.
-pub(crate) fn poison_buf<B: Buf>(buf: &B) {
-    let (addr, len) = unsafe { buf.parts() };
-    poison_region(addr.cast(), len as usize);
-}
-
-/// Mark the bytes of buf `B` as unaddressable.
-pub(crate) fn poison_buf_mut<B: BufMut>(buf: &mut B) {
-    let (addr, len) = unsafe { buf.parts_mut() };
-    poison_region(addr.cast(), len as usize);
 }
 
 /// Mark the bytes of iovecs as addressable.
@@ -93,18 +81,6 @@ pub(crate) fn unpoison<T: Sized>(addr: *const T) {
         // We don't poison zero sized types, so don't unpoison them
         unpoison_region(addr.cast(), mem::size_of::<T>());
     }
-}
-
-/// Mark the bytes of buf `B` as addressable.
-pub(crate) fn unpoison_buf<B: Buf>(buf: &B) {
-    let (addr, len) = unsafe { buf.parts() };
-    unpoison_region(addr.cast(), len as usize);
-}
-
-/// Mark the bytes of buf `B` as addressable.
-pub(crate) fn unpoison_buf_mut<B: BufMut>(buf: &mut B) {
-    let (addr, len) = unsafe { buf.parts_mut() };
-    unpoison_region(addr.cast(), len as usize);
 }
 
 /// Mark the bytes of iovecs as addressable.
