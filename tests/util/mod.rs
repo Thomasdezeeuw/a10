@@ -193,9 +193,7 @@ impl Waker {
     where
         Fut: IntoFuture,
     {
-        // Pin the `Future` to stack.
-        let mut future = future.into_future();
-        let mut future = unsafe { Pin::new_unchecked(&mut future) };
+        let mut future = pin!(future.into_future());
 
         let task_waker = task::Waker::from(self.clone());
         let mut task_ctx = task::Context::from_waker(&task_waker);
