@@ -43,10 +43,7 @@ fn write_all() {
 
     let (r, w) = pipe2(sq).expect("failed to create pipe");
 
-    let buf = BadBuf {
-        calls: Cell::new(0),
-    };
-    waker.block_on(w.write_all(buf)).unwrap();
+    waker.block_on(w.write_all(BadBuf::new())).unwrap();
 
     let buf = waker
         .block_on(r.read(Vec::with_capacity(BadBuf::DATA.len() + 1)))
@@ -74,10 +71,9 @@ fn write_all_at_extract() {
     let mut expected = Vec::from("Hello".as_bytes());
     waker.block_on(file.write("Hello world")).unwrap();
 
-    let buf = BadBuf {
-        calls: Cell::new(0),
-    };
-    waker.block_on(file.write_all_at(buf, 5).extract()).unwrap();
+    waker
+        .block_on(file.write_all_at(BadBuf::new(), 5).extract())
+        .unwrap();
 
     let got = std::fs::read(&path).unwrap();
     expected.extend_from_slice(BadBuf::DATA.as_slice());
