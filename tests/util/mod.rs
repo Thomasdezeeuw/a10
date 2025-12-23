@@ -616,11 +616,10 @@ unsafe impl Buf for BadBuf {
         // to the WriteAll future already does that for us.
         match calls {
             // Per system/io_uring call we call `Buf::parts` for:
-            // 1. passing to the kernel,
-            // 2. to poison the memory,
-            // 3. to unpoison the memory (once the call is clomplete).
-            0..3 => (ptr, 10),
-            3..6 => (ptr, 20),
+            // 1. passing to the kernel & to poison the memory,
+            // 2. to unpoison the memory (once the call is clomplete).
+            0..2 => (ptr, 10),
+            2..4 => (ptr, 20),
             _ => (ptr, 30),
         }
     }

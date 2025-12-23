@@ -7,7 +7,7 @@ use std::cmp::min;
 use std::ffi::c_void;
 use std::mem;
 
-use crate::io::{BufMut, IoMutSlice};
+use crate::io::IoMutSlice;
 
 // TODO: replace with `std::ffi::c_size_t` once stable
 // <https://github.com/rust-lang/rust/issues/88345>.
@@ -36,12 +36,6 @@ pub(crate) fn unpoison_box<T>(value: &Box<T>) {
     // TODO: replace with `Box::as_ptr` once stable
     // <https://github.com/rust-lang/rust/issues/129090>.
     unpoison_region((&raw const **value).cast(), mem::size_of::<T>());
-}
-
-/// Mark the first `n` bytes of buf `B` as fully initialized.
-pub(crate) fn unpoison_buf_mut<B: BufMut>(buf: &mut B, n: usize) {
-    let (addr, _) = unsafe { buf.parts_mut() };
-    unpoison_region(addr.cast(), n);
 }
 
 /// Mark the first `n` bytes of iovecs as fully initialized.

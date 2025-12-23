@@ -153,13 +153,13 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
         submission.0.fd = fd.fd();
-        let (ptr, length) = unsafe { buf.buf.parts_mut() };
+        let (ptr, len) = unsafe { buf.buf.parts_mut() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        asan::poison_buf_mut(&mut buf.buf);
+        asan::poison_region(ptr.cast(), len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
-        submission.0.len = length;
+        submission.0.len = len;
         if let Some(buf_group) = buf.buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
             submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
@@ -167,8 +167,9 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_buf_mut(&mut buf.buf);
-        msan::unpoison_buf_mut(&mut buf.buf, n as usize);
+        let (ptr, len) = unsafe { buf.buf.parts_mut() };
+        asan::unpoison_region(ptr.cast(), len as usize);
+        msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.buffer_init(BufId(buf_id), n);
@@ -391,18 +392,19 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
             SendCall::Normal => libc::IORING_OP_SEND as u8,
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
-        let (buf_ptr, buf_length) = unsafe { buf.buf.parts() };
+        let (buf_ptr, buf_len) = unsafe { buf.buf.parts() };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
-        asan::poison_buf(&buf.buf);
+        asan::poison_region(buf_ptr.cast(), buf_len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
-        submission.0.len = buf_length;
+        submission.0.len = buf_len;
     }
 
     fn map_ok(_: &AsyncFd, buf: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_buf(&buf.buf);
+        let (ptr, len) = unsafe { buf.buf.parts() };
+        asan::unpoison_region(ptr.cast(), len as usize);
         n as usize
     }
 }
@@ -415,7 +417,8 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
         buf: Self::Resources,
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        asan::unpoison_buf(&buf.buf);
+        let (ptr, len) = unsafe { buf.buf.parts() };
+        asan::unpoison_region(ptr.cast(), len as usize);
         (buf.buf, n as usize)
     }
 }
@@ -438,7 +441,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
             SendCall::Normal => libc::IORING_OP_SEND as u8,
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
-        let (buf_ptr, buf_length) = unsafe { buf.parts() };
+        let (buf_ptr, buf_len) = unsafe { buf.parts() };
         let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
@@ -446,16 +449,14 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
-        asan::poison_buf(buf);
+        asan::poison_region(buf_ptr.cast(), buf_len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as u16;
-        submission.0.len = buf_length;
+        submission.0.len = buf_len;
     }
 
-    fn map_ok(_: &AsyncFd, (buf, address): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&address);
-        asan::unpoison_buf(&buf);
-        n as usize
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: cq::OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret).1
     }
 }
 
@@ -468,7 +469,8 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
         (_, n): Self::OperationOutput,
     ) -> Self::ExtractOutput {
         asan::unpoison_box(&address);
-        asan::unpoison_buf(&buf);
+        let (buf_ptr, buf_len) = unsafe { buf.parts() };
+        asan::unpoison_region(buf_ptr.cast(), buf_len as usize);
         (buf, n as usize)
     }
 }
