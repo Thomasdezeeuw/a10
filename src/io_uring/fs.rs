@@ -4,7 +4,8 @@ use std::path::PathBuf;
 use std::ptr;
 
 use crate::fs::{
-    AdviseFlag, AllocateFlag, METADATA_FLAGS, Metadata, RemoveFlag, SyncDataFlag, path_from_cstring,
+    AdviseFlag, AllocateFlag, Metadata, MetadataInterest, RemoveFlag, SyncDataFlag,
+    path_from_cstring,
 };
 use crate::io_uring::{self, cq, libc, sq};
 use crate::op::OpExtract;
@@ -240,12 +241,12 @@ pub(crate) struct StatOp;
 impl io_uring::FdOp for StatOp {
     type Output = Metadata;
     type Resources = Box<Metadata>;
-    type Args = ();
+    type Args = MetadataInterest;
 
     fn fill_submission(
         fd: &AsyncFd,
         metadata: &mut Self::Resources,
-        (): &mut Self::Args,
+        mask: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_STATX as u8;
@@ -258,7 +259,7 @@ impl io_uring::FdOp for StatOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: c"".as_ptr().addr() as u64, // Not using a path.
         };
-        submission.0.len = METADATA_FLAGS;
+        submission.0.len = mask.0;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             statx_flags: libc::AT_EMPTY_PATH as u32,
         };
@@ -268,7 +269,6 @@ impl io_uring::FdOp for StatOp {
         asan::unpoison_box(&metadata);
         msan::unpoison_box(&metadata);
         debug_assert!(n == 0);
-        debug_assert!(metadata.mask() & METADATA_FLAGS == METADATA_FLAGS);
         *metadata
     }
 }
