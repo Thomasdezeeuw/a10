@@ -34,8 +34,8 @@ impl<O: Op> Operation<O> {
         }
     }
 
-    /// Update the arguments if they operation hasn't started yet.
-    pub(crate) fn update_args(&mut self) -> Option<&mut O::Resources> {
+    /// Update the resources if the operation hasn't started yet.
+    pub(crate) fn update_resources(&mut self) -> Option<&mut O::Resources> {
         match &mut self.state {
             State::NotStarted { resources, .. } => Some(resources.get_mut()),
             _ => None,
