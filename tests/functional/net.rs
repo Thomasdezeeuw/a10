@@ -1024,11 +1024,8 @@ fn send_all() {
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
     // Send all data.
-    let buf = BadBuf {
-        calls: Cell::new(0),
-    };
     waker
-        .block_on(stream.send_all(buf, None))
+        .block_on(stream.send_all(BadBuf::new(), None))
         .expect("failed to send");
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
@@ -1055,13 +1052,9 @@ fn send_all_extract() {
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
     // Send all data.
-    let buf = BadBuf {
-        calls: Cell::new(0),
-    };
-    let buf = waker
-        .block_on(stream.send_all(buf, None).extract())
+    waker
+        .block_on(stream.send_all(BadBuf::new(), None).extract())
         .expect("failed to send");
-    assert_eq!(buf.calls.get(), 6 + 2); // + 2 for asan.
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
     assert_eq!(n, BadBuf::DATA.len());

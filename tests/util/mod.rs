@@ -590,10 +590,16 @@ pub(crate) use syscall;
 // method.
 #[derive(Debug)]
 pub(crate) struct BadBuf {
-    pub(crate) calls: Cell<usize>,
+    calls: Cell<usize>,
 }
 
 impl BadBuf {
+    pub(crate) const fn new() -> BadBuf {
+        BadBuf {
+            calls: Cell::new(0),
+        }
+    }
+
     pub(crate) const DATA: [u8; 30] = [
         123, 123, 123, 123, 123, 123, 123, 123, 123, 123, 200, 200, 200, 200, 200, 200, 200, 200,
         200, 200, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
