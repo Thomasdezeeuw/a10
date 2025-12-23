@@ -1,10 +1,11 @@
 use std::env::temp_dir;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use std::{panic, str};
 
 use a10::fs::{
-    self, Advise, AdviseFlag, Allocate, AllocateFlag, CreateDir, Delete, Open, OpenOptions, Rename,
-    Truncate,
+    self, Advise, AdviseFlag, Allocate, AllocateFlag, CreateDir, Delete, MetadataInterest, Open,
+    OpenOptions, Rename, Truncate,
 };
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue, fd};
@@ -513,6 +514,27 @@ fn test_metadata(test_file: &TestFile) {
     assert!(!permissions.others_can_execute());
     // NOTE: we don't check the access, modification or creation timestamp are
     // those re to different between test runs.
+}
+
+#[test]
+fn metadata_select_fields() {
+    let sq = test_queue();
+    let waker = Waker::new();
+    let test_file = &LOREM_IPSUM_5;
+
+    let open_file = fs::open_file(sq, test_file.path.into());
+    let file = waker.block_on(open_file).unwrap();
+
+    let metadata = file.metadata().only(MetadataInterest::TYPE);
+    let metadata = waker.block_on(metadata).unwrap();
+
+    assert!(metadata.file_type().is_file());
+    assert!(metadata.is_file());
+    assert!(!metadata.is_dir());
+    assert!(!metadata.is_symlink());
+    // Random field that should not be field (but is unlikely to be actually
+    // zero).
+    assert_eq!(metadata.created(), SystemTime::UNIX_EPOCH);
 }
 
 #[test]
