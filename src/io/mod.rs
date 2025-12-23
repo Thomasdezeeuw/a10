@@ -491,6 +491,12 @@ fd_operation!(
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
 
+impl<'fd, B: BufMut> Read<'fd, B> {
+    pub(crate) fn fd(&self) -> &'fd AsyncFd {
+        self.0.fd()
+    }
+}
+
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_read`].
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
