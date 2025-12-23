@@ -222,6 +222,14 @@ impl<'fd, O: FdOp> FdOperation<'fd, O> {
         }
     }
 
+    /// Update the arguments if they operation hasn't started yet.
+    pub(crate) fn update_args(&mut self) -> Option<&mut O::Args> {
+        match &mut self.state {
+            State::NotStarted { args, .. } => Some(args),
+            _ => None,
+        }
+    }
+
     pub(crate) const fn fd(&self) -> &'fd AsyncFd {
         self.fd
     }

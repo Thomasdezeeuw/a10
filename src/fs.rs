@@ -417,6 +417,18 @@ fd_operation!(
     pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
 );
 
+impl<'fd> Stat<'fd> {
+    /// Set which field(s) of the metadata the kernel should fill.
+    ///
+    /// Defaults to filling some basic fields.
+    pub fn only(mut self, mask: MetadataInterest) -> Self {
+        if let Some(args) = self.0.update_args() {
+            *args = mask;
+        }
+        self
+    }
+}
+
 /// Metadata information about a file.
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
