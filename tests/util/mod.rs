@@ -194,7 +194,6 @@ impl Waker {
         Fut: IntoFuture,
     {
         let mut future = pin!(future.into_future());
-
         let task_waker = task::Waker::from(self.clone());
         let mut task_ctx = task::Context::from_waker(&task_waker);
         loop {
@@ -351,8 +350,7 @@ where
     type Item = <P::Target as AsyncIterator>::Item;
 
     fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        // SAFETY: this is the same as the unstable `Pin::as_deref_mut` impl.
-        <P::Target as AsyncIterator>::poll_next(unsafe { self.get_unchecked_mut() }.as_mut(), ctx)
+        <P::Target as AsyncIterator>::poll_next(Pin::as_deref_mut(self), ctx)
     }
 }
 
