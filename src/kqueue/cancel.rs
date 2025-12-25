@@ -41,7 +41,7 @@ impl kqueue::FdOp for CancelAllOp {
         OpResult::Ok(())
     }
 
-    fn map_ok((): Self::Resources, (): Self::OperationOutput) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (): Self::OperationOutput) -> Self::Output {
         0 // Can't determine the number of operations we cancelled.
     }
 }

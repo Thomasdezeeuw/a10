@@ -131,7 +131,11 @@ pub(crate) trait FdOp {
         args: &mut Self::Args,
     ) -> OpResult<Self::OperationOutput>;
 
-    fn map_ok(resources: Self::Resources, output: Self::OperationOutput) -> Self::Output;
+    fn map_ok(
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        output: Self::OperationOutput,
+    ) -> Self::Output;
 }
 
 impl<T: FdOp> crate::op::FdOp for T {
@@ -161,11 +165,11 @@ impl<T: FdOp> crate::op::FdOp for T {
     }
 
     fn map_ok(
-        _: &AsyncFd,
+        fd: &AsyncFd,
         resources: Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output {
-        T::map_ok(resources, output)
+        T::map_ok(fd, resources, output)
     }
 }
 
