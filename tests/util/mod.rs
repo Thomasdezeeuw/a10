@@ -11,7 +11,7 @@ use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::os::fd::{AsRawFd, BorrowedFd};
+use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
@@ -569,6 +569,15 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
 
 pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
     fd.as_fd().expect("not a file descriptor")
+}
+
+pub(crate) fn pipe() -> [RawFd; 2] {
+    let mut fds: [RawFd; 2] = [-1, -1];
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC)).expect("failed to create pipe");
+    #[cfg(not(any(target_os = "android", target_os = "linux")))]
+    syscall!(pipe(fds.as_mut_ptr())).expect("failed to create pipe");
+    fds
 }
 
 /// Helper macro to execute a system call that returns an `io::Result`.

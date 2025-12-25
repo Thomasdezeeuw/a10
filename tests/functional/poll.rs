@@ -6,7 +6,7 @@ use std::pin::pin;
 use a10::poll::{Event, Interest, MultishotPoll, OneshotPoll, multishot_poll, oneshot_poll};
 
 use crate::util::{
-    Waker, cancel, expect_io_errno, is_send, is_sync, next, start_mulitshot_op, start_op,
+    pipe, Waker, cancel, expect_io_errno, is_send, is_sync, next, start_mulitshot_op, start_op,
     test_queue,
 };
 
@@ -143,13 +143,9 @@ fn drop_multishot_poll() {
 }
 
 fn pipe2() -> io::Result<(File, File)> {
-    let mut fds: [RawFd; 2] = [-1, -1];
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-
+    let [r, w] = pipe()
     // SAFETY: we just initialised the `fds` above.
-    let r = unsafe { File::from_raw_fd(fds[0]) };
-    let w = unsafe { File::from_raw_fd(fds[1]) };
+    let r = unsafe { File::from_raw_fd(r) };
+    let w = unsafe { File::from_raw_fd(w) };
     Ok((r, w))
 }
