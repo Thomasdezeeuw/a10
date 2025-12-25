@@ -1567,7 +1567,7 @@ impl private::SocketAddress for SocketAddrV6 {
             sin6_scope_id: self.scope_id(),
             // A number of OS have `sin6_len`, but we don't use it.
             #[cfg(not(any(target_os = "linux", target_os = "android")))]
-            sin_len: 0,
+            sin6_len: 0,
         }
     }
 
