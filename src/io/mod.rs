@@ -353,6 +353,7 @@ impl AsyncFd {
     /// See the `splice(2)` manual for correct usage.
     #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_to<'fd>(
         &'fd self,
         target: BorrowedFd<'fd>,
@@ -365,6 +366,7 @@ impl AsyncFd {
     /// Same as [`AsyncFd::splice_to`], but starts reading data at `offset` from
     /// the file (instead of the current position of the read cursor) and starts
     /// writing at `target_offset` to `target`.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_to_at<'fd>(
         &'fd self,
         offset: u64,
@@ -387,6 +389,7 @@ impl AsyncFd {
     ///
     /// See the `splice(2)` manual for correct usage.
     #[doc(alias = "splice")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_from<'fd>(
         &'fd self,
         target: BorrowedFd<'fd>,
@@ -400,6 +403,7 @@ impl AsyncFd {
     /// to the file (instead of the current position of the write cursor) and
     /// starts reading at `target_offset` from `target`.
     #[doc(alias = "splice")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_from_at<'fd>(
         &'fd self,
         offset: u64,
@@ -418,6 +422,7 @@ impl AsyncFd {
         )
     }
 
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     fn splice<'fd>(
         &'fd self,
         target: BorrowedFd<'fd>,
@@ -457,11 +462,13 @@ impl AsyncFd {
 }
 
 #[derive(Copy, Clone, Debug)]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub(crate) enum SpliceDirection {
     To,
     From,
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 new_flag!(
     /// Splice flags.
     ///
