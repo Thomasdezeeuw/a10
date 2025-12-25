@@ -53,6 +53,7 @@ new_flag!(
         /// Domain for Unix socket communication.
         UNIX = libc::AF_UNIX,
         /// Domain for low-level packet interface.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         PACKET = libc::AF_PACKET,
         /// Domain for low-level VSOCK interface.
         VSOCK = libc::AF_VSOCK,
@@ -80,6 +81,7 @@ new_flag!(
         /// Datagram Congestion Control Protocol socket.
         ///
         /// Used for the DCCP protocol.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         DCCP = libc::SOCK_DCCP,
     }
 
@@ -94,14 +96,17 @@ new_flag!(
         /// User Datagram Protocol.
         UDP = libc::IPPROTO_UDP,
         /// Datagram Congestion Control Protocol.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         DCCP = libc::IPPROTO_DCCP,
         /// Stream Control Transport Protocol.
         SCTP = libc::IPPROTO_SCTP,
         /// UDP-Lite.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         UDPLITE = libc::IPPROTO_UDPLITE,
         /// Raw IP packets.
         RAW = libc::IPPROTO_RAW,
         /// Multipath TCP connection.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MPTCP = libc::IPPROTO_MPTCP,
     }
 );
