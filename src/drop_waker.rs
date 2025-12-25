@@ -9,7 +9,9 @@ use std::os::fd::RawFd;
 use std::{mem, ptr, task};
 
 use crate::fd;
-use crate::io::{Buffer, ReadBufPool};
+use crate::io::Buffer;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::io::ReadBufPool;
 use crate::net::{AddressStorage, OptionStorage};
 
 /// Create a [`task::Waker`] that will drop itself when the waker is dropped.
@@ -92,6 +94,7 @@ impl<T> DropWake for OptionStorage<Box<T>> {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl DropWake for ReadBufPool {
     fn into_waker_data(self) -> *const () {
         unsafe { ReadBufPool::into_raw(self) }
