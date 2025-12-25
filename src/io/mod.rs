@@ -163,6 +163,7 @@ impl AsyncFd {
     ///
     /// This will return `ENOBUFS` if no buffer is available in the `pool` to
     /// read into.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub const fn multishot_read<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRead<'fd> {
         MultishotRead(FdOperation::new(self, pool, ()))
     }
@@ -495,6 +496,7 @@ fd_operation!(
 
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_read`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
 }
 
