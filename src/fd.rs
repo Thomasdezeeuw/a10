@@ -198,6 +198,7 @@ impl Kind {
             // We also use `O_CLOEXEC` when we technically should use
             // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
             // expected.
+            #[cfg(not(target_os = "macos"))]
             const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
             libc::O_CLOEXEC
         }
