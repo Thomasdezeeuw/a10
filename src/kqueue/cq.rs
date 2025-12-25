@@ -1,4 +1,5 @@
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
