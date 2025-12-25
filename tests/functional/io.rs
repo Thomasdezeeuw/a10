@@ -11,7 +11,7 @@ use a10::{AsyncFd, Extract, SubmissionQueue};
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
     LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, cancel_all, defer, expect_io_errno, fd, is_send,
-    is_sync, next, remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket,
+    is_sync, next, pipe, remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket,
     test_queue, tmp_path,
 };
 
@@ -519,11 +519,10 @@ async fn open_file(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
 }
 
 async fn open_read_pipe(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
-    let mut fds: [RawFd; 2] = [-1, -1];
-    syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC)).expect("failed to create pipe");
+    let [r, w] = pipe();
     // SAFETY: we just initialised the `fds` above.
-    let r = unsafe { AsyncFd::from_raw_fd(fds[0], sq) };
-    let mut w = unsafe { std::fs::File::from_raw_fd(fds[1]) };
+    let r = unsafe { AsyncFd::from_raw_fd(r, sq) };
+    let mut w = unsafe { std::fs::File::from_raw_fd(w) };
 
     std::thread::spawn(move || {
         std::io::Write::write_all(&mut w, expected).expect("failed to write all data to pipe");
