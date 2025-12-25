@@ -58,9 +58,11 @@ use crate::extract::{Extract, Extractor};
 use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
 use crate::{AsyncFd, man_link, new_flag, sys};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 mod read_buf;
 mod traits;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub use read_buf::{ReadBuf, ReadBufPool};
 pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
 #[allow(unused_imports)] // Not used by all OS.
