@@ -442,7 +442,7 @@ macro_rules! new_flag {
             )*
         }
 
-        $crate::debug_detail!(impl for $type_name($type_repr) match $( $libc::$value_type ),*);
+        $crate::debug_detail!(impl for $type_name($type_repr) match $( $(#[$value_meta])* $libc::$value_type ),*);
 
         $(
         impl std::ops::BitOr for $type_name {
@@ -473,21 +473,21 @@ macro_rules! debug_detail {
     (
         // Match a value exactly.
         impl for $type: ident ($type_repr: ty) match
-        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),* $(,)?
+        $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),* $(,)?
     ) => {
         impl ::std::fmt::Debug for $type {
             #[allow(trivial_numeric_casts, unreachable_patterns, unreachable_code, clippy::bad_bit_mask)]
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 mod consts {
                     $(
-                    $(#[$target])*
+                    $(#[$meta])*
                     pub(super) const $flag: $type_repr = $libc :: $flag as $type_repr;
                     )*
                 }
 
                 f.write_str(match self.0 {
                     $(
-                    $(#[$target])*
+                    $(#[$meta])*
                     consts::$flag => stringify!($flag),
                     )*
                     value => return value.fmt(f),
@@ -498,16 +498,16 @@ macro_rules! debug_detail {
     (
         // Match a value exactly.
         match $type: ident ($event_type: ty),
-        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
+        $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
     ) => {
         struct $type($event_type);
 
-        $crate::debug_detail!(impl for $type($event_type) match $( $libc::$flag ),*);
+        $crate::debug_detail!(impl for $type($event_type) match $( $(#[$meta])* $libc::$flag ),*);
     };
     (
         // Integer bitset.
         bitset $type: ident ($event_type: ty),
-        $( $( #[$target: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
+        $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
     ) => {
         struct $type($event_type);
 
@@ -515,7 +515,7 @@ macro_rules! debug_detail {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 let mut written_one = false;
                 $(
-                    $(#[$target])*
+                    $(#[$meta])*
                     #[allow(clippy::bad_bit_mask)] // Apparently some flags are zero.
                     {
                         if self.0 & $libc :: $flag != 0 {
