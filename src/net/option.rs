@@ -269,6 +269,24 @@ macro_rules! new_option {
         $(
         $(#[$type_meta:meta])*
         $type_vis: vis $type_name: ident {
+            $( $tt: tt)*
+        }
+        )+
+    ) => {
+        $(
+        $(#[$type_meta])*
+        $crate::net::option::new_option!(__impl
+            $(#[$type_meta])*
+            $type_vis $type_name {
+                $( $tt )*
+            }
+        );
+        )+
+    };
+    (
+        __impl
+        $(#[$type_meta:meta])*
+        $type_vis: vis $type_name: ident {
             type Storage = $storage: ty;
             const LEVEL = $level: expr;
             const OPT = $opt: expr;
@@ -287,9 +305,7 @@ macro_rules! new_option {
             fn as_storage($as_storage_value: ident: $value: ty) -> Self::Storage $as_storage: block
             )?
         }
-        )+
     ) => {
-        $(
         $(#[$type_meta])*
         #[allow(missing_debug_implementations)]
         pub enum $type_name {}
@@ -331,7 +347,6 @@ macro_rules! new_option {
 
         impl private::Set for $type_name {}
         )?
-        )+
     };
 }
 
