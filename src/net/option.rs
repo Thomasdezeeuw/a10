@@ -112,6 +112,7 @@ new_option! {
 
     /// Domain.
     #[doc(alias = "SO_DOMAIN")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub Domain {
         type Storage = libc::c_int;
         const LEVEL = Level::SOCKET;
@@ -144,6 +145,7 @@ new_option! {
 
     /// CPU affinity.
     #[doc(alias = "SO_INCOMING_CPU")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub IncomingCpu {
         type Storage = libc::c_int;
         const LEVEL = Level::SOCKET;
@@ -239,6 +241,7 @@ new_option! {
 
     /// Retrieves the socket protocol.
     #[doc(alias = "SO_PROTOCOL")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub Protocol {
         type Storage = u32;
         const LEVEL = Level::SOCKET;
