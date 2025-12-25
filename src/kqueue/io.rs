@@ -45,7 +45,7 @@ impl<B: BufMut> kqueue::FdOp for ReadOp<B> {
         }
     }
 
-    fn map_ok(mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
             buf.buf.set_init(n);
@@ -92,7 +92,11 @@ impl<B: BufMutSlice<N>, const N: usize> kqueue::FdOp for ReadVectoredOp<B, N> {
         }
     }
 
-    fn map_ok((mut bufs, _): Self::Resources, n: Self::OperationOutput) -> Self::Output {
+    fn map_ok(
+        _: &AsyncFd,
+        (mut bufs, _): Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::Output {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n) };
         bufs
