@@ -164,11 +164,8 @@ impl Drop for AsyncFd {
             let result = self.sq.inner.submit_no_completion(|submission| {
                 crate::sys::io::close_file_fd(self.fd(), self.kind(), submission);
             });
-            match result {
-                Ok(()) => return,
-                Err(crate::sq::QueueFull) => {
-                    log::warn!("error submitting close operation for a10::AsyncFd, queue is full");
-                }
+            if let Ok(()) = result {
+                return;
             }
         }
 
