@@ -147,12 +147,12 @@ impl Unpin for AsyncFd {}
 
 impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AsyncFd")
-            .field("fd", &self.fd())
-            .field("kind", &self.kind())
-            .field("state", &self.state)
-            .field("sq", &"SubmissionQueue")
-            .finish()
+        let mut f = f.debug_struct("AsyncFd");
+        f.field("fd", &self.fd()).field("kind", &self.kind());
+        // Always empty for Linux.
+        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        f.field("state", &self.state);
+        f.finish()
     }
 }
 
