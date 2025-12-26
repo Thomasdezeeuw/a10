@@ -36,6 +36,7 @@ impl<I: Implementation> Queue<I> {
     ///
     /// If this returns `QueueFull` it will use the `waker` to wait for a
     /// submission.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) fn submit_multishot<F>(
         &self,
         fill: F,
@@ -76,6 +77,7 @@ impl<I: Implementation> Queue<I> {
 
     /// Queue a new multishot operation, without submitting an operation,
     /// returns the operation id.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) fn queue_multishot(&self) -> Result<OperationId, QueueFull> {
         self.queue2(
             <<<I::Completions as cq::Completions>::Event as cq::Event>::State as cq::OperationState>::new_multishot,
