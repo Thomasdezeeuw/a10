@@ -380,26 +380,6 @@ impl fmt::Debug for Event {
                 target_os = "watchos",
             ))]
             libc::NOTE_FFCOPY,
-            #[cfg(any(
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "visionos",
-                target_os = "watchos",
-            ))]
-            libc::NOTE_FFCTRLMASK,
-            #[cfg(any(
-                target_os = "dragonfly",
-                target_os = "freebsd",
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "visionos",
-                target_os = "watchos",
-            ))]
-            libc::NOTE_FFLAGSMASK,
             libc::NOTE_LOWAT,
             libc::NOTE_DELETE,
             libc::NOTE_WRITE,
@@ -456,8 +436,6 @@ impl fmt::Debug for Event {
                 target_os = "watchos"
             ))]
             libc::NOTE_EXIT_DETAIL,
-            libc::NOTE_PDATAMASK,
-            libc::NOTE_PCTRLMASK,
             #[cfg(any(
                 target_os = "dragonfly",
                 target_os = "freebsd",
@@ -479,14 +457,6 @@ impl fmt::Debug for Event {
                 target_os = "openbsd",
             ))]
             libc::NOTE_CHILD,
-            #[cfg(any(
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "visionos",
-                target_os = "watchos"
-            ))]
-            libc::NOTE_EXIT_DETAIL_MASK,
             #[cfg(any(
                 target_os = "ios",
                 target_os = "macos",
