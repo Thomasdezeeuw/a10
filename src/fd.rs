@@ -70,6 +70,7 @@ impl AsyncFd {
     }
 
     pub(crate) unsafe fn from_raw(fd: RawFd, kind: Kind, sq: SubmissionQueue) -> AsyncFd {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         let fd = if let Kind::Direct = kind {
             fd | (1 << 31)
         } else {
@@ -80,6 +81,7 @@ impl AsyncFd {
 
     /// Returns the kind of descriptor.
     pub fn kind(&self) -> Kind {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if self.fd.is_negative() {
             return Kind::Direct;
         }
@@ -92,6 +94,7 @@ impl AsyncFd {
     /// descriptor can be cloned into a regular file descriptor using
     /// [`AsyncFd::to_file_descriptor`].
     pub fn as_fd(&self) -> Option<BorrowedFd<'_>> {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             return None;
         }
@@ -131,6 +134,7 @@ impl AsyncFd {
     }
 
     pub(crate) fn use_flags(&self, submission: &mut Submission) {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self.kind() {
             crate::sys::fd::use_direct_flags(submission);
         }
@@ -167,6 +171,7 @@ impl Drop for AsyncFd {
 
         // Fall back to synchronously closing the descriptor.
         let result = match self.kind() {
+            #[cfg(any(target_os = "android", target_os = "linux"))]
             Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), self.sq()),
             Kind::File => syscall!(close(self.fd())).map(|_| ()),
         };
@@ -187,24 +192,26 @@ pub enum Kind {
     /// They avoid some of the overhead associated with thread shared file
     /// tables and can be used in any io_uring request that takes a file
     /// descriptor. However they cannot be used outside of io_uring.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     Direct,
 }
 
 impl Kind {
     pub(crate) fn cloexec_flag(self) -> libc::c_int {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {
-            0 // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
-        } else {
-            // We also use `O_CLOEXEC` when we technically should use
-            // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
-            // expected.
-            #[cfg(not(target_os = "macos"))]
-            const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
-            libc::O_CLOEXEC
+            return 0; // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
         }
+        // We also use `O_CLOEXEC` when we technically should use
+        // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
+        // expected.
+        #[cfg(not(target_os = "macos"))]
+        const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
+        libc::O_CLOEXEC
     }
 
     pub(crate) fn create_flags(self, submission: &mut Submission) {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {
             crate::sys::fd::create_direct_flags(submission);
         }
