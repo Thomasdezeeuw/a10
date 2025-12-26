@@ -5,7 +5,7 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{Submission, SubmissionQueue, syscall};
+use crate::{Submission, SubmissionQueue, sys, syscall};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{ToDirect, ToFd};
@@ -36,6 +36,7 @@ pub use crate::sys::fd::{ToDirect, ToFd};
 #[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd {
     fd: RawFd,
+    state: sys::fd::State,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
 }
@@ -76,7 +77,8 @@ impl AsyncFd {
         } else {
             fd
         };
-        AsyncFd { fd, sq }
+        let state = sys::fd::State::new();
+        AsyncFd { fd, state, sq }
     }
 
     /// Returns the kind of descriptor.
@@ -147,8 +149,9 @@ impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AsyncFd")
             .field("fd", &self.fd())
-            .field("sq", &"SubmissionQueue")
             .field("kind", &self.kind())
+            .field("state", &self.state)
+            .field("sq", &"SubmissionQueue")
             .finish()
     }
 }
