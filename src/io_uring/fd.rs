@@ -7,6 +7,16 @@ use crate::io_uring::{self, cq, libc, sq};
 use crate::op::{FdOperation, fd_operation};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
+/// No state needed.
+#[derive(Debug)]
+pub(crate) struct State;
+
+impl State {
+    pub(crate) const fn new() -> State {
+        State
+    }
+}
+
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
     submission.0.flags |= libc::IOSQE_FIXED_FILE;
 }
