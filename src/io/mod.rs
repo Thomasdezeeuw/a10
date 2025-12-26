@@ -501,9 +501,9 @@ fd_operation!(
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_read`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
 }
 

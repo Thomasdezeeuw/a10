@@ -64,6 +64,7 @@ where
         )
     }
 
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) fn poll_next(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<Option<io::Result<O::Output>>>
         where O: Iter,
     {
@@ -259,6 +260,7 @@ where
         )
     }
 
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) fn poll_next(self: Pin<&mut Self>, ctx: &task::Context<'_>) -> Poll<Option<io::Result<O::Output>>>
         where O: FdIter,
     {
@@ -538,6 +540,7 @@ impl<R, A> State<R, A> {
     /// Poll the next item from the state of this operation.
     ///
     /// NOTE: that the functions match those of the [`FdOp`] and [`Op`] traits.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     fn poll_next<FillSubmission, CheckResult, OperationOutput, MapOk, Output>(
         &mut self,
         ctx: &task::Context<'_>,

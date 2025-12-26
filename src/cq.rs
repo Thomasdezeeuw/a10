@@ -156,6 +156,7 @@ pub(crate) trait OperationState: fmt::Debug {
     fn new() -> Self;
 
     /// Create a queued multishot operation.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     fn new_multishot() -> Self;
 
     /// Prepare the operation state for a retry of the operation.
