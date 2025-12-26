@@ -316,25 +316,6 @@ impl fmt::Debug for Event {
             libc::EV_FLAG1,
             libc::EV_ERROR,
             libc::EV_EOF,
-            // Not stable across OS versions on OpenBSD.
-            #[cfg(not(target_os = "openbsd"))]
-            libc::EV_SYSFLAGS,
-            #[cfg(any(
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "visionos",
-                target_os = "watchos"
-            ))]
-            libc::EV_FLAG0,
-            #[cfg(any(
-                target_os = "ios",
-                target_os = "macos",
-                target_os = "tvos",
-                target_os = "visionos",
-                target_os = "watchos"
-            ))]
-            libc::EV_POLL,
             #[cfg(any(
                 target_os = "ios",
                 target_os = "macos",
