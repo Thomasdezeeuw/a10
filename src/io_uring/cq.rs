@@ -4,10 +4,11 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
+use crate::cq::Event;
 use crate::io_uring::{self, Shared, libc, load_atomic_u32, mmap, munmap};
 use crate::msg::Message;
 use crate::op::OpResult;
-use crate::{OperationId, asan, debug_detail, syscall};
+use crate::{NO_COMPLETION_ID, OperationId, asan, debug_detail, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -182,6 +183,12 @@ impl crate::cq::Completions for Completions {
     fn sq_available(&mut self, shared: &Self::Shared) -> usize {
         (shared.entries_len - shared.unsubmitted()) as usize
     }
+
+    fn no_completion_event(completion: &Completion) {
+        debug_assert!(completion.id() == NO_COMPLETION_ID);
+        log::warn!("operation without completion failed");
+        // Can't do much more.
+    }
 }
 
 unsafe impl Send for Completions {}
@@ -276,7 +283,7 @@ impl Completion {
     }
 }
 
-impl crate::cq::Event for Completion {
+impl Event for Completion {
     type State = OperationState;
 
     fn id(&self) -> OperationId {

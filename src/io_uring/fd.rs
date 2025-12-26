@@ -15,6 +15,10 @@ impl State {
     pub(crate) const fn new() -> State {
         State
     }
+
+    pub(crate) unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+        // Nothing to do.
+    }
 }
 
 pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {

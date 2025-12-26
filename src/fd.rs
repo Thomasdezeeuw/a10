@@ -176,7 +176,12 @@ impl Drop for AsyncFd {
         let result = match self.kind() {
             #[cfg(any(target_os = "android", target_os = "linux"))]
             Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), self.sq()),
-            Kind::File => syscall!(close(self.fd())).map(|_| ()),
+            Kind::File => {
+                let res = syscall!(close(self.fd())).map(|_| ());
+                // SAFETY: we're in the Drop implementation.
+                unsafe { self.state.drop(&self.sq) }
+                res
+            }
         };
         if let Err(err) = result {
             log::warn!("error closing a10::AsyncFd: {err}");
