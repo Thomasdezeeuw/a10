@@ -3,7 +3,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
-use crate::{kqueue, syscall};
+use crate::cq::Event;
+use crate::kqueue::fd::OpState;
+use crate::{NO_COMPLETION_ID, kqueue, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -101,5 +103,13 @@ impl crate::cq::Completions for Completions {
     fn sq_available(&mut self, shared: &Self::Shared) -> usize {
         // No practical limit.
         usize::MAX
+    }
+
+    fn no_completion_event(kevent: &kqueue::Event) {
+        debug_assert!(kevent.id() == NO_COMPLETION_ID);
+        if kevent.0.filter == libc::EVFILT_USER {
+            // SAFETY: see `OpState` in kqueue::Fd.
+            unsafe { ptr::drop_in_place::<OpState>(kevent.0.ident as _) };
+        }
     }
 }

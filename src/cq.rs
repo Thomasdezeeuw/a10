@@ -35,7 +35,7 @@ impl<I: Implementation> Queue<I> {
                 if id == WAKE_ID {
                     /* Wake up only. */
                 } else if id == NO_COMPLETION_ID {
-                    log::warn!(id = id; "operation without completion failed");
+                    I::Completions::no_completion_event(completion);
                 } else {
                     log::trace!(id = id; "got completion for unknown operation");
                 }
@@ -133,6 +133,9 @@ pub(crate) trait Completions: fmt::Debug {
     ///
     /// This value may be outdated due to concurrent access.
     fn sq_available(&mut self, shared: &Self::Shared) -> usize;
+
+    /// Handle a completion with id set to `NO_COMPLETION_ID`.
+    fn no_completion_event(completion: &Self::Event);
 }
 
 /// Completition event.
