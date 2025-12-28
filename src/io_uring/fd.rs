@@ -16,7 +16,8 @@ impl State {
         State
     }
 
-    pub(crate) unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+    #[allow(clippy::unused_self)]
+    pub(crate) unsafe fn drop(&mut self, _: &SubmissionQueue) {
         // Nothing to do.
     }
 }
