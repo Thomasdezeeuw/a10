@@ -211,6 +211,7 @@ impl Kind {
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
         #[cfg(not(target_os = "macos"))]
+        #[allow(clippy::items_after_statements)]
         const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
         libc::O_CLOEXEC
     }

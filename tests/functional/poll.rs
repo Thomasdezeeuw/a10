@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsFd, FromRawFd, RawFd};
+use std::os::fd::{AsFd, FromRawFd};
 use std::pin::pin;
 
 use a10::poll::{Event, Interest, MultishotPoll, OneshotPoll, multishot_poll, oneshot_poll};
 
 use crate::util::{
-    pipe, Waker, cancel, expect_io_errno, is_send, is_sync, next, start_mulitshot_op, start_op,
+    Waker, cancel, expect_io_errno, is_send, is_sync, next, pipe, start_mulitshot_op, start_op,
     test_queue,
 };
 
@@ -143,7 +143,7 @@ fn drop_multishot_poll() {
 }
 
 fn pipe2() -> io::Result<(File, File)> {
-    let [r, w] = pipe()
+    let [r, w] = pipe();
     // SAFETY: we just initialised the `fds` above.
     let r = unsafe { File::from_raw_fd(r) };
     let w = unsafe { File::from_raw_fd(w) };

@@ -11,8 +11,8 @@ use a10::{AsyncFd, Extract, SubmissionQueue};
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
     LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, cancel_all, defer, expect_io_errno, fd, is_send,
-    is_sync, next, pipe, remove_test_file, require_kernel, start_op, syscall, tcp_ipv4_socket,
-    test_queue, tmp_path,
+    is_sync, next, pipe, remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue,
+    tmp_path,
 };
 
 const NO_OFFSET: u64 = u64::MAX;

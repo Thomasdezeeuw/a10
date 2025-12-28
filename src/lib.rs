@@ -476,7 +476,7 @@ macro_rules! debug_detail {
         $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),* $(,)?
     ) => {
         impl ::std::fmt::Debug for $type {
-            #[allow(trivial_numeric_casts, unreachable_patterns, unreachable_code, clippy::bad_bit_mask)]
+            #[allow(trivial_numeric_casts, unreachable_patterns, unreachable_code, unused_doc_comments, clippy::bad_bit_mask)]
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 mod consts {
                     $(

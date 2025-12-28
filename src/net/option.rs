@@ -5,6 +5,10 @@
 //! [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
 //! [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
 
+// TODO: the new_option! macro doesn't only set the cfg attributes and instead
+// uses all metadata attributes, including the docs, which Rust complains about.
+#![allow(unused_doc_comments)]
+
 use std::io;
 use std::mem::MaybeUninit;
 
