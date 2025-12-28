@@ -1,24 +1,16 @@
 use std::mem::replace;
-use std::ptr;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicPtr;
+use std::{ptr, task};
 
-use crate::SubmissionQueue;
+use crate::{SubmissionQueue, kqueue};
 
 #[derive(Debug)]
 pub(crate) struct State {
-    inner: AtomicPtr<OpState>,
+    inner: AtomicPtr<SharedState>,
 }
 
-/// For kqueue the pair `ident` and `filter`, or file descriptor and operation
-/// kind (e.g. `EVFILT_READ`) for our use case, is unique. This means that
-/// multiple (e.g.) read operations will need to share a single completion
-/// event.
-///
-/// To do this we use this type to share a single completion event with multiple
-/// Futures waiting on the same filters.
-pub(super) struct OpState {
-    // TODO: add registered operations, etc.
-}
+pub(super) type SharedState = Mutex<OpState>;
 
 impl State {
     pub(crate) const fn new() -> State {
@@ -50,5 +42,35 @@ impl State {
         if let Err(err) = result {
             log::warn!("failed to submit delayed allocation, leaking operation state at {ptr:p}");
         }
+    }
+}
+
+/// For kqueue the pair `ident` and `filter`, or file descriptor and operation
+/// kind (e.g. `EVFILT_READ`) for our use case, is unique. This means that
+/// multiple (e.g.) read operations will need to share a single completion
+/// event.
+///
+/// To do this we use this type to share a single completion event with multiple
+/// Futures waiting on the same filters.
+#[derive(Debug)]
+pub(super) struct OpState {
+    wakers: Vec<(Filter, task::Waker)>,
+}
+
+#[derive(Copy, Clone, Debug)]
+enum Filter {
+    Read,  // EVFILT_READ
+    Write, // EVFILT_WRITE
+}
+
+impl OpState {
+    /// Wake the relevant future based on `event`.
+    pub(crate) fn wake(&mut self, event: &kqueue::Event) {
+        self.wakers
+            .extract_if(.., |(filter, _)| match filter {
+                Filter::Read => event.0.filter == libc::EVFILT_READ,
+                Filter::Write => event.0.filter == libc::EVFILT_WRITE,
+            })
+            .for_each(|(_, waker)| waker.wake())
     }
 }

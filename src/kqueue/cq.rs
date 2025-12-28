@@ -4,8 +4,8 @@ use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
 use crate::cq::Event;
-use crate::kqueue::fd::OpState;
-use crate::{NO_COMPLETION_ID, kqueue, syscall};
+use crate::kqueue::{self, fd};
+use crate::{NO_COMPLETION_ID, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -109,7 +109,7 @@ impl crate::cq::Completions for Completions {
         debug_assert!(kevent.id() == NO_COMPLETION_ID);
         if kevent.0.filter == libc::EVFILT_USER {
             // SAFETY: see `OpState` in kqueue::Fd.
-            unsafe { ptr::drop_in_place::<OpState>(kevent.0.ident as _) };
+            unsafe { ptr::drop_in_place::<fd::SharedState>(kevent.0.ident as _) };
         }
     }
 }
