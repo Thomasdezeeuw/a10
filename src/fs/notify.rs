@@ -585,19 +585,22 @@ macro_rules! bit_checks {
         }
         )+
 
-        fn fmt_event_fields(&self, f: &mut fmt::DebugStruct<'_, '_>) {
-            _ = f.field(
-                "events",
-                &fmt::from_fn(|f| {
+        fn events(&self) -> impl fmt::Debug {
+            struct Events<'a>(&'a Event);
+
+            impl<'a> fmt::Debug for Events<'a> {
+                fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     let mut f = f.debug_list();
                     $(
-                    if self.$fn_name() {
+                    if self.0.$fn_name() {
                         _ = f.entry(&stringify!($fn_name));
                     }
                     )+
                     f.finish()
-                })
-            );
+                }
+            }
+
+            Events(self)
         }
     };
 }
@@ -611,8 +614,8 @@ impl fmt::Debug for Event {
         f.field("wd", &self.event.wd)
             .field("mask", &self.event.mask)
             .field("cookie", &self.event.cookie)
-            .field("file_path", &self.file_path());
-        self.fmt_event_fields(&mut f);
-        f.finish()
+            .field("file_path", &self.file_path())
+            .field("events", &self.events())
+            .finish()
     }
 }
