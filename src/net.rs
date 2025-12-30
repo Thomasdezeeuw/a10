@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
-#[cfg(any(target_os = "linux", target_os = "android"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix;
 use std::os::unix::ffi::OsStrExt;
@@ -1619,7 +1619,7 @@ impl private::SocketAddress for SocketAddrV4 {
             },
             sin_zero: [0; 8],
             // A number of OS have `sin_len`, but we don't use it.
-            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            #[cfg(not(any(target_os = "android", target_os = "linux")))]
             sin_len: 0,
         }
     }
@@ -1668,7 +1668,7 @@ impl private::SocketAddress for SocketAddrV6 {
             },
             sin6_scope_id: self.scope_id(),
             // A number of OS have `sin6_len`, but we don't use it.
-            #[cfg(not(any(target_os = "linux", target_os = "android")))]
+            #[cfg(not(any(target_os = "android", target_os = "linux")))]
             sin6_len: 0,
         }
     }
@@ -1724,7 +1724,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
             let bytes = pathname.as_os_str().as_bytes();
             path[..bytes.len()].copy_from_slice(bytes);
         } else {
-            #[cfg(any(target_os = "linux", target_os = "android"))]
+            #[cfg(any(target_os = "android", target_os = "linux"))]
             if let Some(bytes) = self.as_abstract_name() {
                 path[1..][..bytes.len()].copy_from_slice(bytes);
             }
@@ -1757,7 +1757,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
         // SAFETY: the kernel ensures that at least `length` bytes are
         // initialised.
         let path = unsafe { slice::from_raw_parts::<u8>(path_ptr.cast(), length) };
-        #[cfg(any(target_os = "linux", target_os = "android"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Some(0) = path.first() {
             // NOTE: `from_abstract_name` adds a starting null byte.
             if let Ok(addr) = unix::net::SocketAddr::from_abstract_name(&path[1..]) {
