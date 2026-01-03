@@ -2,6 +2,8 @@
 pub mod fd;
 
 mod sq;
+#[cfg(unix)]
+mod unix;
 
 pub mod io;
 
