@@ -26,5 +26,18 @@ macro_rules! syscall {
     }};
 }
 
+/// Link to online manual.
+#[rustfmt::skip]
+macro_rules! man_link {
+    ($syscall: tt ( $section: tt ) ) => {
+        concat!(
+            "\n\nAdditional documentation can be found in the ",
+            "[`", stringify!($syscall), "(", stringify!($section), ")`]",
+            "(https://man7.org/linux/man-pages/man", stringify!($section), "/", stringify!($syscall), ".", stringify!($section), ".html)",
+            " manual.\n"
+        )
+    };
+}
+
 #[allow(unused_imports)] // Not used on all OS.
-use syscall;
+use {man_link, syscall};
