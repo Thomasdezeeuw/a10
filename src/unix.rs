@@ -3,6 +3,7 @@
 use std::mem::{self, MaybeUninit};
 
 use crate::io::{Buf, BufMut};
+use crate::net::SocketAddress;
 
 #[repr(transparent)] // Needed for I/O.
 pub(crate) struct IoMutSlice(libc::iovec);
@@ -76,3 +77,60 @@ impl IoSlice {
 // it's actually `Send` and `Sync`.
 unsafe impl Send for IoSlice {}
 unsafe impl Sync for IoSlice {}
+
+#[repr(transparent)] // Needed for system calls.
+pub(crate) struct MsgHeader(libc::msghdr);
+
+impl MsgHeader {
+    pub(crate) const fn empty() -> MsgHeader {
+        // SAFETY: zeroed `msghdr` is valid.
+        unsafe { mem::zeroed() }
+    }
+
+    /// # Safety
+    ///
+    /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
+    #[allow(trivial_numeric_casts)]
+    pub(crate) unsafe fn init_recv<A: SocketAddress>(
+        &mut self,
+        address: &mut MaybeUninit<A::Storage>,
+        iovecs: &mut [crate::io::IoMutSlice],
+    ) {
+        let (address_ptr, address_length) = unsafe { A::as_mut_ptr(address) };
+        self.0.msg_name = address_ptr.cast();
+        self.0.msg_namelen = address_length;
+        // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
+        self.0.msg_iov = iovecs.as_mut_ptr().cast();
+        self.0.msg_iovlen = iovecs.len() as _;
+    }
+
+    /// # Safety
+    ///
+    /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
+    #[allow(trivial_numeric_casts)]
+    pub(crate) unsafe fn init_send<A: SocketAddress>(
+        &mut self,
+        address: &mut A::Storage,
+        iovecs: &mut [crate::io::IoSlice],
+    ) {
+        let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
+        self.0.msg_name = address_ptr.cast_mut().cast();
+        self.0.msg_namelen = address_length;
+        // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
+        self.0.msg_iov = iovecs.as_mut_ptr().cast();
+        self.0.msg_iovlen = iovecs.len() as _;
+    }
+
+    pub(crate) const fn address_len(&self) -> libc::socklen_t {
+        self.0.msg_namelen
+    }
+
+    pub(crate) const fn flags(&self) -> libc::c_int {
+        self.0.msg_flags
+    }
+}
+
+// SAFETY: `libc::msghr` is `!Sync`, but the two pointers two the address and
+// `iovecs` (`IoMutSlice`/`IoSlice`) are `Send` and `Sync`.
+unsafe impl Send for MsgHeader {}
+unsafe impl Sync for MsgHeader {}
