@@ -45,3 +45,13 @@
 //! standard library (e.g. [`std::io::stdout`]). Furthermore these handle do not
 //! flush the buffer used by the standard library, so it's not advised to use
 //! both the handle from standard library and Heph simultaneously.
+
+mod traits;
+
+#[allow(unused_imports)] // Not used by all OS.
+pub(crate) use traits::{BufGroupId, BufId};
+// Re-export so we don't have to worry about import `std::io` and `crate::io`.
+pub(crate) use std::io::*;
+
+#[doc(inline)]
+pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
