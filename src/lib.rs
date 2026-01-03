@@ -3,6 +3,8 @@ pub mod fd;
 
 mod sq;
 
+pub mod io;
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
 #[cfg(any(target_os = "android", target_os = "linux"))]
