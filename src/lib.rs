@@ -8,6 +8,8 @@ mod io_uring;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use io_uring as sys;
 
+#[doc(no_inline)]
+pub use fd::AsyncFd;
 #[doc(inline)]
 pub use sq::SubmissionQueue;
 
