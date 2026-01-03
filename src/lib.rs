@@ -1,7 +1,12 @@
+mod sq;
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use io_uring as sys;
+
+#[doc(inline)]
+pub use sq::SubmissionQueue;
 
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
