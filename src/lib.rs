@@ -6,6 +6,7 @@ mod sq;
 mod unix;
 
 pub mod io;
+pub mod net;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
