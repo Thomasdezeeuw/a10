@@ -1,3 +1,6 @@
+// This must come before the other modules for the documentation.
+pub mod fd;
+
 mod sq;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
