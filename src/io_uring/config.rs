@@ -294,7 +294,7 @@ impl<'r> crate::Config<'r> {
 
 macro_rules! check_feature {
     ($features: expr, $required: ident $(,)?) => {
-        if $features & libc::$required != 0 {
+        if $features & libc::$required == 0 {
             return Err(::std::io::Error::new(
                 ::std::io::ErrorKind::Unsupported,
                 ::std::concat!(
