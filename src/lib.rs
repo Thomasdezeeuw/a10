@@ -1,6 +1,7 @@
 // This must come before the other modules for the documentation.
 pub mod fd;
 
+mod asan;
 mod sq;
 #[cfg(unix)]
 mod unix;
