@@ -2,6 +2,7 @@
 pub mod fd;
 
 mod asan;
+mod msan;
 mod sq;
 #[cfg(unix)]
 mod unix;
