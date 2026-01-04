@@ -269,8 +269,8 @@ impl<'r> crate::Config<'r> {
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED); // No need for fixed files.
 
-        //let shared = io_uring::Shared::new(rfd, &parameters)?;
-        let submissions = io_uring::Submissions::new(rfd, &parameters)?;
+        let shared = io_uring::Shared::new(rfd, &parameters)?;
+        let submissions = io_uring::Submissions::new(shared);
         let completions = io_uring::Completions::new(submissions.ring_fd(), &parameters)?;
 
         if let Some(size) = self.sys.direct_descriptors {
