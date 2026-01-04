@@ -1,9 +1,11 @@
+use std::ptr;
+use std::time::Duration;
+
 // This must come before the other modules for the documentation.
 pub mod fd;
 
 mod asan;
 mod msan;
-mod sq;
 #[cfg(unix)]
 mod unix;
 
@@ -17,14 +19,101 @@ use io_uring as sys;
 
 #[doc(no_inline)]
 pub use fd::AsyncFd;
-#[doc(inline)]
-pub use sq::SubmissionQueue;
+
+/// This type represents the user space side of an io_uring.
+///
+/// An io_uring is split into two queues: the submissions and completions queue.
+/// The [`SubmissionQueue`] is public, but doesn't provide many methods. The
+/// `SubmissionQueue` is used by I/O types in the crate to schedule asynchronous
+/// operations.
+///
+/// The completions queue is not exposed by the crate and only used internally.
+/// Instead it will wake the [`Future`]s exposed by the various I/O types, such
+/// as [`AsyncFd::write`]'s [`Write`] `Future`.
+///
+/// [`Future`]: std::future::Future
+/// [`AsyncFd::write`]: AsyncFd::write
+/// [`Write`]: io::Write
+#[derive(Debug)]
+pub struct Ring {
+    sq: sys::Submissions,
+    cq: sys::Completions,
+}
+
+impl Ring {
+    /// Configure a `Ring`.
+    pub const fn config<'r>() -> Config<'r> {
+        Config {
+            sys: crate::sys::Config::new(),
+        }
+    }
+
+    /// Create a new `Ring` with the default configuration.
+    ///
+    /// For more configuration options see [`Config`].
+    #[doc(alias = "io_uring_setup")]
+    #[doc(alias = "kqueue")]
+    pub fn new() -> io::Result<Ring> {
+        Ring::config().build()
+    }
+
+    /// Returns the `SubmissionQueue` used by this ring.
+    ///
+    /// The submission queue can be used to queue asynchronous I/O operations.
+    pub fn sq(&self) -> &SubmissionQueue {
+        SubmissionQueue::from_ref(&self.sq)
+    }
+
+    /// Poll the ring for completions.
+    ///
+    /// This will wake all completed [`Future`]s with the result of their
+    /// operations.
+    ///
+    /// [`Future`]: std::future::Future
+    #[doc(alias = "io_uring_enter")]
+    #[doc(alias = "kevent")]
+    pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
+        self.cq.poll(timeout)
+    }
+}
+
+/// Queue to submit asynchronous operations to.
+///
+/// This type doesn't have many public methods, but is used by all I/O types, to
+/// queue asynchronous operations. The queue can be acquired by using
+/// [`Ring::sq`].
+///
+/// The submission queue can be shared by cloning it, it's a cheap operation.
+#[derive(Clone, Debug)]
+#[repr(transparent)]
+pub struct SubmissionQueue(sys::Submissions);
+
+impl SubmissionQueue {
+    pub(crate) fn from_ref(submissions: &sys::Submissions) -> &SubmissionQueue {
+        // SAFETY: this is safe because `SubmissionQueue` and `sys::Submissions`
+        // have the same layout due to `repr(transparent)`.
+        unsafe { &*ptr::from_ref(submissions).cast() }
+    }
+
+    /// Wake the connected [`Ring`].
+    ///
+    /// All this does is interrupt a call to [`Ring::poll`].
+    pub fn wake(&self) {
+        if let Err(err) = self.0.wake() {
+            log::warn!("failed to wake a10::Ring: {err}");
+        }
+    }
+
+    pub(crate) fn submissions(&self) -> &sys::Submissions {
+        &self.0
+    }
+}
 
 /// Helper macro to execute a system call that returns an `io::Result`.
 macro_rules! syscall {
     ($fn: ident ( $($arg: expr),* $(,)? ) ) => {{
         #[allow(unused_unsafe)]
-        let res = unsafe { ::libc::$fn($( $arg, )*) };
+        let res = unsafe { libc::$fn($( $arg, )*) };
         if res == -1 {
             ::std::result::Result::Err(::std::io::Error::last_os_error())
         } else {
