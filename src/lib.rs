@@ -39,8 +39,8 @@ pub use fd::AsyncFd;
 /// [`Write`]: io::Write
 #[derive(Debug)]
 pub struct Ring {
-    sq: sys::Submissions,
     cq: sys::Completions,
+    sq: sys::Submissions,
 }
 
 impl Ring {
@@ -76,7 +76,7 @@ impl Ring {
     #[doc(alias = "io_uring_enter")]
     #[doc(alias = "kevent")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
-        self.cq.poll(timeout)
+        self.cq.poll(self.sq.shared(), timeout)
     }
 }
 

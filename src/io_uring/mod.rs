@@ -1,6 +1,6 @@
 //! io_uring implementation.
 
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::{ptr, task};
@@ -112,6 +112,20 @@ impl Shared {
     ) -> io::Result<()> {
         syscall!(io_uring_register(self.rfd.as_raw_fd(), op, arg, nr_args))?;
         Ok(())
+    }
+
+    /// Returns the number of unsumitted submission queue entries.
+    pub(crate) fn unsubmitted_submissions(&self) -> u32 {
+        // NOTE: we MUST load the head before the tail to ensure the head is
+        // ALWAYS older. Otherwise it's possible for the subtraction to
+        // underflow.
+        let head = load_kernel_shared(self.submissions_head);
+        let tail = load_kernel_shared(self.submissions_tail);
+        tail - head
+    }
+
+    pub(super) fn ring_fd(&self) -> RawFd {
+        self.rfd.as_raw_fd()
     }
 }
 
