@@ -5,6 +5,7 @@ use std::time::Duration;
 pub mod fd;
 
 mod asan;
+mod config;
 mod msan;
 #[cfg(unix)]
 mod unix;
@@ -17,6 +18,8 @@ mod io_uring;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use io_uring as sys;
 
+#[doc(inline)]
+pub use config::Config;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
 
