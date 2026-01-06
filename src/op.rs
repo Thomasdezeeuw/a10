@@ -30,6 +30,18 @@ impl<O: Op> Operation<O> {
 /// Only implement `Unpin` if the underlying operation implement `Unpin`.
 impl<O: Op + Unpin> Unpin for Operation<O> {}
 
+impl<O: Op> Operation<O>
+where
+    O::State: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("sq", &self.sq)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
 /// State of an [`Operation`] or [`FdOperation`].
 pub(crate) trait OpState {
     /// Resources used in the operation, e.g. a buffer in a read call.
@@ -109,6 +121,12 @@ macro_rules! new_operation {
         $crate::op::new_operation!(Future for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $future_output )?);
         $crate::op::new_operation!(AsyncIter for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $iter_output )?);
         $crate::op::new_operation!(Extract for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?);
+
+        impl<$( $( $lifetime, )* $( $( $resources: $( $trait + )? ::std::fmt::Debug, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::fmt::Debug for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                self.0.fmt_dbg(::std::concat!("a10::", ::std::stringify!($name)), f)
+            }
+        }
     };
     (
         Future for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty

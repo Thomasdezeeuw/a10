@@ -27,6 +27,7 @@ use crate::op::OpState;
 ///  * usage & interactions.
 ///  * drop function
 ///  * how to keep the resources alive.
+#[derive(Debug)]
 pub(crate) struct State<T, R, A> {
     data: NonNull<Data<T, R, A>>,
 }
@@ -239,6 +240,7 @@ impl CompletionResult {
 pub(super) type OpReturn = (u16, u32);
 
 /// Single shot operation.
+#[derive(Debug)]
 pub(crate) struct Singleshot(CompletionResult);
 
 impl OpResult for Singleshot {
@@ -260,6 +262,7 @@ impl OpResult for Singleshot {
 }
 
 /// Multishot operation.
+#[derive(Debug)]
 pub(crate) struct Multishot(Vec<CompletionResult>);
 
 impl OpResult for Multishot {
