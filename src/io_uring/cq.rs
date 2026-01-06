@@ -58,25 +58,23 @@ impl Completions {
     pub(crate) fn poll(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
         let mut head = load_kernel_shared(self.entries_head);
         let mut tail = load_kernel_shared(self.entries_tail);
-        if head == tail {
+        if head >= tail {
             // If we have no completions we make a system call to wait for
             // completion events.
-            self.enter(shared, timeout)?;
-            // NOTE: we're the only onces writing to the completion `head` so we
-            // don't need to read it again.
-            tail = load_kernel_shared(self.entries_tail);
+            tail += self.enter(shared, timeout)?;
+            debug_assert!(tail <= load_kernel_shared(self.entries_tail));
         }
 
         debug_assert!(tail >= head);
-        while head <= tail {
-            let idx = (head & (self.entries_len - 1)) as usize;
+        while head < tail {
+            let index = (head & (self.entries_len - 1)) as usize;
             // SAFETY: see below.
-            let ptr = unsafe { self.entries.add(idx).as_ptr() };
+            let ptr = unsafe { self.entries.add(index).as_ptr() };
             asan::unpoison_region(ptr.cast(), size_of::<Completion>());
             // SAFETY: the pointer is valid and we've ensured above that the
             // kernel has written a new completion.
             let completion = unsafe { &*ptr };
-            log::trace!(completion:? = completion; "dequeued completion");
+            log::trace!(completion:? = completion, index, head; "dequeued completion");
             // SAFETY: we're only processing the completion once.
             unsafe { completion.process() };
             asan::poison_region(ptr.cast(), size_of::<Completion>());
@@ -91,7 +89,7 @@ impl Completions {
 
     /// Make the `io_uring_enter` system call.
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn enter(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
+    fn enter(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<u32> {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
@@ -115,23 +113,22 @@ impl Completions {
         };
 
         // If there are no completions we'll wait for at least one.
-        let enter_flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
+        let flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
         log::debug!(submissions = submissions; "waiting for completion events");
         shared.is_polling.store(true, Ordering::Release);
-        let result = syscall!(io_uring_enter2(
-            shared.ring_fd(),
+        let result = shared.enter(
             submissions,
             1, // Wait for at least one completion.
-            enter_flags,
+            flags,
             ptr::from_ref(&args).cast(),
             size_of::<libc::io_uring_getevents_arg>(),
-        ));
+        );
         shared.is_polling.store(false, Ordering::Release);
         match result {
-            Ok(_) => Ok(()),
+            Ok(n) => Ok(n),
             // Hit timeout or got interrupted, we can ignore it.
-            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(()),
+            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(0),
             Err(err) => Err(err),
         }
     }
