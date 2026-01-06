@@ -1,4 +1,7 @@
 //! io_uring implementation.
+//!
+//! Manuals:
+//! * <https://man7.org/linux/man-pages/man7/io_uring.7.html>
 
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
