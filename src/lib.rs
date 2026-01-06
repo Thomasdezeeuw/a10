@@ -7,6 +7,7 @@ pub mod fd;
 mod asan;
 mod config;
 mod msan;
+mod op;
 #[cfg(unix)]
 mod unix;
 
