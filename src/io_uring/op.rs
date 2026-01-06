@@ -7,8 +7,9 @@ use std::sync::Mutex;
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::SubmissionQueue;
+use crate::{SubmissionQueue, AsyncFd};
 use crate::io_uring::cq::Completion;
+use crate::io_uring::sq::Submission;
 use crate::io_uring::{self, libc};
 use crate::op::OpState;
 
@@ -283,7 +284,7 @@ pub(crate) trait Op {
     fn fill_submission(
         resources: &mut Self::Resources,
         args: &mut Self::Args,
-        submission: &mut io_uring::sq::Submission,
+        submission: &mut Submission,
     );
 
     fn map_ok(
@@ -293,6 +294,7 @@ pub(crate) trait Op {
     ) -> Self::Output;
 }
 
+// TODO: DRY this with the FdOp impl below.
 impl<T: Op> crate::op::Op for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -360,6 +362,100 @@ impl<T: Op> crate::op::Op for T {
                     unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
                 let op_return = result.as_op_return()?;
                 Poll::Ready(Ok(T::map_ok(sq, resources, op_return)))
+            }
+            // Only the Future sets the Dropped status, which is also the only
+            // one that calls this function, so this should be unreachable.
+            Status::Dropped => unreachable!(),
+            // Shouldn't be reachable, but if the Future is used incorrectly it
+            // can be.
+            Status::Complete => panic!("polled Future after completion"),
+        }
+    }
+}
+
+pub(crate) trait FdOp {
+    type Output;
+    type Resources;
+    type Args;
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+        submission: &mut Submission,
+    );
+
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, op_return: OpReturn) -> Self::Output;
+}
+
+// TODO: DRY this with the Op impl above.
+impl<T: FdOp> crate::op::FdOp for T {
+    type Output = io::Result<T::Output>;
+    type Resources = T::Resources;
+    type Args = T::Args;
+    type State = State<Singleshot, T::Resources, T::Args>;
+
+    fn poll(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Self::Output> {
+        let data = unsafe { state.data.as_mut() };
+        let mut shared = data.shared.lock().unwrap();
+        match &mut shared.status {
+            Status::NotStarted => {
+                let submissions = fd.sq().submissions();
+                let result = submissions.add(|submission| {
+                    // SAFETY: the resources are initialised as the status not
+                    // set to Complete. Furtermore we have unique access as the
+                    // status is not Running.
+                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
+                    let args = &mut data.tail.args;
+                    T::fill_submission(fd, resources, args, submission);
+                    submission.0.user_data = state.data.expose_provenance().get() as u64;
+                });
+                match result {
+                    Ok(()) => {
+                        // Make sure we get awoken when the operation is ready.
+                        shared.waker = Some(ctx.waker().clone());
+                        shared.status = Status::Running {
+                            result: Singleshot::empty(),
+                        };
+                    }
+                    Err(QueueFull) => {
+                        // Make sure we get awoken when we can retry submitting
+                        // the operation.
+                        submissions.wait_for_submission(ctx.waker().clone());
+                    }
+                }
+                Poll::Pending
+            }
+            Status::Running { .. } => {
+                // For a single shot operation we wait until the operation is
+                // done so that we can safely move/deallocate the resources.
+                // This is needed for zero copy operations (e.g. sends), which
+                // returns two completion events, setting the status to Running
+                // and Done respectively.
+
+                // Make sure we wake using the correct waker.
+                match &mut shared.waker {
+                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
+                    Some(waker) => *waker = ctx.waker().clone(),
+                    None => shared.waker = Some(ctx.waker().clone()),
+                }
+                Poll::Pending
+            }
+            Status::Done { result } => {
+                let result = result.0;
+                shared.status = Status::Complete;
+                drop(shared);
+
+                // SAFETY: this is only safe because we set the status to
+                // Complete above.
+                let resources =
+                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
+                let op_return = result.as_op_return()?;
+                Poll::Ready(Ok(T::map_ok(fd, resources, op_return)))
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
