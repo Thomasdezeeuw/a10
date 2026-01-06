@@ -10,17 +10,17 @@ use crate::{asan, debug_detail, syscall};
 #[derive(Debug)]
 pub(crate) struct Completions {
     /// Pointer and length to the mmaped page(s).
-    ring: *mut libc::c_void,
+    ring: ptr::NonNull<libc::c_void>,
     ring_len: u32,
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic/synchronised access.
     /// Incremented by us when completions have been read.
-    entries_head: *mut AtomicU32,
+    entries_head: ptr::NonNull<AtomicU32>,
     /// Incremented by the kernel when adding completions.
-    entries_tail: *const AtomicU32,
+    entries_tail: ptr::NonNull<AtomicU32>,
     /// Array of [`Completions::entries_len`] completion entries shared with the
     /// kernel. The kernel modifies this array, we're only reading from it.
-    entries: *const Completion,
+    entries: ptr::NonNull<Completion>,
     // Fixed values that don't change after the setup.
     /// Number of `entries`.
     entries_len: u32,
@@ -40,9 +40,8 @@ impl Completions {
 
         // The entries are written by the kernel and can only be read based on
         // the `tail` (also written by the kernel), see `poll` below.
-        let entries: *const Completion =
-            unsafe { ring.add(parameters.cq_off.cqes as usize).cast() };
-        asan::poison_region(entries.cast(), entries_len as usize);
+        let entries = unsafe { ring.add(parameters.cq_off.cqes as usize).cast() };
+        asan::poison_region(entries.cast().as_ptr(), entries_len as usize);
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
         // ensures all of this stuff is set up for us with the mmap calls above.
@@ -72,7 +71,7 @@ impl Completions {
         while head <= tail {
             let idx = (head & (self.entries_len - 1)) as usize;
             // SAFETY: see below.
-            let ptr = unsafe { self.entries.add(idx) };
+            let ptr = unsafe { self.entries.add(idx).as_ptr() };
             asan::unpoison_region(ptr.cast(), size_of::<Completion>());
             // SAFETY: the pointer is valid and we've ensured above that the
             // kernel has written a new completion.
@@ -85,7 +84,7 @@ impl Completions {
         }
 
         // Let the kernel write more completions.
-        unsafe { (&*self.entries_head).store(head, Ordering::Release) };
+        unsafe { (&*self.entries_head.as_ptr()).store(head, Ordering::Release) };
 
         Ok(())
     }
@@ -145,7 +144,7 @@ unsafe impl Sync for Completions {}
 impl Drop for Completions {
     fn drop(&mut self) {
         let entries_len = (self.entries_len as usize) * size_of::<Completion>();
-        asan::poison_region(self.entries.cast(), entries_len);
+        asan::poison_region(self.entries.as_ptr().cast(), entries_len);
 
         let ptr = self.ring;
         let len = self.ring_len as usize;

@@ -23,23 +23,23 @@ pub(crate) use sq::Submissions;
 #[derive(Debug)]
 pub(crate) struct Shared {
     /// Pointer and length to the mmaped page(s).
-    submission_ring: *mut libc::c_void,
+    submission_ring: ptr::NonNull<libc::c_void>,
     submission_ring_len: u32,
     // NOTE: the following fields reference mmaped pages shared with the kernel,
     // thus all need atomic/synchronised access.
     /// Flags set by the kernel to communicate information.
-    kernel_flags: *const AtomicU32,
+    kernel_flags: ptr::NonNull<AtomicU32>,
     /// Head of the submissions queue, i.e. the numbers of submissions read by
     /// the kernel. Incremented by the kernel when submissions has succesfully
     /// been processed.
-    submissions_head: *const AtomicU32,
+    submissions_head: ptr::NonNull<AtomicU32>,
     /// Tail of the submissions queue, i.e. the number of submissions we've
     /// submitted to the kernel.
-    submissions_tail: *const AtomicU32,
+    submissions_tail: ptr::NonNull<AtomicU32>,
     /// Array of [`Shared::submissions_len`] submission entries shared with the
     /// kernel. We're the only one modifiying the structures, but the kernel can
     /// read from them.
-    submissions: *mut sq::Submission,
+    submissions: ptr::NonNull<sq::Submission>,
     // Fixed values that don't change after the setup.
     /// Length of [`Shared::submissions`].
     submissions_len: u32,
@@ -80,7 +80,7 @@ impl Shared {
         })?;
         // Same as what we did for the submission array, but this time with the
         // actual submissions.
-        asan::poison_region(submissions_ptr.cast(), submissions_len);
+        asan::poison_region(submissions_ptr.cast().as_ptr(), submissions_len);
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
         // ensures all of this stuff is set up for us with the mmap calls above.
@@ -95,6 +95,7 @@ impl Shared {
                 submission_ring.add(parameters.sq_off.tail as usize).cast()
             },
             submissions: submissions_ptr.cast(),
+            submissions_lock: Mutex::new(()),
             submissions_len: parameters.sq_entries,
             kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
             is_polling: AtomicBool::new(false),
@@ -137,24 +138,24 @@ impl Drop for Shared {
     fn drop(&mut self) {
         let ptr = self.submissions.cast();
         let len = (self.submissions_len as usize) * size_of::<sq::Submission>();
-        asan::unpoison_region(ptr, len);
+        asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
             log::warn!(ptr:? = ptr, len = len; "error unmapping io_uring submissions: {err}");
         }
 
         let ptr = self.submission_ring;
         let len = self.submission_ring_len as usize;
-        asan::unpoison_region(ptr, len);
+        asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
             log::warn!(ptr:? = ptr, len = len; "error unmapping io_uring submission ring: {err}");
         }
     }
 }
 
-fn load_kernel_shared(ptr: *const AtomicU32) -> u32 {
+fn load_kernel_shared(ptr: ptr::NonNull<AtomicU32>) -> u32 {
     // SAFETY: since the value is shared with the kernel we need to use Acquire
     // memory ordering.
-    unsafe { (*ptr).load(Ordering::Acquire) }
+    unsafe { (*ptr.as_ptr()).load(Ordering::Acquire) }
 }
 
 /// `mmap(2)` wrapper that also sets `MADV_DONTFORK`.
@@ -164,13 +165,14 @@ fn mmap(
     flags: libc::c_int,
     fd: libc::c_int,
     offset: libc::off_t,
-) -> io::Result<*mut libc::c_void> {
+) -> io::Result<ptr::NonNull<libc::c_void>> {
     let addr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
         libc::MAP_FAILED => return Err(io::Error::last_os_error()),
-        addr => addr,
+        // SAFETY: mmap ensure the pointer is not null.
+        addr => unsafe { ptr::NonNull::new_unchecked(addr) },
     };
 
-    match unsafe { libc::madvise(addr, len, libc::MADV_DONTFORK) } {
+    match unsafe { libc::madvise(addr.as_ptr(), len, libc::MADV_DONTFORK) } {
         0 => Ok(addr),
         _ => {
             let err = io::Error::last_os_error();
@@ -181,8 +183,8 @@ fn mmap(
 }
 
 /// `munmap(2)` wrapper.
-pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
-    match unsafe { libc::munmap(addr, len) } {
+pub(crate) fn munmap(addr: ptr::NonNull<libc::c_void>, len: libc::size_t) -> io::Result<()> {
+    match unsafe { libc::munmap(addr.as_ptr(), len) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
