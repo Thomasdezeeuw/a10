@@ -46,6 +46,11 @@
 //! flush the buffer used by the standard library, so it's not advised to use
 //! both the handle from standard library and Heph simultaneously.
 
+use std::io;
+
+use crate::op::{fd_operation, FdOperation};
+use crate::{man_link, sys, AsyncFd};
+
 mod traits;
 
 #[allow(unused_imports)] // Not used by all OS.
@@ -55,3 +60,40 @@ pub(crate) use std::io::*;
 
 #[doc(inline)]
 pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
+
+/// The io_uring_enter(2) manual says for IORING_OP_READ and IORING_OP_WRITE:
+/// > If offs is set to -1, the offset will use (and advance) the file
+/// > position, like the read(2) and write(2) system calls.
+///
+/// `-1` cast as `unsigned long long` in C is the same as as `u64::MAX`.
+pub(crate) const NO_OFFSET: u64 = u64::MAX;
+
+/// I/O system calls.
+impl AsyncFd {
+    /// Read from this fd into `buf`.
+    #[doc = man_link!(read(2))]
+    pub fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
+    where
+        B: BufMut,
+    {
+        self.read_at(buf, NO_OFFSET)
+    }
+
+    /// Read from this fd into `buf` starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
+    /// continue reading at 2kb in the next call to `read`.
+    #[doc = man_link!(pread(2))]
+    pub fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
+    where
+        B: BufMut,
+    {
+        Read(FdOperation::new(self, buf, offset))
+    }
+}
+
+fd_operation!(
+    /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
+    pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
+);
