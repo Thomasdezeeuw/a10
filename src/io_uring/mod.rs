@@ -115,6 +115,26 @@ impl Shared {
         Ok(())
     }
 
+    /// Make a `io_uring_enter2(2)` system call.
+    pub(crate) fn enter(
+        &self,
+        to_submit: libc::c_uint,
+        min_complete: libc::c_uint,
+        flags: libc::c_uint,
+        arg: *const libc::c_void,
+        arg_size: libc::size_t,
+    ) -> io::Result<u32> {
+        let n = syscall!(io_uring_enter2(
+            self.ring_fd(),
+            to_submit,
+            min_complete,
+            flags,
+            arg,
+            arg_size
+        ))?;
+        Ok(n as u32)
+    }
+
     /// Returns the number of unsumitted submission queue entries.
     pub(crate) fn unsubmitted_submissions(&self) -> u32 {
         // NOTE: we MUST load the head before the tail to ensure the head is
@@ -125,7 +145,7 @@ impl Shared {
         tail - head
     }
 
-    pub(super) fn ring_fd(&self) -> RawFd {
+    fn ring_fd(&self) -> RawFd {
         self.rfd.as_raw_fd()
     }
 }
