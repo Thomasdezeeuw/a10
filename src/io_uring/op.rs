@@ -154,10 +154,13 @@ pub(super) enum StatusUpdate {
     },
 }
 
-// SAFETY: `UnsafeCell` is `!Sync`, but as long as `R` is `Sync` so is the
-// `Status`.
-unsafe impl<R: Send, A: Send> Send for Tail<R, A> {}
-unsafe impl<R: Sync, A: Sync> Sync for Tail<R, A> {}
+// SAFETY: UnsafeCell is !Sync, but as long as R is Sync/Send so UnsafeCell<R>.
+unsafe impl<T: Send, R: Send, A: Send> Send for State<T, R, A> {}
+unsafe impl<T: Sync, R: Sync, A: Sync> Sync for State<T, R, A> {}
+
+// SAFETY: everything is heap allocate and is not moved between the initial
+// allocation and deallocation.
+impl<T, R, A> Unpin for State<T, R, A> {}
 
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
 
