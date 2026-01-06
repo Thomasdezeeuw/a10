@@ -40,6 +40,8 @@ pub(crate) struct Shared {
     /// kernel. We're the only one modifiying the structures, but the kernel can
     /// read from them.
     submissions: ptr::NonNull<sq::Submission>,
+    /// Lock to submit the next submission.
+    submissions_lock: Mutex<()>,
     // Fixed values that don't change after the setup.
     /// Length of [`Shared::submissions`].
     submissions_len: u32,
