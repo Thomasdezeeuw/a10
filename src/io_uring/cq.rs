@@ -1,10 +1,10 @@
 use std::os::fd::RawFd;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr, slice};
 
-use crate::io_uring::{libc, load_kernel_shared, mmap, munmap, op, Shared};
+use crate::io_uring::{Shared, libc, load_kernel_shared, mmap, munmap, op};
 use crate::{asan, debug_detail, syscall};
 
 #[derive(Debug)]

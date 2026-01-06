@@ -1,8 +1,8 @@
 //! io_uring implementation.
 
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::{ptr, task};
 
 use crate::{asan, syscall};

@@ -7,7 +7,7 @@ use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
 use crate::io_uring::op::{OpReturn, Singleshot, State};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{AddressStorage, Domain, NoAddress, OptionStorage, Protocol, SocketAddress, Type};
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) use crate::unix::MsgHeader;
 

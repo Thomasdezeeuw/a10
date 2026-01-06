@@ -5,7 +5,7 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{syscall, SubmissionQueue};
+use crate::{SubmissionQueue, syscall};
 
 /// An open file descriptor.
 ///

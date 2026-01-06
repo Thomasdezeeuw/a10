@@ -110,4 +110,3 @@ pub(crate) fn unpoison_cstring(value: &CString) {
     let value = value.as_bytes_with_nul();
     unpoison_region(value.as_ptr().cast(), value.len());
 }
-

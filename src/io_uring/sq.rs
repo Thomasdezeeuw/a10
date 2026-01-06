@@ -3,7 +3,7 @@ use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{cq, libc, load_kernel_shared, mmap, munmap, Shared};
+use crate::io_uring::{Shared, cq, libc, load_kernel_shared, mmap, munmap};
 use crate::{asan, msan, syscall};
 
 #[derive(Clone, Debug)]

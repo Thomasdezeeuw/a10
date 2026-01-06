@@ -184,7 +184,12 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
     // SAFETY: if we're called we're dropping the value, thus we should have
     // unique acess.
     let data = unsafe { &mut *ptr };
-    if let Status::Complete = data.shared.get_mut().unwrap_or_else(|e| e.into_inner()).status {
+    if let Status::Complete = data
+        .shared
+        .get_mut()
+        .unwrap_or_else(|e| e.into_inner())
+        .status
+    {
         // Resources already moved.
     } else {
         // SAFETY: Resources must always be initialise if the status is not
