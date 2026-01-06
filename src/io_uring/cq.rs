@@ -115,7 +115,7 @@ impl Completions {
         // If there are no completions we'll wait for at least one.
         let flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
-        log::debug!(submissions = submissions; "waiting for completion events");
+        log::trace!(submissions; "waiting for completion events");
         shared.is_polling.store(true, Ordering::Release);
         let result = shared.enter(
             submissions,
@@ -146,7 +146,7 @@ impl Drop for Completions {
         let ptr = self.ring;
         let len = self.ring_len as usize;
         if let Err(err) = munmap(ptr, len) {
-            log::warn!(ptr:? = ptr, len = len; "error unmapping io_uring submission ring: {err}");
+            log::warn!(ptr:? = ptr, len; "error unmapping io_uring submission ring: {err}");
         }
     }
 }
@@ -226,7 +226,7 @@ impl fmt::Debug for Completion {
         );
 
         f.debug_struct("io_uring::Completion")
-            .field("user_data", &self.0.user_data)
+            .field("user_data", &(self.0.user_data as *const ()))
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.0.res)
