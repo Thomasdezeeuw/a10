@@ -16,7 +16,20 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::new_flag;
+use crate::op::{Operation, operation};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
+
+/// Creates a new socket.
+#[doc = man_link!(socket(2))]
+pub fn socket(
+    sq: SubmissionQueue,
+    domain: Domain,
+    r#type: Type,
+    protocol: Option<Protocol>,
+) -> Socket {
+    let args = (domain, r#type, protocol.unwrap_or(Protocol(0)));
+    Socket(Operation::new(sq, fd::Kind::File, args))
+}
 
 new_flag!(
     /// Specification of the communication domain for a socket.
@@ -92,6 +105,13 @@ impl Domain {
         address.domain()
     }
 }
+
+operation!(
+    /// [`Future`] behind [`socket`].
+    ///
+    /// If you're looking for a socket type, there is none, see [`AsyncFd`].
+    pub struct Socket(sys::net::SocketOp) -> io::Result<AsyncFd>;
+);
 
 /// Trait that defines the behaviour of socket addresses.
 ///
