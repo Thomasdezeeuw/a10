@@ -2,7 +2,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::task::{self, Poll};
 
-use crate::SubmissionQueue;
+use crate::{AsyncFd, SubmissionQueue};
 
 /// Generic [`Future`] that powers other I/O operation futures.
 ///
@@ -27,8 +27,6 @@ impl<O: Op> Operation<O> {
     }
 }
 
-/// Only implement `Unpin` if the underlying operation implement `Unpin`.
-impl<O: Op + Unpin> Unpin for Operation<O> {}
 
 impl<O: Op> Operation<O>
 where
@@ -40,17 +38,6 @@ where
             .field("state", &self.state)
             .finish()
     }
-}
-
-/// State of an [`Operation`] or [`FdOperation`].
-pub(crate) trait OpState {
-    /// Resources used in the operation, e.g. a buffer in a read call.
-    type Resources;
-    /// Arguments in the system call.
-    type Args;
-
-    /// Create a new operation state.
-    fn new(resources: Self::Resources, args: Self::Args) -> Self;
 }
 
 /// Implementation of a [`Operation`].
@@ -72,6 +59,76 @@ pub(crate) trait Op {
     ) -> Poll<Self::Output>;
 }
 
+/// Generic [`Future`] that powers other I/O operation futures on a file
+/// descriptor.
+///
+/// [`Future`]: std::future::Future
+pub(crate) struct FdOperation<'fd, O: FdOp> {
+    fd: &'fd AsyncFd,
+    state: O::State,
+}
+
+impl<'fd, O: FdOp> FdOperation<'fd, O> {
+    /// Create a new `FdOperation`.
+    pub(crate) fn new(
+        fd: &'fd AsyncFd,
+        resources: O::Resources,
+        args: O::Args,
+    ) -> FdOperation<'fd, O> {
+        FdOperation {
+            fd,
+            state: O::State::new(resources, args),
+        }
+    }
+
+    /// Poll the future.
+    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<O::Output> {
+        O::poll(&mut self.state, ctx, self.fd)
+    }
+}
+
+impl<'fd, O: FdOp> FdOperation<'fd, O>
+where
+    O::State: fmt::Debug,
+{
+    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct(name)
+            .field("fd", &self.fd)
+            .field("state", &self.state)
+            .finish()
+    }
+}
+
+/// Implementation of a [`FdOperation`].
+pub(crate) trait FdOp {
+    /// Output of the operation.
+    type Output;
+    /// See [`OpState::Resources`].
+    type Resources;
+    /// See [`OpState::Args`].
+    type Args;
+    /// State of the operation.
+    type State: OpState<Resources = Self::Resources, Args = Self::Args>;
+
+    /// See [`Future::poll`].
+    fn poll(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Self::Output>;
+}
+
+/// State of an [`Operation`] or [`FdOperation`].
+pub(crate) trait OpState {
+    /// Resources used in the operation, e.g. a buffer in a read call.
+    type Resources;
+    /// Arguments in the system call.
+    type Args;
+
+    /// Create a new operation state.
+    fn new(resources: Self::Resources, args: Self::Args) -> Self;
+}
+
 /// Create a [`Future`] based on [`Operation`].
 ///
 /// [`Future`]: std::future::Future
@@ -86,6 +143,27 @@ macro_rules! operation {
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? (Operation($sys))
+              impl Future -> $output,
+              $( impl Extract -> $extract_output, )?
+        );
+        )+
+    };
+}
+
+/// Create a [`Future`] based on [`FdOperation`].
+///
+/// [`Future`]: std::future::Future
+macro_rules! fd_operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
+        )+
+    ) => {
+        $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > (FdOperation($sys))
               impl Future -> $output,
               $( impl Extract -> $extract_output, )?
         );
@@ -157,4 +235,4 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {new_operation, operation};
+pub(crate) use {fd_operation, new_operation, operation};
