@@ -249,8 +249,8 @@ macro_rules! debug_detail {
     ) => {
         struct $type($event_type);
 
-        impl fmt::Debug for $type {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        impl ::std::fmt::Debug for $type {
+            fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 let mut written_one = false;
                 $(
                     $(#[$meta])*
