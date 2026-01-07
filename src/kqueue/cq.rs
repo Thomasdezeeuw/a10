@@ -86,6 +86,14 @@ impl Completions {
         }
 
         for event in &mut self.events {
+            if let Some(err) = event.error() {
+                // TODO: see if we can some how get this error to the operation
+                // that submitted it or something to ensure the Future doesn't
+                // stall.
+                log::warn!(kevent:? = event; "submitted change has an error: {err}, dropping it");
+                continue;
+            }
+
             log::trace!(event:? = event; "got event");
             match event.0.filter {
                 libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => continue,
