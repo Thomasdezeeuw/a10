@@ -47,7 +47,7 @@ impl Completions {
             // SAFETY: casting `Event` to `libc::kevent` is safe due to
             // `repr(transparent)` on `Event`.
             changes.as_ptr().cast(),
-            changes.capacity() as _,
+            changes.len() as _,
             // SAFETY: casting `Event` to `libc::kevent` is safe due to
             // `repr(transparent)` on `Event`.
             self.events.as_mut_ptr().cast(),
