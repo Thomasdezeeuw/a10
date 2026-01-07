@@ -23,7 +23,7 @@ impl Completions {
     pub(crate) fn poll(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
         self.events.clear();
 
-        let timeout = timeout.map(|to| libc::timespec {
+        let ts = timeout.map(|to| libc::timespec {
             tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64) as libc::time_t,
             // `Duration::subsec_nanos` is guaranteed to be less than one
             // billion (the number of nanoseconds in a second), making the
@@ -41,6 +41,7 @@ impl Completions {
         };
         drop(change_list); // Unlock, to not block others.
 
+        log::trace!(submissions = changes.len(), timeout:? = timeout; "waiting for events");
         shared.is_polling.store(true, Ordering::Release);
         let result = syscall!(kevent(
             shared.kq.as_raw_fd(),
@@ -52,8 +53,7 @@ impl Completions {
             // `repr(transparent)` on `Event`.
             self.events.as_mut_ptr().cast(),
             self.events.capacity() as _,
-            timeout
-                .as_ref()
+            ts.as_ref()
                 .map(|s| s as *const _)
                 .unwrap_or(ptr::null_mut()),
         ));
