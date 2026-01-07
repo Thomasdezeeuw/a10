@@ -39,10 +39,10 @@ impl Submissions {
         if event.0.flags & libc::EV_DELETE == 0 {
             event.0.flags |= libc::EV_ADD;
         }
+        log::trace!(event:? = event; "registering event");
 
         // Add the event to the list of waiting events.
         let mut change_list = shared.change_list.lock().unwrap();
-        log::trace!(event:? = event; "registering event");
         change_list.push(event);
         // If we haven't collected enough events yet and we're not polling,
         // we're done quickly.
