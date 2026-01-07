@@ -105,7 +105,7 @@ impl Submissions {
     pub(crate) fn wake(&self) -> io::Result<()> {
         self._add(true, |kevent| {
             kevent.0.filter = libc::EVFILT_USER;
-            kevent.0.flags = libc::EV_ADD | libc::EV_RECEIPT;
+            kevent.0.flags = libc::EV_ADD;
             kevent.0.fflags = libc::NOTE_TRIGGER;
             kevent.0.udata = cq::WAKE_USER_DATA as _;
         });
