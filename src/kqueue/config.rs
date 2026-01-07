@@ -2,11 +2,12 @@
 
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 use std::{io, mem, ptr};
 
-use crate::kqueue::{self, Completions, Shared, Submissions};
-use crate::{syscall, WAKE_ID};
+use crate::kqueue::{self, cq, Completions, Shared, Submissions};
+use crate::syscall;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config<'r> {
@@ -48,7 +49,7 @@ impl<'r> crate::Config<'r> {
         self
     }
 
-    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Shared, Completions)> {
+    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Completions)> {
         // NOTE: `max_events` must be at least `max_change_list_size` to ensure
         // we can handle all submission errors.
         debug_assert!(
@@ -66,7 +67,7 @@ impl<'r> crate::Config<'r> {
             ident: 0,
             filter: libc::EVFILT_USER,
             flags: libc::EV_ADD | libc::EV_CLEAR | libc::EV_RECEIPT,
-            udata: WAKE_ID as _,
+            udata: cq::WAKE_USER_DATA,
             // SAFETY: all zeros is valid for `libc::kevent`.
             ..unsafe { mem::zeroed() }
         };
@@ -75,10 +76,14 @@ impl<'r> crate::Config<'r> {
             return Err(io::Error::from_raw_os_error(kevent.data as i32));
         }
 
-        let submissions = kqueue::Submissions::new(self.sys.max_change_list_size);
-        let change_list = Mutex::new(Vec::new());
-        let shared = kqueue::Shared { kq, change_list };
-        let completions = kqueue::Completions::new(self.sys.max_events);
-        Ok((submissions, shared, completions))
+        let shared = Shared {
+            max_change_list_size: self.sys.max_change_list_size,
+            change_list: Mutex::new(Vec::new()),
+            is_polling: AtomicBool::new(false),
+            kq,
+        };
+        let submissions = Submissions::new(shared);
+        let completions = Completions::new(self.sys.max_events);
+        Ok((submissions, completions))
     }
 }
