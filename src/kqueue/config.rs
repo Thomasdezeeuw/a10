@@ -19,8 +19,8 @@ pub(crate) struct Config<'r> {
 impl<'r> Config<'r> {
     pub(crate) const fn new() -> Config<'r> {
         Config {
-            max_events: 32,
-            max_change_list_size: 64,
+            max_events: 64,
+            max_change_list_size: 32,
             _unused: PhantomData,
         }
     }
@@ -31,16 +31,16 @@ impl<'r> crate::Config<'r> {
     /// Set the maximum number of events that can be collected in a single call
     /// to `kevent(2)`.
     ///
-    /// Defaults to 32.
+    /// Defaults to 64.
     pub const fn max_events(mut self, max_events: u32) -> Self {
         self.sys.max_events = max_events;
         self
     }
 
-    /// Set the maximum number of submissions that are buffered before
-    /// submitting to the kernel, without waiting on a call to [`Ring::poll`].
+    /// Set the maximum number of changes that are buffered before registering
+    /// them with the kernel, without waiting on a call to [`Ring::poll`].
     ///
-    /// This must be larger or equal to [`max_events`]. Defaults to 64 changes.
+    /// This must be larger or equal to [`max_events`]. Defaults to 32.
     ///
     /// [`Ring::poll`]: crate::Ring::poll
     /// [`max_events`]: crate::Config::max_events
