@@ -33,6 +33,14 @@ use crate::{SubmissionQueue, syscall};
 #[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd {
     fd: RawFd,
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    state: crate::sys::fd::State,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
 }
@@ -73,7 +81,18 @@ impl AsyncFd {
         } else {
             fd
         };
-        AsyncFd { fd, sq }
+        AsyncFd {
+            fd,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            state: crate::sys::fd::State::new(),
+            sq,
+        }
     }
 
     /// Returns the kind of descriptor.
@@ -125,6 +144,18 @@ impl AsyncFd {
         self.fd & !(1 << 31)
     }
 
+    /// Returns the internal state of the fd.
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    pub(crate) const fn state(&self) -> &crate::sys::fd::State {
+        &self.state
+    }
+
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
     pub(crate) const fn sq(&self) -> &SubmissionQueue {
         &self.sq
@@ -137,8 +168,13 @@ impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("AsyncFd");
         f.field("fd", &self.fd()).field("kind", &self.kind());
-        // Always empty for Linux.
-        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
         f.field("state", &self.state);
         f.finish()
     }
@@ -159,6 +195,17 @@ impl Drop for AsyncFd {
         };
         if let Err(err) = result {
             log::warn!("error closing a10::AsyncFd: {err}");
+        }
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        // SAFETY: we're in the drop implementation.
+        unsafe {
+            self.state.drop(&self.sq)
         }
     }
 }
@@ -187,7 +234,7 @@ impl Kind {
         // We also use `O_CLOEXEC` when we technically should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         #[allow(clippy::items_after_statements)]
         const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
         libc::O_CLOEXEC

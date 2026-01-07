@@ -16,6 +16,7 @@ use crate::debug_detail;
 
 pub(crate) mod config;
 mod cq;
+pub(crate) mod fd;
 pub(crate) mod io;
 pub(crate) mod net;
 pub(crate) mod op;
