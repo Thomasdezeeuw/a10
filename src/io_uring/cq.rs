@@ -115,7 +115,7 @@ impl Completions {
         // If there are no completions we'll wait for at least one.
         let flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
-        log::trace!(submissions, timeout; "waiting for completion events");
+        log::trace!(submissions, timeout:? = timeout; "waiting for completion events");
         shared.is_polling.store(true, Ordering::Release);
         let result = shared.enter(
             submissions,
