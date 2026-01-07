@@ -100,6 +100,11 @@ impl Submissions {
     }
 
     pub(crate) fn wake(&self) -> io::Result<()> {
+        if !self.shared.is_polling.load(Ordering::Acquire) {
+            // If we're not polling we don't need to wake up.
+            return Ok(());
+        }
+
         self._add(true, |kevent| {
             kevent.0.filter = libc::EVFILT_USER;
             kevent.0.flags = libc::EV_ADD;
