@@ -82,11 +82,11 @@ impl State {
         // we know for sure that no other thread is accessing it to prevent a
         // use-after-free.
         //
-        // We do this by sending a kevent to the polling thread to deallocate
+        // We do this by sending an event to the polling thread to deallocate
         // the operation state for us.
-        sq.submissions().add(|kevent| {
-            kevent.0.ident = ptr as _;
-            kevent.0.filter = libc::EVFILT_USER;
+        sq.submissions().add(|event| {
+            event.0.ident = ptr as _;
+            event.0.filter = libc::EVFILT_USER;
         });
     }
 }
