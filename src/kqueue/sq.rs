@@ -33,12 +33,12 @@ impl Submissions {
         let shared = &*self.shared;
         // Create and fill the submission event.
         // SAFETY: all zero is valid for `libc::kevent`.
-        let mut event = unsafe { mem::zeroed() };
-        fill_event(&mut event);
+        let mut event: Event = unsafe { mem::zeroed() };
         event.0.flags |= libc::EV_RECEIPT | libc::EV_ONESHOT; // TODO: try EV_DISPATCH instead of oneshot.
         if event.0.flags & libc::EV_DELETE == 0 {
             event.0.flags |= libc::EV_ADD;
         }
+        fill_event(&mut event);
         log::trace!(event:? = event; "registering event");
 
         // Add the event to the list of waiting events.
