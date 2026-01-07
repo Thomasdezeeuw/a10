@@ -39,14 +39,15 @@ impl State {
                 Ordering::Acquire,
             );
             match res {
-                Ok(p) => {
-                    debug_assert!(p == state_ptr);
-                    ptr = p
+                Ok(old_ptr) => {
+                    debug_assert!(old_ptr.is_null());
+                    ptr = state_ptr;
                 }
-                Err(p) => {
-                    debug_assert!(!p.is_null());
-                    ptr = p;
-                    // SAFETY: created the box above.
+                Err(old_ptr) => {
+                    debug_assert!(!old_ptr.is_null());
+                    debug_assert!(old_ptr != state_ptr);
+                    ptr = old_ptr;
+                    // SAFETY: created the box above, but we're not using it.
                     drop(unsafe { Box::from_raw(state_ptr) });
                 }
             }
