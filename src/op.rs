@@ -27,7 +27,6 @@ impl<O: Op> Operation<O> {
     }
 }
 
-
 impl<O: Op> Operation<O>
 where
     O::State: fmt::Debug,
@@ -213,7 +212,8 @@ macro_rules! new_operation {
             type Output = $output;
 
             fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                self.get_mut().0.poll(ctx)
+                // SAFETY: not moving self.
+                unsafe { ::std::pin::Pin::get_unchecked_mut(self).0.poll(ctx) }
             }
         }
     };
