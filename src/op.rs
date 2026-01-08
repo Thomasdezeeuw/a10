@@ -25,6 +25,10 @@ impl<O: Op> Operation<O> {
     pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<O::Output> {
         O::poll(&mut self.state, ctx, &self.sq)
     }
+
+    pub(crate) fn resources_mut(&mut self) -> Option<&mut O::Resources> {
+        self.state.resources_mut()
+    }
 }
 
 impl<O: Op> Operation<O>
@@ -126,6 +130,12 @@ pub(crate) trait OpState {
 
     /// Create a new operation state.
     fn new(resources: Self::Resources, args: Self::Args) -> Self;
+
+    /// Mutable reference to the resources if the operation wasn't started yet.
+    fn resources_mut(&mut self) -> Option<&mut Self::Resources>;
+
+    /// Mutable reference to the arguments if the operation wasn't started yet.
+    fn args_mut(&mut self) -> Option<&mut Self::Args>;
 }
 
 /// Create a [`Future`] based on [`Operation`].

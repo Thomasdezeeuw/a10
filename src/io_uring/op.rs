@@ -3,7 +3,7 @@ use std::mem::{self, MaybeUninit, replace};
 use std::panic::RefUnwindSafe;
 use std::pin::Pin;
 use std::ptr::{self, NonNull};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::task::{self, Poll};
 use std::{fmt, io};
 
@@ -97,6 +97,38 @@ impl<T, R, A> OpState for State<T, R, A> {
         // SAFETY: `Box::into_raw` always returns a valid pointer.
         let data = unsafe { NonNull::new_unchecked(Box::into_raw(data)) };
         State { data }
+    }
+
+    fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
+        // SAFETY: when the operation hasn't started we're ensure that we have
+        // unique access to all the state date.
+        let data = unsafe { self.data.as_ref() };
+        if let Status::NotStarted = lock(&data.shared).status {
+            Some(unsafe { self.data.as_mut().tail.resources.get_mut().assume_init_mut() })
+        } else {
+            None
+        }
+    }
+
+    fn args_mut(&mut self) -> Option<&mut Self::Args> {
+        // SAFETY: when the operation hasn't started we're ensure that we have
+        // unique access to all the state date.
+        let data = unsafe { self.data.as_ref() };
+        if let Status::NotStarted = lock(&data.shared).status {
+            Some(unsafe { &mut self.data.as_mut().tail.args })
+        } else {
+            None
+        }
+    }
+}
+
+pub(super) fn lock<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(err) => {
+            mutex.clear_poison();
+            err.into_inner()
+        }
     }
 }
 
