@@ -113,6 +113,20 @@ operation!(
     pub struct Socket(sys::net::SocketOp) -> io::Result<AsyncFd>;
 );
 
+impl Socket {
+    /// Set the kind of descriptor to use.
+    ///
+    /// Defaults to a regular [`File`] descriptor.
+    ///
+    /// [`File`]: fd::Kind::File
+    pub fn kind(mut self, kind: fd::Kind) -> Self {
+        if let Some(resources) = self.0.resources_mut() {
+            *resources = kind;
+        }
+        self
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum Name {
     Local,
