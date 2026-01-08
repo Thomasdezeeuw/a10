@@ -25,6 +25,22 @@ impl<R, A> OpState for State<R, A> {
     fn new(resources: Self::Resources, args: Self::Args) -> Self {
         State::NotStarted { resources, args }
     }
+
+    fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
+        if let State::NotStarted { resources, .. } = self {
+            Some(resources)
+        } else {
+            None
+        }
+    }
+
+    fn args_mut(&mut self) -> Option<&mut Self::Args> {
+        if let State::NotStarted { args, .. } = self {
+            Some(args)
+        } else {
+            None
+        }
+    }
 }
 
 pub(crate) trait Op {
@@ -77,6 +93,22 @@ impl<R, A> OpState for FdState<R, A> {
 
     fn new(resources: Self::Resources, args: Self::Args) -> Self {
         FdState::NotStarted { resources, args }
+    }
+
+    fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
+        if let FdState::NotStarted { resources, .. } = self {
+            Some(resources)
+        } else {
+            None
+        }
+    }
+
+    fn args_mut(&mut self) -> Option<&mut Self::Args> {
+        if let FdState::NotStarted { args, .. } = self {
+            Some(args)
+        } else {
+            None
+        }
     }
 }
 
