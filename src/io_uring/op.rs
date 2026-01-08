@@ -72,9 +72,16 @@ enum Status<T> {
 struct Tail<R, A> {
     /// Resources shared with the kernel.
     ///
-    /// This is only initialised if the status is not Complete.
+    /// If the status is [`Status::Running`] the kernel has (mutable) access to
+    /// these resources and thus access it not allowed, hence the `UnsafeCell`.
+    ///
+    /// This is only initialised if the status is not [`Status::Complete`],
+    /// hence `MaybeUninit`.
     resources: UnsafeCell<MaybeUninit<R>>,
     /// Arguments for the operation, kept around if it needs to be retried.
+    ///
+    /// These are not shared with the kernel as we check for
+    /// `IORING_FEAT_SUBMIT_STABLE`.
     args: A,
 }
 
@@ -200,17 +207,16 @@ impl<T, R, A> Drop for State<T, R, A> {
     fn drop(&mut self) {
         {
             let mut shared = unsafe { self.data.as_ref().shared.lock().unwrap() };
-            shared.waker = None;
-            if !matches!(&shared.status, Status::Done { .. }) {
-                // Operation is not done, mark the status as dropped and delay
-                // the dropping until the operation is done. This is done in
-                // [`Shared::update`].
+            if matches!(&shared.status, Status::Running { .. }) {
+                // Operation is still running, mark the status as dropped and
+                // delay the dropping until the operation is done. This is done
+                // in [`Shared::update`].
                 shared.status = Status::Dropped;
                 return;
             }
         } // Drop all references to the data.
 
-        // Operation is complete, so we can safely drop it.
+        // Operation is not running, so we can safely drop it.
         unsafe { drop_state::<T, R, A>(self.data.as_ptr().cast()) };
     }
 }
@@ -221,20 +227,13 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
     // SAFETY: if we're called we're dropping the value, thus we should have
     // unique acess.
     let data = unsafe { &mut *ptr };
-    if let Status::Complete = data
-        .shared
-        .get_mut()
-        .unwrap_or_else(|e| e.into_inner())
-        .status
-    {
-        // Resources already moved.
-    } else {
+    if !matches!(lock(&data.shared).status, Status::Complete) {
         // SAFETY: Resources must always be initialise if the status is not
         // Complete, which we checked above.
         unsafe { data.tail.resources.get_mut().assume_init_drop() }
     }
     drop(data); // Drop any (mutable) reference before we call Box::from_raw.
-    mem::drop(unsafe { Box::from_raw(ptr) });
+    mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
 }
 
 /// Container for the [`CompletionResult`]. Either [`Singleshot`] or
