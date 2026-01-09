@@ -37,6 +37,27 @@ pub(crate) trait OpExtract: Op {
     ) -> Poll<Self::ExtractOutput>;
 }
 
+/// [`AsyncIterator`] implementation of an [`Op`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+pub(crate) trait Iter {
+    /// Output of the operation.
+    type Output;
+    /// See [`OpState::Resources`].
+    type Resources;
+    /// See [`OpState::Args`].
+    type Args;
+    /// State of the operation.
+    type State: OpState<Resources = Self::Resources, Args = Self::Args>;
+
+    /// See [`AsyncIterator::poll_next`].
+    fn poll_next(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        sq: &SubmissionQueue,
+    ) -> Poll<Option<Self::Output>>;
+}
+
 /// [`Future`] implementation of a operation with access to an [`AsyncFd`].
 pub(crate) trait FdOp {
     /// Output of the operation.
@@ -127,6 +148,30 @@ macro_rules! operation {
             required: Op,
             impl Future -> $output,
             $( impl Extract using OpExtract -> $extract_output, )?
+        );
+        )+
+    };
+}
+
+/// Create an [`AsyncIterator`] based on multishot [`Operation`]s.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+macro_rules! iter_operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? )+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty ;
+        )+
+    ) => {
+        $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? {
+                sq: SubmissionQueue,
+                sys: $sys,
+            }
+            required: Iter,
+            impl AsyncIter -> $output,
         );
         )+
     };
@@ -318,4 +363,4 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
+pub(crate) use {fd_iter_operation, fd_operation, iter_operation, new_operation, operation};
