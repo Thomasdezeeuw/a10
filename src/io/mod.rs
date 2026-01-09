@@ -48,7 +48,7 @@
 
 use std::io;
 
-use crate::op::{fd_operation, FdOperation};
+use crate::op::fd_operation;
 use crate::{man_link, sys, AsyncFd};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -93,7 +93,7 @@ impl AsyncFd {
     where
         B: BufMut,
     {
-        Read(FdOperation::new(self, buf, offset))
+        Read::new(self, buf, offset)
     }
 }
 
