@@ -196,7 +196,7 @@ macro_rules! new_operation {
             ) -> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
                 $name {
                     $( $field_name )*,
-                    state: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State::new(resources, args),
+                    state: <<$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State as $crate::op::OpState>::new(resources, args),
                 }
             }
         }
