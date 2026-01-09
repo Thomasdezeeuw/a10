@@ -3,8 +3,8 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::io_uring::op::{FdOp, Op, OpReturn, Singleshot, State};
+use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::io_uring::op::{FdIter, FdOp, Op, OpReturn, Singleshot, State};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
@@ -227,5 +227,35 @@ impl<B: BufMut> FdOp for RecvOp<B> {
             buf.buffer_init(BufId(buf_id), n);
         };
         buf
+    }
+}
+
+pub(crate) struct MultishotRecvOp;
+
+impl FdIter for MultishotRecvOp {
+    type Output = ReadBuf;
+    type Resources = ReadBufPool;
+    type Args = RecvFlag;
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        flags: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_RECV as u8;
+        submission.0.flags = libc::IOSQE_BUFFER_SELECT;
+        submission.0.ioprio = libc::IORING_RECV_MULTISHOT as u16;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+    }
+
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+        // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
+        // SAFETY: the kernel initialised the buffers for us as part of the read
+        // call.
+        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
     }
 }

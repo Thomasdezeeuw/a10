@@ -16,8 +16,8 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::io::BufMut;
-use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::io::{BufMut, ReadBuf, ReadBufPool};
+use crate::op::{fd_iter_operation, fd_operation, operation, OpState};
 use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
@@ -190,6 +190,29 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         Recv::new(self, buf, flags)
+    }
+
+    /// Continuously receive data on the socket from the remote address to which
+    /// it is connected.
+    ///
+    /// # Notes
+    ///
+    /// This will return `ENOBUFS` if no buffer is available in the `pool` to
+    /// read into.
+    ///
+    /// Be careful when using this as a peer sending a lot data might take up
+    /// all your buffers from your pool!
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub fn multishot_recv<'fd>(
+        &'fd self,
+        pool: ReadBufPool,
+        flags: Option<RecvFlag>,
+    ) -> MultishotRecv<'fd> {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
+        MultishotRecv::new(self, pool, flags)
     }
 }
 
@@ -724,6 +747,12 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::recv`].
     pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
+}
+
+fd_iter_operation! {
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 }
 
 /// Trait that defines the behaviour of socket addresses.
