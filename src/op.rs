@@ -43,6 +43,27 @@ pub(crate) trait FdOp {
     ) -> Poll<Self::Output>;
 }
 
+/// [`AsyncIterator`] implementation of a [`FdOp`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+pub(crate) trait FdIter {
+    /// Output of the operation.
+    type Output;
+    /// See [`OpState::Resources`].
+    type Resources;
+    /// See [`OpState::Args`].
+    type Args;
+    /// State of the operation.
+    type State: OpState<Resources = Self::Resources, Args = Self::Args>;
+
+    /// See [`AsyncIterator::poll_next`].
+    fn poll_next(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Option<Self::Output>>;
+}
+
 /// State of an operation.
 pub(crate) trait OpState {
     /// Resources used in the operation, e.g. a buffer in a read call.
@@ -104,6 +125,31 @@ macro_rules! fd_operation {
             }
             required: FdOp,
             impl Future -> $output,
+            $( impl Extract -> $extract_output, )?
+        );
+        )+
+    };
+}
+
+/// Create an [`AsyncIterator`] based on multishot [`FdOperation`]s.
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+macro_rules! fd_iter_operation {
+    (
+        $(
+        $(#[ $meta: meta ])*
+        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
+        )+
+    ) => {
+        $(
+        $crate::op::new_operation!(
+            $(#[ $meta ])*
+            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > {
+                fd: &'fd AsyncFd,
+                sys: $sys,
+            }
+            required: FdIter,
+            impl AsyncIter -> $output,
             $( impl Extract -> $extract_output, )?
         );
         )+
@@ -238,4 +284,4 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {fd_operation, new_operation, operation};
+pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
