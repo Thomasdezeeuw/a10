@@ -4,46 +4,8 @@ use std::task::{self, Poll};
 
 use crate::{AsyncFd, SubmissionQueue};
 
-/// Generic [`Future`] that powers other I/O operation futures.
-///
-/// [`Future`]: std::future::Future
-pub(crate) struct Operation<O: Op> {
-    sq: SubmissionQueue,
-    state: O::State,
-}
-
-impl<O: Op> Operation<O> {
-    /// Create a new `Operation`.
-    pub(crate) fn new(sq: SubmissionQueue, resources: O::Resources, args: O::Args) -> Operation<O> {
-        Operation {
-            sq,
-            state: O::State::new(resources, args),
-        }
-    }
-
-    /// Poll the future.
-    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<O::Output> {
-        O::poll(&mut self.state, ctx, &self.sq)
-    }
-
-    pub(crate) fn resources_mut(&mut self) -> Option<&mut O::Resources> {
-        self.state.resources_mut()
-    }
-}
-
-impl<O: Op> Operation<O>
-where
-    O::State: fmt::Debug,
-{
-    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(name)
-            .field("sq", &self.sq)
-            .field("state", &self.state)
-            .finish()
-    }
-}
-
-/// Implementation of a [`Operation`].
+/// [`Future`] implementation of a operation with access to a
+/// [`SubmissionQueue`].
 pub(crate) trait Op {
     /// Output of the operation.
     type Output;
@@ -62,47 +24,7 @@ pub(crate) trait Op {
     ) -> Poll<Self::Output>;
 }
 
-/// Generic [`Future`] that powers other I/O operation futures on a file
-/// descriptor.
-///
-/// [`Future`]: std::future::Future
-pub(crate) struct FdOperation<'fd, O: FdOp> {
-    fd: &'fd AsyncFd,
-    state: O::State,
-}
-
-impl<'fd, O: FdOp> FdOperation<'fd, O> {
-    /// Create a new `FdOperation`.
-    pub(crate) fn new(
-        fd: &'fd AsyncFd,
-        resources: O::Resources,
-        args: O::Args,
-    ) -> FdOperation<'fd, O> {
-        FdOperation {
-            fd,
-            state: O::State::new(resources, args),
-        }
-    }
-
-    /// Poll the future.
-    pub(crate) fn poll(&mut self, ctx: &mut task::Context<'_>) -> Poll<O::Output> {
-        O::poll(&mut self.state, ctx, self.fd)
-    }
-}
-
-impl<'fd, O: FdOp> FdOperation<'fd, O>
-where
-    O::State: fmt::Debug,
-{
-    pub(crate) fn fmt_dbg(&self, name: &'static str, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct(name)
-            .field("fd", &self.fd)
-            .field("state", &self.state)
-            .finish()
-    }
-}
-
-/// Implementation of a [`FdOperation`].
+/// [`Future`] implementation of a operation with access to an [`AsyncFd`].
 pub(crate) trait FdOp {
     /// Output of the operation.
     type Output;
@@ -121,7 +43,7 @@ pub(crate) trait FdOp {
     ) -> Poll<Self::Output>;
 }
 
-/// State of an [`Operation`] or [`FdOperation`].
+/// State of an operation.
 pub(crate) trait OpState {
     /// Resources used in the operation, e.g. a buffer in a read call.
     type Resources;
@@ -151,9 +73,13 @@ macro_rules! operation {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? (Operation($sys))
-              impl Future -> $output,
-              $( impl Extract -> $extract_output, )?
+            $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? {
+                sq: SubmissionQueue,
+                sys: $sys,
+            }
+            required: Op,
+            impl Future -> $output,
+            $( impl Extract -> $extract_output, )?
         );
         )+
     };
@@ -172,9 +98,13 @@ macro_rules! fd_operation {
         $(
         $crate::op::new_operation!(
             $(#[ $meta ])*
-            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > (FdOperation($sys))
-              impl Future -> $output,
-              $( impl Extract -> $extract_output, )?
+            $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > {
+                fd: &'fd AsyncFd,
+                sys: $sys,
+            }
+            required: FdOp,
+            impl Future -> $output,
+            $( impl Extract -> $extract_output, )?
         );
         )+
     };
@@ -186,10 +116,14 @@ macro_rules! fd_operation {
 macro_rules! new_operation {
     (
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? ($op_type: ident ( $sys: ty ) )
-          $( impl Future -> $future_output: ty , )?
-          $( impl AsyncIter -> $iter_output: ty , )?
-          $( impl Extract -> $extract_output: ty , )?
+        $vis: vis struct $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path )? > )? {
+            $( $field_name: ident: $field_type: ty )*,
+            sys: $sys: ty,
+        }
+        required: $trait_bound: ident,
+        $( impl Future -> $future_output: ty , )?
+        $( impl AsyncIter -> $iter_output: ty , )?
+        $( impl Extract -> $extract_output: ty , )?
     ) => {
         // NOTE: the weird meta ordering is required here.
         $(
@@ -203,40 +137,99 @@ macro_rules! new_operation {
         #[must_use = "`AsyncIterator`s do nothing unless polled"]
         )?
         $(#[ $meta ])*
-        $vis struct $name<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait = $gen_default )? )?>($crate::op::$op_type<$( $( $lifetime, )* )? $sys $( $(, $gen )? )? >);
+        $vis struct $name<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait = $gen_default )? )?>{
+            $( $field_name: $field_type )*,
+            state: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State,
+        }
 
-        $crate::op::new_operation!(Future for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $future_output )?);
-        $crate::op::new_operation!(AsyncIter for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $iter_output )?);
-        $crate::op::new_operation!(Extract for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?);
+        impl<$( $( $lifetime, )* $( $( $resources: $( $trait )? )+ $(const $const_generic: $const_ty, )? )? $( $gen: $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            pub(crate) fn new(
+                $( $field_name: $field_type )*,
+                resources: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::Resources,
+                args: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::Args,
+            ) -> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+                $name {
+                    $( $field_name )*,
+                    state: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State::new(resources, args),
+                }
+            }
+        }
+
+        $crate::op::new_operation!(
+            Future for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $future_output )?;
+            call: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::poll,
+            fields: $( $field_name ),*,
+        );
+        $crate::op::new_operation!(
+            AsyncIter for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $iter_output )?;
+            call: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::poll_next,
+            fields: $( $field_name ),*,
+        );
+        $crate::op::new_operation!(
+            Extract for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?;
+            call: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::poll_extract,
+            fields: $( $field_name ),*,
+        );
 
         impl<$( $( $lifetime, )* $( $( $resources: $( $trait + )? ::std::fmt::Debug, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::fmt::Debug for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                self.0.fmt_dbg(::std::concat!("a10::", ::std::stringify!($name)), f)
+                let mut f = f.debug_struct(::std::concat!(::std::stringify!($name)));
+                $( f.field(::std::stringify!($field_name), &self.$field_name); )*
+                f.field("state", &self.state).finish()
             }
         }
     };
     (
-        Future for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+        Future for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty;
+        call: $poll: expr,
+        fields: $( $field_name: ident ),*,
     ) => {
         impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
             type Output = $output;
 
-            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                // SAFETY: not moving self.
-                unsafe { ::std::pin::Pin::get_unchecked_mut(self).0.poll(ctx) }
+            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                let this = &mut *self;
+                $poll(&mut this.state, ctx, $( &this.$field_name ),*)
             }
         }
     };
     (
-        AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
+        AsyncIter for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty;
+        call: $poll_next: expr,
+        fields: $( $field_name: ident ),*,
+    ) => {
+        impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            /// This is the same as the [`AsyncIterator::poll_next`] function, but
+            /// then available on stable Rust.
+            ///
+            /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
+            pub fn poll_next(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
+                let this = &mut *self;
+                $poll_next(&mut this.state, ctx, $( &this.$field_name ),*)
+            }
+        }
+
+        #[cfg(feature = "nightly")]
+        impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::async_iter::AsyncIterator for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            type Item = $output;
+
+            fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<Self::Item>> {
+                self.poll_next(ctx)
+            }
+        }
+    };
+    (
+        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty;
+        call: $poll_extract: expr,
+        fields: $( $field_name: ident ),*,
     ) => {
     };
     (
-        Extract for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> $output: ty
-    ) => {
-    };
-    (
-        $trait_name: ident for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? ->
+        // NOTE: compared to the actual implementations this doesn't have an
+        // output, which indicates that the implementation shouldn't be added.
+        $trait_name: ident for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> ;
+        call: $poll: expr,
+        fields: $( $field_name: ident ),*,
     ) => {
         // No `$trait_name` implementation.
     };
