@@ -126,7 +126,7 @@ macro_rules! operation {
             }
             required: Op,
             impl Future -> $output,
-            $( impl Extract -> $extract_output, )?
+            $( impl Extract using OpExtract -> $extract_output, )?
         );
         )+
     };
@@ -151,7 +151,7 @@ macro_rules! fd_operation {
             }
             required: FdOp,
             impl Future -> $output,
-            $( impl Extract -> $extract_output, )?
+            $( impl Extract using FdOpExtract -> $extract_output, )?
         );
         )+
     };
@@ -164,7 +164,7 @@ macro_rules! fd_iter_operation {
     (
         $(
         $(#[ $meta: meta ])*
-        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty $( , impl Extract -> $extract_output: ty )? ;
+        $vis: vis struct $name: ident $( < $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )?> )? ($sys: ty) -> $output: ty ;
         )+
     ) => {
         $(
@@ -176,7 +176,6 @@ macro_rules! fd_iter_operation {
             }
             required: FdIter,
             impl AsyncIter -> $output,
-            $( impl Extract -> $extract_output, )?
         );
         )+
     };
@@ -195,7 +194,7 @@ macro_rules! new_operation {
         required: $trait_bound: ident,
         $( impl Future -> $future_output: ty , )?
         $( impl AsyncIter -> $iter_output: ty , )?
-        $( impl Extract -> $extract_output: ty , )?
+        $( impl Extract using $extract_trait_bound: ident -> $extract_output: ty , )?
     ) => {
         // NOTE: the weird meta ordering is required here.
         $(
@@ -239,7 +238,7 @@ macro_rules! new_operation {
         );
         $crate::op::new_operation!(
             Extract for $name $( <$( $lifetime, )* $( $( $resources $( : $trait )? ),+ $(; const $const_generic: $const_ty )? )? $(;; $gen : $gen_trait = $gen_default )? > )? -> $( $extract_output )?;
-            call: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::poll_extract,
+            call: <$sys $( $(, $gen )? )? as $( $crate::op::$extract_trait_bound )?>::poll_extract,
             fields: $( $field_name ),*,
         );
 
@@ -300,8 +299,8 @@ macro_rules! new_operation {
         impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?>> {
             type Output = $output;
 
-            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                let this = &mut *self;
+            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                let this = &mut self.fut;
                 $poll_extract(&mut this.state, ctx, $( &this.$field_name ),*)
             }
         }
@@ -310,8 +309,7 @@ macro_rules! new_operation {
         // NOTE: compared to the actual implementations this doesn't have an
         // output, which indicates that the implementation shouldn't be added.
         $trait_name: ident for $name: ident $( < $( $lifetime: lifetime, )* $( $( $resources: ident $( : $trait: path )? ),+ $(; const $const_generic: ident : $const_ty: ty )? )? $(;; $gen: ident : $gen_trait: path = $gen_default: path)? > )? -> ;
-        call: $poll: expr,
-        fields: $( $field_name: ident ),*,
+        $( $remainder: tt )*
     ) => {
         // No `$trait_name` implementation.
     };
