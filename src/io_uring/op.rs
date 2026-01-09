@@ -315,12 +315,14 @@ pub(crate) trait Op {
     type Resources;
     type Args;
 
+    /// Fill a submission to start the operation.
     fn fill_submission(
         resources: &mut Self::Resources,
         args: &mut Self::Args,
         submission: &mut Submission,
     );
 
+    /// Map a completion result to the output of the operation.
     fn map_ok(
         sq: &SubmissionQueue,
         resources: Self::Resources,
@@ -328,7 +330,7 @@ pub(crate) trait Op {
     ) -> Self::Output;
 }
 
-// TODO: DRY this with the FdOp impl below.
+// TODO: DRY this with the Op like impls.
 impl<T: Op> crate::op::Op for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -412,6 +414,7 @@ pub(crate) trait FdOp {
     type Resources;
     type Args;
 
+    /// See [`Op::fill_submission`].
     fn fill_submission(
         fd: &AsyncFd,
         resources: &mut Self::Resources,
@@ -419,10 +422,11 @@ pub(crate) trait FdOp {
         submission: &mut Submission,
     );
 
+    /// See [`Op::map_ok`].
     fn map_ok(fd: &AsyncFd, resources: Self::Resources, op_return: OpReturn) -> Self::Output;
 }
 
-// TODO: DRY this with the Op impl above.
+// TODO: DRY this with the Op like impls.
 impl<T: FdOp> crate::op::FdOp for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
