@@ -7,8 +7,8 @@ use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool}
 use crate::io_uring::op::{FdIter, FdOp, Op, OpReturn, Singleshot, State};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
-    RecvFlag, SendCall, SendFlag, SocketAddress, Type,
+    option, AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage,
+    Protocol, RecvFlag, SendCall, SendFlag, SocketAddress, Type,
 };
 use crate::{asan, fd, msan, AsyncFd, SubmissionQueue};
 
@@ -35,11 +35,7 @@ impl Op for SocketOp {
         submission.0.len = protocol.0;
         // Must currently always be set to zero per the manual.
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
-        /* TODO.
-        if let fd::Kind::Direct = *fd_kind {
-            io_uring::fd::create_direct_flags(submission);
-        }
-        */
+        fd_kind.create_flags(submission);
     }
 
     #[allow(clippy::cast_possible_wrap)]
