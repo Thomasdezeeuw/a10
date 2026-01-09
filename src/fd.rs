@@ -182,12 +182,21 @@ impl fmt::Debug for AsyncFd {
 
 impl Drop for AsyncFd {
     fn drop(&mut self) {
+        // Try to asynchronously close the desctiptor (if the OS supports it).
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        {
+            let result = self.sq.submissions().add(|submission| {
+                crate::sys::io::close_file_fd(self.fd(), self.kind(), submission);
+            });
+            if let Ok(()) = result {
+                return;
+            }
+        }
+
         // Fall back to synchronously closing the descriptor.
         let result = match self.kind() {
             #[cfg(any(target_os = "android", target_os = "linux"))]
-            Kind::Direct => {
-                todo!("close direct fd")
-            }
+            Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), &self.sq),
             Kind::File => {
                 let res = syscall!(close(self.fd())).map(|_| ());
                 res

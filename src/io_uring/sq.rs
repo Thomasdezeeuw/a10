@@ -3,7 +3,7 @@ use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{Shared, cq, libc, load_kernel_shared, mmap, munmap};
+use crate::io_uring::{cq, libc, load_kernel_shared, mmap, munmap, Shared};
 use crate::{asan, msan, syscall};
 
 #[derive(Clone, Debug)]
@@ -19,7 +19,7 @@ impl Submissions {
     }
 
     /// Try to submit a new operation.
-    pub(super) fn add<F>(&self, fill_submission: F) -> Result<(), QueueFull>
+    pub(crate) fn add<F>(&self, fill_submission: F) -> Result<(), QueueFull>
     where
         F: FnOnce(&mut Submission),
     {
