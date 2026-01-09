@@ -15,6 +15,7 @@ pub(crate) mod cq;
 pub(crate) mod fd;
 pub(crate) mod io;
 mod libc;
+pub(crate) mod mem;
 pub(crate) mod net;
 pub(crate) mod op;
 pub(crate) mod sq;
