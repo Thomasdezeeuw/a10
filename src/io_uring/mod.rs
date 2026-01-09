@@ -4,14 +4,15 @@
 //! * <https://man7.org/linux/man-pages/man7/io_uring.7.html>
 
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::{ptr, task};
 
 use crate::{asan, syscall};
 
 pub(crate) mod config;
 pub(crate) mod cq;
+pub(crate) mod fd;
 pub(crate) mod io;
 mod libc;
 pub(crate) mod net;
