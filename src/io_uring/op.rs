@@ -409,6 +409,93 @@ impl<T: Op> crate::op::Op for T {
     }
 }
 
+pub(crate) trait OpExtract: Op  {
+    type ExtractOutput;
+
+    /// Same as [`Op::map_ok`], returning the extract output.
+    fn map_ok_extract(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        op_return: OpReturn,
+    ) -> Self::ExtractOutput;
+}
+
+// TODO: DRY this with the Op like impls.
+impl<T: Op + OpExtract> crate::op::OpExtract for T {
+    type ExtractOutput = io::Result<T::ExtractOutput>;
+
+    fn poll_extract(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        sq: &SubmissionQueue,
+    ) -> Poll<Self::ExtractOutput> {
+        let data = unsafe { state.data.as_mut() };
+        let mut shared = data.shared.lock().unwrap();
+        match &mut shared.status {
+            Status::NotStarted => {
+                let submissions = sq.submissions();
+                let result = submissions.add(|submission| {
+                    // SAFETY: the resources are initialised as the status not
+                    // set to Complete. Furtermore we have unique access as the
+                    // status is not Running.
+                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
+                    let args = &mut data.tail.args;
+                    T::fill_submission(resources, args, submission);
+                    submission.0.user_data = state.data.expose_provenance().get() as u64;
+                });
+                match result {
+                    Ok(()) => {
+                        // Make sure we get awoken when the operation is ready.
+                        shared.waker = Some(ctx.waker().clone());
+                        shared.status = Status::Running {
+                            result: Singleshot::empty(),
+                        };
+                    }
+                    Err(QueueFull) => {
+                        // Make sure we get awoken when we can retry submitting
+                        // the operation.
+                        submissions.wait_for_submission(ctx.waker().clone());
+                    }
+                }
+                Poll::Pending
+            }
+            Status::Running { .. } => {
+                // For a single shot operation we wait until the operation is
+                // done so that we can safely move/deallocate the resources.
+                // This is needed for zero copy operations (e.g. sends), which
+                // returns two completion events, setting the status to Running
+                // and Done respectively.
+
+                // Make sure we wake using the correct waker.
+                match &mut shared.waker {
+                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
+                    Some(waker) => *waker = ctx.waker().clone(),
+                    None => shared.waker = Some(ctx.waker().clone()),
+                }
+                Poll::Pending
+            }
+            Status::Done { result } => {
+                let result = result.0;
+                shared.status = Status::Complete;
+                drop(shared);
+
+                // SAFETY: this is only safe because we set the status to
+                // Complete above.
+                let resources =
+                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
+                let op_return = result.as_op_return()?;
+                Poll::Ready(Ok(T::map_ok_extract(sq, resources, op_return)))
+            }
+            // Only the Future sets the Dropped status, which is also the only
+            // one that calls this function, so this should be unreachable.
+            Status::Dropped => unreachable!(),
+            // Shouldn't be reachable, but if the Future is used incorrectly it
+            // can be.
+            Status::Complete => panic!("polled Future after completion"),
+        }
+    }
+}
+
 pub(crate) trait FdOp {
     type Output;
     type Resources;
@@ -510,7 +597,7 @@ pub(crate) trait FdOpExtract: FdOp  {
 
     /// Same as [`Op::map_ok`], returning the extract output.
     fn map_ok_extract(
-        _: &AsyncFd,
+        fd: &AsyncFd,
         resources: Self::Resources,
         op_return: OpReturn,
     ) -> Self::ExtractOutput;
