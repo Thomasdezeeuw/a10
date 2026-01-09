@@ -20,6 +20,8 @@ use crate::io::{BufMut, ReadBuf, ReadBufPool};
 use crate::op::{fd_iter_operation, fd_operation, operation, OpState};
 use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
+pub mod option;
+
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
 pub fn socket(
