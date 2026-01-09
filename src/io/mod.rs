@@ -51,8 +51,12 @@ use std::io;
 use crate::op::{fd_operation, FdOperation};
 use crate::{man_link, sys, AsyncFd};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+mod read_buf;
 mod traits;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub use read_buf::{ReadBuf, ReadBufPool};
 #[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
