@@ -5,7 +5,10 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{SubmissionQueue, syscall};
+use crate::{syscall, SubmissionQueue};
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub use crate::sys::fd::{ToDirect, ToFd};
 
 /// An open file descriptor.
 ///
