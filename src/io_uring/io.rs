@@ -7,8 +7,10 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
-use crate::io::{Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::io_uring::op::OpReturn;
+use crate::io::{
+    Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection, SpliceFlag,
+};
+use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{self, cq, libc, sq};
 use crate::{asan, fd, msan, AsyncFd, SubmissionQueue};
 
@@ -305,7 +307,7 @@ fn page_size() -> usize {
 
 pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> io_uring::op::FdOp for ReadOp<B> {
+impl<B: BufMut> FdOp for ReadOp<B> {
     type Output = B;
     type Resources = B;
     type Args = u64; // Offset.
@@ -341,4 +343,232 @@ impl<B: BufMut> io_uring::op::FdOp for ReadOp<B> {
         };
         buf
     }
+}
+
+pub(crate) struct MultishotReadOp;
+
+impl FdIter for MultishotReadOp {
+    type Output = crate::io::ReadBuf;
+    type Resources = crate::io::ReadBufPool;
+    type Args = ();
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        (): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_READ_MULTISHOT as u8;
+        submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+    }
+
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+        // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
+        // SAFETY: the kernel initialised the buffers for us as part of the read
+        // call.
+        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
+    }
+}
+
+pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
+
+impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
+    type Output = B;
+    type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
+    type Args = u64; // Offset.
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        (_, iovecs): &mut Self::Resources,
+        offset: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_READV as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: iovecs.as_mut_ptr().addr() as u64,
+        };
+        asan::poison_iovecs_mut(&**iovecs);
+        submission.0.len = iovecs.len() as u32;
+    }
+
+    fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_iovecs_mut(&*iovecs);
+        msan::unpoison_iovecs_mut(&*iovecs, n as usize);
+        // SAFETY: kernel just initialised the buffers for us.
+        unsafe { bufs.set_init(n as usize) };
+        bufs
+    }
+}
+
+pub(crate) struct WriteOp<B>(PhantomData<*const B>);
+
+impl<B: Buf> FdOp for WriteOp<B> {
+    type Output = usize;
+    type Resources = B;
+    type Args = u64; // Offset.
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        buf: &mut Self::Resources,
+        offset: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (ptr, len) = unsafe { buf.parts() };
+        submission.0.opcode = libc::IORING_OP_WRITE as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: ptr.addr() as u64,
+        };
+        asan::poison_region(ptr.cast(), len as usize);
+        submission.0.len = len;
+    }
+
+    fn map_ok(fd: &AsyncFd, buf: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, buf, ret).1
+    }
+}
+
+impl<B: Buf> FdOpExtract for WriteOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(_: &AsyncFd, buf: Self::Resources, (_, n): OpReturn) -> Self::ExtractOutput {
+        let (ptr, len) = unsafe { buf.parts() };
+        asan::unpoison_region(ptr.cast(), len as usize);
+        (buf, n as usize)
+    }
+}
+
+pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>);
+
+impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
+    type Output = usize;
+    type Resources = (B, Box<[crate::io::IoSlice; N]>);
+    type Args = u64; // Offset.
+
+    fn fill_submission(
+        fd: &AsyncFd,
+        (_, iovecs): &mut Self::Resources,
+        offset: &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        submission.0.opcode = libc::IORING_OP_WRITEV as u8;
+        submission.0.fd = fd.fd();
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            addr: iovecs.as_ptr().addr() as u64,
+        };
+        asan::poison_iovecs(&**iovecs);
+        submission.0.len = iovecs.len() as u32;
+    }
+
+    fn map_ok(_: &AsyncFd, (_, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_iovecs(&*iovecs);
+        n as usize
+    }
+}
+
+impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        _: &AsyncFd,
+        (buf, iovecs): Self::Resources,
+        (_, n): OpReturn,
+    ) -> Self::ExtractOutput {
+        asan::unpoison_iovecs(&*iovecs);
+        (buf, n as usize)
+    }
+}
+
+pub(crate) struct SpliceOp;
+
+impl FdOp for SpliceOp {
+    type Output = usize;
+    type Resources = ();
+    type Args = (RawFd, SpliceDirection, u64, u64, u32, SpliceFlag); // target, direction, off_in, off_out, len, flags
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        fd: &AsyncFd,
+        (): &mut Self::Resources,
+        (target, direction, off_in, off_out, length, flags): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        let (fd_in, fd_out) = match *direction {
+            SpliceDirection::To => (fd.fd(), target.as_raw_fd()),
+            SpliceDirection::From => (target.as_raw_fd(), fd.fd()),
+        };
+        submission.0.opcode = libc::IORING_OP_SPLICE as u8;
+        submission.0.fd = fd_out;
+        submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *off_out };
+        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+            splice_off_in: *off_in,
+        };
+        submission.0.len = *length;
+        submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
+            splice_flags: flags.0,
+        };
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            splice_fd_in: fd_in,
+        };
+    }
+
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        n as usize
+    }
+}
+
+pub(crate) struct CloseOp;
+
+impl Op for CloseOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (RawFd, fd::Kind);
+
+    #[allow(clippy::cast_sign_loss)]
+    fn fill_submission(
+        (): &mut Self::Resources,
+        (fd, kind): &mut Self::Args,
+        submission: &mut sq::Submission,
+    ) {
+        close_file_fd(*fd, *kind, submission);
+    }
+
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        debug_assert!(n == 0);
+    }
+}
+
+#[allow(clippy::cast_sign_loss)] // fd as u32.
+pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring::sq::Submission) {
+    submission.0.opcode = libc::IORING_OP_CLOSE as u8;
+    if let fd::Kind::Direct = kind {
+        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+            // Zero mean a file descriptor, so indices need to be encoded +1.
+            file_index: (fd + 1) as u32,
+        };
+    } else {
+        submission.0.fd = fd;
+    }
+}
+
+#[allow(clippy::cast_sign_loss)] // For fd as u32.
+pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
+    let shared = sq.submissions().shared();
+    let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
+    let update = libc::io_uring_files_update {
+        offset: fd as u32, // The fd is also the index/offset into the set.
+        resv: 0,
+        fds: ptr::from_ref(fd_updates).addr() as u64,
+    };
+    shared.register(
+        libc::IORING_REGISTER_FILES_UPDATE,
+        ptr::from_ref(&update).cast(),
+        1,
+    )
 }
