@@ -29,7 +29,7 @@ pub fn socket(
     protocol: Option<Protocol>,
 ) -> Socket {
     let args = (domain, r#type, protocol.unwrap_or(Protocol(0)));
-    Socket(Operation::new(sq, fd::Kind::File, args))
+    Socket::new(sq, fd::Kind::File, args)
 }
 
 new_flag!(
@@ -121,7 +121,7 @@ impl Socket {
     ///
     /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
-        if let Some(resources) = self.0.resources_mut() {
+        if let Some(resources) = self.state.resources_mut() {
             *resources = kind;
         }
         self
@@ -137,7 +137,7 @@ impl AsyncFd {
         A: SocketAddress,
     {
         let storage = AddressStorage(Box::from(address.into_storage()));
-        Bind(FdOperation::new(self, storage, ()))
+        Bind::new(self, storage, ())
     }
 
     /// Mark the socket as a passive socket, i.e. allow it to accept incoming
@@ -146,7 +146,7 @@ impl AsyncFd {
     /// [`accept`]: AsyncFd::accept
     #[doc = man_link!(listen(2))]
     pub fn listen<'fd>(&'fd self, backlog: libc::c_int) -> Listen<'fd> {
-        Listen(FdOperation::new(self, (), backlog))
+        Listen::new(self, (), backlog)
     }
 
     /// Initiate a connection on this socket to the specified address.
@@ -156,7 +156,7 @@ impl AsyncFd {
         A: SocketAddress,
     {
         let storage = AddressStorage(Box::from(address.into_storage()));
-        Connect(FdOperation::new(self, storage, ()))
+        Connect::new(self, storage, ())
     }
 
     /// Returns the current address to which the socket is bound.
@@ -175,7 +175,21 @@ impl AsyncFd {
 
     fn socket_name<'fd, A: SocketAddress>(&'fd self, name: Name) -> SocketName<'fd, A> {
         let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
-        SocketName(FdOperation::new(self, address, name))
+        SocketName::new(self, address, name)
+    }
+
+    /// Receives data on the socket from the remote address to which it is
+    /// connected.
+    #[doc = man_link!(recv(2))]
+    pub fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
+    where
+        B: BufMut,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
+        Recv::new(self, buf, flags)
     }
 }
 
