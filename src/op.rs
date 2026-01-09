@@ -128,7 +128,7 @@ pub(crate) trait OpState {
     fn args_mut(&mut self) -> Option<&mut Self::Args>;
 }
 
-/// Create a [`Future`] based on [`Operation`].
+/// Create a [`Future`] based on [`Op`].
 ///
 /// [`Future`]: std::future::Future
 macro_rules! operation {
@@ -153,7 +153,7 @@ macro_rules! operation {
     };
 }
 
-/// Create an [`AsyncIterator`] based on multishot [`Operation`]s.
+/// Create an [`AsyncIterator`] based on multishot [`Iter`]s.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 macro_rules! iter_operation {
@@ -177,7 +177,7 @@ macro_rules! iter_operation {
     };
 }
 
-/// Create a [`Future`] based on [`FdOperation`].
+/// Create a [`Future`] based on [`FdOp`].
 ///
 /// [`Future`]: std::future::Future
 macro_rules! fd_operation {
@@ -202,7 +202,7 @@ macro_rules! fd_operation {
     };
 }
 
-/// Create an [`AsyncIterator`] based on multishot [`FdOperation`]s.
+/// Create an [`AsyncIterator`] based on multishot [`FdIter`]s.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
 macro_rules! fd_iter_operation {
