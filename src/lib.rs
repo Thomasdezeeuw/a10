@@ -11,8 +11,11 @@ mod op;
 #[cfg(unix)]
 mod unix;
 
+pub mod extract;
 pub mod io;
+pub mod mem;
 pub mod net;
+pub mod pipe;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
