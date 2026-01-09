@@ -16,8 +16,9 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::op::{Operation, operation};
-use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
+use crate::io::BufMut;
+use crate::op::{fd_operation, operation, FdOperation, Operation};
+use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
@@ -124,6 +125,57 @@ impl Socket {
             *resources = kind;
         }
         self
+    }
+}
+
+/// Socket related system calls.
+impl AsyncFd {
+    /// Assign a name to the socket.
+    #[doc = man_link!(bind(2))]
+    pub fn bind<'fd, A>(&'fd self, address: A) -> Bind<'fd, A>
+    where
+        A: SocketAddress,
+    {
+        let storage = AddressStorage(Box::from(address.into_storage()));
+        Bind(FdOperation::new(self, storage, ()))
+    }
+
+    /// Mark the socket as a passive socket, i.e. allow it to accept incoming
+    /// connection using [`accept`].
+    ///
+    /// [`accept`]: AsyncFd::accept
+    #[doc = man_link!(listen(2))]
+    pub fn listen<'fd>(&'fd self, backlog: libc::c_int) -> Listen<'fd> {
+        Listen(FdOperation::new(self, (), backlog))
+    }
+
+    /// Initiate a connection on this socket to the specified address.
+    #[doc = man_link!(connect(2))]
+    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
+    where
+        A: SocketAddress,
+    {
+        let storage = AddressStorage(Box::from(address.into_storage()));
+        Connect(FdOperation::new(self, storage, ()))
+    }
+
+    /// Returns the current address to which the socket is bound.
+    #[doc = man_link!(getsockname(2))]
+    #[doc(alias = "getsockname")]
+    pub fn local_addr<'fd, A: SocketAddress>(&'fd self) -> SocketName<'fd, A> {
+        self.socket_name(Name::Local)
+    }
+
+    /// Returns the address of the peer connected to the socket.
+    #[doc = man_link!(getpeername(2))]
+    #[doc(alias = "getpeername")]
+    pub fn peer_addr<'fd, A: SocketAddress>(&'fd self) -> SocketName<'fd, A> {
+        self.socket_name(Name::Peer)
+    }
+
+    fn socket_name<'fd, A: SocketAddress>(&'fd self, name: Name) -> SocketName<'fd, A> {
+        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        SocketName(FdOperation::new(self, address, name))
     }
 }
 
@@ -642,6 +694,23 @@ macro_rules! impl_from {
 }
 
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
+
+fd_operation! {
+    /// [`Future`] behind [`AsyncFd::bind`].
+    pub struct Bind<A: SocketAddress>(sys::net::BindOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::listen`].
+    pub struct Listen(sys::net::ListenOp) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::connect`].
+    pub struct Connect<A: SocketAddress>(sys::net::ConnectOp<A>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::peer_addr`] and [`AsyncFd::local_addr`].
+    pub struct SocketName<A: SocketAddress>(sys::net::SocketNameOp<A>) -> io::Result<A>;
+
+    /// [`Future`] behind [`AsyncFd::recv`].
+    pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
+}
 
 /// Trait that defines the behaviour of socket addresses.
 ///
