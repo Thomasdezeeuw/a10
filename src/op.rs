@@ -24,6 +24,19 @@ pub(crate) trait Op {
     ) -> Poll<Self::Output>;
 }
 
+/// Same as [`Op`], but with extract output.
+pub(crate) trait OpExtract: Op {
+    /// Extracted output of the operation.
+    type ExtractOutput;
+
+    /// Same as [`Op::poll`].
+    fn poll_extract(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        sq: &SubmissionQueue,
+    ) -> Poll<Self::ExtractOutput>;
+}
+
 /// [`Future`] implementation of a operation with access to an [`AsyncFd`].
 pub(crate) trait FdOp {
     /// Output of the operation.
@@ -43,7 +56,7 @@ pub(crate) trait FdOp {
     ) -> Poll<Self::Output>;
 }
 
-/// [`Future`] implementation of a operation with access to an [`AsyncFd`].
+/// Same as [`FdOp`], but with extract output.
 pub(crate) trait FdOpExtract: FdOp {
     /// Extracted output of the operation.
     type ExtractOutput;
