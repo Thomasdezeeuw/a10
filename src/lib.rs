@@ -12,6 +12,7 @@ mod op;
 mod unix;
 
 pub mod extract;
+pub mod fs;
 pub mod io;
 pub mod mem;
 pub mod net;
