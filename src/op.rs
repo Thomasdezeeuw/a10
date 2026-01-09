@@ -43,6 +43,19 @@ pub(crate) trait FdOp {
     ) -> Poll<Self::Output>;
 }
 
+/// [`Future`] implementation of a operation with access to an [`AsyncFd`].
+pub(crate) trait FdOpExtract: FdOp {
+    /// Extracted output of the operation.
+    type ExtractOutput;
+
+    /// Same as [`FdOp::poll`].
+    fn poll_extract(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Self::ExtractOutput>;
+}
+
 /// [`AsyncIterator`] implementation of a [`FdOp`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
@@ -269,6 +282,16 @@ macro_rules! new_operation {
         call: $poll_extract: expr,
         fields: $( $field_name: ident ),*,
     ) => {
+        impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> $crate::extract::Extract for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {}
+
+        impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?>> {
+            type Output = $output;
+
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                let this = &mut *self;
+                $poll_extract(&mut this.state, ctx, $( &this.$field_name ),*)
+            }
+        }
     };
     (
         // NOTE: compared to the actual implementations this doesn't have an
