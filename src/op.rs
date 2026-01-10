@@ -303,8 +303,9 @@ macro_rules! new_operation {
         impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
             type Output = $output;
 
-            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                let this = &mut *self;
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving data out of self/this.
+                let this = unsafe { ::std::pin::Pin::get_unchecked_mut(self) };
                 $poll(&mut this.state, ctx, $( &this.$field_name ),*)
             }
         }
@@ -319,8 +320,9 @@ macro_rules! new_operation {
             /// then available on stable Rust.
             ///
             /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
-            pub fn poll_next(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
-                let this = &mut *self;
+            pub fn poll_next(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Option<$output>> {
+                // SAFETY: not moving data out of self/this.
+                let this = unsafe { ::std::pin::Pin::get_unchecked_mut(self) };
                 $poll_next(&mut this.state, ctx, $( &this.$field_name ),*)
             }
         }
@@ -344,8 +346,9 @@ macro_rules! new_operation {
         impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::future::Future for $crate::extract::Extractor<$name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?>> {
             type Output = $output;
 
-            fn poll(mut self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
-                let this = &mut self.fut;
+            fn poll(self: ::std::pin::Pin<&mut Self>, ctx: &mut ::std::task::Context<'_>) -> ::std::task::Poll<Self::Output> {
+                // SAFETY: not moving data out of self/this.
+                let this = unsafe { &mut ::std::pin::Pin::get_unchecked_mut(self).fut };
                 $poll_extract(&mut this.state, ctx, $( &this.$field_name ),*)
             }
         }
