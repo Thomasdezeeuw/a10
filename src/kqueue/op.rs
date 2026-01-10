@@ -76,6 +76,51 @@ impl<T: DirectOp> crate::op::Op for T {
     }
 }
 
+/// Same as [`DirectOp`], but for operations using file descriptors.
+pub(crate) trait DirectFdOp {
+    type Output;
+    type Resources;
+    type Args;
+
+    /// Same as [`DirectOp::run`], but using an `AsyncFd`.
+    fn run(fd: &AsyncFd, resources: Self::Resources, args: Self::Args) -> io::Result<Self::Output>;
+}
+
+/// Macro to implement the FdOp trait.
+//
+// NOTE: this should be a simple implementation:
+//   impl<T: DirectFdOp> crate::op::FdOp for T
+// But that conflicts with the FdOp implementation for T below, causing E0119.
+macro_rules! impl_fd_op {
+    ( $( $T: ident $( < $( $gen: ident ),+ > )? ),* ) => {
+        $(
+        impl $( < $( $gen ),+ > )? crate::op::FdOp for $T $( < $( $gen ),* > )?
+            where Self: $crate::kqueue::op::DirectFdOp,
+        {
+            type Output = ::std::io::Result<<Self as $crate::kqueue::op::DirectFdOp>::Output>;
+            type Resources = <Self as $crate::kqueue::op::DirectFdOp>::Resources;
+            type Args = <Self as $crate::kqueue::op::DirectFdOp>::Args;
+            type State = $crate::kqueue::op::DirectState<<Self as $crate::kqueue::op::DirectFdOp>::Resources, <Self as $crate::kqueue::op::DirectFdOp>::Args>;
+
+            fn poll(
+                state: &mut Self::State,
+                ctx: &mut ::std::task::Context<'_>,
+                fd: &$crate::AsyncFd,
+            ) -> ::std::task::Poll<Self::Output> {
+                match ::std::mem::replace(state, $crate::kqueue::op::DirectState::Complete) {
+                    $crate::kqueue::op::DirectState::NotStarted { resources, args } => ::std::task::Poll::Ready(Self::run(fd, resources, args)),
+                    // Shouldn't be reachable, but if the Future is used incorrectly it
+                    // can be.
+                    $crate::kqueue::op::DirectState::Complete => ::std::panic!("polled Future after completion"),
+                }
+            }
+        }
+        )*
+    };
+}
+
+pub(super) use impl_fd_op;
+
 /// State of an operation that whats for an event (on a file descriptor) first.
 #[derive(Debug)]
 pub(crate) enum EventedState<R, A> {
