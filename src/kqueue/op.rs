@@ -42,7 +42,7 @@ impl<R, A> OpState for DirectState<R, A> {
     }
 }
 
-pub(crate) trait Op {
+pub(crate) trait DirectOp {
     type Output;
     type Resources;
     type Args;
@@ -55,7 +55,7 @@ pub(crate) trait Op {
     ) -> io::Result<Self::Output>;
 }
 
-impl<T: Op> crate::op::Op for T {
+impl<T: DirectOp> crate::op::Op for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
     type Args = T::Args;
