@@ -42,6 +42,7 @@ impl<R, A> OpState for DirectState<R, A> {
     }
 }
 
+/// Operation that is done using a synchronous function.
 pub(crate) trait DirectOp {
     type Output;
     type Resources;
@@ -111,6 +112,8 @@ impl<R, A> OpState for EventedState<R, A> {
     }
 }
 
+/// Operation on a file descriptor that waits for an event first and uses
+/// non-blocking I/O.
 pub(crate) trait FdOp {
     type Output;
     type Resources;
