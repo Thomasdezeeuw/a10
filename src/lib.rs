@@ -1,3 +1,43 @@
+//! The [A10] io_uring library.
+//!
+//! This library is meant as a low-level library safely exposing the io_uring
+//! API. For simplicity this only has two main types and a number of helper
+//! types:
+//!  * [`Ring`] is a wrapper around io_uring used to poll for completion events.
+//!  * [`AsyncFd`] is a wrapper around a file descriptor that provides a safe
+//!    API to schedule operations.
+//!
+//! Some modules provide ways to create `AsyncFd`, e.g. [`OpenOptions`], others
+//! are simply a place to expose the [`Future`]s supporting the scheduled
+//! operations. The modules try to follow the same structure as that of the
+//! standard library.
+//!
+//! Additional documentation can be found in the [`io_uring(7)`] manual.
+//!
+//! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
+//! [`OpenOptions`]: fs::OpenOptions
+//! [`Future`]: std::future::Future
+//! [`io_uring(7)`]: https://man7.org/linux/man-pages/man7/io_uring.7.html
+//!
+//! # Notes
+//!
+//! Most I/O operations need ownership of the data, e.g. a buffer, so it can
+//! delay deallocation if needed. For example when a `Future` is dropped before
+//! being polled to completion. This data can be retrieved again by using the
+//! [`Extract`] trait.
+//!
+//! # Examples
+//!
+//! Examples can be found in the examples directory of the source code,
+//! [available online on GitHub].
+//!
+//! [available online on GitHub]: https://github.com/Thomasdezeeuw/a10/tree/main/examples
+
+#![cfg_attr(
+    feature = "nightly",
+    feature(async_iterator, cfg_sanitize, io_error_more)
+)]
+
 use std::ptr;
 use std::time::Duration;
 
@@ -43,6 +83,8 @@ use kqueue as sys;
 
 #[doc(inline)]
 pub use config::Config;
+#[doc(no_inline)]
+pub use extract::Extract;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
 
