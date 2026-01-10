@@ -86,3 +86,18 @@ impl<A: SocketAddress> DirectFdOp for BindOp<A> {
 }
 
 impl_fd_op!(BindOp<A>);
+
+pub(crate) struct ListenOp;
+
+impl DirectFdOp for ListenOp {
+    type Output = ();
+    type Resources = ();
+    type Args = libc::c_int; // backlog.
+
+    fn run(fd: &AsyncFd, (): Self::Resources, backlog: Self::Args) -> io::Result<Self::Output> {
+        let socket = syscall!(listen(fd.fd(), backlog))?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(ListenOp);
