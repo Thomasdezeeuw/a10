@@ -2,6 +2,8 @@
 //!
 //! See the [`Extract`] trait for more information.
 
+use crate::cancel::{Cancel, CancelOperation, CancelResult};
+
 /// Extract input arguments from operations.
 ///
 /// Because of the way that io_uring works the kernel needs mutable access to
@@ -90,4 +92,14 @@ pub trait Extract {
 #[derive(Debug)]
 pub struct Extractor<Fut> {
     pub(crate) fut: Fut,
+}
+
+impl<Fut: Cancel> Cancel for Extractor<Fut> {
+    fn try_cancel(&mut self) -> CancelResult {
+        self.fut.try_cancel()
+    }
+
+    fn cancel(&mut self) -> CancelOperation {
+        self.fut.cancel()
+    }
 }
