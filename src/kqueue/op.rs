@@ -8,26 +8,25 @@ use crate::kqueue::Event;
 use crate::op::OpState;
 use crate::{AsyncFd, SubmissionQueue};
 
-/// For (not fd) operations we keep a simple state as the operation is
-/// synchronous.
+/// State of an operation that is done synchronously, e.g. opening a socket.
 #[derive(Debug)]
-pub(crate) enum State<R, A> {
+pub(crate) enum DirectState<R, A> {
     /// Operation has not started yet.
     NotStarted { resources: R, args: A },
     /// Last state where the operation was fully cleaned up.
     Complete,
 }
 
-impl<R, A> OpState for State<R, A> {
+impl<R, A> OpState for DirectState<R, A> {
     type Resources = R;
     type Args = A;
 
     fn new(resources: Self::Resources, args: Self::Args) -> Self {
-        State::NotStarted { resources, args }
+        DirectState::NotStarted { resources, args }
     }
 
     fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
-        if let State::NotStarted { resources, .. } = self {
+        if let DirectState::NotStarted { resources, .. } = self {
             Some(resources)
         } else {
             None
@@ -35,7 +34,7 @@ impl<R, A> OpState for State<R, A> {
     }
 
     fn args_mut(&mut self) -> Option<&mut Self::Args> {
-        if let State::NotStarted { args, .. } = self {
+        if let DirectState::NotStarted { args, .. } = self {
             Some(args)
         } else {
             None
@@ -60,18 +59,18 @@ impl<T: Op> crate::op::Op for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
     type Args = T::Args;
-    type State = State<T::Resources, T::Args>;
+    type State = DirectState<T::Resources, T::Args>;
 
     fn poll(
         state: &mut Self::State,
         ctx: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
-        match replace(state, State::Complete) {
-            State::NotStarted { resources, args } => Poll::Ready(T::run(sq, resources, args)),
+        match replace(state, DirectState::Complete) {
+            DirectState::NotStarted { resources, args } => Poll::Ready(T::run(sq, resources, args)),
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            State::Complete => panic!("polled Future after completion"),
+            DirectState::Complete => panic!("polled Future after completion"),
         }
     }
 }
