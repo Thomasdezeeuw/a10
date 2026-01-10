@@ -258,7 +258,7 @@ macro_rules! new_operation {
             state: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State,
         }
 
-        impl<$( $( $lifetime, )* $( $( $resources: $( $trait )? )+ $(const $const_generic: $const_ty, )? )? $( $gen: $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+        impl<$( $( $lifetime, )* $( $( $resources: $( $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen: $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
             pub(crate) fn new(
                 $( $field_name: $field_type )*,
                 resources: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::Resources,
