@@ -142,7 +142,7 @@ macro_rules! operation {
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? {
-                sq: SubmissionQueue,
+                sq: $crate::SubmissionQueue,
                 sys: $sys,
             }
             required: Op,
@@ -167,7 +167,7 @@ macro_rules! iter_operation {
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name $( < $( $resources $( : $trait )? )+ $(; const $const_generic : $const_ty )?> )? {
-                sq: SubmissionQueue,
+                sq: $crate::SubmissionQueue,
                 sys: $sys,
             }
             required: Iter,
@@ -191,7 +191,7 @@ macro_rules! fd_operation {
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > {
-                fd: &'fd AsyncFd,
+                fd: &'fd $crate::AsyncFd,
                 sys: $sys,
             }
             required: FdOp,
@@ -216,7 +216,7 @@ macro_rules! fd_iter_operation {
         $crate::op::new_operation!(
             $(#[ $meta ])*
             $vis struct $name <'fd, $( $( $resources $( : $trait )? ),+ $(; const $const_generic : $const_ty )? )? > {
-                fd: &'fd AsyncFd,
+                fd: &'fd $crate::AsyncFd,
                 sys: $sys,
             }
             required: FdIter,
