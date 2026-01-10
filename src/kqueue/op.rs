@@ -75,9 +75,9 @@ impl<T: Op> crate::op::Op for T {
     }
 }
 
-/// State of an operation on a file descriptor.
+/// State of an operation that whats for an event (on a file descriptor) first.
 #[derive(Debug)]
-pub(crate) enum FdState<R, A> {
+pub(crate) enum EventedState<R, A> {
     /// Operation has not started yet.
     NotStarted { resources: R, args: A },
     /// Event was submitted, waiting for a result.
@@ -86,16 +86,16 @@ pub(crate) enum FdState<R, A> {
     Complete,
 }
 
-impl<R, A> OpState for FdState<R, A> {
+impl<R, A> OpState for EventedState<R, A> {
     type Resources = R;
     type Args = A;
 
     fn new(resources: Self::Resources, args: Self::Args) -> Self {
-        FdState::NotStarted { resources, args }
+        EventedState::NotStarted { resources, args }
     }
 
     fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
-        if let FdState::NotStarted { resources, .. } = self {
+        if let EventedState::NotStarted { resources, .. } = self {
             Some(resources)
         } else {
             None
@@ -103,7 +103,7 @@ impl<R, A> OpState for FdState<R, A> {
     }
 
     fn args_mut(&mut self) -> Option<&mut Self::Args> {
-        if let FdState::NotStarted { args, .. } = self {
+        if let EventedState::NotStarted { args, .. } = self {
             Some(args)
         } else {
             None
@@ -145,7 +145,7 @@ impl<T: FdOp> crate::op::FdOp for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
     type Args = T::Args;
-    type State = FdState<T::Resources, T::Args>;
+    type State = EventedState<T::Resources, T::Args>;
 
     fn poll(
         state: &mut Self::State,
@@ -154,7 +154,7 @@ impl<T: FdOp> crate::op::FdOp for T {
     ) -> Poll<Self::Output> {
         loop {
             match state {
-                FdState::NotStarted { .. } => {
+                EventedState::NotStarted { .. } => {
                     let fd_state = fd.state();
                     // Add ourselves to the waiters for the operation.
                     let needs_register = {
@@ -178,42 +178,42 @@ impl<T: FdOp> crate::op::FdOp for T {
                     }
 
                     // Set ourselves to waiting for an event from the kernel.
-                    if let FdState::NotStarted { resources, args } =
-                        replace(state, FdState::Complete)
+                    if let EventedState::NotStarted { resources, args } =
+                        replace(state, EventedState::Complete)
                     {
-                        *state = FdState::Waiting { resources, args };
+                        *state = EventedState::Waiting { resources, args };
                     }
                     // We've added our waker above to the list, we'll be woken up
                     // once we can make progress.
                     return Poll::Pending;
                 }
-                FdState::Waiting { resources, args } => {
+                EventedState::Waiting { resources, args } => {
                     match T::try_run(fd, resources, args) {
                         Ok(res) => {
-                            if let FdState::Waiting { resources, args } =
-                                replace(state, FdState::Complete)
+                            if let EventedState::Waiting { resources, args } =
+                                replace(state, EventedState::Complete)
                             {
                                 return Poll::Ready(Ok(T::map_ok(fd, resources, res)));
                             }
                         }
                         Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                            if let FdState::Waiting { resources, args } =
-                                replace(state, FdState::Complete)
+                            if let EventedState::Waiting { resources, args } =
+                                replace(state, EventedState::Complete)
                             {
-                                *state = FdState::NotStarted { resources, args };
+                                *state = EventedState::NotStarted { resources, args };
                                 // Try again in the next loop iteration.
                                 continue;
                             }
                         }
                         Err(err) => {
-                            *state = FdState::Complete;
+                            *state = EventedState::Complete;
                             return Poll::Ready(Err(err));
                         }
                     }
                 }
                 // Shouldn't be reachable, but if the Future is used incorrectly it
                 // can be.
-                FdState::Complete => panic!("polled Future after completion"),
+                EventedState::Complete => panic!("polled Future after completion"),
             }
         }
     }
