@@ -4,7 +4,7 @@ use std::os::fd::RawFd;
 use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::kqueue::op::DirectOp;
+use crate::kqueue::op::{impl_fd_op, DirectFdOp, DirectOp};
 use crate::kqueue::{self, cq, sq};
 use crate::net::{AddressStorage, Domain, NoAddress, OptionStorage, Protocol, SocketAddress, Type};
 use crate::{fd, syscall, AsyncFd, SubmissionQueue};
@@ -70,3 +70,19 @@ impl DirectOp for SocketOp {
         Ok(fd)
     }
 }
+
+pub(crate) struct BindOp<A>(PhantomData<*const A>);
+
+impl<A: SocketAddress> DirectFdOp for BindOp<A> {
+    type Output = ();
+    type Resources = AddressStorage<Box<A::Storage>>;
+    type Args = ();
+
+    fn run(fd: &AsyncFd, address: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
+        let (ptr, length) = unsafe { A::as_ptr(&address.0) };
+        let socket = syscall!(bind(fd.fd(), ptr, length))?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(BindOp<A>);
