@@ -136,6 +136,13 @@ impl OpenOptions {
     /// transferred. To guarantee synchronous I/O, `O_SYNC` must be used in
     /// addition to `O_DIRECT`.
     #[doc(alias = "O_DIRECT")]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd"
+    ))]
     pub const fn direct(mut self) -> Self {
         self.flags |= libc::O_DIRECT;
         self
@@ -143,7 +150,7 @@ impl OpenOptions {
 
     /// Sets the mode bits that a new file will be created with.
     pub const fn mode(mut self, mode: u32) -> Self {
-        self.mode = mode;
+        self.mode = mode as _;
         self
     }
 
@@ -165,6 +172,7 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open {
         self.flags |= libc::O_TMPFILE;
         self.open(sq, dir)
