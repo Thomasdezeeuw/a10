@@ -176,7 +176,12 @@ impl Waker {
             match Future::poll(future.as_mut(), &mut task_ctx) {
                 Poll::Ready(res) => return res,
                 // The waking implementation will `unpark` us.
-                Poll::Pending => thread::park(),
+                Poll::Pending => {
+                    // Wake up the thread that polls the shared ring to ensure
+                    // we make progress.
+                    test_queue().wake();
+                    thread::park()
+                }
             }
         }
     }
