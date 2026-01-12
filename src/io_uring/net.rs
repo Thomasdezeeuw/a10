@@ -453,7 +453,7 @@ pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 
 impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
     type Output = usize;
-    type Resources = (B, Box<A::Storage>);
+    type Resources = (B, Box<AddressStorage<A::Storage>>);
     type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
@@ -468,7 +468,7 @@ impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
         let (buf_ptr, buf_len) = unsafe { buf.parts() };
-        let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
+        let (address_ptr, address_length) = unsafe { A::as_ptr(&address.0) };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
         asan::poison_box(address);
@@ -508,7 +508,11 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
     type Resources = (
         B,
         // These types need a stable address for the duration of the operation.
-        Box<(MsgHeader, [crate::io::IoSlice; N], A::Storage)>,
+        Box<(
+            MsgHeader,
+            [crate::io::IoSlice; N],
+            AddressStorage<A::Storage>,
+        )>,
     );
     type Args = (SendCall, SendFlag);
 
@@ -521,7 +525,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
     ) {
         let (msg, iovecs, address) = &mut **resources;
         // SAFETY: `address` and `iovecs` outlive `msg`.
-        unsafe { msg.init_send::<A>(address, iovecs) };
+        unsafe { msg.init_send::<A>(&mut address.0, iovecs) };
 
         submission.0.opcode = match *send_op {
             SendCall::Normal => libc::IORING_OP_SENDMSG as u8,
@@ -796,7 +800,7 @@ pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
 
 impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
     type Output = ();
-    type Resources = Box<T::Storage>;
+    type Resources = Box<OptionStorage<T::Storage>>;
     type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
@@ -824,7 +828,7 @@ impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
             optlen: size_of::<T::Storage>() as u32,
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
-            optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as u64),
+            optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
         asan::poison_box(value);
     }

@@ -16,8 +16,12 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::io::{BufMut, ReadBuf, ReadBufPool};
+use crate::extract::{Extract, Extractor};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadNBuf, SkipBuf};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::io::{ReadBuf, ReadBufPool};
 use crate::op::{fd_iter_operation, fd_operation, operation, OpState};
+use crate::sys::net::MsgHeader;
 use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
 
 pub mod option;
@@ -215,6 +219,442 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         MultishotRecv::new(self, pool, flags)
+    }
+
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected.
+    pub fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
+    where
+        B: BufMut,
+    {
+        let buf = ReadNBuf { buf, last_read: 0 };
+        RecvN {
+            recv: self.recv(buf, None),
+            left: n,
+        }
+    }
+
+    /// Receives data on the socket from the remote address to which it is
+    /// connected, using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: Option<RecvFlag>,
+    ) -> RecvVectored<'fd, B, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let resources = Box::new((MsgHeader::empty(), iovecs));
+        RecvVectored::new(self, (bufs, resources), flags)
+    }
+
+    /// Receives at least `n` bytes on the socket from the remote address to
+    /// which it is connected, using vectored I/O.
+    pub fn recv_n_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        n: usize,
+    ) -> RecvNVectored<'fd, B, N>
+    where
+        B: BufMutSlice<N>,
+    {
+        let bufs = ReadNBuf {
+            buf: bufs,
+            last_read: 0,
+        };
+        RecvNVectored {
+            recv: self.recv_vectored(bufs, None),
+            left: n,
+        }
+    }
+
+    /// Receives data on the socket and returns the source address.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_from<'fd, B, A>(
+        &'fd self,
+        mut buf: B,
+        flags: Option<RecvFlag>,
+    ) -> RecvFrom<'fd, B, A>
+    where
+        B: BufMut,
+        A: SocketAddress,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
+        // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
+        let iovec = unsafe { IoMutSlice::new(&mut buf) };
+        let resources = Box::new((MsgHeader::empty(), iovec, MaybeUninit::uninit()));
+        RecvFrom::new(self, (buf, resources), flags)
+    }
+
+    /// Receives data on the socket and the source address using vectored I/O.
+    #[doc = man_link!(recvmsg(2))]
+    pub fn recv_from_vectored<'fd, B, A, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+        flags: Option<RecvFlag>,
+    ) -> RecvFromVectored<'fd, B, A, N>
+    where
+        B: BufMutSlice<N>,
+        A: SocketAddress,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => RecvFlag(0),
+        };
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        let resources = Box::new((MsgHeader::empty(), iovecs, MaybeUninit::uninit()));
+        RecvFromVectored::new(self, (bufs, resources), flags)
+    }
+
+    /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(send(2))]
+    pub fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
+    where
+        B: Buf,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
+        Send::new(self, buf, (SendCall::Normal, flags))
+    }
+
+    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
+    /// of `buf`.
+    ///
+    /// # Notes
+    ///
+    /// Zerocopy execution is not guaranteed and may fall back to copying. The
+    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
+    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
+    /// instead.
+    ///
+    /// The `Future` only returns once it safe for the buffer to be used again,
+    /// for TCP for example this means until the data is ACKed by the peer.
+    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
+    where
+        B: Buf,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
+        Send::new(self, buf, (SendCall::ZeroCopy, flags))
+    }
+
+    /// Sends all data in `buf` on the socket to a connected peer.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            send: Extractor {
+                fut: self.send(buf, flags),
+            },
+            send_op: SendCall::Normal,
+            flags,
+        }
+    }
+
+    /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
+    /// copies of `buf`.
+    pub fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
+    where
+        B: Buf,
+    {
+        let buf = SkipBuf { buf, skip: 0 };
+        SendAll {
+            send: Extractor {
+                fut: self.send(buf, flags),
+            },
+            send_op: SendCall::ZeroCopy,
+            flags,
+        }
+    }
+
+    /// Sends data in `bufs` on the socket to a connected peer.
+    #[doc = man_link!(sendmsg(2))]
+    pub fn send_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: Option<SendFlag>,
+    ) -> SendMsg<'fd, B, NoAddress, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(SendCall::Normal, bufs, NoAddress, flags)
+    }
+
+    /// Same as [`AsyncFd::send_vectored`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    pub fn send_vectored_zc<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+        flags: Option<SendFlag>,
+    ) -> SendMsg<'fd, B, NoAddress, N>
+    where
+        B: BufSlice<N>,
+    {
+        self.sendmsg(SendCall::ZeroCopy, bufs, NoAddress, flags)
+    }
+
+    /// Sends all data in `bufs` on the socket to a connected peer, using
+    /// vectored I/O.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all_vectored<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> SendAllVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        SendAllVectored {
+            send: self.send_vectored(bufs, None).extract(),
+            skip: 0,
+            send_op: SendCall::Normal,
+        }
+    }
+
+    /// Sends all data in `bufs` on the socket to a connected peer, using
+    /// vectored I/O.
+    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
+    pub fn send_all_vectored_zc<'fd, B, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> SendAllVectored<'fd, B, N>
+    where
+        B: BufSlice<N>,
+    {
+        SendAllVectored {
+            send: self.send_vectored(bufs, None).extract(),
+            skip: 0,
+            send_op: SendCall::ZeroCopy,
+        }
+    }
+
+    /// Sends data on the socket to a connected peer.
+    #[doc = man_link!(sendto(2))]
+    pub fn send_to<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: Option<SendFlag>,
+    ) -> SendTo<'fd, B, A>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        let resources = (buf, Box::new(AddressStorage(address.into_storage())));
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
+        let args = (SendCall::Normal, flags);
+        SendTo::new(self, resources, args)
+    }
+
+    /// Same as [`AsyncFd::send_to`], but tries to avoid making intermediate
+    /// copies of `buf`.
+    ///
+    /// See [`AsyncFd::send_zc`] for additional notes.
+    pub fn send_to_zc<'fd, B, A>(
+        &'fd self,
+        buf: B,
+        address: A,
+        flags: Option<SendFlag>,
+    ) -> SendTo<'fd, B, A>
+    where
+        B: Buf,
+        A: SocketAddress,
+    {
+        let resources = (buf, Box::new(AddressStorage(address.into_storage())));
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
+        let args = (SendCall::ZeroCopy, flags);
+        SendTo::new(self, resources, args)
+    }
+
+    /// Sends data in `bufs` on the socket to a connected peer.
+    #[doc = man_link!(sendmsg(2))]
+    pub fn send_to_vectored<'fd, B, A, const N: usize>(
+        &'fd self,
+        bufs: B,
+        address: A,
+        flags: Option<SendFlag>,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        self.sendmsg(SendCall::Normal, bufs, address, flags)
+    }
+
+    /// Same as [`AsyncFd::send_to_vectored`], but tries to avoid making
+    /// intermediate copies of `buf`.
+    pub fn send_to_vectored_zc<'fd, B, A, const N: usize>(
+        &'fd self,
+        bufs: B,
+        address: A,
+        flags: Option<SendFlag>,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        self.sendmsg(SendCall::ZeroCopy, bufs, address, flags)
+    }
+
+    fn sendmsg<'fd, B, A, const N: usize>(
+        &'fd self,
+        send_op: SendCall,
+        bufs: B,
+        address: A,
+        flags: Option<SendFlag>,
+    ) -> SendMsg<'fd, B, A, N>
+    where
+        B: BufSlice<N>,
+        A: SocketAddress,
+    {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => SendFlag(0),
+        };
+        let iovecs = unsafe { bufs.as_iovecs() };
+        let address = AddressStorage(address.into_storage());
+        let resources = Box::new((MsgHeader::empty(), iovecs, address));
+        SendMsg::new(self, (bufs, resources), (send_op, flags))
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]).
+    ///
+    /// If an accepted stream is returned, the remote address of the peer is
+    /// returned along with it.
+    #[doc = man_link!(accept(2))]
+    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A>
+    where
+        A: SocketAddress,
+    {
+        self.accept4(None)
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::accept`].
+    #[doc = man_link!(accept4(2))]
+    pub fn accept4<'fd, A>(&'fd self, flags: Option<AcceptFlag>) -> Accept<'fd, A>
+    where
+        A: SocketAddress,
+    {
+        let flags = flags.unwrap_or(AcceptFlag(0));
+        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        Accept::new(self, address, flags)
+    }
+
+    /// Accept multiple socket streams.
+    ///
+    /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
+    /// uses a multishot operation, which means only a single operation is
+    /// created kernel side, making this more efficient.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
+        self.multishot_accept4(None)
+    }
+
+    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
+    /// socket.
+    ///
+    /// Also see [`AsyncFd::multishot_accept`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub fn multishot_accept4<'fd>(&'fd self, flags: Option<AcceptFlag>) -> MultishotAccept<'fd> {
+        let flags = match flags {
+            Some(flags) => flags,
+            None => AcceptFlag(0),
+        };
+        MultishotAccept::new(self, (), flags)
+    }
+
+    /// Get socket option.
+    ///
+    /// Also see [`AsyncFd::socket_option2`] for a type safe variant.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level for
+    /// io_uring.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(getsockopt(2))]
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option<'fd, T>(
+        &'fd self,
+        level: Level,
+        optname: impl Into<Opt>,
+    ) -> SocketOption<'fd, T> {
+        let value = Box::new_uninit();
+        SocketOption::new(self, value, (level, optname.into()))
+    }
+
+    /// Get socket option.
+    #[doc = man_link!(getsockopt(2))]
+    #[doc(alias = "getsockopt")]
+    pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
+    where
+        T: option::Get,
+    {
+        let value = OptionStorage(Box::new_uninit());
+        SocketOption2::new(self, value, (T::LEVEL, T::OPT))
+    }
+
+    /// Set socket option.
+    ///
+    /// Also see [`AsyncFd::set_socket_option2`] for a type safe variant.
+    ///
+    /// At the time of writing this limited to the `SOL_SOCKET` level.
+    ///
+    /// # Safety
+    ///
+    /// The caller must ensure that `T` is the valid type for the option.
+    #[doc = man_link!(setsockopt(2))]
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option<'fd, T>(
+        &'fd self,
+        level: Level,
+        optname: impl Into<Opt>,
+        optvalue: T,
+    ) -> SetSocketOption<'fd, T> {
+        let value = Box::new(optvalue);
+        SetSocketOption::new(self, value, (level, optname.into()))
+    }
+
+    /// Set socket option.
+    #[doc = man_link!(setsockopt(2))]
+    #[doc(alias = "setsockopt")]
+    pub fn set_socket_option2<'fd, T>(&'fd self, value: T::Value) -> SetSocketOption2<'fd, T>
+    where
+        T: option::Set,
+    {
+        let value = Box::new(OptionStorage(T::as_storage(value)));
+        SetSocketOption2::new(self, value, (T::LEVEL, T::OPT))
+    }
+
+    /// Shuts down the read, write, or both halves of this connection.
+    #[doc = man_link!(shutdown(2))]
+    pub fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
+        Shutdown::new(self, (), how)
     }
 }
 
@@ -749,12 +1189,255 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::recv`].
     pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
+
+    /// [`Future`] behind [`AsyncFd::recv_vectored`].
+    pub struct RecvVectored<B: BufMutSlice<N>; const N: usize>(sys::net::RecvVectoredOp<B, N>) -> io::Result<(B, libc::c_int)>;
+
+    /// [`Future`] behind [`AsyncFd::recv_from`].
+    pub struct RecvFrom<B: BufMut, A: SocketAddress>(sys::net::RecvFromOp<B, A>) -> io::Result<(B, A, libc::c_int)>;
+
+    /// [`Future`] behind [`AsyncFd::recv_from_vectored`].
+    pub struct RecvFromVectored<B: BufMutSlice<N>, A: SocketAddress; const N: usize>(sys::net::RecvFromVectoredOp<B, A, N>) -> io::Result<(B, A, libc::c_int)>;
+
+    /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
+    pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
+      impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::send_to`] and [`AsyncFd::send_to_zc`].
+    pub struct SendTo<B: Buf, A: SocketAddress>(sys::net::SendToOp<B, A>) -> io::Result<usize>,
+      impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::send_vectored`],
+    /// [`AsyncFd::send_vectored_zc`], [`AsyncFd::send_to_vectored`],
+    /// [`AsyncFd::send_to_vectored_zc`].
+    pub struct SendMsg<B: BufSlice<N>, A: SocketAddress; const N: usize>(sys::net::SendMsgOp<B, A, N>) -> io::Result<usize>,
+      impl Extract -> io::Result<(B, usize)>;
+
+    /// [`Future`] behind [`AsyncFd::accept`].
+    pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A>) -> io::Result<(AsyncFd, A)>;
+
+    /// [`Future`] behind [`AsyncFd::socket_option`].
+    pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
+
+    /// [`Future`] behind [`AsyncFd::socket_option2`].
+    pub struct SocketOption2<T: option::Get>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
+
+    /// [`Future`] behind [`AsyncFd::set_socket_option`].
+    pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
+      impl Extract -> io::Result<T>;
+
+    /// [`Future`] behind [`AsyncFd::set_socket_option2`].
+    pub struct SetSocketOption2<T: option::Set>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
+
+    /// [`Future`] behind [`AsyncFd::shutdown`].
+    pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
+
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n`].
+#[derive(Debug)]
+pub struct RecvN<'fd, B: BufMut> {
+    recv: Recv<'fd, ReadNBuf<B>>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving the `Recv` future.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok(buf)) => {
+                if buf.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if buf.last_read >= this.left {
+                    // Received the required amount of bytes.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                this.left -= buf.last_read;
+
+                recv.set(recv.fd.recv(buf, None));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::send_all`].
+#[derive(Debug)]
+pub struct SendAll<'fd, B: Buf> {
+    send: Extractor<Send<'fd, SkipBuf<B>>>,
+    send_op: SendCall,
+    flags: Option<SendFlag>,
+}
+
+impl<'fd, B: Buf> SendAll<'fd, B> {
+    fn poll_inner(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        match Pin::new(&mut self.send).poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((mut buf, n))) => {
+                buf.skip += n as u32;
+
+                if let (_, 0) = unsafe { buf.parts() } {
+                    // Send everything.
+                    return Poll::Ready(Ok(buf.buf));
+                }
+
+                // Send some more.
+                self.send = match self.send_op {
+                    SendCall::Normal => self.send.fut.fd.send(buf, self.flags),
+                    SendCall::ZeroCopy => self.send.fut.fd.send_zc(buf, self.flags),
+                }
+                .extract();
+                self.poll_inner(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B: Buf> Future for SendAll<'fd, B> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.poll_inner(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: Buf> Extract for SendAll<'fd, B> {}
+
+impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
+    type Output = io::Result<B>;
+
+    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        Pin::new(&mut self.fut).poll_inner(ctx)
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::recv_n_vectored`].
+#[derive(Debug)]
+pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
+    recv: RecvVectored<'fd, ReadNBuf<B>, N>,
+    /// Number of bytes we still need to receive to hit our target `N`.
+    left: usize,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
+        match recv.as_mut().poll(ctx) {
+            Poll::Ready(Ok((bufs, _))) => {
+                if bufs.last_read == 0 {
+                    return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
+                }
+
+                if bufs.last_read >= this.left {
+                    // Read the required amount of bytes.
+                    return Poll::Ready(Ok(bufs.buf));
+                }
+
+                this.left -= bufs.last_read;
+
+                recv.set(recv.fd.recv_vectored(bufs, None));
+                unsafe { Pin::new_unchecked(this) }.poll(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+/// [`Future`] behind [`AsyncFd::send_all_vectored`] and [`AsyncFd::send_all_vectored_zc`].
+#[derive(Debug)]
+pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
+    send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
+    skip: u64,
+    send_op: SendCall,
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
+    /// Poll implementation used by the [`Future`] implement for the naked type
+    /// and the type wrapper in an [`Extractor`].
+    fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving `Future`.
+        let this = unsafe { Pin::into_inner_unchecked(self) };
+        let mut send = unsafe { Pin::new_unchecked(&mut this.send) };
+        match send.as_mut().poll(ctx) {
+            Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
+            Poll::Ready(Ok((bufs, n))) => {
+                this.skip += n as u64;
+
+                let mut iovecs = unsafe { bufs.as_iovecs() };
+                let mut skip = this.skip;
+                for iovec in &mut iovecs {
+                    if iovec.len() as u64 <= skip {
+                        // Skip entire buf.
+                        skip -= iovec.len() as u64;
+                        // SAFETY: setting it to zero is always valid.
+                        unsafe { iovec.set_len(0) };
+                    } else {
+                        // SAFETY: checked above that the length > skip.
+                        unsafe { iovec.set_len(skip as usize) };
+                        break;
+                    }
+                }
+
+                if iovecs[N - 1].len() == 0 {
+                    // Send everything.
+                    return Poll::Ready(Ok(bufs));
+                }
+
+                let resources = Box::new((MsgHeader::empty(), iovecs, AddressStorage(NoAddress)));
+                send.set(
+                    SendMsg::new(send.fut.fd, (bufs, resources), (this.send_op, SendFlag(0)))
+                        .extract(),
+                );
+                unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for SendAllVectored<'fd, B, N> {
+    type Output = io::Result<()>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        self.poll_inner(ctx).map_ok(|_| ())
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Extract for SendAllVectored<'fd, B, N> {}
+
+impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'fd, B, N>> {
+    type Output = io::Result<B>;
+
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
+    }
 }
 
 /// Trait that defines the behaviour of socket addresses.
