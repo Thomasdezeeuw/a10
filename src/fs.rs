@@ -707,7 +707,8 @@ impl fmt::Debug for Permissions {
         if self.others_can_execute() {
             buf[8] = b'x';
         }
-        let permissions = str::from_utf8(&buf).unwrap();
+        // SAFETY: we only set ASCII bytes, which makes the string valid UTF-8.
+        let permissions = unsafe { str::from_utf8_unchecked(&buf) };
         f.debug_tuple("Permissions").field(&permissions).finish()
     }
 }

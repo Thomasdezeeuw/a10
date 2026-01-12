@@ -1032,6 +1032,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
 
         unix::net::SocketAddr::from_pathname(Path::new(OsStr::from_bytes(path)))
             // Fallback to an unnamed address.
+            // SAFETY: unnamed (zero length) address is valid.
             .unwrap_or_else(|_| unix::net::SocketAddr::from_pathname("").unwrap())
     }
 
