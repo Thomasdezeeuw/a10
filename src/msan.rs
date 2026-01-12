@@ -3,11 +3,9 @@
 // Let's make it easier with all the `cfg`s.
 #![allow(unused_variables)]
 
+use crate::io::IoMutSlice;
 use std::cmp::min;
 use std::ffi::c_void;
-use std::mem;
-
-use crate::io::IoMutSlice;
 
 // TODO: replace with `std::ffi::c_size_t` once stable
 // <https://github.com/rust-lang/rust/issues/88345>.
@@ -28,14 +26,6 @@ pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
     unsafe {
         __msan_unpoison(addr, size);
     }
-}
-
-/// Mark memory storing `T` as fully initialized.
-#[allow(clippy::borrowed_box)]
-pub(crate) fn unpoison_box<T>(value: &Box<T>) {
-    // TODO: replace with `Box::as_ptr` once stable
-    // <https://github.com/rust-lang/rust/issues/129090>.
-    unpoison_region((&raw const **value).cast(), mem::size_of::<T>());
 }
 
 /// Mark the first `n` bytes of iovecs as fully initialized.
