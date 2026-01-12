@@ -10,7 +10,6 @@ use std::{ptr, task};
 
 use crate::{asan, syscall};
 
-pub(crate) mod cancel;
 pub(crate) mod config;
 pub(crate) mod cq;
 pub(crate) mod fd;
