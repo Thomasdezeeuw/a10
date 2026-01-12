@@ -7,7 +7,7 @@ use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::sq::{self, Submission};
 use crate::io_uring::{self, libc};
 use crate::op::fd_operation;
-use crate::{asan, msan, SubmissionQueue};
+use crate::SubmissionQueue;
 
 /// io_uring specific methods.
 impl AsyncFd {
@@ -31,11 +31,7 @@ impl AsyncFd {
             matches!(self.kind(), fd::Kind::File),
             "can't covert a direct descriptor to a different direct descriptor"
         );
-        // The `fd` needs to be valid until the operation is complete, so we
-        // need to heap allocate it so we can delay it's allocation in case of
-        // an early drop.
-        let fd = Box::new(self.fd());
-        ToDirect::new(self, ((), fd), ())
+        ToDirect::new(self, ((), self.fd()), ())
     }
 
     /// Convert a direct descriptor into a regular file descriptor.
@@ -69,7 +65,7 @@ pub(crate) struct ToDirectOp<M = ()>(PhantomData<*const M>);
 
 impl<M: DirectFdMapper> FdOp for ToDirectOp<M> {
     type Output = M::Output;
-    type Resources = (M, Box<RawFd>);
+    type Resources = (M, RawFd);
     type Args = ();
 
     fn fill_submission(
@@ -88,7 +84,7 @@ impl<M: DirectFdMapper> FdOp for ToDirectOp<M> {
 
 impl<M: DirectFdMapper> Op for ToDirectOp<M> {
     type Output = M::Output;
-    type Resources = (M, Box<RawFd>);
+    type Resources = (M, RawFd);
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
@@ -103,9 +99,8 @@ impl<M: DirectFdMapper> Op for ToDirectOp<M> {
             off: libc::IORING_FILE_INDEX_ALLOC as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **fd).addr() as u64,
+            addr: ptr::from_mut(&mut *fd).addr() as u64,
         };
-        asan::poison_box(fd);
         submission.0.len = 1;
     }
 
@@ -114,12 +109,10 @@ impl<M: DirectFdMapper> Op for ToDirectOp<M> {
         (mapper, dfd): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::Output {
-        asan::unpoison_box(&dfd);
-        msan::unpoison_box(&dfd);
         debug_assert!(n == 1);
         let sq = sq.clone();
         // SAFETY: the kernel ensures that `dfd` is valid.
-        let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq) };
+        let dfd = unsafe { AsyncFd::from_raw(dfd, fd::Kind::Direct, sq) };
         mapper.map(dfd)
     }
 }

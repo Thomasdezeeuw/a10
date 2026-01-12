@@ -243,7 +243,7 @@ impl Signals {
         );
         let sq = self.fd.sq().clone();
         let fd = self.fd.fd();
-        ToDirect::new(sq, (self, Box::new(fd)), ())
+        ToDirect::new(sq, (self, fd), ())
     }
 
     /// Receive a signal.
