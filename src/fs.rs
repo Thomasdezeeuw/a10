@@ -428,20 +428,19 @@ impl<'fd> Stat<'fd> {
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
 #[repr(transparent)]
-pub struct Metadata {
-    inner: libc::statx,
-}
+pub struct Metadata(sys::fs::Stat);
 
 impl Metadata {
     /// Which field(s) of the metadata are filled (based on the provided
     /// interest).
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub const fn filled(&self) -> MetadataInterest {
-        MetadataInterest(self.inner.stx_mask)
+        sys::fs::filled(&self.0)
     }
 
     /// Returns the file type for this metadata.
     pub const fn file_type(&self) -> FileType {
-        FileType(self.inner.stx_mode)
+        sys::fs::file_type(&self.0)
     }
 
     /// Returns `true` if this represents a directory.
@@ -465,22 +464,22 @@ impl Metadata {
     /// Returns the size of the file, in bytes, this metadata is for.
     #[allow(clippy::len_without_is_empty)] // Makes no sense.
     pub const fn len(&self) -> u64 {
-        self.inner.stx_size
+        sys::fs::len(&self.0)
     }
 
     /// The "preferred" block size for efficient filesystem I/O.
     pub const fn block_size(&self) -> u32 {
-        self.inner.stx_blksize
+        sys::fs::block_size(&self.0)
     }
 
     /// Returns the permissions of the file this metadata is for.
     pub const fn permissions(&self) -> Permissions {
-        Permissions(self.inner.stx_mode)
+        sys::fs::permissions(&self.0)
     }
 
     /// Returns the time this file was last modified.
     pub fn modified(&self) -> SystemTime {
-        timestamp(&self.inner.stx_mtime)
+        sys::fs::modified(&self.0)
     }
 
     /// Returns the time this file was last accessed.
@@ -490,22 +489,12 @@ impl Metadata {
     /// It's possible to disable keeping track of this access time, which makes
     /// this function return an invalid value.
     pub fn accessed(&self) -> SystemTime {
-        timestamp(&self.inner.stx_atime)
+        sys::fs::accessed(&self.0)
     }
 
     /// Returns the time this file was created.
     pub fn created(&self) -> SystemTime {
-        timestamp(&self.inner.stx_btime)
-    }
-}
-
-#[allow(clippy::cast_sign_loss)] // Checked.
-fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
-    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
-    if ts.tv_sec.is_negative() {
-        SystemTime::UNIX_EPOCH - dur
-    } else {
-        SystemTime::UNIX_EPOCH + dur
+        sys::fs::created(&self.0)
     }
 }
 
@@ -527,7 +516,7 @@ impl fmt::Debug for Metadata {
 ///
 /// See [`Metadata`].
 #[derive(Copy, Clone)]
-pub struct FileType(u16);
+pub struct FileType(pub(crate) u16);
 
 impl FileType {
     /// Returns `true` if this represents a directory.
@@ -618,7 +607,7 @@ impl fmt::Debug for FileType {
 ///
 /// See [`Metadata`].
 #[derive(Copy, Clone)]
-pub struct Permissions(u16);
+pub struct Permissions(pub(crate) u16);
 
 impl Permissions {
     /// Return `true` if the owner has read permission.

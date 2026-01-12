@@ -1,11 +1,12 @@
 use std::ffi::CString;
+use std::time::{SystemTime, Duration};
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
 
 use crate::fs::{
     AdviseFlag, AllocateFlag, Metadata, MetadataInterest, RemoveFlag, SyncDataFlag,
-    path_from_cstring,
+    path_from_cstring, Permissions, FileType
 };
 use crate::io_uring::{libc, sq};
 use crate::io_uring::op::{Op, OpExtract, OpReturn, FdOp};
@@ -342,5 +343,49 @@ impl FdOp for TruncateOp {
 
     fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) use libc::statx as Stat;
+
+pub(crate) const fn filled(stat: &Stat) -> MetadataInterest {
+    MetadataInterest(stat.stx_mask)
+}
+
+pub(crate) const fn file_type(stat: &Stat) -> FileType {
+    FileType(stat.stx_mode)
+}
+
+pub(crate) const fn len(stat: &Stat) -> u64 {
+    stat.stx_size
+}
+
+pub(crate) const fn block_size(stat: &Stat) -> u32 {
+    stat.stx_blksize
+}
+
+pub(crate) const fn permissions(stat: &Stat) -> Permissions {
+    Permissions(stat.stx_mode)
+}
+
+pub(crate) fn modified(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_mtime)
+}
+
+pub(crate) fn accessed(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_atime)
+}
+
+pub(crate) fn created(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_btime)
+}
+
+#[allow(clippy::cast_sign_loss)] // Checked.
+fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
+    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
+    if ts.tv_sec.is_negative() {
+        SystemTime::UNIX_EPOCH - dur
+    } else {
+        SystemTime::UNIX_EPOCH + dur
     }
 }
