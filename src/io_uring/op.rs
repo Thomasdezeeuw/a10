@@ -198,17 +198,23 @@ impl<T: OpResult> Shared<T> {
 
                 // IORING_CQE_F_MORE indicates that more completions are coming
                 // for this operation.
-                if completion_flags & libc::IORING_CQE_F_MORE == 0
+                let done = if completion_flags & libc::IORING_CQE_F_MORE == 0
                     && let Status::Running { result } | Status::Done { result } =
                         replace(&mut self.status, Status::Complete)
                 {
                     self.status = Status::Done { result };
+                    true
+                } else {
+                    false
+                };
 
-                    if let Some(waker) = self.waker.take() {
-                        StatusUpdate::Wake(waker)
-                    } else {
-                        StatusUpdate::Ok
-                    }
+                // Only wake up the Future if the operation is done or it's a
+                // multishot operation (which processes results before the
+                // operation is completed).
+                if (done || T::IS_MULTISHOT)
+                    && let Some(waker) = self.waker.take()
+                {
+                    StatusUpdate::Wake(waker)
                 } else {
                     StatusUpdate::Ok
                 }
@@ -254,6 +260,10 @@ trait OpResult {
 
     /// Update the result of the operation.
     fn update(&mut self, result: CompletionResult, completion_flags: u32);
+
+    /// Whether or not the operation if a multishot operation. Is used to
+    /// determine if we need to wake if more completion events are expected.
+    const IS_MULTISHOT: bool;
 }
 
 /// Completed result of an operation.
@@ -304,6 +314,8 @@ impl OpResult for Singleshot {
         }
         self.0 = result;
     }
+
+    const IS_MULTISHOT: bool = false;
 }
 
 /// Multishot operation.
@@ -318,6 +330,8 @@ impl OpResult for Multishot {
     fn update(&mut self, result: CompletionResult, _: u32) {
         self.0.push(result);
     }
+
+    const IS_MULTISHOT: bool = true;
 }
 
 pub(crate) trait Op {
