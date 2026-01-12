@@ -158,18 +158,19 @@ impl<T, R, A> OpState for State<T, R, A> {
 /// Caller must ensure the point is safe to drop.
 unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
     let ptr = ptr.cast::<Data<T, R, A>>();
-    // We have to manually drop the resources as it uses MaybeUninit.
-    // SAFETY: if we're called we're dropping the value, thus we should have
-    // unique acess.
-    let data = unsafe { &mut *ptr };
-    if !matches!(lock(&data.shared).status, Status::Complete) {
-        asan::unpoison(data.tail.resources.get());
-        // SAFETY: Resources must always be initialise if the status is not
-        // Complete, which we checked above.
-        unsafe { data.tail.resources.get_mut().assume_init_drop() }
-    }
+    {
+        // We have to manually drop the resources as it uses MaybeUninit.
+        // SAFETY: if we're called we're dropping the value, thus we should have
+        // unique acess.
+        let data = unsafe { &mut *ptr };
+        if !matches!(lock(&data.shared).status, Status::Complete) {
+            asan::unpoison(data.tail.resources.get());
+            // SAFETY: Resources must always be initialise if the status is not
+            // Complete, which we checked above.
+            unsafe { data.tail.resources.get_mut().assume_init_drop() }
+        }
+    } // Drop any (mutable) reference before we call Box::from_raw.
 
-    drop(data); // Drop any (mutable) reference before we call Box::from_raw.
     mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
 }
 
@@ -262,7 +263,7 @@ impl CompletionResult {
     /// Returns itself as operation return value.
     pub(crate) fn as_op_return(self) -> io::Result<OpReturn> {
         if let Ok(result) = u32::try_from(self.result) {
-            Ok((self.flags, self.result as u32))
+            Ok((self.flags, result))
         } else {
             // If the result is negative then we return an error.
             Err(io::Error::from_raw_os_error(-self.result))
