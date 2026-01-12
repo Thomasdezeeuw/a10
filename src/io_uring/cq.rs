@@ -62,8 +62,8 @@ impl Completions {
         if head >= tail {
             // If we have no completions we make a system call to wait for
             // completion events.
-            tail += self.enter(shared, timeout)?;
-            debug_assert!(tail <= load_kernel_shared(self.entries_tail));
+            self.enter(shared, timeout)?;
+            tail = load_kernel_shared(self.entries_tail);
         }
 
         debug_assert!(tail >= head);
@@ -92,7 +92,7 @@ impl Completions {
 
     /// Make the `io_uring_enter` system call.
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn enter(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<u32> {
+    fn enter(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
         let mut args = libc::io_uring_getevents_arg {
             sigmask: 0,
             sigmask_sz: 0,
@@ -129,9 +129,9 @@ impl Completions {
         );
         shared.is_polling.store(false, Ordering::Release);
         match result {
-            Ok(n) => Ok(n),
+            Ok(_) => Ok(()),
             // Hit timeout or got interrupted, we can ignore it.
-            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(0),
+            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(()),
             Err(err) => Err(err),
         }
     }
