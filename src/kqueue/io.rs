@@ -1,9 +1,10 @@
 use std::io;
 use std::marker::PhantomData;
+use std::os::fd::RawFd;
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, NO_OFFSET};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{FdOp, FdOpExtract};
+use crate::kqueue::op::{DirectOp, FdOp, FdOpExtract};
 use crate::kqueue::{self, cq, sq, Event};
 use crate::{asan, fd, msan, syscall, AsyncFd, SubmissionQueue};
 
@@ -169,5 +170,24 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
         n: Self::OperationOutput,
     ) -> Self::ExtractOutput {
         (bufs, n as usize)
+    }
+}
+
+pub(crate) struct CloseOp;
+
+impl DirectOp for CloseOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (RawFd, fd::Kind);
+
+    fn run(
+        _: &SubmissionQueue,
+        (): Self::Resources,
+        (fd, kind): Self::Args,
+    ) -> io::Result<Self::Output> {
+        let fd::Kind::File = kind;
+
+        syscall!(close(fd))?;
+        Ok(())
     }
 }
