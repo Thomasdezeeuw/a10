@@ -550,6 +550,7 @@ impl<T: FdOp> crate::op::FdOp for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    fd.kind().use_flags(submission);
                     // While the kernel has access to the resources (to use in
                     // the operation) we can't access them.
                     asan::poison(resources);
@@ -641,6 +642,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    fd.kind().use_flags(submission);
                     // While the kernel has access to the resources (to use in
                     // the operation) we can't access them.
                     asan::poison(resources);
@@ -747,6 +749,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    fd.kind().use_flags(submission);
                     // NOTE: we do NOT poison the resources as we need read only
                     // access to them while the kernel is also reading them.
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
