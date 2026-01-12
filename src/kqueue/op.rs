@@ -80,6 +80,38 @@ impl<T: DirectOp> crate::op::Op for T {
     }
 }
 
+/// Operation that is done using a synchronous function.
+pub(crate) trait DirectOpEtract: DirectOp {
+    /// Extracted output of the operation.
+    type ExtractOutput;
+
+    /// Same as [`DirectOp::run`], but returns extracted output.
+    fn run_extract(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::ExtractOutput>;
+}
+
+impl<T: DirectOpEtract> crate::op::OpExtract for T {
+    type ExtractOutput = io::Result<<Self as DirectOpEtract>::ExtractOutput>;
+
+    fn poll_extract(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        sq: &SubmissionQueue,
+    ) -> Poll<Self::ExtractOutput> {
+        match replace(state, DirectState::Complete) {
+            DirectState::NotStarted { resources, args } => {
+                Poll::Ready(T::run_extract(sq, resources, args))
+            }
+            // Shouldn't be reachable, but if the Future is used incorrectly it
+            // can be.
+            DirectState::Complete => panic!("polled Future after completion"),
+        }
+    }
+}
+
 /// Same as [`DirectOp`], but for operations using file descriptors.
 pub(crate) trait DirectFdOp {
     type Output;
