@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::task::{self, Poll};
 
 use crate::asan;
-use crate::io_uring::cq::Completion;
+use crate::io_uring::cq::{Completion, MULTISHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
@@ -753,7 +753,8 @@ impl<T: FdIter> crate::op::FdIter for T {
                     fd.kind().use_flags(submission);
                     // NOTE: we do NOT poison the resources as we need read only
                     // access to them while the kernel is also reading them.
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
+                    submission.0.user_data =
+                        (state.data.expose_provenance().get() | MULTISHOT_TAG) as u64;
                 });
                 match result {
                     Ok(()) => {

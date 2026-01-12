@@ -195,7 +195,7 @@ impl Drop for Completions {
 #[repr(transparent)]
 pub(crate) struct Completion(pub(super) libc::io_uring_cqe);
 
-const MULTISHOT_TAG: usize = 0b01;
+pub(super) const MULTISHOT_TAG: usize = 0b01;
 const TAG_MASK: usize = !MULTISHOT_TAG;
 
 /// User data set for completions that can be ignored. For example when we're
