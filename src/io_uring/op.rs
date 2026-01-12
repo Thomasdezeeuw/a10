@@ -376,8 +376,10 @@ impl<T: Op> crate::op::Op for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
+                        drop(shared);
                     }
                     Err(QueueFull) => {
+                        drop(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -398,6 +400,7 @@ impl<T: Op> crate::op::Op for T {
                     Some(waker) => *waker = ctx.waker().clone(),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
+                drop(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
@@ -415,10 +418,16 @@ impl<T: Op> crate::op::Op for T {
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
-            Status::Dropped => unreachable!(),
+            Status::Dropped => {
+                drop(shared);
+                unreachable!()
+            }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            Status::Complete => panic!("polled Future after completion"),
+            Status::Complete => {
+                drop(shared);
+                panic!("polled Future after completion");
+            }
         }
     }
 }
@@ -467,8 +476,10 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
+                        drop(shared);
                     }
                     Err(QueueFull) => {
+                        drop(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -489,6 +500,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                     Some(waker) => *waker = ctx.waker().clone(),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
+                drop(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
@@ -506,10 +518,16 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
-            Status::Dropped => unreachable!(),
+            Status::Dropped => {
+                drop(shared);
+                unreachable!()
+            }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            Status::Complete => panic!("polled Future after completion"),
+            Status::Complete => {
+                drop(shared);
+                panic!("polled Future after completion")
+            }
         }
     }
 }
@@ -568,8 +586,10 @@ impl<T: FdOp> crate::op::FdOp for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
+                        drop(shared);
                     }
                     Err(QueueFull) => {
+                        drop(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -590,6 +610,7 @@ impl<T: FdOp> crate::op::FdOp for T {
                     Some(waker) => *waker = ctx.waker().clone(),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
+                drop(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
@@ -607,10 +628,16 @@ impl<T: FdOp> crate::op::FdOp for T {
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
-            Status::Dropped => unreachable!(),
+            Status::Dropped => {
+                drop(shared);
+                unreachable!()
+            }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            Status::Complete => panic!("polled Future after completion"),
+            Status::Complete => {
+                drop(shared);
+                panic!("polled Future after completion")
+            }
         }
     }
 }
@@ -660,8 +687,10 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
+                        drop(shared);
                     }
                     Err(QueueFull) => {
+                        drop(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -682,6 +711,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                     Some(waker) => *waker = ctx.waker().clone(),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
+                drop(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
@@ -699,10 +729,16 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
-            Status::Dropped => unreachable!(),
+            Status::Dropped => {
+                drop(shared);
+                unreachable!()
+            }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            Status::Complete => panic!("polled Future after completion"),
+            Status::Complete => {
+                drop(shared);
+                panic!("polled Future after completion")
+            }
         }
     }
 }
@@ -763,8 +799,10 @@ impl<T: FdIter> crate::op::FdIter for T {
                         shared.status = Status::Running {
                             result: Multishot::empty(),
                         };
+                        drop(shared);
                     }
                     Err(QueueFull) => {
+                        drop(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -780,6 +818,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                         Some(waker) => *waker = ctx.waker().clone(),
                         None => shared.waker = Some(ctx.waker().clone()),
                     }
+                    drop(shared);
                     return Poll::Pending;
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
@@ -814,10 +853,16 @@ impl<T: FdIter> crate::op::FdIter for T {
             }
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
-            Status::Dropped => unreachable!(),
+            Status::Dropped => {
+                drop(shared);
+                unreachable!()
+            }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            Status::Complete => panic!("polled Future after completion"),
+            Status::Complete => {
+                drop(shared);
+                panic!("polled Future after completion")
+            }
         }
     }
 }
