@@ -21,7 +21,7 @@ use std::{fmt, mem, panic, process, str};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
-use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
+use a10::{AsyncFd, Ring, SubmissionQueue};
 
 /// Initialise logging.
 ///
@@ -94,19 +94,10 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .get_or_init(|| {
             init();
 
-            let config = Ring::config(128)
-                .with_kernel_thread(true)
-                .with_direct_descriptors(1024);
+            let config = Ring::config().with_direct_descriptors(1024);
             let mut ring = match config.clone().build() {
                 Ok(ring) => ring,
-                Err(err) => {
-                    log::warn!("creating test ring without a kernel thread");
-                    if let Ok(ring) = config.with_kernel_thread(false).build() {
-                        ring
-                    } else {
-                        panic!("failed to create test ring: {err}");
-                    }
-                }
+                Err(err) => panic!("failed to create test ring: {err}"),
             };
             let sq = ring.sq().clone();
             thread::spawn(move || {
@@ -206,69 +197,6 @@ impl Waker {
     }
 }
 
-/// Cancel `operation`.
-///
-/// `Future`s are inert and we can't determine if an operation has actually been
-/// started or the submission queue was full. This means that we can't ensure
-/// that the operation has been queued with the Kernel. This means that in some
-/// cases we won't actually cancel the operation simply because it hasn't
-/// started. This introduces flakyness in the tests.
-///
-/// To work around this we have this cancel function. If we fail to cancel the
-/// operation we try to start the operation using `start_op`, before canceling t
-/// again. Looping until the operation is canceled.
-#[track_caller]
-pub(crate) fn cancel<O, F>(waker: &Arc<Waker>, operation: &mut O, start_op: F)
-where
-    O: Cancel,
-    F: Fn(&mut O),
-{
-    for _ in 0..100 {
-        match waker.block_on(operation.cancel()) {
-            Ok(()) => return,
-            Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
-            Err(err) => panic!("unexpected error canceling operation: {err}"),
-        }
-
-        start_op(operation);
-    }
-    panic!("couldn't cancel operation");
-}
-
-/// Cancel all operations of `fd`.
-///
-/// `Future`s are inert and we can't determine if an operation has actually been
-/// started or the submission queue was full. This means that we can't ensure
-/// that the operation has been queued with the Kernel. This means that in some
-/// cases we won't actually cancel any operations simply because they haven't
-/// started. This introduces flakyness in the tests.
-///
-/// To work around this we have this cancel all function. If we fail to get the
-/// `expected` number of canceled operations we try to start the operations
-/// using `start_op`, before canceling them again. Looping until we get the
-/// expected number of canceled operations.
-#[track_caller]
-pub(crate) fn cancel_all<F: FnMut()>(
-    waker: &Arc<Waker>,
-    fd: &AsyncFd,
-    mut start_op: F,
-    expected: usize,
-) {
-    let mut canceled = 0;
-    for _ in 0..100 {
-        let n = waker
-            .block_on(fd.cancel_all())
-            .expect("failed to cancel all operations");
-        canceled += n;
-        if canceled >= expected {
-            return;
-        }
-
-        start_op();
-    }
-    panic!("couldn't cancel all expected operations");
-}
-
 /// Start an A10 operation, assumes `future` is a A10 `Future`.
 #[track_caller]
 pub(crate) fn start_op<Fut>(future: &mut Fut)
@@ -280,16 +208,6 @@ where
     if !result.is_pending() {
         panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
     }
-}
-
-/// Start an A10 multishot operation, assumes `iter` is a A10 `AsyncIterator`.
-#[track_caller]
-pub(crate) fn start_mulitshot_op<I>(iter: &mut I)
-where
-    I: AsyncIterator + Unpin,
-    I::Item: fmt::Debug,
-{
-    start_op(&mut next(iter));
 }
 
 /// Poll the `future` once with a no-op waker.

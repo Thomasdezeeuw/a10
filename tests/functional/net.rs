@@ -8,7 +8,6 @@ use std::net::{
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr;
 
-use a10::cancel::{Cancel, CancelResult};
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
@@ -19,9 +18,8 @@ use a10::{AsyncFd, Extract, Ring, fd};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    block_on, cancel, expect_io_errno, expect_io_error_kind, fd, init, is_send, is_sync,
-    new_socket, next, require_kernel, start_mulitshot_op, start_op, syscall, tcp_ipv4_socket,
-    test_queue, udp_ipv4_socket,
+    block_on, expect_io_errno, expect_io_error_kind, fd, init, is_send, is_sync, new_socket, next,
+    require_kernel, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -123,40 +121,6 @@ fn accept_no_address() {
 }
 
 #[test]
-fn cancel_accept() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<NoAddress>();
-
-    // Then cancel the accept multishot call.
-    cancel(&waker, &mut accept, start_op);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn try_cancel_accept_before_poll() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<SocketAddr>();
-
-    // Before we accept we cancel the accept call.
-    if !matches!(accept.try_cancel(), CancelResult::NotStarted) {
-        panic!("failed to cancel");
-    }
-}
-
-#[test]
 fn multishot_accept() {
     require_kernel!(5, 19);
 
@@ -232,112 +196,6 @@ fn multishot_accept() {
             assert!(buf.is_empty());
         }
     }
-}
-
-#[test]
-fn cancel_multishot_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    // Start two connections.
-    let stream1 = TcpStream::connect(local_addr).expect("failed to connect");
-    let s_addr1 = stream1.local_addr().expect("failed to get address");
-    let stream2 = TcpStream::connect(local_addr).expect("failed to connect");
-
-    // Accept the first.
-    let client1 = waker
-        .block_on(next(&mut accept_stream))
-        .expect("missing a connection")
-        .expect("failed to accept connection");
-    let c_addr1 = peer_addr(fd(&client1)).expect("failed to get address");
-
-    // Then cancel the accept multishot call.
-    cancel(&waker, &mut accept_stream, start_mulitshot_op);
-
-    // We should still be able to accept the second connection.
-    let client2 = waker
-        .block_on(next(&mut accept_stream))
-        .expect("missing a connection")
-        .expect("failed to accept connection");
-
-    // After that we expect no more connections.
-    assert!(waker.block_on(next(&mut accept_stream)).is_none());
-
-    // Match the connections.
-    let tests = if s_addr1 == c_addr1 {
-        [(stream1, client1), (stream2, client2)]
-    } else {
-        [(stream1, client2), (stream2, client1)]
-    };
-
-    // Test each connection.
-    for (mut stream, client) in tests {
-        // Read some data.
-        stream.write(DATA1).expect("failed to write");
-        let mut buf = waker
-            .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
-            .expect("failed to read");
-        assert_eq!(buf, DATA1);
-
-        // Write some data.
-        let n = waker
-            .block_on(client.write(DATA2))
-            .expect("failed to write");
-        assert_eq!(n, DATA2.len());
-        buf.resize(DATA2.len() + 1, 0);
-        let n = stream.read(&mut buf).expect("failed to read");
-        assert_eq!(&buf[..n], DATA2);
-
-        // Closing the client should get a result.
-        drop(stream);
-        buf.clear();
-        let buf = waker.block_on(client.read(buf)).expect("failed to read");
-        assert!(buf.is_empty());
-    }
-}
-
-#[test]
-fn try_cancel_multishot_accept_before_poll() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    // Start a connection.
-    let _stream = TcpStream::connect(local_addr).expect("failed to connect");
-
-    // But before we accept we cancel the accept call.
-    if !matches!(accept_stream.try_cancel(), CancelResult::NotStarted) {
-        panic!("failed to cancel");
-    }
-}
-
-#[test]
-fn cancel_multishot_accept_before_poll() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    waker.block_on(accept_stream.cancel()).unwrap();
 }
 
 #[test]
@@ -471,7 +329,7 @@ fn recv_read_buf_pool() {
     require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
@@ -504,7 +362,7 @@ fn recv_read_buf_pool_send_read_buf() {
     require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
@@ -549,7 +407,7 @@ fn multishot_recv() {
     is_send::<MultishotRecv>();
     is_sync::<MultishotRecv>();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -592,7 +450,7 @@ fn multishot_recv_large_send() {
     require_kernel!(6, 0);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -638,7 +496,7 @@ fn multishot_recv_all_buffers_used() {
     require_kernel!(6, 0);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -862,7 +720,7 @@ fn recv_from_read_buf_pool() {
     require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 

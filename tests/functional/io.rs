@@ -10,9 +10,8 @@ use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
-    LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, cancel_all, defer, expect_io_errno, fd, is_send,
-    is_sync, next, pipe, remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue,
-    tmp_path,
+    LOREM_IPSUM_50, Waker, defer, fd, is_send, is_sync, next, pipe, remove_test_file,
+    require_kernel, tcp_ipv4_socket, test_queue, tmp_path,
 };
 
 const NO_OFFSET: u64 = u64::MAX;
@@ -240,59 +239,6 @@ fn read_n_vectored_at() {
         .unwrap();
     assert_eq!(&buf.data[0], &test_file.content[5..105]);
     assert_eq!(&buf.data[1], &test_file.content[105..]);
-}
-
-#[test]
-fn cancel_all_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<a10::net::NoAddress>();
-
-    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_all_twice_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<a10::net::NoAddress>();
-
-    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
-    let n = waker
-        .block_on(listener.cancel_all())
-        .expect("failed to cancel all operations");
-    assert_eq!(n, 0);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_all_no_operation_in_progress() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let socket = waker.block_on(tcp_ipv4_socket(sq));
-
-    let n = waker
-        .block_on(socket.cancel_all())
-        .expect("failed to cancel all operations");
-    assert_eq!(n, 0);
 }
 
 #[test]

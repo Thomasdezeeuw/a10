@@ -18,7 +18,7 @@ fn config_is_send_and_sync() {
 fn config_disabled() {
     require_kernel!(5, 10);
     init();
-    let mut ring = Ring::config(1).disable().build().unwrap();
+    let mut ring = Ring::config().disable().build().unwrap();
 
     // In a disabled state, so we expect an error.
     expect_io_errno(ring.poll(None), libc::EBADFD);
@@ -33,7 +33,7 @@ fn config_single_issuer() {
     require_kernel!(6, 0);
     init();
 
-    let ring = Ring::config(1).single_issuer().build().unwrap();
+    let ring = Ring::config().single_issuer().build().unwrap();
 
     // This is fine.
     let buf_pool = ReadBufPool::new(ring.sq().clone(), 2, BUF_SIZE as u32).unwrap();
@@ -53,7 +53,7 @@ fn config_single_issuer_disabled_ring() {
     require_kernel!(6, 0);
     init();
 
-    let mut ring = Ring::config(1).single_issuer().disable().build().unwrap();
+    let mut ring = Ring::config().single_issuer().disable().build().unwrap();
 
     thread::spawn(move || {
         ring.enable().unwrap();
@@ -71,10 +71,9 @@ fn config_defer_task_run() {
     require_kernel!(6, 1);
     init();
 
-    let mut ring = Ring::config(1)
+    let mut ring = Ring::config()
         .single_issuer()
         .defer_task_run()
-        .with_kernel_thread(false)
         .build()
         .unwrap();
 

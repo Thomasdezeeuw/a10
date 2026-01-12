@@ -38,7 +38,7 @@ fn sq_size() {
 #[test]
 fn dropping_ring_unmaps_queues() {
     init();
-    let ring = Ring::new(64).unwrap();
+    let ring = Ring::new().unwrap();
     drop(ring);
 }
 
@@ -48,7 +48,7 @@ fn polling_with_timeout() -> io::Result<()> {
     const MARGIN: Duration = Duration::from_millis(10);
 
     init();
-    let mut ring = Ring::new(1).unwrap();
+    let mut ring = Ring::new().unwrap();
 
     let start = Instant::now();
     ring.poll(Some(TIMEOUT)).unwrap();
@@ -67,7 +67,7 @@ fn submission_queue_full_is_handled_internally() {
     const BUF_SIZE: usize = SIZE / N;
 
     init();
-    let mut ring = Ring::new(2).unwrap();
+    let mut ring = Ring::new().unwrap();
     let sq = ring.sq();
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
@@ -149,8 +149,8 @@ fn submission_queue_full_is_handled_internally() {
 #[test]
 fn wake_ring_with_kernel_thread() {
     init();
-    let mut ring = Ring::config(2)
-        .with_kernel_thread(true)
+    let mut ring = Ring::config()
+        .with_kernel_thread()
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
@@ -169,8 +169,8 @@ fn wake_ring_with_kernel_thread() {
 #[test]
 fn wake_ring_no_kernel_thread() {
     init();
-    let mut ring = Ring::config(2)
-        .with_kernel_thread(false)
+    // Defaults to no kernel thread.
+    let mut ring = Ring::config()
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
@@ -189,7 +189,7 @@ fn wake_ring_no_kernel_thread() {
 #[test]
 fn wake_ring_after_ring_dropped() {
     init();
-    let ring = Ring::new(2).unwrap();
+    let ring = Ring::new().unwrap();
     let sq = ring.sq().clone();
 
     drop(ring);
