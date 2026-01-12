@@ -42,6 +42,7 @@ new_flag!(
     /// Flags to [`pipe`].
     pub struct PipeFlag(u32) {
         /// Create a pipe that performs I/O in "packet" mode.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         DIRECT = libc::O_DIRECT,
     }
 );
