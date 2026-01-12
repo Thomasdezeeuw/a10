@@ -1,3 +1,5 @@
+use std::cmp::min;
+use std::mem::{swap, take};
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
@@ -84,6 +86,8 @@ impl Completions {
         // Let the kernel write more completions.
         unsafe { (&*self.entries_head.as_ptr()).store(head, Ordering::Release) };
 
+        self.wake_blocked_futures(shared);
+
         Ok(())
     }
 
@@ -130,6 +134,43 @@ impl Completions {
             // Hit timeout or got interrupted, we can ignore it.
             Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(0),
             Err(err) => Err(err),
+        }
+    }
+
+    /// Wake any futures that were blocked on a submission slot.
+    // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
+    #[allow(clippy::iter_with_drain, clippy::needless_pass_by_ref_mut)]
+    fn wake_blocked_futures(&mut self, shared: &Shared) {
+        let available = (shared.submissions_len - shared.unsubmitted_submissions()) as usize;
+        if available == 0 {
+            return;
+        }
+
+        let mut blocked_futures = lock(&shared.blocked_futures);
+        if blocked_futures.is_empty() {
+            return;
+        }
+
+        let mut wakers = take(&mut *blocked_futures);
+        drop(blocked_futures); // Unblock others.
+        let awoken = min(available, wakers.len());
+        for waker in wakers.drain(..awoken) {
+            waker.wake();
+        }
+
+        // Reuse allocation.
+        let mut blocked_futures = lock(&shared.blocked_futures);
+        swap(&mut *blocked_futures, &mut wakers);
+        if wakers.len() <= available - awoken {
+            drop(blocked_futures); // Unblock others.
+            for waker in wakers {
+                waker.wake();
+            }
+        } else {
+            // Can't wake up all the additional waiting futures, so add them
+            // back to the waiting list.
+            blocked_futures.extend(wakers);
+            drop(blocked_futures); // Unblock others.
         }
     }
 }
