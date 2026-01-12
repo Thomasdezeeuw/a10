@@ -236,7 +236,7 @@ pub(crate) struct StatOp;
 
 impl FdOp for StatOp {
     type Output = Metadata;
-    type Resources = Box<Metadata>;
+    type Resources = Metadata;
     type Args = MetadataInterest;
 
     fn fill_submission(
@@ -249,9 +249,8 @@ impl FdOp for StatOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             // SAFETY: this is safe because `Metadata` is transparent.
-            off: ptr::from_mut(&mut **metadata).addr() as u64,
+            off: ptr::from_mut(metadata).addr() as u64,
         };
-        asan::poison_box(metadata);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: c"".as_ptr().addr() as u64, // Not using a path.
         };
@@ -262,10 +261,8 @@ impl FdOp for StatOp {
     }
 
     fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_box(&metadata);
-        msan::unpoison_box(&metadata);
         debug_assert!(n == 0);
-        *metadata
+        metadata
     }
 }
 

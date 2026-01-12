@@ -275,7 +275,7 @@ impl AsyncFd {
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
         // SAFETY: fully zeroed `libc::statx` is a valid value.
-        let metadata = unsafe { Box::new(mem::zeroed()) };
+        let metadata = unsafe { mem::zeroed() };
         let interest = MetadataInterest::TYPE
             | MetadataInterest::MODE
             | MetadataInterest::ACCESSED_TIME
