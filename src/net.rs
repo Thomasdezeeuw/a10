@@ -142,7 +142,7 @@ impl AsyncFd {
     where
         A: SocketAddress,
     {
-        let storage = AddressStorage(Box::from(address.into_storage()));
+        let storage = AddressStorage(address.into_storage());
         Bind::new(self, storage, ())
     }
 
@@ -161,7 +161,7 @@ impl AsyncFd {
     where
         A: SocketAddress,
     {
-        let storage = AddressStorage(Box::from(address.into_storage()));
+        let storage = AddressStorage(address.into_storage());
         Connect::new(self, storage, ())
     }
 
@@ -180,7 +180,7 @@ impl AsyncFd {
     }
 
     fn socket_name<'fd, A: SocketAddress>(&'fd self, name: Name) -> SocketName<'fd, A> {
-        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        let address = AddressStorage((MaybeUninit::uninit(), 0));
         SocketName::new(self, address, name)
     }
 
@@ -250,8 +250,8 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let resources = Box::new((MsgHeader::empty(), iovecs));
-        RecvVectored::new(self, (bufs, resources), flags)
+        let resources = (bufs, MsgHeader::empty(), iovecs);
+        RecvVectored::new(self, resources, flags)
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
@@ -291,8 +291,8 @@ impl AsyncFd {
         };
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
-        let resources = Box::new((MsgHeader::empty(), iovec, MaybeUninit::uninit()));
-        RecvFrom::new(self, (buf, resources), flags)
+        let resources = (buf, MsgHeader::empty(), iovec, MaybeUninit::uninit());
+        RecvFrom::new(self, resources, flags)
     }
 
     /// Receives data on the socket and the source address using vectored I/O.
@@ -311,8 +311,8 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let resources = Box::new((MsgHeader::empty(), iovecs, MaybeUninit::uninit()));
-        RecvFromVectored::new(self, (bufs, resources), flags)
+        let resources = (bufs, MsgHeader::empty(), iovecs, MaybeUninit::uninit());
+        RecvFromVectored::new(self, resources, flags)
     }
 
     /// Sends data on the socket to a connected peer.
@@ -455,7 +455,7 @@ impl AsyncFd {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, Box::new(AddressStorage(address.into_storage())));
+        let resources = (buf, AddressStorage(address.into_storage()));
         let flags = match flags {
             Some(flags) => flags,
             None => SendFlag(0),
@@ -478,7 +478,7 @@ impl AsyncFd {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, Box::new(AddressStorage(address.into_storage())));
+        let resources = (buf, AddressStorage(address.into_storage()));
         let flags = match flags {
             Some(flags) => flags,
             None => SendFlag(0),
@@ -534,8 +534,8 @@ impl AsyncFd {
         };
         let iovecs = unsafe { bufs.as_iovecs() };
         let address = AddressStorage(address.into_storage());
-        let resources = Box::new((MsgHeader::empty(), iovecs, address));
-        SendMsg::new(self, (bufs, resources), (send_op, flags))
+        let resources = (bufs, MsgHeader::empty(), iovecs, address);
+        SendMsg::new(self, resources, (send_op, flags))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
@@ -560,7 +560,7 @@ impl AsyncFd {
         A: SocketAddress,
     {
         let flags = flags.unwrap_or(AcceptFlag(0));
-        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
+        let address = AddressStorage((MaybeUninit::uninit(), 0));
         Accept::new(self, address, flags)
     }
 
@@ -604,7 +604,7 @@ impl AsyncFd {
         level: Level,
         optname: impl Into<Opt>,
     ) -> SocketOption<'fd, T> {
-        let value = Box::new_uninit();
+        let value = MaybeUninit::uninit();
         SocketOption::new(self, value, (level, optname.into()))
     }
 
@@ -615,7 +615,7 @@ impl AsyncFd {
     where
         T: option::Get,
     {
-        let value = OptionStorage(Box::new_uninit());
+        let value = OptionStorage(MaybeUninit::uninit());
         SocketOption2::new(self, value, (T::LEVEL, T::OPT))
     }
 
@@ -636,8 +636,7 @@ impl AsyncFd {
         optname: impl Into<Opt>,
         optvalue: T,
     ) -> SetSocketOption<'fd, T> {
-        let value = Box::new(optvalue);
-        SetSocketOption::new(self, value, (level, optname.into()))
+        SetSocketOption::new(self, optvalue, (level, optname.into()))
     }
 
     /// Set socket option.
@@ -647,7 +646,7 @@ impl AsyncFd {
     where
         T: option::Set,
     {
-        let value = Box::new(OptionStorage(T::as_storage(value)));
+        let value = OptionStorage(T::as_storage(value));
         SetSocketOption2::new(self, value, (T::LEVEL, T::OPT))
     }
 
@@ -1409,10 +1408,9 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                let resources = Box::new((MsgHeader::empty(), iovecs, AddressStorage(NoAddress)));
+                let resources = (bufs, MsgHeader::empty(), iovecs, AddressStorage(NoAddress));
                 send.set(
-                    SendMsg::new(send.fut.fd, (bufs, resources), (this.send_op, SendFlag(0)))
-                        .extract(),
+                    SendMsg::new(send.fut.fd, resources, (this.send_op, SendFlag(0))).extract(),
                 );
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
