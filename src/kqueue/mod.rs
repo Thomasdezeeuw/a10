@@ -20,6 +20,7 @@ pub(crate) mod fd;
 pub(crate) mod io;
 pub(crate) mod net;
 pub(crate) mod op;
+pub(crate) mod pipe;
 mod sq;
 
 pub(crate) use config::Config;
