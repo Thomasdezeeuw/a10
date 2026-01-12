@@ -4,7 +4,7 @@ use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
 use crate::kqueue::{self, fd, Event, Shared};
-use crate::syscall;
+use crate::{lock, syscall};
 
 /// User data to wake up the polling thread.
 pub(super) const WAKE_USER_DATA: *mut libc::c_void = ptr::null_mut();
@@ -33,7 +33,7 @@ impl Completions {
         });
 
         // Submit any submissions (changes) to the kernel.
-        let mut change_list = shared.change_list.lock().unwrap();
+        let mut change_list = lock(&shared.change_list);
         let mut changes = if change_list.is_empty() {
             Vec::new() // No point in taking an empty vector.
         } else {

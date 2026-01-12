@@ -327,3 +327,14 @@ macro_rules! debug_detail {
 }
 
 use {debug_detail, man_link, new_flag, syscall};
+
+/// Lock `mutex` clearing any poison set.
+fn lock<'a, T>(mutex: &'a std::sync::Mutex<T>) -> std::sync::MutexGuard<'a, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(err) => {
+            mutex.clear_poison();
+            err.into_inner()
+        }
+    }
+}

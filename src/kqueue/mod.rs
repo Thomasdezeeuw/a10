@@ -12,7 +12,7 @@ use std::os::fd::OwnedFd;
 use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
 
-use crate::debug_detail;
+use crate::{debug_detail, lock};
 
 pub(crate) mod config;
 mod cq;
@@ -48,7 +48,7 @@ impl Shared {
             return;
         }
 
-        let mut change_list = self.change_list.lock().unwrap();
+        let mut change_list = lock(&self.change_list);
         if change_list.len() < changes.capacity() {
             // Existing is smaller than `changes` alloc, reuse it.
             swap(&mut *change_list, &mut changes);

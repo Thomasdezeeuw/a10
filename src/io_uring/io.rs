@@ -12,7 +12,7 @@ use crate::io::{
 };
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{self, cq, libc, sq};
-use crate::{asan, fd, msan, AsyncFd, SubmissionQueue};
+use crate::{asan, fd, lock, msan, AsyncFd, SubmissionQueue};
 
 pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 pub(crate) use std::io::*; // So we don't have to worry about importing `std::io`.
@@ -176,7 +176,7 @@ impl ReadBufPool {
 
         // Because we need to fill the `ring_buf` and then atomatically update
         // the `ring_tail` we do it while holding a lock.
-        let guard = self.reregister_lock.lock().unwrap();
+        let guard = lock(&self.reregister_lock);
         // Get a ring_buf we write into.
         // NOTE: that we allocated at least as many `io_uring_buf`s as we
         // did buffer, so there is always a slot available for us.

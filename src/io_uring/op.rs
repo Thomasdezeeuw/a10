@@ -7,7 +7,7 @@ use std::sync::{Mutex, MutexGuard};
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::{SubmissionQueue, AsyncFd};
+use crate::{SubmissionQueue, AsyncFd, lock};
 use crate::io_uring::cq::Completion;
 use crate::io_uring::sq::Submission;
 use crate::io_uring::{self, libc};
@@ -129,15 +129,6 @@ impl<T, R, A> OpState for State<T, R, A> {
     }
 }
 
-pub(super) fn lock<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(err) => {
-            mutex.clear_poison();
-            err.into_inner()
-        }
-    }
-}
 
 impl<T: OpResult> Shared<T> {
     /// Update the operation based on a `completion` event.
@@ -206,7 +197,7 @@ impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
 impl<T, R, A> Drop for State<T, R, A> {
     fn drop(&mut self) {
         {
-            let mut shared = unsafe { self.data.as_ref().shared.lock().unwrap() };
+            let mut shared = unsafe { lock(&self.data.as_ref().shared) };
             if matches!(&shared.status, Status::Running { .. }) {
                 // Operation is still running, mark the status as dropped and
                 // delay the dropping until the operation is done. This is done
@@ -343,7 +334,7 @@ impl<T: Op> crate::op::Op for T {
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = sq.submissions();
@@ -430,7 +421,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
         sq: &SubmissionQueue,
     ) -> Poll<Self::ExtractOutput> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = sq.submissions();
@@ -531,7 +522,7 @@ impl<T: Iter> crate::op::Iter for T {
         sq: &SubmissionQueue,
     ) -> Poll<Option<Self::Output>> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = sq.submissions();
@@ -632,7 +623,7 @@ impl<T: FdOp> crate::op::FdOp for T {
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = fd.sq().submissions();
@@ -719,7 +710,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
         fd: &AsyncFd,
     ) -> Poll<Self::ExtractOutput> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = fd.sq().submissions();
@@ -821,7 +812,7 @@ impl<T: FdIter> crate::op::FdIter for T {
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
         let data = unsafe { state.data.as_mut() };
-        let mut shared = data.shared.lock().unwrap();
+        let mut shared = lock(&data.shared);
         match &mut shared.status {
             Status::NotStarted => {
                 let submissions = fd.sq().submissions();

@@ -1,11 +1,11 @@
 use std::os::fd::RawFd;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Mutex;
 use std::time::Duration;
 use std::{fmt, io, ptr, slice};
 
-use crate::io_uring::{Shared, libc, load_kernel_shared, mmap, munmap, op};
-use crate::{asan, debug_detail, syscall};
+use crate::io_uring::{libc, load_kernel_shared, mmap, munmap, op, Shared};
+use crate::{asan, debug_detail, lock, syscall};
 
 #[derive(Debug)]
 pub(crate) struct Completions {
@@ -186,11 +186,11 @@ impl Completion {
         let update = if ptr.addr() & MULTISHOT_TAG == 0 {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::SingleShared>() > 1);
             let head: &op::SingleShared = unsafe { &*ptr.cast() };
-            head.lock().unwrap().update(self)
+            lock(&head).update(self)
         } else {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::MultiShared>() > 1);
             let head: &op::MultiShared = unsafe { &*ptr.map_addr(|addr| addr & TAG_MASK).cast() };
-            head.lock().unwrap().update(self)
+            lock(&head).update(self)
         };
         match update {
             op::StatusUpdate::Ok => { /* Done. */ }

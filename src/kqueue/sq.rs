@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::{io, mem, ptr};
 
 use crate::kqueue::{self, cq, Event, Shared};
-use crate::syscall;
+use crate::{lock, syscall};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Submissions {
@@ -39,7 +39,7 @@ impl Submissions {
         log::trace!(event:? = event; "registering event");
 
         // Add the event to the list of waiting events.
-        let mut change_list = shared.change_list.lock().unwrap();
+        let mut change_list = lock(&shared.change_list);
         change_list.push(event);
         // If we haven't collected enough events yet and we're not polling,
         // we're done quickly.

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::{fmt, io, ptr, task};
 
 use crate::io_uring::{cq, libc, load_kernel_shared, mmap, munmap, Shared};
-use crate::{asan, msan, syscall};
+use crate::{asan, lock, msan, syscall};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Submissions {
@@ -119,7 +119,7 @@ impl Submissions {
     pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
         log::trace!(waker:? = waker; "adding blocked future");
         let shared = &*self.shared;
-        shared.blocked_futures.lock().unwrap().push(waker);
+        lock(&shared.blocked_futures).push(waker);
     }
 
     pub(crate) fn shared(&self) -> &Shared {
