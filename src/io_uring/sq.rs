@@ -89,29 +89,33 @@ impl Submissions {
             return Ok(());
         }
 
-        let submitted = self
-            .add(|submission| {
-                submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
-                submission.0.fd = self.ring_fd();
-                submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-                    addr: u64::from(libc::IORING_MSG_DATA),
-                };
-                submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-                    off: cq::WAKE_USER_DATA,
-                };
-                submission.no_success_event();
-            })
-            .is_ok();
+        _ = self.add(|submission| {
+            submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
+            submission.0.fd = self.ring_fd();
+            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+                addr: u64::from(libc::IORING_MSG_DATA),
+            };
+            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+                off: cq::WAKE_USER_DATA,
+            };
+            submission.no_success_event();
+        });
 
-        let flags = if self.shared.kernel_thread
-            && load_kernel_shared(self.shared.kernel_flags) & libc::IORING_SQ_NEED_WAKEUP != 0
-        {
-            libc::IORING_ENTER_SQ_WAKEUP
+        let (flags, submissions) = if self.shared.kernel_thread {
+            let flags = if load_kernel_shared(self.shared.kernel_flags)
+                & libc::IORING_SQ_NEED_WAKEUP
+                != 0
+            {
+                libc::IORING_ENTER_SQ_WAKEUP
+            } else {
+                0
+            };
+            (flags, 0) // Kernel thread handles the submissions.
         } else {
-            0
+            (0, self.shared.unsubmitted_submissions())
         };
-        self.shared
-            .enter(submitted as u32, 0, flags, ptr::null(), 0)?;
+        log::trace!(submissions; "entering kernel for wake up");
+        self.shared.enter(submissions, 0, flags, ptr::null(), 0)?;
 
         Ok(())
     }
