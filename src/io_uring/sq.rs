@@ -23,8 +23,6 @@ impl Submissions {
     where
         F: FnOnce(&mut Submission),
     {
-        // TODO: remove the `submissions_lock`.
-
         let shared = &*self.shared;
         let len = shared.submissions_len;
         // Before grabbing a lock, see if there is space in the queue.
@@ -35,15 +33,7 @@ impl Submissions {
         }
 
         // Grab the submission lock.
-        let submissions_guard = match shared.submissions_lock.lock() {
-            Ok(guard) => guard,
-            // If filling the submission failed we clear the poison flag and
-            // carry on.
-            Err(err) => {
-                shared.submissions_lock.clear_poison();
-                err.into_inner()
-            }
-        };
+        let submissions_guard = lock(&shared.submissions_lock);
 
         // NOTE: need to load the tail and head values again as they could have
         // changed since we last loaded them.

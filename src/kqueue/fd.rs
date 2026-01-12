@@ -54,7 +54,7 @@ impl State {
         }
 
         // SAFETY: ensured the pointer is valid above.
-        lock_state(unsafe { &*ptr })
+        lock(unsafe { &*ptr })
     }
 
     /// Returns the `kevent::udata` to register events for this fd (state).
@@ -88,17 +88,6 @@ impl State {
             event.0.ident = ptr as _;
             event.0.filter = libc::EVFILT_USER;
         });
-    }
-}
-
-/// Lock the fd state.
-pub(super) fn lock_state<'a>(mutex: &'a Mutex<OpState>) -> MutexGuard<'a, OpState> {
-    match mutex.lock() {
-        Ok(guard) => guard,
-        Err(err) => {
-            mutex.clear_poison();
-            err.into_inner()
-        }
     }
 }
 
