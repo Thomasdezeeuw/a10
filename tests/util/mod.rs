@@ -9,7 +9,6 @@ use std::cell::Cell;
 use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
-use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
@@ -17,7 +16,7 @@ use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, mem, panic, process, str};
+use std::{fmt, io, mem, panic, str};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
@@ -114,21 +113,7 @@ pub(crate) fn test_queue() -> SubmissionQueue {
                     Ok(()) => (),
                     Err(err) => {
                         let msg = panic_message(&*err);
-                        let msg = format!("Polling thread panicked: {msg}\n");
-
-                        // Bypass the buffered output and write directly to standard
-                        // error.
-                        let stderr = io::stderr();
-                        let mut guard = stderr.lock();
-                        let _ = guard.flush();
-                        let _ = unsafe {
-                            libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len())
-                        };
-                        drop(guard);
-
-                        // Since all the tests depend on this thread we'll abort the
-                        // process since otherwise they'll wait for ever.
-                        process::abort()
+                        panic!("Polling thread panicked: {msg}\n");
                     }
                 }
             });
