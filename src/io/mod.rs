@@ -493,7 +493,10 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
+);
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
     /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
