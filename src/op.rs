@@ -1,5 +1,3 @@
-use std::fmt;
-use std::marker::PhantomData;
 use std::task::{self, Poll};
 
 use crate::{AsyncFd, SubmissionQueue};

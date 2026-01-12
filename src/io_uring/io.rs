@@ -4,14 +4,14 @@ use std::mem::MaybeUninit;
 use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::{self, NonNull};
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
 use std::{io, slice};
 
 use crate::io::{
     Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection, SpliceFlag,
 };
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{self, libc, sq};
 use crate::{asan, fd, lock, msan, AsyncFd, SubmissionQueue};
 
 pub(crate) use crate::unix::{IoMutSlice, IoSlice};

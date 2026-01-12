@@ -1,9 +1,9 @@
 use std::os::fd::RawFd;
 
 use crate::io_uring::op::{Op, OpReturn};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{asan, fd, msan, AsyncFd, SubmissionQueue};
+use crate::{fd, AsyncFd, SubmissionQueue};
 
 pub(crate) struct PipeOp;
 

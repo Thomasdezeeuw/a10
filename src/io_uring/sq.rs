@@ -1,10 +1,10 @@
-use std::os::fd::{AsRawFd, OwnedFd, RawFd};
-use std::sync::atomic::{self, AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex};
+use std::os::fd::RawFd;
+use std::sync::atomic::{self, Ordering};
+use std::sync::Arc;
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{cq, libc, load_kernel_shared, mmap, munmap, Shared};
-use crate::{asan, lock, msan, syscall};
+use crate::io_uring::{cq, libc, load_kernel_shared, Shared};
+use crate::{asan, lock};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Submissions {

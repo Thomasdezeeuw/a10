@@ -7,9 +7,9 @@ use crate::fs::{
     AdviseFlag, AllocateFlag, Metadata, MetadataInterest, RemoveFlag, SyncDataFlag,
     path_from_cstring,
 };
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{libc, sq};
 use crate::io_uring::op::{Op, OpExtract, OpReturn, FdOp};
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct OpenOp;
 

@@ -1,5 +1,5 @@
 use crate::io_uring::op::{Op, OpReturn};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{libc, sq};
 use crate::mem::AdviseFlag;
 use crate::SubmissionQueue;
 

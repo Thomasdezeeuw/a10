@@ -3,9 +3,9 @@ use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::fd::{self, AsyncFd, Kind};
+use crate::io_uring::libc;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::sq::{self, Submission};
-use crate::io_uring::{self, libc};
 use crate::op::fd_operation;
 use crate::SubmissionQueue;
 

@@ -2,12 +2,11 @@ use std::cmp::min;
 use std::mem::{swap, take};
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
 use std::time::Duration;
-use std::{fmt, io, ptr, slice};
+use std::{fmt, io, ptr};
 
 use crate::io_uring::{libc, load_kernel_shared, mmap, munmap, op, Shared};
-use crate::{asan, debug_detail, lock, syscall};
+use crate::{asan, debug_detail, lock};
 
 #[derive(Debug)]
 pub(crate) struct Completions {

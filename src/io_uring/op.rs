@@ -1,16 +1,15 @@
 use std::cell::UnsafeCell;
 use std::mem::{self, MaybeUninit, replace};
 use std::panic::RefUnwindSafe;
-use std::pin::Pin;
 use std::ptr::{self, NonNull};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex};
 use std::task::{self, Poll};
-use std::{fmt, io};
+use std::{io};
 
 use crate::{SubmissionQueue, AsyncFd, lock};
 use crate::io_uring::cq::Completion;
-use crate::io_uring::sq::Submission;
-use crate::io_uring::{self, libc};
+use crate::io_uring::sq::{Submission, QueueFull};
+use crate::io_uring::{libc};
 use crate::op::OpState;
 use crate::asan;
 

@@ -2,11 +2,10 @@ use std::os::fd::RawFd;
 use std::ptr;
 
 use crate::io::NO_OFFSET;
-use crate::io_uring::fd::DirectFdMapper;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::{self, libc, sq};
 use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{asan, msan, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue};
 
 pub(crate) struct WaitIdOp;
 

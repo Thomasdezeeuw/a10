@@ -1,12 +1,12 @@
 //! Configuration of a [`Ring`].
 
 use std::mem::{self, size_of};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::time::Duration;
 use std::{io, ptr};
 
-use crate::io_uring::{self, Completions, Submissions, libc};
-use crate::{Ring, SubmissionQueue, syscall};
+use crate::io_uring::{self, libc, Completions, Submissions};
+use crate::{syscall, Ring, SubmissionQueue};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.

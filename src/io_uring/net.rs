@@ -4,8 +4,8 @@ use std::os::fd::RawFd;
 use std::{ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
-use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn, Singleshot, State};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
+use crate::io_uring::{libc, sq};
 use crate::net::{
     option, AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage,
     Protocol, RecvFlag, SendCall, SendFlag, SocketAddress, Type,

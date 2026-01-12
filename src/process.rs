@@ -3,14 +3,12 @@
 //! [`wait`] and [`wait_on`] can be used to wait on started processes.
 //! [`Signals`] can be used for process signal handling.
 
-use std::mem::{self, ManuallyDrop, MaybeUninit};
+use std::mem::{self, MaybeUninit};
 use std::os::unix::process::ExitStatusExt;
-use std::pin::Pin;
 use std::process::{Child, ExitStatus};
-use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::op::{self, fd_operation, operation};
+use crate::op::{fd_operation, operation};
 use crate::{fd, man_link, new_flag, sys, syscall, AsyncFd, SubmissionQueue};
 
 /// Wait on the child `process`.
