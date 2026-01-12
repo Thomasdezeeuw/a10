@@ -395,6 +395,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
     }
 
     fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
