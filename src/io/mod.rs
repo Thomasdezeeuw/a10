@@ -211,7 +211,7 @@ impl AsyncFd {
     where
         B: BufMutSlice<N>,
     {
-        let iovecs = Box::new(unsafe { bufs.as_iovecs_mut() });
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
         ReadVectored::new(self, (bufs, iovecs), offset)
     }
 
@@ -313,7 +313,7 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        let iovecs = Box::new(unsafe { bufs.as_iovecs() });
+        let iovecs = unsafe { bufs.as_iovecs() };
         WriteVectored::new(self, (bufs, iovecs), offset)
     }
 
@@ -684,10 +684,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                write.set(
-                    WriteVectored::new(write.fut.fd, (bufs, Box::new(iovecs)), this.offset)
-                        .extract(),
-                );
+                write.set(WriteVectored::new(write.fut.fd, (bufs, iovecs), this.offset).extract());
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),

@@ -376,7 +376,7 @@ pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
     type Output = B;
-    type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
+    type Resources = (B, [crate::io::IoMutSlice; N]);
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -391,13 +391,10 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
-        asan::poison_iovecs_mut(&**iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
     fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_iovecs_mut(&*iovecs);
-        msan::unpoison_iovecs_mut(&*iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
@@ -447,7 +444,7 @@ pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
     type Output = usize;
-    type Resources = (B, Box<[crate::io::IoSlice; N]>);
+    type Resources = (B, [crate::io::IoSlice; N]);
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -462,12 +459,10 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_ptr().addr() as u64,
         };
-        asan::poison_iovecs(&**iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
     fn map_ok(_: &AsyncFd, (_, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_iovecs(&*iovecs);
         n as usize
     }
 }
@@ -480,7 +475,6 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
         (buf, iovecs): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
-        asan::unpoison_iovecs(&*iovecs);
         (buf, n as usize)
     }
 }
