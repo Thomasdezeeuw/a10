@@ -12,6 +12,7 @@ use crate::io_uring::cq::Completion;
 use crate::io_uring::sq::Submission;
 use crate::io_uring::{self, libc};
 use crate::op::OpState;
+use crate::asan;
 
 /// State of an operation.
 ///
@@ -163,10 +164,12 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
     // unique acess.
     let data = unsafe { &mut *ptr };
     if !matches!(lock(&data.shared).status, Status::Complete) {
+        asan::unpoison(data.tail.resources.get());
         // SAFETY: Resources must always be initialise if the status is not
         // Complete, which we checked above.
         unsafe { data.tail.resources.get_mut().assume_init_drop() }
     }
+
     drop(data); // Drop any (mutable) reference before we call Box::from_raw.
     mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
 }
@@ -234,8 +237,6 @@ unsafe impl<T: Sync, R: Sync, A: Sync> Sync for State<T, R, A> {}
 impl<T, R, A> Unpin for State<T, R, A> {}
 
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
-
-
 
 /// Container for the [`CompletionResult`]. Either [`Singleshot`] or
 /// [`Multishot`].
@@ -355,6 +356,9 @@ impl<T: Op> crate::op::Op for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(resources, args, submission);
+                    // While the kernel has access to the resources (to use in
+                    // the operation) we can't access them.
+                    asan::poison(resources);
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -395,6 +399,7 @@ impl<T: Op> crate::op::Op for T {
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
+                asan::unpoison(data.tail.resources.get());
                 let resources =
                     unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
                 let op_return = result.as_op_return()?;
@@ -442,6 +447,9 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(resources, args, submission);
+                    // While the kernel has access to the resources (to use in
+                    // the operation) we can't access them.
+                    asan::poison(resources);
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -482,6 +490,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
+                asan::unpoison(data.tail.resources.get());
                 let resources =
                     unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
                 let op_return = result.as_op_return()?;
@@ -543,6 +552,8 @@ impl<T: Iter> crate::op::Iter for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(resources, args, submission);
+                    // NOTE: we do NOT poison the resources as we need read only
+                    // access to them while the kernel is also reading them.
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -573,7 +584,8 @@ impl<T: Iter> crate::op::Iter for T {
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
                 drop(shared);
-                // SAFETY: TODO.
+                // SAFETY: we share the resources with the kernel, so we can
+                // only read them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
                 Poll::Ready(Some(Ok(T::map_next(sq, resources, op_return))))
             }
@@ -589,7 +601,8 @@ impl<T: Iter> crate::op::Iter for T {
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
                 drop(shared);
-                // SAFETY: TODO.
+                // SAFETY: the operation is done, so the kernel doesn't access
+                // the resources any more. This gives us unique access to them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
                 Poll::Ready(Some(Ok(T::map_next(sq, resources, op_return))))
             }
@@ -644,6 +657,9 @@ impl<T: FdOp> crate::op::FdOp for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    // While the kernel has access to the resources (to use in
+                    // the operation) we can't access them.
+                    asan::poison(resources);
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -684,6 +700,7 @@ impl<T: FdOp> crate::op::FdOp for T {
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
+                asan::unpoison(data.tail.resources.get());
                 let resources =
                     unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
                 let op_return = result.as_op_return()?;
@@ -731,6 +748,9 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    // While the kernel has access to the resources (to use in
+                    // the operation) we can't access them.
+                    asan::poison(resources);
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -771,6 +791,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
+                asan::unpoison(data.tail.resources.get());
                 let resources =
                     unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
                 let op_return = result.as_op_return()?;
@@ -833,6 +854,8 @@ impl<T: FdIter> crate::op::FdIter for T {
                     let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
                     let args = &mut data.tail.args;
                     T::fill_submission(fd, resources, args, submission);
+                    // NOTE: we do NOT poison the resources as we need read only
+                    // access to them while the kernel is also reading them.
                     submission.0.user_data = state.data.expose_provenance().get() as u64;
                 });
                 match result {
@@ -863,7 +886,8 @@ impl<T: FdIter> crate::op::FdIter for T {
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
                 drop(shared);
-                // SAFETY: TODO.
+                // SAFETY: we share the resources with the kernel, so we can
+                // only read them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
                 Poll::Ready(Some(Ok(T::map_next(fd, resources, op_return))))
             }
@@ -879,7 +903,8 @@ impl<T: FdIter> crate::op::FdIter for T {
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
                 drop(shared);
-                // SAFETY: TODO.
+                // SAFETY: the operation is done, so the kernel doesn't access
+                // the resources any more. This gives us unique access to them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
                 Poll::Ready(Some(Ok(T::map_next(fd, resources, op_return))))
             }
