@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, NO_OFFSET};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::FdOp;
+use crate::kqueue::op::{FdOp, FdOpExtract};
 use crate::kqueue::{self, cq, sq, Event};
 use crate::{asan, fd, msan, syscall, AsyncFd, SubmissionQueue};
 
@@ -59,8 +59,8 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         (buf, iovecs): &mut Self::Resources,
         offset: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
-        // io_uring uses `NO_OFFSET` to issue a `read` system call, otherwise it
-        // uses `pread`. We emulate the same thing.
+        // io_uring uses `NO_OFFSET` to issue a `readv` system call, otherwise
+        // it uses `preadv`. We emulate the same thing.
         if *offset == NO_OFFSET {
             syscall!(readv(fd.fd(), iovecs.as_ptr() as _, iovecs.len() as _))
         } else {
@@ -81,5 +81,47 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as _) };
         bufs
+    }
+}
+
+pub(crate) struct WriteOp<B>(PhantomData<*const B>);
+
+impl<B: Buf> FdOp for WriteOp<B> {
+    type Output = usize;
+    type Resources = B;
+    type Args = u64; // Offset.
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        buf: &mut Self::Resources,
+        offset: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let (ptr, len) = unsafe { buf.parts() };
+        // io_uring uses `NO_OFFSET` to issue a `write` system call, otherwise
+        // it uses `pwrite`. We emulate the same thing.
+        if *offset == NO_OFFSET {
+            syscall!(write(fd.fd(), ptr.cast(), len as _))
+        } else {
+            syscall!(pwrite(fd.fd(), ptr.cast(), len as _, *offset as _))
+        }
+    }
+
+    fn map_ok(fd: &AsyncFd, buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        Self::map_ok_extract(fd, buf, n).1
+    }
+}
+
+impl<B: Buf> FdOpExtract for WriteOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        _: &AsyncFd,
+        buf: Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (buf, n as usize)
     }
 }
