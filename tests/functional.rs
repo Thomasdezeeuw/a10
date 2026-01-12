@@ -18,8 +18,6 @@ mod msg;
 mod net;
 #[path = "functional/net_options.rs"]
 mod net_options;
-#[path = "functional/poll.rs"]
-mod poll;
 #[path = "functional/process.rs"]
 mod process;
 #[path = "functional/read_buf.rs"]
