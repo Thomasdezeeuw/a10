@@ -391,10 +391,12 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
+        asan::poison_iovecs_mut(iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
     fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };

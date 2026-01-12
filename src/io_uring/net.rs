@@ -272,6 +272,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
         (mut bufs, msg, iovecs): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::Output {
+        asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // NOTE: don't need to unpoison the address as we didn't use one.
         // SAFETY: the kernel initialised the bytes for us as part of the
@@ -307,6 +308,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
         (mut buf, msg, iovec, address): Self::Resources,
         (buf_id, n): OpReturn,
     ) -> Self::Output {
+        asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
         msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
@@ -344,6 +346,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVecto
         (mut bufs, msg, iovecs, address): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::Output {
+        asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
