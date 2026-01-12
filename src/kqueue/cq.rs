@@ -108,7 +108,7 @@ impl Completions {
                     debug_assert!(!ptr.is_null());
                     // SAFETY: in kqueue::op we ensure that the pointer is
                     // always valid (the kernel should copy it over for us).
-                    fd::lock_state(unsafe { &*ptr }).wake(&event);
+                    lock(unsafe { &*ptr }).wake(&event);
                 }
                 _ => log::debug!(event:? = event; "unexpected event, ignoring it"),
             }

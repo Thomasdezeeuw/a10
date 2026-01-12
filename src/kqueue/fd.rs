@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::{ptr, task};
 
-use crate::{kqueue, SubmissionQueue};
+use crate::{kqueue, lock, SubmissionQueue};
 
 /// State of a file descriptor.
 #[derive(Debug)]
