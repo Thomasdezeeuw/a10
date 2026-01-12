@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr};
 
-use crate::io_uring::{libc, load_kernel_shared, mmap, munmap, op, Shared};
+use crate::io_uring::{Shared, libc, load_kernel_shared, mmap, munmap, op};
 use crate::{asan, debug_detail, lock};
 
 #[derive(Debug)]

@@ -20,9 +20,9 @@ use crate::extract::{Extract, Extractor};
 use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadNBuf, SkipBuf};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::io::{ReadBuf, ReadBufPool};
-use crate::op::{fd_iter_operation, fd_operation, operation, OpState};
+use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
-use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
 pub mod option;
 

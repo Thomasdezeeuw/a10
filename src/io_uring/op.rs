@@ -1,17 +1,17 @@
 use std::cell::UnsafeCell;
+use std::io;
 use std::mem::{self, MaybeUninit, replace};
 use std::panic::RefUnwindSafe;
 use std::ptr::{self, NonNull};
-use std::sync::{Mutex};
+use std::sync::Mutex;
 use std::task::{self, Poll};
-use std::{io};
 
-use crate::{SubmissionQueue, AsyncFd, lock};
-use crate::io_uring::cq::Completion;
-use crate::io_uring::sq::{Submission, QueueFull};
-use crate::io_uring::{libc};
-use crate::op::OpState;
 use crate::asan;
+use crate::io_uring::cq::Completion;
+use crate::io_uring::libc;
+use crate::io_uring::sq::{QueueFull, Submission};
+use crate::op::OpState;
+use crate::{AsyncFd, SubmissionQueue, lock};
 
 /// State of an operation.
 ///
@@ -112,7 +112,14 @@ impl<T, R, A> OpState for State<T, R, A> {
         // unique access to all the state date.
         let data = unsafe { self.data.as_ref() };
         if let Status::NotStarted = lock(&data.shared).status {
-            Some(unsafe { self.data.as_mut().tail.resources.get_mut().assume_init_mut() })
+            Some(unsafe {
+                self.data
+                    .as_mut()
+                    .tail
+                    .resources
+                    .get_mut()
+                    .assume_init_mut()
+            })
         } else {
             None
         }
@@ -416,7 +423,7 @@ impl<T: Op> crate::op::Op for T {
     }
 }
 
-pub(crate) trait OpExtract: Op  {
+pub(crate) trait OpExtract: Op {
     type ExtractOutput;
 
     /// Same as [`Op::map_ok`], returning the extract output.
@@ -506,8 +513,6 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
         }
     }
 }
-
-
 
 pub(crate) trait FdOp {
     type Output;
@@ -610,7 +615,7 @@ impl<T: FdOp> crate::op::FdOp for T {
     }
 }
 
-pub(crate) trait FdOpExtract: FdOp  {
+pub(crate) trait FdOpExtract: FdOp {
     type ExtractOutput;
 
     /// Same as [`Op::map_ok`], returning the extract output.
@@ -718,11 +723,7 @@ pub(crate) trait FdIter {
     /// Similar to [`FdOp::map_ok`], but this processes one of the results.
     /// Meaning it only have a reference to the resources and doesn't take
     /// ownership of it.
-    fn map_next(
-        fd: &AsyncFd,
-        resources: &Self::Resources,
-        op_return: OpReturn,
-    ) -> Self::Output;
+    fn map_next(fd: &AsyncFd, resources: &Self::Resources, op_return: OpReturn) -> Self::Output;
 }
 
 // TODO: DRY this with the Op like impls.
@@ -794,7 +795,13 @@ impl<T: FdIter> crate::op::FdIter for T {
                     drop(shared);
                     // SAFETY: this is only safe because we set the status to
                     // Complete above.
-                    unsafe { data.tail.resources.get().cast::<Self::Resources>().drop_in_place() };
+                    unsafe {
+                        data.tail
+                            .resources
+                            .get()
+                            .cast::<Self::Resources>()
+                            .drop_in_place()
+                    };
                     return Poll::Ready(None);
                 }
                 let op_return = result.0.remove(0).as_op_return()?;

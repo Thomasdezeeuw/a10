@@ -3,7 +3,7 @@
 // Let's make it easier with all the `cfg`s.
 #![allow(unused_variables)]
 
-use std::ffi::{c_void, CString};
+use std::ffi::{CString, c_void};
 use std::mem;
 
 use crate::io::{IoMutSlice, IoSlice};

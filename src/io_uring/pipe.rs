@@ -3,7 +3,7 @@ use std::os::fd::RawFd;
 use crate::io_uring::op::{Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{fd, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd};
 
 pub(crate) struct PipeOp;
 

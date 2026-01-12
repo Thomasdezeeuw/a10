@@ -2,7 +2,7 @@ use std::io;
 
 use crate::kqueue::op::DirectOp;
 use crate::mem::AdviseFlag;
-use crate::{syscall, SubmissionQueue};
+use crate::{SubmissionQueue, syscall};
 
 pub(crate) struct AdviseOp;
 

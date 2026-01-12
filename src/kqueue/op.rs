@@ -3,8 +3,8 @@ use std::mem::replace;
 use std::task::{self, Poll};
 use std::{fmt, io};
 
-use crate::kqueue::fd::OpKind;
 use crate::kqueue::Event;
+use crate::kqueue::fd::OpKind;
 use crate::op::OpState;
 use crate::{AsyncFd, SubmissionQueue};
 

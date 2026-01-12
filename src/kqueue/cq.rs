@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use std::{cmp, io, mem, ptr};
 
-use crate::kqueue::{self, fd, Event, Shared};
+use crate::kqueue::{self, Event, Shared, fd};
 use crate::{lock, syscall};
 
 /// User data to wake up the polling thread.

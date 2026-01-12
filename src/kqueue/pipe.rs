@@ -4,11 +4,11 @@ use std::os::fd::RawFd;
 use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::kqueue::op::{impl_fd_op, DirectFdOp, DirectOp};
+use crate::kqueue::op::{DirectFdOp, DirectOp, impl_fd_op};
 use crate::kqueue::{self, cq, sq};
 use crate::net::{AddressStorage, Domain, NoAddress, OptionStorage, Protocol, SocketAddress, Type};
 use crate::pipe::PipeFlag;
-use crate::{fd, syscall, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct PipeOp;
 

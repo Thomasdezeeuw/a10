@@ -9,8 +9,8 @@
 use std::fmt;
 use std::mem::swap;
 use std::os::fd::OwnedFd;
-use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 
 use crate::{debug_detail, lock};
 

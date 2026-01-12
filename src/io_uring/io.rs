@@ -3,8 +3,8 @@ use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::{self, NonNull};
-use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU16, Ordering};
 use std::{io, slice};
 
 use crate::io::{
@@ -12,7 +12,7 @@ use crate::io::{
 };
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{self, libc, sq};
-use crate::{asan, fd, lock, msan, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, lock, msan};
 
 pub(crate) use crate::unix::{IoMutSlice, IoSlice};
 pub(crate) use std::io::*; // So we don't have to worry about importing `std::io`.

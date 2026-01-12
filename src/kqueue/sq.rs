@@ -1,9 +1,9 @@
 use std::os::fd::AsRawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{io, mem, ptr};
 
-use crate::kqueue::{self, cq, Event, Shared};
+use crate::kqueue::{self, Event, Shared, cq};
 use crate::{lock, syscall};
 
 #[derive(Clone, Debug)]

@@ -3,9 +3,9 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::fs::{path_from_cstring, FileType, Permissions};
+use crate::fs::{FileType, Permissions, path_from_cstring};
 use crate::kqueue::op::{DirectOp, DirectOpEtract};
-use crate::{fd, syscall, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct OpenOp;
 

@@ -9,7 +9,7 @@ use std::process::{Child, ExitStatus};
 use std::{fmt, io, ptr};
 
 use crate::op::{fd_operation, operation};
-use crate::{fd, man_link, new_flag, sys, syscall, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
 
 /// Wait on the child `process`.
 ///

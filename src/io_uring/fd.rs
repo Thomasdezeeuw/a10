@@ -2,12 +2,12 @@ use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
+use crate::SubmissionQueue;
 use crate::fd::{self, AsyncFd, Kind};
 use crate::io_uring::libc;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::sq::{self, Submission};
 use crate::op::fd_operation;
-use crate::SubmissionQueue;
 
 /// io_uring specific methods.
 impl AsyncFd {

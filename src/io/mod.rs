@@ -54,7 +54,7 @@ use std::{io, ptr};
 
 use crate::extract::{Extract, Extractor};
 use crate::op::{fd_iter_operation, fd_operation, operation};
-use crate::{man_link, new_flag, sys, AsyncFd};
+use crate::{AsyncFd, man_link, new_flag, sys};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod read_buf;

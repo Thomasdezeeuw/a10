@@ -7,10 +7,10 @@ use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool}
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::net::{
-    option, AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage,
-    Protocol, RecvFlag, SendCall, SendFlag, SocketAddress, Type,
+    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
 };
-use crate::{asan, fd, msan, AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) use crate::unix::MsgHeader;
 

@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use std::{env, io, str};
 
-use a10::net::{socket, Domain, Type};
+use a10::net::{Domain, Type, socket};
 use a10::{Ring, SubmissionQueue};
 
 mod runtime;

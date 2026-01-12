@@ -1,15 +1,15 @@
 use std::ffi::CString;
-use std::time::{SystemTime, Duration};
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
+use std::time::{Duration, SystemTime};
 
 use crate::fs::{
-    AdviseFlag, AllocateFlag, Metadata, MetadataInterest, RemoveFlag, SyncDataFlag,
-    path_from_cstring, Permissions, FileType
+    AdviseFlag, AllocateFlag, FileType, Metadata, MetadataInterest, Permissions, RemoveFlag,
+    SyncDataFlag, path_from_cstring,
 };
+use crate::io_uring::op::{FdOp, Op, OpExtract, OpReturn};
 use crate::io_uring::{libc, sq};
-use crate::io_uring::op::{Op, OpExtract, OpReturn, FdOp};
 use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct OpenOp;
@@ -39,11 +39,7 @@ impl Op for OpenOp {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(
-        sq: &SubmissionQueue,
-        resources: Self::Resources,
-        ret: OpReturn,
-    ) -> Self::Output {
+    fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(sq, resources, ret).0
     }
 }
@@ -132,11 +128,7 @@ impl Op for RenameOp {
         submission.0.len = libc::AT_FDCWD as u32;
     }
 
-    fn map_ok(
-        _: &SubmissionQueue,
-        (from, to): Self::Resources,
-        (_, n): OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (from, to): Self::Resources, (_, n): OpReturn) -> Self::Output {
         asan::unpoison_cstring(&from);
         asan::unpoison_cstring(&to);
         debug_assert!(n == 0);

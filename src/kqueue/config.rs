@@ -2,11 +2,11 @@
 
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::sync::atomic::AtomicBool;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicBool;
 use std::{io, mem, ptr};
 
-use crate::kqueue::{self, cq, Completions, Shared, Submissions};
+use crate::kqueue::{self, Completions, Shared, Submissions, cq};
 use crate::syscall;
 
 #[derive(Debug, Clone)]

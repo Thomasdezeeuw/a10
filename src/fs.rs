@@ -8,8 +8,8 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use std::{fmt, io, mem, str};
 
-use crate::op::{fd_operation, operation, OpState};
-use crate::{fd, man_link, new_flag, sys, AsyncFd, SubmissionQueue};
+use crate::op::{OpState, fd_operation, operation};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
 /// Options used to configure how a file ([`AsyncFd`]) is opened.
 #[derive(Clone, Debug)]

@@ -5,8 +5,8 @@ use std::os::fd::RawFd;
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, NO_OFFSET};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectOp, FdOp, FdOpExtract};
-use crate::kqueue::{self, cq, sq, Event};
-use crate::{asan, fd, msan, syscall, AsyncFd, SubmissionQueue};
+use crate::kqueue::{self, Event, cq, sq};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;

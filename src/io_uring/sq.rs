@@ -1,9 +1,9 @@
 use std::os::fd::RawFd;
-use std::sync::atomic::{self, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{self, Ordering};
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{cq, libc, load_kernel_shared, Shared};
+use crate::io_uring::{Shared, cq, libc, load_kernel_shared};
 use crate::{asan, lock};
 
 #[derive(Clone, Debug)]
