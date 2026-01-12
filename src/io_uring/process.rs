@@ -12,7 +12,7 @@ pub(crate) struct WaitIdOp;
 
 impl Op for WaitIdOp {
     type Output = WaitInfo;
-    type Resources = Box<WaitInfo>;
+    type Resources = WaitInfo;
     type Args = (WaitOn, WaitOption);
 
     #[allow(clippy::cast_sign_loss)]
@@ -30,9 +30,8 @@ impl Op for WaitIdOp {
         submission.0.opcode = libc::IORING_OP_WAITID as u8;
         submission.0.fd = pid as RawFd;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            addr2: ptr::from_mut(&mut **info).addr() as u64,
+            addr2: ptr::from_mut(info).addr() as u64,
         };
-        asan::poison_box(info);
         submission.0.len = id_type;
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             file_index: options.0,
@@ -40,10 +39,8 @@ impl Op for WaitIdOp {
     }
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_box(&info);
-        msan::unpoison_box(&info);
         debug_assert!(n == 0);
-        *info
+        info
     }
 }
 
@@ -62,7 +59,7 @@ pub(crate) struct ReceiveSignalOp;
 
 impl FdOp for ReceiveSignalOp {
     type Output = SignalInfo;
-    type Resources = Box<SignalInfo>;
+    type Resources = SignalInfo;
     type Args = ();
 
     fn fill_submission(
@@ -75,17 +72,14 @@ impl FdOp for ReceiveSignalOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: (&raw mut info.0) as u64,
+            addr: ptr::from_mut(info).addr() as u64,
         };
-        asan::poison_box(info);
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
     }
 
     fn map_ok(_: &AsyncFd, info: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_box(&info);
-        msan::unpoison_box(&info);
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        SignalInfo(info.0)
+        info
     }
 }

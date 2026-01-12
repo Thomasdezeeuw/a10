@@ -28,7 +28,7 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>
 #[doc(alias = "waitid")]
 pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> WaitId {
     // SAFETY: fully zeroed `libc::siginfo_t` is a valid value.
-    let info = unsafe { Box::new(mem::zeroed()) };
+    let info = unsafe { mem::zeroed() };
     let options = match options {
         Some(options) => options,
         None => WaitOption(0),
@@ -249,7 +249,7 @@ impl Signals {
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
         // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
-        let info = unsafe { Box::new(mem::zeroed()) };
+        let info = unsafe { mem::zeroed() };
         ReceiveSignal::new(&self.fd, info, ())
     }
 
