@@ -175,6 +175,14 @@ impl SubmissionQueue {
     pub(crate) fn submissions(&self) -> &sys::Submissions {
         &self.0
     }
+
+    /// Returns itself.
+    ///
+    /// Used by the operation macro to be generic over `SubmissionQueue` and
+    /// `AsyncFd`.
+    pub(crate) const fn sq(&self) -> &SubmissionQueue {
+        self
+    }
 }
 
 /// Helper macro to execute a system call that returns an `io::Result`.

@@ -126,6 +126,13 @@ pub(crate) trait OpState {
 
     /// Mutable reference to the arguments if the operation wasn't started yet.
     fn args_mut(&mut self) -> Option<&mut Self::Args>;
+
+    /// Drop the operation state.
+    ///
+    /// # SAFETY
+    ///
+    /// May only be called once in the Drop implementation.
+    unsafe fn drop(&mut self, sq: &SubmissionQueue);
 }
 
 /// Create a [`Future`] based on [`Op`].
@@ -292,6 +299,13 @@ macro_rules! new_operation {
                 let mut f = f.debug_struct(::std::concat!(::std::stringify!($name)));
                 $( f.field(::std::stringify!($field_name), &self.$field_name); )*
                 f.field("state", &self.state).finish()
+            }
+        }
+
+        impl<$( $( $lifetime, )* $( $( $resources $( : $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen : $gen_trait )? )?> ::std::ops::Drop for $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            fn drop(&mut self) {
+                // SAFETY: we're in the drop implementation.
+                unsafe { <<$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::State as $crate::op::OpState>::drop(&mut self.state, $( &self.$field_name.sq() ),* ) }
             }
         }
     };

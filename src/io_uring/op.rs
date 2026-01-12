@@ -28,6 +28,7 @@ use crate::op::OpState;
 ///  * usage & interactions.
 ///  * drop function
 ///  * how to keep the resources alive.
+///  * how operations are canceled on drop.
 #[derive(Debug)]
 pub(crate) struct State<T, R, A> {
     data: NonNull<Data<T, R, A>>,
@@ -127,8 +128,48 @@ impl<T, R, A> OpState for State<T, R, A> {
             None
         }
     }
+
+    unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+        {
+            let mut shared = unsafe { lock(&self.data.as_ref().shared) };
+            if matches!(&shared.status, Status::Running { .. }) {
+                let user_data = self.data.expose_provenance().get() as u64;
+                if let Err(err) = sq.submissions().cancel(user_data) {
+                    log::debug!("failed to cancel operation, will wait on result: {err}");
+                }
+
+                // Operation is still running, mark the status as dropped and
+                // delay the dropping until the operation is done. This is done
+                // in [`Shared::update`].
+                shared.status = Status::Dropped;
+                return;
+            }
+        } // Drop all references to the data.
+
+        // Operation is not running, so we can safely drop it.
+        unsafe { drop_state::<T, R, A>(self.data.as_ptr().cast()) };
+    }
 }
 
+/// Drop `Data` pointed to be `ptr`.
+///
+/// # SAFETY
+///
+/// Caller must ensure the point is safe to drop.
+unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
+    let ptr = ptr.cast::<Data<T, R, A>>();
+    // We have to manually drop the resources as it uses MaybeUninit.
+    // SAFETY: if we're called we're dropping the value, thus we should have
+    // unique acess.
+    let data = unsafe { &mut *ptr };
+    if !matches!(lock(&data.shared).status, Status::Complete) {
+        // SAFETY: Resources must always be initialise if the status is not
+        // Complete, which we checked above.
+        unsafe { data.tail.resources.get_mut().assume_init_drop() }
+    }
+    drop(data); // Drop any (mutable) reference before we call Box::from_raw.
+    mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
+}
 
 impl<T: OpResult> Shared<T> {
     /// Update the operation based on a `completion` event.
@@ -194,38 +235,7 @@ impl<T, R, A> Unpin for State<T, R, A> {}
 
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
 
-impl<T, R, A> Drop for State<T, R, A> {
-    fn drop(&mut self) {
-        {
-            let mut shared = unsafe { lock(&self.data.as_ref().shared) };
-            if matches!(&shared.status, Status::Running { .. }) {
-                // Operation is still running, mark the status as dropped and
-                // delay the dropping until the operation is done. This is done
-                // in [`Shared::update`].
-                shared.status = Status::Dropped;
-                return;
-            }
-        } // Drop all references to the data.
 
-        // Operation is not running, so we can safely drop it.
-        unsafe { drop_state::<T, R, A>(self.data.as_ptr().cast()) };
-    }
-}
-
-unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
-    let ptr = ptr.cast::<Data<T, R, A>>();
-    // We have to manually drop the resources as it uses MaybeUninit.
-    // SAFETY: if we're called we're dropping the value, thus we should have
-    // unique acess.
-    let data = unsafe { &mut *ptr };
-    if !matches!(lock(&data.shared).status, Status::Complete) {
-        // SAFETY: Resources must always be initialise if the status is not
-        // Complete, which we checked above.
-        unsafe { data.tail.resources.get_mut().assume_init_drop() }
-    }
-    drop(data); // Drop any (mutable) reference before we call Box::from_raw.
-    mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
-}
 
 /// Container for the [`CompletionResult`]. Either [`Singleshot`] or
 /// [`Multishot`].

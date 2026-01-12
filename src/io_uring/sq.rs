@@ -72,6 +72,17 @@ impl Submissions {
         Ok(())
     }
 
+    /// Asynchronously cancel an operation.
+    pub(super) fn cancel(&self, user_data: u64) -> Result<(), QueueFull> {
+        self.add(|submission| {
+            submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
+            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: user_data };
+            // We'll get a canceled completion event if we succeeded, which is
+            // sufficient to cleanup the operation.
+            submission.no_success_event();
+        })
+    }
+
     pub(crate) fn wake(&self) -> io::Result<()> {
         if !self.shared.is_polling.load(Ordering::Acquire) {
             // If we're not polling we don't need to wake up.
