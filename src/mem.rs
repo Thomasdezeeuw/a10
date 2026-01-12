@@ -94,6 +94,20 @@ new_flag!(
         /// Populate (prefault) page tables writable, faulting in all pages.
         #[cfg(any(target_os = "android", target_os = "linux"))]
         POPULATE_WRITE = libc::MADV_POPULATE_WRITE,
+        /// Zero out the pages in the address range if it is deallocated without
+        /// first unwiring the pages (i.e. a munmap(2) without a preceding
+        /// munlock(2) or the application quits).
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
+        ZERO_WIRED_PAGES = libc::MADV_ZERO_WIRED_PAGES,
+        /* TODO: needs https://github.com/rust-lang/libc/pull/4924.
+        /// Zero out the pages in the address range without causing unnecessary
+        /// memory accesses.
+        ///
+        /// This could return `ENOTSUP` in some situations, in which case the
+        /// caller should fall back to zeroing the range themselves.
+        #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
+        ZERO = libc::MADV_ZERO,
+        */
     }
 );
 
