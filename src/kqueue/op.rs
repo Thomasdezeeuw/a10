@@ -40,6 +40,10 @@ impl<R, A> OpState for DirectState<R, A> {
             None
         }
     }
+
+    unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+        // Nothing special to do.
+    }
 }
 
 /// Operation that is done using a synchronous function.
@@ -154,6 +158,10 @@ impl<R, A> OpState for EventedState<R, A> {
         } else {
             None
         }
+    }
+
+    unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+        // Nothing special to do.
     }
 }
 
