@@ -20,7 +20,6 @@ pub(crate) mod mem;
 pub(crate) mod net;
 pub(crate) mod op;
 pub(crate) mod pipe;
-pub(crate) mod poll;
 pub(crate) mod sq;
 
 pub(crate) use config::Config;
