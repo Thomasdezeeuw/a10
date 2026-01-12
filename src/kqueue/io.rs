@@ -125,3 +125,49 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
         (buf, n as usize)
     }
 }
+
+pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>);
+
+impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
+    type Output = usize;
+    type Resources = (B, [crate::io::IoSlice; N]);
+    type Args = u64; // Offset.
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (bufs, iovecs): &mut Self::Resources,
+        offset: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        // io_uring uses `NO_OFFSET` to issue a `writev` system call, otherwise
+        // it uses `pwritev`. We emulate the same thing.
+        if *offset == NO_OFFSET {
+            syscall!(writev(fd.fd(), iovecs.as_ptr() as _, iovecs.len() as _))
+        } else {
+            syscall!(pwritev(
+                fd.fd(),
+                iovecs.as_ptr() as _,
+                iovecs.len() as _,
+                *offset as _
+            ))
+        }
+    }
+
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        Self::map_ok_extract(fd, resources, n).1
+    }
+}
+
+impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        _: &AsyncFd,
+        (bufs, _): Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (bufs, n as usize)
+    }
+}
