@@ -1,5 +1,6 @@
 //! Types shared across Unix-like implementations.
 
+use std::fmt;
 use std::mem::{self, MaybeUninit};
 
 use crate::io::{Buf, BufMut};
@@ -41,6 +42,15 @@ impl IoMutSlice {
 unsafe impl Send for IoMutSlice {}
 unsafe impl Sync for IoMutSlice {}
 
+impl fmt::Debug for IoMutSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IoMutSlice")
+            .field("ptr", &self.ptr())
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
 #[repr(transparent)] // Needed for I/O.
 pub(crate) struct IoSlice(libc::iovec);
 
@@ -77,6 +87,12 @@ impl IoSlice {
 // it's actually `Send` and `Sync`.
 unsafe impl Send for IoSlice {}
 unsafe impl Sync for IoSlice {}
+
+impl fmt::Debug for IoSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("IoSlice").field(&self.as_bytes()).finish()
+    }
+}
 
 #[repr(transparent)] // Needed for system calls.
 pub(crate) struct MsgHeader(libc::msghdr);
@@ -134,3 +150,17 @@ impl MsgHeader {
 // `iovecs` (`IoMutSlice`/`IoSlice`) are `Send` and `Sync`.
 unsafe impl Send for MsgHeader {}
 unsafe impl Sync for MsgHeader {}
+
+impl fmt::Debug for MsgHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MsgHeader")
+            .field("msg_name", &self.0.msg_name)
+            .field("msg_namelen", &self.0.msg_namelen)
+            .field("msg_iov", &self.0.msg_iov)
+            .field("msg_iovlen", &self.0.msg_iovlen)
+            .field("msg_control", &self.0.msg_control)
+            .field("msg_controllen", &self.0.msg_controllen)
+            .field("msg_flags", &self.0.msg_flags)
+            .finish()
+    }
+}
