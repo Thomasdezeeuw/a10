@@ -105,7 +105,7 @@ pub(super) struct OpState {
 
 /// Kind of operation (or filter in kqueue terminology).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub(super) enum OpKind {
+pub(crate) enum OpKind {
     /// EVFILT_READ
     Read,
     /// EVFILT_WRITE
