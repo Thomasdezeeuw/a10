@@ -57,6 +57,7 @@ pub mod io;
 pub mod mem;
 pub mod net;
 pub mod pipe;
+pub mod process;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
