@@ -47,9 +47,9 @@ impl<'r> crate::Config<'r> {
     /// Set the size of the io_uring submission queue.
     ///
     /// It must be a power of two. Defaults to 32. Also see
-    /// [`Config::maximum_queue_size`] to set the maximum queue size.
+    /// [`Config::with_maximum_queue_size`] to set the maximum queue size.
     ///
-    /// [`Config::maximum_queue_size`]: crate::Config::maximum_queue_size
+    /// [`Config::with_maximum_queue_size`]: crate::Config::with_maximum_queue_size
     #[doc(alias = "io_uring_setup")]
     pub const fn with_submission_queue_size(mut self, entries: u32) -> Self {
         self.sys.submission_entries = entries;
@@ -59,10 +59,10 @@ impl<'r> crate::Config<'r> {
     /// Set the size of the io_uring completion queue.
     ///
     /// It must be a power of two. Defaults to twice the size of the submission
-    /// queue. Also see [`Config::maximum_queue_size`] to set the maximum queue
-    /// size.
+    /// queue. Also see [`Config::with_maximum_queue_size`] to set the maximum
+    /// queue size.
     ///
-    /// [`Config::maximum_queue_size`]: crate::Config::maximum_queue_size
+    /// [`Config::with_maximum_queue_size`]: crate::Config::with_maximum_queue_size
     #[doc(alias = "IORING_SETUP_CQSIZE")]
     pub const fn with_completion_queue_size(mut self, entries: u32) -> Self {
         self.sys.completion_entries = Some(entries);

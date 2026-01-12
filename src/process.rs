@@ -291,7 +291,7 @@ fd_operation!(
 
 /// Process signal information.
 ///
-/// See [`Signals::receive`] and [`Signals::receive_signals`].
+/// See [`Signals::receive`].
 #[repr(transparent)]
 pub struct SignalInfo(pub(crate) libc::signalfd_siginfo);
 
