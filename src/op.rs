@@ -219,6 +219,7 @@ macro_rules! new_operation {
         }
 
         impl<$( $( $lifetime, )* $( $( $resources: $( $trait )?, )+ $(const $const_generic: $const_ty, )? )? $( $gen: $gen_trait )? )?> $name<$( $( $lifetime, )* $( $( $resources, )+ $( $const_generic, )? )? $( $gen )? )?> {
+            #[allow(private_interfaces)]
             pub(crate) fn new(
                 $( $field_name: $field_type )*,
                 resources: <$sys $( $(, $gen )? )? as $crate::op::$trait_bound>::Resources,

@@ -174,6 +174,7 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
     mem::drop(unsafe { Box::<Data<T, R, A>>::from_raw(ptr) });
 }
 
+#[allow(private_bounds)]
 impl<T: OpResult> Shared<T> {
     /// Update the operation based on a `completion` event.
     ///
