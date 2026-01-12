@@ -473,7 +473,7 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, iovecs): Self::Resources,
+        (buf, _): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         (buf, n as usize)

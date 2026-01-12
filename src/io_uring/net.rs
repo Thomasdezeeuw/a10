@@ -69,7 +69,7 @@ impl<A: SocketAddress> FdOp for BindOp<A> {
         };
     }
 
-    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -122,7 +122,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
         };
     }
 
-    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -461,7 +461,7 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, address): Self::Resources,
+        (buf, _): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         let (buf_ptr, buf_len) = unsafe { buf.parts() };
@@ -515,7 +515,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, msg, iovecs, address): Self::Resources,
+        (buf, _, iovecs, _): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         asan::unpoison_iovecs(&iovecs);
@@ -782,7 +782,7 @@ impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
         };
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
