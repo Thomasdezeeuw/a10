@@ -12,8 +12,6 @@ mod fs;
 mod io;
 #[path = "functional/mem.rs"]
 mod mem;
-#[path = "functional/msg.rs"]
-mod msg;
 #[path = "functional/net.rs"]
 mod net;
 #[path = "functional/net_options.rs"]
