@@ -52,7 +52,6 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
 use crate::op::{fd_iter_operation, fd_operation, operation};
 use crate::{man_link, new_flag, sys, AsyncFd};

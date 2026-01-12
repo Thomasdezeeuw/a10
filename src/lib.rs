@@ -51,7 +51,6 @@ mod op;
 #[cfg(unix)]
 mod unix;
 
-pub mod cancel;
 pub mod extract;
 pub mod fs;
 pub mod io;
@@ -82,8 +81,6 @@ mod kqueue;
 ))]
 use kqueue as sys;
 
-#[doc(no_inline)]
-pub use cancel::Cancel;
 #[doc(inline)]
 pub use config::Config;
 #[doc(no_inline)]
