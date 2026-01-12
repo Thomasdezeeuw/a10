@@ -463,8 +463,8 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok(_: &AsyncFd, (_, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
-        n as usize
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret).1
     }
 }
 
