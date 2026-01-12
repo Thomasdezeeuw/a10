@@ -75,7 +75,7 @@ pub(crate) struct BindOp<A>(PhantomData<*const A>);
 
 impl<A: SocketAddress> DirectFdOp for BindOp<A> {
     type Output = ();
-    type Resources = AddressStorage<Box<A::Storage>>;
+    type Resources = AddressStorage<A::Storage>;
     type Args = ();
 
     fn run(fd: &AsyncFd, address: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
