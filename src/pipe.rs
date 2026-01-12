@@ -34,7 +34,7 @@ use crate::{man_link, new_flag, sys, SubmissionQueue};
 #[doc = man_link!(pipe(2))]
 pub fn pipe(sq: SubmissionQueue, flags: Option<PipeFlag>) -> Pipe {
     let flags = flags.unwrap_or(PipeFlag(0));
-    let resources = (Box::new([-1, -1]), fd::Kind::File);
+    let resources = ([-1, -1], fd::Kind::File);
     Pipe::new(sq, resources, flags)
 }
 
