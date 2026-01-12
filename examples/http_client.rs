@@ -6,14 +6,14 @@
 use std::net::SocketAddr;
 use std::{env, io, str};
 
-use a10::net::{Domain, Type, socket};
+use a10::net::{socket, Domain, Type};
 use a10::{Ring, SubmissionQueue};
 
 mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
-    let mut ring = Ring::new(2)?;
+    let mut ring = Ring::new()?;
 
     // Read the host, e.g. thomasdezeeuw.nl, this doesn't accept a scheme, path
     // or anything else.
