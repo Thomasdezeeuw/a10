@@ -77,7 +77,7 @@ impl ReadBufPool {
             // Reserved for future use.
             resv: [0; 3],
         };
-        log::trace!(ring_fd = ring_fd, buffer_group = id, size = pool_size; "registering buffer pool");
+        log::trace!(ring_fd, buffer_group = id, size = pool_size; "registering buffer pool");
 
         let result = sq.submissions().shared().register(
             libc::IORING_REGISTER_PBUF_RING,
@@ -123,7 +123,7 @@ impl ReadBufPool {
         };
         for (i, ring_buf) in bufs.iter_mut().enumerate() {
             let addr = unsafe { pool.bufs_addr.add(i * buf_size as usize) };
-            log::trace!(buffer_group = id, buffer = i, addr:? = addr, len = buf_size; "registering buffer");
+            log::trace!(buffer_group = id, buffer = i, addr:?, len = buf_size; "registering buffer");
             ring_buf.write(libc::io_uring_buf {
                 addr: addr as u64,
                 len: buf_size,

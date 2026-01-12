@@ -41,7 +41,7 @@ impl Completions {
         };
         drop(change_list); // Unlock, to not block others.
 
-        log::trace!(submissions = changes.len(), timeout:? = timeout; "waiting for events");
+        log::trace!(submissions = changes.len(), timeout:?; "waiting for events");
         shared.is_polling.store(true, Ordering::Release);
         let result = syscall!(kevent(
             shared.kq.as_raw_fd(),
@@ -94,7 +94,7 @@ impl Completions {
                 continue;
             }
 
-            log::trace!(event:? = event; "got event");
+            log::trace!(event:?; "got event");
             match event.0.filter {
                 libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => continue,
                 libc::EVFILT_USER => {
@@ -110,7 +110,7 @@ impl Completions {
                     // always valid (the kernel should copy it over for us).
                     lock(unsafe { &*ptr }).wake(&event);
                 }
-                _ => log::debug!(event:? = event; "unexpected event, ignoring it"),
+                _ => log::debug!(event:?; "unexpected event, ignoring it"),
             }
         }
         Ok(())

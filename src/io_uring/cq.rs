@@ -75,7 +75,7 @@ impl Completions {
             // SAFETY: the pointer is valid and we've ensured above that the
             // kernel has written a new completion.
             let completion = unsafe { &*ptr };
-            log::trace!(completion:? = completion, index, head; "dequeued completion");
+            log::trace!(completion:?, index, head; "dequeued completion");
             // SAFETY: we're only processing the completion once.
             unsafe { completion.process() };
             asan::poison_region(ptr.cast(), size_of::<Completion>());
@@ -118,7 +118,7 @@ impl Completions {
         // If there are no completions we'll wait for at least one.
         let flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
             | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
-        log::trace!(submissions, timeout:? = timeout; "waiting for completion events");
+        log::trace!(submissions, timeout:?; "waiting for completion events");
         shared.is_polling.store(true, Ordering::Release);
         let result = shared.enter(
             submissions,
@@ -154,6 +154,7 @@ impl Completions {
         drop(blocked_futures); // Unblock others.
         let awoken = min(available, wakers.len());
         for waker in wakers.drain(..awoken) {
+            log::trace!(waker:?; "waking up future for submission");
             waker.wake();
         }
 
@@ -163,6 +164,7 @@ impl Completions {
         if wakers.len() <= available - awoken {
             drop(blocked_futures); // Unblock others.
             for waker in wakers {
+                log::trace!(waker:?; "waking up future for submission");
                 waker.wake();
             }
         } else {
@@ -186,7 +188,7 @@ impl Drop for Completions {
         let ptr = self.ring;
         let len = self.ring_len as usize;
         if let Err(err) = munmap(ptr, len) {
-            log::warn!(ptr:? = ptr, len; "error unmapping io_uring submission ring: {err}");
+            log::warn!(ptr:?, len; "error unmapping io_uring submission ring: {err}");
         }
     }
 }
@@ -234,10 +236,17 @@ impl Completion {
         };
         match update {
             op::StatusUpdate::Ok => { /* Done. */ }
-            op::StatusUpdate::Wake(waker) => waker.wake(),
-            // SAFETY: `update` told use to drop all the operation data.
-            // The operation future itself ensures that we only get here if  1
-            op::StatusUpdate::Drop { drop, ptr } => unsafe { drop(ptr) },
+            op::StatusUpdate::Wake(waker) => {
+                log::trace!(waker:?; "waking up future to make progress");
+                waker.wake()
+            }
+            op::StatusUpdate::Drop { drop, ptr } => {
+                log::trace!(ptr:?; "dropping operation state");
+                // SAFETY: `update` told use to drop all the operation data. The
+                // operation future itself ensures that we only get here if the
+                // Future is dropped and the state is no longer used.
+                unsafe { drop(ptr) }
+            }
         };
     }
 

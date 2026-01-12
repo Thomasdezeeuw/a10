@@ -66,7 +66,7 @@ impl Submissions {
         unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
         drop(submissions_guard);
 
-        log::trace!(submission:? = submission, index, tail, new_tail; "queueing submission");
+        log::trace!(submission:?, index, tail, new_tail; "queueing submission");
         asan::poison(submission);
 
         Ok(())
@@ -122,7 +122,7 @@ impl Submissions {
 
     /// Wait for a submission slot, waking `waker` once one is available.
     pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
-        log::trace!(waker:? = waker; "adding blocked future");
+        log::trace!(waker:?; "adding future waiting on submission slot");
         let shared = &*self.shared;
         lock(&shared.blocked_futures).push(waker);
     }

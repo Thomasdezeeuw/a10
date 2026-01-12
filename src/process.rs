@@ -203,7 +203,7 @@ pub struct Signals {
 impl Signals {
     /// Create a new signal notifier from a signal set.
     pub fn from_set(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
-        log::trace!(signals:? = signals; "setting up signal handling");
+        log::trace!(signals:?; "setting up signal handling");
         let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw(fd, fd::Kind::File, sq) };

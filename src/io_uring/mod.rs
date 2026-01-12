@@ -75,7 +75,7 @@ pub(crate) struct Shared {
     kernel_thread: bool,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     is_polling: AtomicBool,
-    /// Futures that are waiting for a slot in `queued_ops`.
+    /// Futures that are waiting for a slot in submissions.
     blocked_futures: Mutex<Vec<task::Waker>>,
     /// File descriptor of the io_uring.
     /// NOTE: must come last to ensure it's dropped (closed) last.
@@ -187,14 +187,14 @@ impl Drop for Shared {
         let len = (self.submissions_len as usize) * size_of::<sq::Submission>();
         asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
-            log::warn!(ptr:? = ptr, len; "error unmapping io_uring submissions: {err}");
+            log::warn!(ptr:?, len; "error unmapping io_uring submissions: {err}");
         }
 
         let ptr = self.submission_ring;
         let len = self.submission_ring_len as usize;
         asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
-            log::warn!(ptr:? = ptr, len; "error unmapping io_uring submission ring: {err}");
+            log::warn!(ptr:?, len; "error unmapping io_uring submission ring: {err}");
         }
     }
 }

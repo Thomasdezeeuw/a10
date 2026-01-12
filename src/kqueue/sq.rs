@@ -36,7 +36,7 @@ impl Submissions {
         let mut event: Event = unsafe { mem::zeroed() };
         event.0.flags |= libc::EV_RECEIPT | libc::EV_DISPATCH | libc::EV_ENABLE | libc::EV_ADD;
         fill_event(&mut event);
-        log::trace!(event:? = event; "registering event");
+        log::trace!(event:?; "registering event");
 
         // Add the event to the list of waiting events.
         let mut change_list = lock(&shared.change_list);
