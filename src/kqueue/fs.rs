@@ -3,8 +3,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::fs::{FileType, Permissions, RemoveFlag, path_from_cstring};
-use crate::kqueue::op::{DirectOp, DirectOpEtract};
+use crate::fs::{FileType, Permissions, RemoveFlag, SyncDataFlag, path_from_cstring};
+use crate::kqueue::op::{DirectFdOp, DirectOp, DirectOpEtract, impl_fd_op};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct OpenOp;
@@ -140,6 +140,48 @@ impl DirectOpEtract for DeleteOp {
         Ok(path_from_cstring(path))
     }
 }
+
+pub(crate) struct SyncDataOp;
+
+impl DirectFdOp for SyncDataOp {
+    type Output = ();
+    type Resources = ();
+    type Args = SyncDataFlag;
+
+    fn run(fd: &AsyncFd, resources: Self::Resources, flag: Self::Args) -> io::Result<Self::Output> {
+        match flag {
+            #[cfg(not(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            )))]
+            SyncDataFlag::All => syscall!(fsync(fd.fd()))?,
+            #[cfg(not(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            )))]
+            SyncDataFlag::Data => syscall!(fdatasync(fd.fd()))?,
+            #[cfg(any(
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            SyncDataFlag::All | SyncDataFlag::Data => {
+                syscall!(fcntl(fd.fd(), libc::F_FULLFSYNC, 0))?
+            }
+        };
+        Ok(())
+    }
+}
+
+impl_fd_op!(SyncDataOp);
 
 pub(crate) use libc::stat as Stat;
 

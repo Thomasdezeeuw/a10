@@ -254,6 +254,9 @@ impl AsyncFd {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    ///
+    /// On macOS this uses `fcntl(fd, F_FULLFSYNC, 0)` as `fsync(2)` doesn't
+    /// behave as it does on other OS and `F_FULLFSYNC` is.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fsync")]
     pub fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
@@ -272,6 +275,9 @@ impl AsyncFd {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    ///
+    /// On macOS this uses `fcntl(fd, F_FULLFSYNC, 0)` as `fsync(2)` doesn't
+    /// behave as it does on other OS and `F_FULLFSYNC` is.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fdatasync")]
     pub fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
