@@ -105,6 +105,35 @@ impl DirectFdOp for ListenOp {
 
 impl_fd_op!(ListenOp);
 
+pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
+
+impl<T> DirectFdOp for SocketOptionOp<T> {
+    type Output = T;
+    type Resources = MaybeUninit<T>;
+    type Args = (Level, Opt);
+
+    fn run(
+        fd: &AsyncFd,
+        mut value: Self::Resources,
+        (level, optname): Self::Args,
+    ) -> io::Result<Self::Output> {
+        let mut optlen = size_of::<T>() as libc::socklen_t;
+        syscall!(getsockopt(
+            fd.fd(),
+            level.0.cast_signed(),
+            optname.0.cast_signed(),
+            value.as_mut_ptr().cast(),
+            &mut optlen,
+        ))?;
+        // SAFETY: the kernel initialised the value for us as part of the
+        // getsockopt call.
+        debug_assert!(optlen == (size_of::<T>() as libc::socklen_t));
+        Ok(unsafe { MaybeUninit::assume_init(value) })
+    }
+}
+
+impl_fd_op!(SocketOptionOp<T>);
+
 pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
 
 impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
