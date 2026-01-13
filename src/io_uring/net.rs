@@ -368,12 +368,12 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     submission: &mut sq::Submission,
 ) {
     // SAFETY: `address` and `iovecs` outlive `msg`.
-    unsafe { msg.init_recv::<A>(address, iovecs) };
+    let ptr = unsafe { msg.init_recv::<A>(address, iovecs) };
 
     submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
     submission.0.fd = fd;
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-        addr: ptr::from_mut(&mut *msg).addr() as u64,
+        addr: ptr.addr() as u64,
     };
     asan::poison_iovecs_mut(iovecs);
     submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
