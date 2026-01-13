@@ -223,7 +223,7 @@ macro_rules! new_flag {
     (
         $(
         $(#[$type_meta:meta])*
-        $type_vis: vis struct $type_name: ident ( $type_repr: ty ) $(impl BitOr $( $type_or: ty )*)? {
+        $type_vis: vis struct $type_name: ident ( $type_repr: ty ) $( impl BitOr $( $type_or: ty )* )? {
             $(
             $(#[$value_meta:meta])*
             $value_name: ident = $libc: ident :: $value_type: ident,
@@ -242,6 +242,16 @@ macro_rules! new_flag {
             #[allow(trivial_numeric_casts, clippy::cast_sign_loss)]
             $type_vis const $value_name: $type_name = $type_name($libc::$value_type as $type_repr);
             )*
+
+            // Need the value_meta to set the cfg attribute, but that also
+            // includes documentation, which we can ignore.
+            #[allow(unused_doc_comments, dead_code)]
+            const ALL: &[$type_name] = &[
+                $(
+                $(#[$value_meta])*
+                $type_name::$value_name,
+                )*
+            ];
         }
 
         $crate::debug_detail!(impl for $type_name($type_repr) match $( $(#[$value_meta])* $libc::$value_type ),*);
