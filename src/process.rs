@@ -366,53 +366,12 @@ impl SignalSet {
     }
 }
 
-/// Known signals supported by Linux as of v6.3.
-const KNOWN_SIGNALS: &[(libc::c_int, &str)] = &[
-    (libc::SIGHUP, "SIGHUP"),
-    (libc::SIGINT, "SIGINT"),
-    (libc::SIGQUIT, "SIGQUIT"),
-    (libc::SIGILL, "SIGILL"),
-    (libc::SIGTRAP, "SIGTRAP"),
-    (libc::SIGABRT, "SIGABRT"),
-    (libc::SIGIOT, "SIGIOT"),
-    (libc::SIGBUS, "SIGBUS"),
-    (libc::SIGFPE, "SIGFPE"),
-    (libc::SIGKILL, "SIGKILL"),
-    (libc::SIGUSR1, "SIGUSR1"),
-    (libc::SIGSEGV, "SIGSEGV"),
-    (libc::SIGUSR2, "SIGUSR2"),
-    (libc::SIGPIPE, "SIGPIPE"),
-    (libc::SIGALRM, "SIGALRM"),
-    (libc::SIGTERM, "SIGTERM"),
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    (libc::SIGSTKFLT, "SIGSTKFLT"),
-    (libc::SIGCHLD, "SIGCHLD"),
-    (libc::SIGCONT, "SIGCONT"),
-    (libc::SIGSTOP, "SIGSTOP"),
-    (libc::SIGTSTP, "SIGTSTP"),
-    (libc::SIGTTIN, "SIGTTIN"),
-    (libc::SIGTTOU, "SIGTTOU"),
-    (libc::SIGURG, "SIGURG"),
-    (libc::SIGXCPU, "SIGXCPU"),
-    (libc::SIGXFSZ, "SIGXFSZ"),
-    (libc::SIGVTALRM, "SIGVTALRM"),
-    (libc::SIGPROF, "SIGPROF"),
-    (libc::SIGWINCH, "SIGWINCH"),
-    (libc::SIGIO, "SIGIO"),
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    (libc::SIGPOLL, "SIGPOLL"), // NOTE: same value as `SIGIO`.
-    //(libc::SIGLOST, "SIGLOST"),
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    (libc::SIGPWR, "SIGPWR"),
-    (libc::SIGSYS, "SIGSYS"),
-];
-
 impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let signals = KNOWN_SIGNALS
+        let signals = Signal::ALL
             .into_iter()
             .copied()
-            .filter_map(|(signal, name)| self.contains(Signal(signal)).then_some(name));
+            .filter_map(|signal| self.contains(signal).then_some(signal));
         f.debug_set().entries(signals).finish()
     }
 }
