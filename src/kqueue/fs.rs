@@ -3,7 +3,9 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::fs::{FileType, Permissions, RemoveFlag, SyncDataFlag, path_from_cstring};
+use crate::fs::{
+    FileType, Metadata, MetadataInterest, Permissions, RemoveFlag, SyncDataFlag, path_from_cstring,
+};
 use crate::kqueue::op::{DirectFdOp, DirectOp, DirectOpEtract, impl_fd_op};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -148,7 +150,7 @@ impl DirectFdOp for SyncDataOp {
     type Resources = ();
     type Args = SyncDataFlag;
 
-    fn run(fd: &AsyncFd, resources: Self::Resources, flag: Self::Args) -> io::Result<Self::Output> {
+    fn run(fd: &AsyncFd, (): Self::Resources, flag: Self::Args) -> io::Result<Self::Output> {
         match flag {
             #[cfg(not(any(
                 target_os = "ios",
@@ -182,6 +184,25 @@ impl DirectFdOp for SyncDataOp {
 }
 
 impl_fd_op!(SyncDataOp);
+
+pub(crate) const fn default_metadata_interest() -> MetadataInterest {
+    MetadataInterest(0)
+}
+
+pub(crate) struct StatOp;
+
+impl DirectFdOp for StatOp {
+    type Output = Metadata;
+    type Resources = Metadata;
+    type Args = MetadataInterest;
+
+    fn run(fd: &AsyncFd, mut metadata: Self::Resources, _: Self::Args) -> io::Result<Self::Output> {
+        syscall!(fstat(fd.fd(), &mut metadata.0))?;
+        Ok(metadata)
+    }
+}
+
+impl_fd_op!(StatOp);
 
 pub(crate) use libc::stat as Stat;
 

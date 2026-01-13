@@ -286,17 +286,12 @@ impl AsyncFd {
 
     /// Retrieve metadata about the file.
     #[doc = man_link!(statx(2))]
+    #[doc(alias = "stat")]
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
-        // SAFETY: fully zeroed `libc::statx` is a valid value.
+        // SAFETY: fully zeroed `libc::statx` and `libc::stat` are valid values.
         let metadata = unsafe { mem::zeroed() };
-        let interest = MetadataInterest::TYPE
-            | MetadataInterest::MODE
-            | MetadataInterest::ACCESSED_TIME
-            | MetadataInterest::MODIFIED_TIME
-            | MetadataInterest::CREATED_TIME
-            | MetadataInterest::SIZE
-            | MetadataInterest::BLOCKS;
+        let interest = sys::fs::default_metadata_interest();
         Stat::new(self, metadata, interest)
     }
 
@@ -358,21 +353,31 @@ new_flag!(
     /// Interest in specific metadata.
     pub struct MetadataInterest(u32) impl BitOr {
         /// Enables [`Metadata::file_type`] and related `is_*` methods.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         TYPE = libc::STATX_TYPE,
         /// Enables [`Metadata::len`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         SIZE = libc::STATX_SIZE,
         /// Enables [`Metadata::block_size`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         BLOCKS = libc::STATX_BLOCKS,
         /// Enables [`Metadata::permissions`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MODE = libc::STATX_MODE,
         /// Enables [`Metadata::modified`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MODIFIED_TIME = libc::STATX_MTIME,
         /// Enables [`Metadata::accessed`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         ACCESSED_TIME = libc::STATX_ATIME,
         /// Enables [`Metadata::created`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         CREATED_TIME = libc::STATX_BTIME,
     }
+);
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+new_flag!(
     /// Advise about data access.
     ///
     /// See [`AsyncFd::advise`].
@@ -442,7 +447,7 @@ impl<'fd> Stat<'fd> {
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
 #[repr(transparent)]
-pub struct Metadata(sys::fs::Stat);
+pub struct Metadata(pub(crate) sys::fs::Stat);
 
 impl Metadata {
     /// Which field(s) of the metadata are filled (based on the provided
