@@ -4,11 +4,14 @@ use std::os::fd::RawFd;
 use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::kqueue::op::{DirectFdOp, DirectFdOpExtract, DirectOp, impl_fd_op, impl_fd_op_extract};
+use crate::kqueue::fd::OpKind;
+use crate::kqueue::op::{
+    DirectFdOp, DirectFdOpExtract, DirectOp, FdOp, impl_fd_op, impl_fd_op_extract,
+};
 use crate::kqueue::{self, cq, sq};
 use crate::net::{
-    AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, SocketAddress, Type,
-    option,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol,
+    SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -104,6 +107,72 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct AcceptOp<A>(PhantomData<*const A>);
+
+impl<A: SocketAddress> FdOp for AcceptOp<A> {
+    type Output = (AsyncFd, A);
+    type Resources = AddressStorage<(MaybeUninit<A::Storage>, libc::socklen_t)>;
+    type Args = AcceptFlag;
+    type OperationOutput = AsyncFd;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        lfd: &AsyncFd,
+        resources: &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
+        let address_length = &mut (resources.0).1;
+        *address_length = length;
+
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd",
+        ))]
+        let fd = syscall!(accept4(
+            lfd.fd(),
+            ptr,
+            address_length,
+            libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC
+        ))?;
+
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        let fd = syscall!(accept(lfd.fd(), ptr, address_length))?;
+
+        // SAFETY: the accept operation ensures that `fd` is valid.
+        let fd = unsafe { AsyncFd::from_raw(fd, lfd.kind(), lfd.sq().clone()) };
+
+        #[cfg(any(
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        {
+            syscall!(fcntl(fd.fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+            syscall!(fcntl(fd.fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        }
+
+        Ok(fd)
+    }
+
+    fn map_ok(_: &AsyncFd, resources: Self::Resources, fd: Self::OperationOutput) -> Self::Output {
+        // SAFETY: the kernel has written the address for us.
+        let address = unsafe { A::init((resources.0).0, (resources.0).1) };
+        (fd, address)
+    }
+}
 
 pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
