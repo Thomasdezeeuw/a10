@@ -121,7 +121,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
     type Args = (SendCall, SendFlag);
     type OperationOutput = libc::ssize_t;
 
-    const OP_KIND: OpKind = OpKind::Read;
+    const OP_KIND: OpKind = OpKind::Write;
 
     fn try_run(
         fd: &AsyncFd,

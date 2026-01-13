@@ -93,7 +93,7 @@ impl<B: Buf> FdOp for WriteOp<B> {
     type Args = u64; // Offset.
     type OperationOutput = libc::ssize_t;
 
-    const OP_KIND: OpKind = OpKind::Read;
+    const OP_KIND: OpKind = OpKind::Write;
 
     fn try_run(
         fd: &AsyncFd,
@@ -135,7 +135,7 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
     type Args = u64; // Offset.
     type OperationOutput = libc::ssize_t;
 
-    const OP_KIND: OpKind = OpKind::Read;
+    const OP_KIND: OpKind = OpKind::Write;
 
     fn try_run(
         fd: &AsyncFd,
