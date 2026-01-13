@@ -4,7 +4,7 @@ use std::os::fd::RawFd;
 use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::kqueue::op::{DirectFdOp, DirectOp, impl_fd_op};
+use crate::kqueue::op::{DirectFdOp, DirectFdOpExtract, DirectOp, impl_fd_op, impl_fd_op_extract};
 use crate::kqueue::{self, cq, sq};
 use crate::net::{
     AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, SocketAddress, Type,
@@ -104,6 +104,43 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+
+pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
+
+impl<T> DirectFdOp for SetSocketOptionOp<T> {
+    type Output = ();
+    type Resources = T;
+    type Args = (Level, Opt);
+
+    fn run(fd: &AsyncFd, resources: Self::Resources, args: Self::Args) -> io::Result<Self::Output> {
+        Self::run_extract(fd, resources, args)?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(SetSocketOptionOp<T>);
+
+impl<T> DirectFdOpExtract for SetSocketOptionOp<T> {
+    type ExtractOutput = T;
+
+    fn run_extract(
+        fd: &AsyncFd,
+        value: Self::Resources,
+        (level, optname): Self::Args,
+    ) -> io::Result<Self::ExtractOutput> {
+        syscall!(setsockopt(
+            fd.fd(),
+            level.0.cast_signed(),
+            optname.0.cast_signed(),
+            ptr::from_ref(&value).cast(),
+            size_of::<T>() as _,
+        ))?;
+        Ok(value)
+    }
+}
+
+impl_fd_op_extract!(SetSocketOptionOp<T>);
 
 pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
 
