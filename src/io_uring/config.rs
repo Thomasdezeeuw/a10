@@ -215,7 +215,7 @@ impl<'r> crate::Config<'r> {
         self
     }
 
-    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Completions)> {
+    pub(crate) fn build_sys(self) -> io::Result<(Completions, Submissions)> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
         parameters.flags = libc::IORING_SETUP_SUBMIT_ALL // Submit all submissions on error.
@@ -288,7 +288,7 @@ impl<'r> crate::Config<'r> {
                 .register(libc::IORING_REGISTER_FILES2, arg, size as u32)?;
         }
 
-        Ok((submissions, completions))
+        Ok((completions, submissions))
     }
 }
 

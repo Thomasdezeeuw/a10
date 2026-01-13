@@ -19,7 +19,7 @@ impl<'r> Config<'r> {
     #[doc(alias = "kqueue")]
     #[doc(alias = "io_uring_setup")]
     pub fn build(self) -> io::Result<Ring> {
-        let (sq, cq) = self.build_sys()?;
-        Ok(Ring { sq, cq })
+        let (cq, sq) = self.build_sys()?;
+        Ok(Ring { cq, sq })
     }
 }

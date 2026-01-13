@@ -49,7 +49,7 @@ impl<'r> crate::Config<'r> {
         self
     }
 
-    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Completions)> {
+    pub(crate) fn build_sys(self) -> io::Result<(Completions, Submissions)> {
         // NOTE: `max_events` must be at least `max_change_list_size` to ensure
         // we can handle all submission errors.
         debug_assert!(
@@ -84,6 +84,6 @@ impl<'r> crate::Config<'r> {
         };
         let submissions = Submissions::new(shared);
         let completions = Completions::new(self.sys.max_events);
-        Ok((submissions, completions))
+        Ok((completions, submissions))
     }
 }
