@@ -101,3 +101,23 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct ShutdownOp;
+
+impl DirectFdOp for ShutdownOp {
+    type Output = ();
+    type Resources = ();
+    type Args = std::net::Shutdown;
+
+    fn run(fd: &AsyncFd, (): Self::Resources, how: Self::Args) -> io::Result<Self::Output> {
+        let how = match how {
+            std::net::Shutdown::Read => libc::SHUT_RD,
+            std::net::Shutdown::Write => libc::SHUT_WR,
+            std::net::Shutdown::Both => libc::SHUT_RDWR,
+        };
+        syscall!(shutdown(fd.fd(), how))?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(ShutdownOp);
