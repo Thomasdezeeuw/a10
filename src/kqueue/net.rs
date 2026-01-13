@@ -10,8 +10,8 @@ use crate::kqueue::op::{
 };
 use crate::kqueue::{self, cq, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -107,6 +107,32 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct SocketNameOp<A>(PhantomData<*const A>);
+
+impl<A: SocketAddress> DirectFdOp for SocketNameOp<A> {
+    type Output = A;
+    type Resources = AddressStorage<(MaybeUninit<A::Storage>, libc::socklen_t)>;
+    type Args = Name;
+
+    fn run(
+        fd: &AsyncFd,
+        mut resources: Self::Resources,
+        name: Self::Args,
+    ) -> io::Result<Self::Output> {
+        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
+        let address_length = &mut (resources.0).1;
+        *address_length = length;
+        match name {
+            Name::Local => syscall!(getsockname(fd.fd(), ptr, address_length))?,
+            Name::Peer => syscall!(getpeername(fd.fd(), ptr, address_length))?,
+        };
+        // SAFETY: the kernel has written the address for us.
+        Ok(unsafe { A::init((resources.0).0, (resources.0).1) })
+    }
+}
+
+impl_fd_op!(SocketNameOp<A>);
 
 pub(crate) struct RecvOp<B>(PhantomData<*const B>);
 
