@@ -247,7 +247,8 @@ impl Signals {
 
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
-        // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
+        // SAFETY: fully zeroed libc::signalfd_siginfo and Signal are valid
+        // values.
         let info = unsafe { mem::zeroed() };
         ReceiveSignal::new(&self.fd, info, ())
     }
@@ -257,6 +258,7 @@ impl Signals {
     /// # Safety
     ///
     /// Caller must ensure `fd` is a valid signalfd descriptor.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
         self.fd = fd;
     }
@@ -299,7 +301,6 @@ pub struct SignalInfo(pub(crate) crate::sys::process::SignalInfo);
 
 impl SignalInfo {
     /// Signal send.
-    #[allow(clippy::cast_possible_wrap)]
     pub fn signal(&self) -> Signal {
         crate::sys::process::signal(&self.0)
     }
