@@ -5,7 +5,7 @@
 use std::ffi::{CString, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use std::{fmt, io, mem, str};
 
 use crate::op::{OpState, fd_operation, operation};
@@ -447,20 +447,30 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::metadata`].
     pub struct Stat(sys::fs::StatOp) -> io::Result<Metadata>;
 
+    /// [`Future`] behind [`AsyncFd::truncate`].
+    pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
+);
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::advise`].
     pub struct Advise(sys::fs::AdviseOp) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::allocate`].
     pub struct Allocate(sys::fs::AllocateOp) -> io::Result<()>;
-
-    /// [`Future`] behind [`AsyncFd::truncate`].
-    pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
 );
 
 impl<'fd> Stat<'fd> {
     /// Set which field(s) of the metadata the kernel should fill.
     ///
     /// Defaults to filling some basic fields.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn only(mut self, mask: MetadataInterest) -> Self {
         if let Some(args) = self.state.args_mut() {
             *args = mask;
