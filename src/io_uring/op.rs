@@ -149,8 +149,10 @@ impl<T, R, A> OpState for State<T, R, A> {
                 // delay the dropping until the operation is done. This is done
                 // in [`Shared::update`].
                 shared.status = Status::Dropped;
+                drop(shared);
                 return;
             }
+            drop(shared);
         } // Drop all references to the data.
 
         // Operation is not running, so we can safely drop it.
