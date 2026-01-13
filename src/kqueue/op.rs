@@ -155,7 +155,45 @@ macro_rules! impl_fd_op {
     };
 }
 
-pub(super) use impl_fd_op;
+/// Operation that is done using a synchronous function.
+pub(crate) trait DirectFdOpExtract: DirectFdOp {
+    /// Extracted output of the operation.
+    type ExtractOutput;
+
+    /// Same as [`DirectFdOp::run`], but returns extracted output.
+    fn run_extract(
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::ExtractOutput>;
+}
+
+macro_rules! impl_fd_op_extract {
+    ( $( $T: ident $( < $( $gen: ident ),+ > )? ),* ) => {
+        $(
+        impl $( < $( $gen ),+ > )? crate::op::FdOpExtract for $T $( < $( $gen ),* > )?
+            where Self: $crate::kqueue::op::DirectFdOpExtract,
+        {
+            type ExtractOutput = ::std::io::Result<<Self as $crate::kqueue::op::DirectFdOpExtract>::ExtractOutput>;
+
+            fn poll_extract(
+                state: &mut Self::State,
+                ctx: &mut ::std::task::Context<'_>,
+                fd: &$crate::AsyncFd,
+            ) -> ::std::task::Poll<Self::ExtractOutput> {
+                match ::std::mem::replace(state, $crate::kqueue::op::DirectState::Complete) {
+                    $crate::kqueue::op::DirectState::NotStarted { resources, args } => ::std::task::Poll::Ready(Self::run_extract(fd, resources, args)),
+                    // Shouldn't be reachable, but if the Future is used incorrectly it
+                    // can be.
+                    $crate::kqueue::op::DirectState::Complete => ::std::panic!("polled Future after completion"),
+                }
+            }
+        }
+        )*
+    };
+}
+
+pub(super) use {impl_fd_op, impl_fd_op_extract};
 
 /// State of an operation that whats for an event (on a file descriptor) first.
 #[derive(Debug)]
