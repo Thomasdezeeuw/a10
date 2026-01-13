@@ -7,7 +7,7 @@
 //! * <https://man.netbsd.org/kqueue.2>
 
 use std::fmt;
-use std::mem::swap;
+use std::mem::{drop as unlock, swap};
 use std::os::fd::OwnedFd;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
@@ -57,7 +57,7 @@ impl Shared {
             swap(&mut *change_list, &mut changes);
         }
         change_list.append(&mut changes);
-        drop(change_list); // Unlock before any deallocations.
+        unlock(change_list); // Unlock before any deallocations.
     }
 }
 

@@ -1,3 +1,4 @@
+use std::mem::drop as unlock;
 use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::{self, Ordering};
@@ -64,7 +65,7 @@ impl Submissions {
         // access to the submissions.
         let new_tail = tail.wrapping_add(1);
         unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
-        drop(submissions_guard);
+        unlock(submissions_guard);
 
         log::trace!(submission:?, index, tail, new_tail; "queueing submission");
         asan::poison(submission);

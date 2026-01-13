@@ -1,7 +1,8 @@
+use std::mem::{self, drop as unlock};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{io, mem, ptr};
+use std::{io, ptr};
 
 use crate::kqueue::{self, Event, Shared, cq};
 use crate::{lock, syscall};
@@ -47,13 +48,13 @@ impl Submissions {
             || (change_list.len() < (shared.max_change_list_size as usize)
                 && !shared.is_polling.load(Ordering::Acquire))
         {
-            drop(change_list); // Unlock first.
+            unlock(change_list); // Unlock first.
             return;
         }
 
         // Take ownership of the change list to submit it to the kernel.
         let mut changes = mem::replace(&mut *change_list, Vec::new());
-        drop(change_list); // Unlock, to not block others.
+        unlock(change_list); // Unlock, to not block others.
 
         // Submit the all changes to the kernel.
         let timeout = libc::timespec {

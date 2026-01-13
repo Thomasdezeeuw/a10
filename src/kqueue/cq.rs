@@ -1,7 +1,8 @@
+use std::mem::{self, drop as unlock};
 use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use std::{cmp, io, mem, ptr};
+use std::{cmp, io, ptr};
 
 use crate::kqueue::{self, Event, Shared, fd};
 use crate::{lock, syscall};
@@ -39,7 +40,7 @@ impl Completions {
         } else {
             mem::replace(&mut *change_list, Vec::new())
         };
-        drop(change_list); // Unlock, to not block others.
+        unlock(change_list); // Unlock, to not block others.
 
         log::trace!(submissions = changes.len(), timeout:?; "waiting for events");
         shared.is_polling.store(true, Ordering::Release);

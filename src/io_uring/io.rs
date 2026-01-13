@@ -1,6 +1,6 @@
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{MaybeUninit, drop as unlock};
 use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
@@ -209,7 +209,7 @@ impl ReadBufPool {
         // NOTE: poising the buffer again.
         asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
-        drop(guard);
+        unlock(guard);
     }
 
     /// Returns the tail of buffer ring.

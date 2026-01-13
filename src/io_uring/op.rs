@@ -1,6 +1,6 @@
 use std::cell::UnsafeCell;
 use std::io;
-use std::mem::{self, MaybeUninit, replace};
+use std::mem::{self, MaybeUninit, drop as unlock, replace};
 use std::panic::RefUnwindSafe;
 use std::ptr::{self, NonNull};
 use std::sync::Mutex;
@@ -149,10 +149,10 @@ impl<T, R, A> OpState for State<T, R, A> {
                 // delay the dropping until the operation is done. This is done
                 // in [`Shared::update`].
                 shared.status = Status::Dropped;
-                drop(shared);
+                unlock(shared);
                 return;
             }
-            drop(shared);
+            unlock(shared);
         } // Drop all references to the data.
 
         // Operation is not running, so we can safely drop it.
@@ -392,10 +392,10 @@ impl<T: Op> crate::op::Op for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
-                        drop(shared);
+                        unlock(shared);
                     }
                     Err(QueueFull) => {
-                        drop(shared);
+                        unlock(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -416,13 +416,13 @@ impl<T: Op> crate::op::Op for T {
                     Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
-                drop(shared);
+                unlock(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
                 let result = result.0;
                 shared.status = Status::Complete;
-                drop(shared);
+                unlock(shared);
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
@@ -435,13 +435,13 @@ impl<T: Op> crate::op::Op for T {
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
             Status::Dropped => {
-                drop(shared);
+                unlock(shared);
                 unreachable!()
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
             Status::Complete => {
-                drop(shared);
+                unlock(shared);
                 panic!("polled Future after completion");
             }
         }
@@ -492,10 +492,10 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
-                        drop(shared);
+                        unlock(shared);
                     }
                     Err(QueueFull) => {
-                        drop(shared);
+                        unlock(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -516,13 +516,13 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                     Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
-                drop(shared);
+                unlock(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
                 let result = result.0;
                 shared.status = Status::Complete;
-                drop(shared);
+                unlock(shared);
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
@@ -535,13 +535,13 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
             Status::Dropped => {
-                drop(shared);
+                unlock(shared);
                 unreachable!()
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
             Status::Complete => {
-                drop(shared);
+                unlock(shared);
                 panic!("polled Future after completion")
             }
         }
@@ -602,10 +602,10 @@ impl<T: FdOp> crate::op::FdOp for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
-                        drop(shared);
+                        unlock(shared);
                     }
                     Err(QueueFull) => {
-                        drop(shared);
+                        unlock(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -626,13 +626,13 @@ impl<T: FdOp> crate::op::FdOp for T {
                     Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
-                drop(shared);
+                unlock(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
                 let result = result.0;
                 shared.status = Status::Complete;
-                drop(shared);
+                unlock(shared);
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
@@ -645,13 +645,13 @@ impl<T: FdOp> crate::op::FdOp for T {
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
             Status::Dropped => {
-                drop(shared);
+                unlock(shared);
                 unreachable!()
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
             Status::Complete => {
-                drop(shared);
+                unlock(shared);
                 panic!("polled Future after completion")
             }
         }
@@ -703,10 +703,10 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                         shared.status = Status::Running {
                             result: Singleshot::empty(),
                         };
-                        drop(shared);
+                        unlock(shared);
                     }
                     Err(QueueFull) => {
-                        drop(shared);
+                        unlock(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -727,13 +727,13 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                     Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
-                drop(shared);
+                unlock(shared);
                 Poll::Pending
             }
             Status::Done { result } => {
                 let result = result.0;
                 shared.status = Status::Complete;
-                drop(shared);
+                unlock(shared);
 
                 // SAFETY: this is only safe because we set the status to
                 // Complete above.
@@ -746,13 +746,13 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
             Status::Dropped => {
-                drop(shared);
+                unlock(shared);
                 unreachable!()
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
             Status::Complete => {
-                drop(shared);
+                unlock(shared);
                 panic!("polled Future after completion")
             }
         }
@@ -815,10 +815,10 @@ impl<T: FdIter> crate::op::FdIter for T {
                         shared.status = Status::Running {
                             result: Multishot::empty(),
                         };
-                        drop(shared);
+                        unlock(shared);
                     }
                     Err(QueueFull) => {
-                        drop(shared);
+                        unlock(shared);
                         // Make sure we get awoken when we can retry submitting
                         // the operation.
                         submissions.wait_for_submission(ctx.waker().clone());
@@ -834,11 +834,11 @@ impl<T: FdIter> crate::op::FdIter for T {
                         Some(waker) => waker.clone_from(ctx.waker()),
                         None => shared.waker = Some(ctx.waker().clone()),
                     }
-                    drop(shared);
+                    unlock(shared);
                     return Poll::Pending;
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
-                drop(shared);
+                unlock(shared);
                 // SAFETY: we share the resources with the kernel, so we can
                 // only read them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
@@ -848,7 +848,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                 if result.0.is_empty() {
                     // Processed all results.
                     shared.status = Status::Complete;
-                    drop(shared);
+                    unlock(shared);
                     // SAFETY: this is only safe because we set the status to
                     // Complete above.
                     unsafe {
@@ -861,7 +861,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                     return Poll::Ready(None);
                 }
                 let op_return = result.0.remove(0).as_op_return()?;
-                drop(shared);
+                unlock(shared);
                 // SAFETY: the operation is done, so the kernel doesn't access
                 // the resources any more. This gives us unique access to them.
                 let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
@@ -870,13 +870,13 @@ impl<T: FdIter> crate::op::FdIter for T {
             // Only the Future sets the Dropped status, which is also the only
             // one that calls this function, so this should be unreachable.
             Status::Dropped => {
-                drop(shared);
+                unlock(shared);
                 unreachable!()
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
             Status::Complete => {
-                drop(shared);
+                unlock(shared);
                 panic!("polled Future after completion")
             }
         }

@@ -1,5 +1,5 @@
 use std::cmp::min;
-use std::mem::{swap, take};
+use std::mem::{drop as unlock, swap, take};
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -150,7 +150,7 @@ impl Completions {
         }
 
         let mut wakers = take(&mut *blocked_futures);
-        drop(blocked_futures); // Unblock others.
+        unlock(blocked_futures); // Unblock others.
         let awoken = min(available, wakers.len());
         for waker in wakers.drain(..awoken) {
             log::trace!(waker:?; "waking up future for submission");
@@ -161,7 +161,7 @@ impl Completions {
         let mut blocked_futures = lock(&shared.blocked_futures);
         swap(&mut *blocked_futures, &mut wakers);
         if wakers.len() <= available - awoken {
-            drop(blocked_futures); // Unblock others.
+            unlock(blocked_futures); // Unblock others.
             for waker in wakers {
                 log::trace!(waker:?; "waking up future for submission");
                 waker.wake();
@@ -170,7 +170,7 @@ impl Completions {
             // Can't wake up all the additional waiting futures, so add them
             // back to the waiting list.
             blocked_futures.extend(wakers);
-            drop(blocked_futures); // Unblock others.
+            unlock(blocked_futures); // Unblock others.
         }
     }
 }
