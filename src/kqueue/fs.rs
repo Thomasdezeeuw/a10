@@ -3,7 +3,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 
-use crate::fs::{FileType, Permissions, path_from_cstring};
+use crate::fs::{FileType, Permissions, RemoveFlag, path_from_cstring};
 use crate::kqueue::op::{DirectOp, DirectOpEtract};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -104,6 +104,40 @@ impl DirectOpEtract for RenameOp {
             to.as_ptr()
         ))?;
         Ok((path_from_cstring(from), path_from_cstring(to)))
+    }
+}
+
+pub(crate) struct DeleteOp;
+
+impl DirectOp for DeleteOp {
+    type Output = ();
+    type Resources = CString; // path
+    type Args = RemoveFlag;
+
+    fn run(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        Self::run_extract(sq, resources, args)?;
+        Ok(())
+    }
+}
+
+impl DirectOpEtract for DeleteOp {
+    type ExtractOutput = PathBuf;
+
+    fn run_extract(
+        sq: &SubmissionQueue,
+        path: Self::Resources,
+        flags: Self::Args,
+    ) -> io::Result<Self::ExtractOutput> {
+        let flags = match flags {
+            RemoveFlag::File => 0,
+            RemoveFlag::Directory => libc::AT_REMOVEDIR,
+        };
+        syscall!(unlinkat(libc::AT_FDCWD, path.as_ptr(), flags))?;
+        Ok(path_from_cstring(path))
     }
 }
 
