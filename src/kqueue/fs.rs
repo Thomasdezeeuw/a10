@@ -41,6 +41,37 @@ impl DirectOpEtract for OpenOp {
     }
 }
 
+pub(crate) struct CreateDirOp;
+
+impl DirectOp for CreateDirOp {
+    type Output = ();
+    type Resources = CString; // path.
+    type Args = ();
+
+    fn run(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        Self::run_extract(sq, resources, args)?;
+        Ok(())
+    }
+}
+
+impl DirectOpEtract for CreateDirOp {
+    type ExtractOutput = PathBuf;
+
+    fn run_extract(
+        sq: &SubmissionQueue,
+        path: Self::Resources,
+        (): Self::Args,
+    ) -> io::Result<Self::ExtractOutput> {
+        let mode = 0o777; // Same as used by the standard library.
+        syscall!(mkdirat(libc::AT_FDCWD, path.as_ptr(), mode))?;
+        Ok(path_from_cstring(path))
+    }
+}
+
 pub(crate) use libc::stat as Stat;
 
 pub(crate) const fn file_type(stat: &Stat) -> FileType {
