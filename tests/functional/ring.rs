@@ -13,8 +13,8 @@ use crate::util::{LOREM_IPSUM_50, init, is_send, is_sync, poll_nop};
 
 #[test]
 fn ring_size() {
-    assert_eq!(std::mem::size_of::<Ring>(), 64);
-    assert_eq!(std::mem::size_of::<Option<Ring>>(), 64);
+    assert_eq!(std::mem::size_of::<Ring>(), 48);
+    assert_eq!(std::mem::size_of::<Option<Ring>>(), 48);
 }
 
 #[test]
