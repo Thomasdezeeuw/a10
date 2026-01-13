@@ -234,6 +234,7 @@ impl Signals {
     /// descriptor.
     ///
     /// See [`AsyncFd::to_direct_descriptor`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn to_direct_descriptor(self) -> ToDirect {
         debug_assert!(
             matches!(self.fd.kind(), fd::Kind::File),
@@ -279,6 +280,7 @@ impl Drop for Signals {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 operation!(
     /// [`Future`] behind [`Signals::to_direct_descriptor`].
     pub struct ToDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
@@ -361,7 +363,7 @@ impl SignalSet {
 }
 
 /// Known signals supported by Linux as of v6.3.
-const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
+const KNOWN_SIGNALS: &[(libc::c_int, &str)] = &[
     (libc::SIGHUP, "SIGHUP"),
     (libc::SIGINT, "SIGINT"),
     (libc::SIGQUIT, "SIGQUIT"),
@@ -378,6 +380,7 @@ const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
     (libc::SIGPIPE, "SIGPIPE"),
     (libc::SIGALRM, "SIGALRM"),
     (libc::SIGTERM, "SIGTERM"),
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     (libc::SIGSTKFLT, "SIGSTKFLT"),
     (libc::SIGCHLD, "SIGCHLD"),
     (libc::SIGCONT, "SIGCONT"),
@@ -392,8 +395,10 @@ const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
     (libc::SIGPROF, "SIGPROF"),
     (libc::SIGWINCH, "SIGWINCH"),
     (libc::SIGIO, "SIGIO"),
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     (libc::SIGPOLL, "SIGPOLL"), // NOTE: same value as `SIGIO`.
     //(libc::SIGLOST, "SIGLOST"),
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     (libc::SIGPWR, "SIGPWR"),
     (libc::SIGSYS, "SIGSYS"),
 ];
@@ -402,6 +407,7 @@ impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let signals = KNOWN_SIGNALS
             .into_iter()
+            .copied()
             .filter_map(|(signal, name)| self.contains(Signal(signal)).then_some(name));
         f.debug_set().entries(signals).finish()
     }
@@ -467,8 +473,10 @@ new_flag!(
         /// Pollable event.
         ///
         /// NOTE: same value as [`Signal::IO`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         POLL = libc::SIGPOLL,
         /// Power failure.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         PWR = libc::SIGPWR,
         /// Bad system call.
         SYS = libc::SIGSYS,
