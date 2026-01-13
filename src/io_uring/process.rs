@@ -4,7 +4,7 @@ use std::ptr;
 use crate::io::NO_OFFSET;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::{self, libc, sq};
-use crate::process::{SignalInfo, Signals, WaitInfo, WaitOn, WaitOption};
+use crate::process::{Signal, Signals, WaitInfo, WaitOn, WaitOption};
 use crate::{AsyncFd, SubmissionQueue};
 
 pub(crate) struct WaitIdOp;
@@ -57,8 +57,8 @@ impl io_uring::fd::DirectFdMapper for Signals {
 pub(crate) struct ReceiveSignalOp;
 
 impl FdOp for ReceiveSignalOp {
-    type Output = SignalInfo;
-    type Resources = SignalInfo;
+    type Output = crate::process::SignalInfo;
+    type Resources = crate::process::SignalInfo;
     type Args = ();
 
     fn fill_submission(
@@ -81,4 +81,18 @@ impl FdOp for ReceiveSignalOp {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
         info
     }
+}
+
+pub(crate) use libc::signalfd_siginfo as SignalInfo;
+
+pub(crate) const fn signal(info: &SignalInfo) -> Signal {
+    Signal(info.ssi_signo as i32)
+}
+
+pub(crate) const fn pid(info: &SignalInfo) -> u32 {
+    info.ssi_pid
+}
+
+pub(crate) const fn real_user_id(info: &SignalInfo) -> u32 {
+    info.ssi_uid
 }

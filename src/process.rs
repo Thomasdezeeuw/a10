@@ -295,33 +295,37 @@ fd_operation!(
 ///
 /// See [`Signals::receive`].
 #[repr(transparent)]
-pub struct SignalInfo(pub(crate) libc::signalfd_siginfo);
+pub struct SignalInfo(pub(crate) crate::sys::process::SignalInfo);
 
 impl SignalInfo {
     /// Signal send.
     #[allow(clippy::cast_possible_wrap)]
     pub fn signal(&self) -> Signal {
-        Signal(self.0.ssi_signo as i32)
+        crate::sys::process::signal(&self.0)
     }
 
     /// Process id of the sender.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn pid(&self) -> u32 {
-        self.0.ssi_pid
+        crate::sys::process::pid(&self.0)
     }
 
     /// Real user ID of the sender.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn real_user_id(&self) -> u32 {
-        self.0.ssi_uid
+        crate::sys::process::real_user_id(&self.0)
     }
 }
 
 impl fmt::Debug for SignalInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SignalInfo")
-            .field("signal", &self.signal())
-            .field("pid", &self.pid())
-            .field("real_user_id", &self.real_user_id())
-            .finish()
+        let mut f = f.debug_struct("SignalInfo");
+        f.field("signal", &self.signal());
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        f.field("pid", &self.pid());
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        f.field("real_user_id", &self.real_user_id());
+        f.finish()
     }
 }
 
