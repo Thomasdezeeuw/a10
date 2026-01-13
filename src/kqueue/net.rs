@@ -108,6 +108,49 @@ impl DirectFdOp for ListenOp {
 
 impl_fd_op!(ListenOp);
 
+pub(crate) struct SendOp<B>(PhantomData<*const B>);
+
+impl<B: Buf> FdOp for SendOp<B> {
+    type Output = usize;
+    type Resources = B;
+    type Args = (SendCall, SendFlag);
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Write;
+
+    fn try_run(
+        fd: &AsyncFd,
+        buf: &mut Self::Resources,
+        (send_op, flags): &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let (SendCall::Normal | SendCall::ZeroCopy) = send_op;
+
+        let (buf_ptr, buf_len) = unsafe { buf.parts() };
+        syscall!(send(
+            fd.fd(),
+            buf_ptr.cast(),
+            buf_len as usize,
+            flags.0.cast_signed()
+        ))
+    }
+
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        Self::map_ok_extract(fd, resources, n).1
+    }
+}
+
+impl<B: Buf> FdOpExtract for SendOp<B> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        _: &AsyncFd,
+        buf: Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (buf, n as usize)
+    }
+}
+
 pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 
 impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
