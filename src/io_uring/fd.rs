@@ -165,12 +165,12 @@ impl Kind {
     pub(crate) fn create_flags(self, submission: &mut Submission) {
         if let Kind::Direct = self {
             submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-                file_index: libc::IORING_FILE_INDEX_ALLOC as u32,
+                file_index: libc::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
             };
         }
     }
 
-    pub(crate) fn use_flags(&self, submission: &mut Submission) {
+    pub(crate) fn use_flags(self, submission: &mut Submission) {
         if let Kind::Direct = self {
             submission.0.flags |= libc::IOSQE_FIXED_FILE;
         }

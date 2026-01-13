@@ -411,7 +411,7 @@ impl<T: Op> crate::op::Op for T {
                 // Make sure we wake using the correct waker.
                 match &mut shared.waker {
                     Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => *waker = ctx.waker().clone(),
+                    Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
                 drop(shared);
@@ -511,7 +511,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
                 // Make sure we wake using the correct waker.
                 match &mut shared.waker {
                     Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => *waker = ctx.waker().clone(),
+                    Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
                 drop(shared);
@@ -621,7 +621,7 @@ impl<T: FdOp> crate::op::FdOp for T {
                 // Make sure we wake using the correct waker.
                 match &mut shared.waker {
                     Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => *waker = ctx.waker().clone(),
+                    Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
                 drop(shared);
@@ -722,7 +722,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
                 // Make sure we wake using the correct waker.
                 match &mut shared.waker {
                     Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => *waker = ctx.waker().clone(),
+                    Some(waker) => waker.clone_from(ctx.waker()),
                     None => shared.waker = Some(ctx.waker().clone()),
                 }
                 drop(shared);
@@ -829,7 +829,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                     // Make sure we wake using the correct waker.
                     match &mut shared.waker {
                         Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                        Some(waker) => *waker = ctx.waker().clone(),
+                        Some(waker) => waker.clone_from(ctx.waker()),
                         None => shared.waker = Some(ctx.waker().clone()),
                     }
                     drop(shared);
@@ -854,8 +854,8 @@ impl<T: FdIter> crate::op::FdIter for T {
                             .resources
                             .get()
                             .cast::<Self::Resources>()
-                            .drop_in_place()
-                    };
+                            .drop_in_place();
+                    }
                     return Poll::Ready(None);
                 }
                 let op_return = result.0.remove(0).as_op_return()?;

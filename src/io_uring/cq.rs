@@ -137,8 +137,7 @@ impl Completions {
     }
 
     /// Wake any futures that were blocked on a submission slot.
-    // Work around <https://github.com/rust-lang/rust-clippy/issues/8539>.
-    #[allow(clippy::iter_with_drain, clippy::needless_pass_by_ref_mut)]
+    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self, shared: &Shared) {
         let available = (shared.submissions_len - shared.unsubmitted_submissions()) as usize;
         if available == 0 {
@@ -228,17 +227,17 @@ impl Completion {
         let update = if ptr.addr() & MULTISHOT_TAG == 0 {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::SingleShared>() > 1);
             let head: &op::SingleShared = unsafe { &*ptr.cast() };
-            lock(&head).update(self)
+            lock(head).update(self)
         } else {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::MultiShared>() > 1);
             let head: &op::MultiShared = unsafe { &*ptr.map_addr(|addr| addr & TAG_MASK).cast() };
-            lock(&head).update(self)
+            lock(head).update(self)
         };
         match update {
             op::StatusUpdate::Ok => { /* Done. */ }
             op::StatusUpdate::Wake(waker) => {
                 log::trace!(waker:?; "waking up future to make progress");
-                waker.wake()
+                waker.wake();
             }
             op::StatusUpdate::Drop { drop, ptr } => {
                 log::trace!(ptr:?; "dropping operation state");
@@ -247,7 +246,7 @@ impl Completion {
                 // Future is dropped and the state is no longer used.
                 unsafe { drop(ptr) }
             }
-        };
+        }
     }
 
     /// Returns the operation flags that need to be passed to

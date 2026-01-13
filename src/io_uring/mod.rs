@@ -159,7 +159,7 @@ impl Shared {
             arg,
             arg_size
         ))?;
-        Ok(n as u32)
+        Ok(n.cast_unsigned())
     }
 
     /// Returns the number of unsumitted submission queue entries.

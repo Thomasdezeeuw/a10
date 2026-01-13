@@ -41,7 +41,7 @@ impl Submissions {
         let head = load_kernel_shared(shared.submissions_head);
         if (tail - head) > len {
             return Err(QueueFull);
-        };
+        }
 
         // SAFETY: with the mask we've ensured above that index is valid for the
         // number of submissions. Furthermore while holding the lock we're
