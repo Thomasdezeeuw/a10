@@ -1,14 +1,12 @@
 use std::marker::PhantomData;
-use std::mem::{ManuallyDrop, MaybeUninit};
-use std::os::fd::RawFd;
+use std::mem::MaybeUninit;
 use std::{io, ptr, slice};
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{
     DirectFdOp, DirectFdOpExtract, DirectOp, FdOp, FdOpExtract, impl_fd_op, impl_fd_op_extract,
 };
-use crate::kqueue::{self, cq, sq};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
@@ -86,7 +84,7 @@ impl<A: SocketAddress> DirectFdOp for BindOp<A> {
 
     fn run(fd: &AsyncFd, address: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
         let (ptr, length) = unsafe { A::as_ptr(&address.0) };
-        let socket = syscall!(bind(fd.fd(), ptr, length))?;
+        syscall!(bind(fd.fd(), ptr, length))?;
         Ok(())
     }
 }
@@ -101,7 +99,7 @@ impl DirectFdOp for ListenOp {
     type Args = libc::c_int; // backlog.
 
     fn run(fd: &AsyncFd, (): Self::Resources, backlog: Self::Args) -> io::Result<Self::Output> {
-        let socket = syscall!(listen(fd.fd(), backlog))?;
+        syscall!(listen(fd.fd(), backlog))?;
         Ok(())
     }
 }
@@ -153,7 +151,7 @@ impl<B: BufMut> FdOp for RecvOp<B> {
         syscall!(recv(fd.fd(), ptr.cast(), len as _, flags.0.cast_signed()))
     }
 
-    fn map_ok(fd: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recv call.
         unsafe { buf.set_init(n as usize) };
@@ -182,8 +180,8 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
     }
 
     fn map_ok(
-        fd: &AsyncFd,
-        (mut bufs, msg, iovecs): Self::Resources,
+        _: &AsyncFd,
+        (mut bufs, msg, _): Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
@@ -213,7 +211,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
     }
 
     fn map_ok(
-        fd: &AsyncFd,
+        _: &AsyncFd,
         (mut buf, msg, _, address): Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::Output {
@@ -243,7 +241,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVecto
 
     fn try_run(
         fd: &AsyncFd,
-        (bufs, msg, iovecs, address): &mut Self::Resources,
+        (_, msg, iovecs, address): &mut Self::Resources,
         flags: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
         let ptr = unsafe { msg.init_recv::<A>(address, iovecs) };
@@ -251,8 +249,8 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVecto
     }
 
     fn map_ok(
-        fd: &AsyncFd,
-        (mut bufs, msg, iovecs, address): Self::Resources,
+        _: &AsyncFd,
+        (mut bufs, msg, _, address): Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
@@ -424,7 +422,7 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
             lfd.fd(),
             ptr,
             address_length,
-            libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC
+            flags.0.cast_signed() | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
         ))?;
 
         #[cfg(any(
@@ -449,6 +447,7 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
         {
             syscall!(fcntl(fd.fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
             syscall!(fcntl(fd.fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+            _ = flags;
         }
 
         Ok(fd)

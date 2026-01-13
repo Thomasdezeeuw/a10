@@ -1,7 +1,7 @@
 //! Utilities for memory sanitizer support.
 
 // Let's make it easier with all the `cfg`s.
-#![allow(unused_variables)]
+#![allow(unused_variables, dead_code)]
 
 use crate::io::IoMutSlice;
 use std::cmp::min;

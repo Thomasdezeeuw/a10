@@ -1,9 +1,7 @@
-use std::marker::PhantomData;
+use std::io;
 use std::mem::replace;
 use std::task::{self, Poll};
-use std::{fmt, io};
 
-use crate::kqueue::Event;
 use crate::kqueue::fd::OpKind;
 use crate::op::OpState;
 use crate::{AsyncFd, SubmissionQueue};
@@ -41,7 +39,7 @@ impl<R, A> OpState for DirectState<R, A> {
         }
     }
 
-    unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+    unsafe fn drop(&mut self, _: &SubmissionQueue) {
         // Nothing special to do.
     }
 }
@@ -68,7 +66,7 @@ impl<T: DirectOp> crate::op::Op for T {
 
     fn poll(
         state: &mut Self::State,
-        ctx: &mut task::Context<'_>,
+        _: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
         match replace(state, DirectState::Complete) {
@@ -98,7 +96,7 @@ impl<T: DirectOpExtract> crate::op::OpExtract for T {
 
     fn poll_extract(
         state: &mut Self::State,
-        ctx: &mut task::Context<'_>,
+        _: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::ExtractOutput> {
         match replace(state, DirectState::Complete) {
@@ -140,7 +138,7 @@ macro_rules! impl_fd_op {
 
             fn poll(
                 state: &mut Self::State,
-                ctx: &mut ::std::task::Context<'_>,
+                _: &mut ::std::task::Context<'_>,
                 fd: &$crate::AsyncFd,
             ) -> ::std::task::Poll<Self::Output> {
                 match ::std::mem::replace(state, $crate::kqueue::op::DirectState::Complete) {
@@ -178,7 +176,7 @@ macro_rules! impl_fd_op_extract {
 
             fn poll_extract(
                 state: &mut Self::State,
-                ctx: &mut ::std::task::Context<'_>,
+                _: &mut ::std::task::Context<'_>,
                 fd: &$crate::AsyncFd,
             ) -> ::std::task::Poll<Self::ExtractOutput> {
                 match ::std::mem::replace(state, $crate::kqueue::op::DirectState::Complete) {
@@ -230,7 +228,7 @@ impl<R, A> OpState for EventedState<R, A> {
         }
     }
 
-    unsafe fn drop(&mut self, sq: &SubmissionQueue) {
+    unsafe fn drop(&mut self, _: &SubmissionQueue) {
         // Nothing special to do.
     }
 }
@@ -317,7 +315,7 @@ impl<T: FdOp> crate::op::FdOp for T {
                 EventedState::Waiting { resources, args } => {
                     match T::try_run(fd, resources, args) {
                         Ok(res) => {
-                            if let EventedState::Waiting { resources, args } =
+                            if let EventedState::Waiting { resources, .. } =
                                 replace(state, EventedState::Complete)
                             {
                                 return Poll::Ready(Ok(T::map_ok(fd, resources, res)));
@@ -405,7 +403,7 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
                 EventedState::Waiting { resources, args } => {
                     match T::try_run(fd, resources, args) {
                         Ok(res) => {
-                            if let EventedState::Waiting { resources, args } =
+                            if let EventedState::Waiting { resources, .. } =
                                 replace(state, EventedState::Complete)
                             {
                                 return Poll::Ready(Ok(T::map_ok_extract(fd, resources, res)));

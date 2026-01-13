@@ -144,13 +144,13 @@ unsafe fn copy_bytes(dst: *mut u8, dst_len: usize, src: &[u8]) -> usize {
 ///
 /// [`ReadBufPool`]: crate::io::ReadBufPool
 #[derive(Copy, Clone, Debug)]
-pub struct BufGroupId(pub(crate) u16);
+pub struct BufGroupId(#[allow(dead_code)] pub(crate) u16);
 
 /// Index for a [`ReadBufPool`].
 ///
 /// [`ReadBufPool`]: crate::io::ReadBufPool
 #[derive(Copy, Clone, Debug)]
-pub struct BufId(pub(crate) u16);
+pub struct BufId(#[allow(dead_code)] pub(crate) u16);
 
 /// The implementation for `Vec<u8>` only uses the uninitialised capacity of the
 /// vector. In other words the bytes currently in the vector remain untouched.

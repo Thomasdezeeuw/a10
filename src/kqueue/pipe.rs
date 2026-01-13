@@ -1,12 +1,7 @@
-use std::marker::PhantomData;
-use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
-use std::{io, ptr, slice};
+use std::{io, ptr};
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
-use crate::kqueue::op::{DirectFdOp, DirectOp, impl_fd_op};
-use crate::kqueue::{self, cq, sq};
-use crate::net::{AddressStorage, Domain, NoAddress, OptionStorage, Protocol, SocketAddress, Type};
+use crate::kqueue::op::DirectOp;
 use crate::pipe::PipeFlag;
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 

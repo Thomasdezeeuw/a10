@@ -64,7 +64,7 @@ impl DirectOpExtract for CreateDirOp {
     type ExtractOutput = PathBuf;
 
     fn run_extract(
-        sq: &SubmissionQueue,
+        _: &SubmissionQueue,
         path: Self::Resources,
         (): Self::Args,
     ) -> io::Result<Self::ExtractOutput> {
@@ -95,7 +95,7 @@ impl DirectOpExtract for RenameOp {
     type ExtractOutput = (PathBuf, PathBuf);
 
     fn run_extract(
-        sq: &SubmissionQueue,
+        _: &SubmissionQueue,
         (from, to): Self::Resources,
         (): Self::Args,
     ) -> io::Result<Self::ExtractOutput> {
@@ -130,7 +130,7 @@ impl DirectOpExtract for DeleteOp {
     type ExtractOutput = PathBuf;
 
     fn run_extract(
-        sq: &SubmissionQueue,
+        _: &SubmissionQueue,
         path: Self::Resources,
         flags: Self::Args,
     ) -> io::Result<Self::ExtractOutput> {

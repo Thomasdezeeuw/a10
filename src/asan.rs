@@ -1,7 +1,7 @@
 //! Utilities for address sanitizer support.
 
 // Let's make it easier with all the `cfg`s.
-#![allow(unused_variables)]
+#![allow(unused_variables, dead_code)]
 
 use std::ffi::{CString, c_void};
 use std::mem;

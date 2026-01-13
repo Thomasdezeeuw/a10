@@ -2,11 +2,10 @@ use std::io;
 use std::marker::PhantomData;
 use std::os::fd::RawFd;
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, NO_OFFSET};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, NO_OFFSET};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectOp, FdOp, FdOpExtract};
-use crate::kqueue::{self, Event, cq, sq};
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
+use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
@@ -38,7 +37,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         }
     }
 
-    fn map_ok(fd: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe { buf.set_init(n as _) };
         buf
@@ -57,7 +56,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
 
     fn try_run(
         fd: &AsyncFd,
-        (buf, iovecs): &mut Self::Resources,
+        (_, iovecs): &mut Self::Resources,
         offset: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
         // io_uring uses `NO_OFFSET` to issue a `readv` system call, otherwise
@@ -75,7 +74,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
     }
 
     fn map_ok(
-        fd: &AsyncFd,
+        _: &AsyncFd,
         (mut bufs, _): Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::Output {
@@ -139,7 +138,7 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
 
     fn try_run(
         fd: &AsyncFd,
-        (bufs, iovecs): &mut Self::Resources,
+        (_, iovecs): &mut Self::Resources,
         offset: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
         // io_uring uses `NO_OFFSET` to issue a `writev` system call, otherwise

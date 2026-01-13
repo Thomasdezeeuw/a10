@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::time::SystemTime;
 use std::{fmt, io, mem, str};
 
-use crate::op::{OpState, fd_operation, operation};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::op::OpState;
+use crate::op::{fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
 /// Options used to configure how a file ([`AsyncFd`]) is opened.

@@ -70,6 +70,7 @@ pub(crate) trait FdOpExtract: FdOp {
 /// [`AsyncIterator`] implementation of a [`FdOp`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub(crate) trait FdIter {
     /// Output of the operation.
     type Output;
@@ -102,6 +103,7 @@ pub(crate) trait OpState {
     fn resources_mut(&mut self) -> Option<&mut Self::Resources>;
 
     /// Mutable reference to the arguments if the operation wasn't started yet.
+    #[allow(dead_code)] // Not used on all OS.
     fn args_mut(&mut self) -> Option<&mut Self::Args>;
 
     /// Drop the operation state.
@@ -165,6 +167,7 @@ macro_rules! fd_operation {
 /// Create an [`AsyncIterator`] based on multishot [`FdIter`]s.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[cfg(any(target_os = "android", target_os = "linux"))]
 macro_rules! fd_iter_operation {
     (
         $(
@@ -334,4 +337,6 @@ macro_rules! new_operation {
     };
 }
 
-pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub(crate) use fd_iter_operation;
+pub(crate) use {fd_operation, new_operation, operation};

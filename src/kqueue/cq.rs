@@ -1,10 +1,10 @@
 use std::mem::{self, drop as unlock};
 use std::os::fd::AsRawFd;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{cmp, io, ptr};
 
-use crate::kqueue::{self, Event, Shared, fd};
+use crate::kqueue::{self, Event, Shared};
 use crate::{lock, syscall};
 
 /// User data to wake up the polling thread.

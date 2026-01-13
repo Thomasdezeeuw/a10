@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::{io, mem, ptr};
 
-use crate::kqueue::{self, Completions, Shared, Submissions, cq};
+use crate::kqueue::{Completions, Shared, Submissions, cq};
 use crate::syscall;
 
 #[derive(Debug, Clone)]

@@ -1,10 +1,10 @@
+use std::io;
 use std::mem::{self, drop as unlock};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::{io, ptr};
+use std::sync::atomic::Ordering;
 
-use crate::kqueue::{self, Event, Shared, cq};
+use crate::kqueue::{Event, Shared, cq};
 use crate::{lock, syscall};
 
 #[derive(Clone, Debug)]
