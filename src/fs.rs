@@ -325,6 +325,13 @@ impl AsyncFd {
     #[doc = man_link!(fallocate(2))]
     #[doc(alias = "fallocate")]
     #[doc(alias = "posix_fallocate")]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+    ))]
     pub fn allocate<'fd>(
         &'fd self,
         offset: u64,
@@ -412,17 +419,23 @@ new_flag!(
     /// Mode for call to [`AsyncFd::allocate`].
     pub struct AllocateFlag(u32) impl BitOr {
         /// Keep the same file size.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         KEEP_SIZE = libc::FALLOC_FL_KEEP_SIZE,
         /// Guarantee that a subsequent write will not fail due to lack of
         /// space.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         UNSHARE_RANGE = libc::FALLOC_FL_UNSHARE_RANGE,
         /// Deallocate the space.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         PUNCH_HOLE = libc::FALLOC_FL_PUNCH_HOLE,
         /// Remove the byte range from the file, without leaving a hole.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         COLLAPSE_RANGE = libc::FALLOC_FL_COLLAPSE_RANGE,
         /// Zero the byte range.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         ZERO_RANGE = libc::FALLOC_FL_ZERO_RANGE,
         /// Inserta  hole in the file without overwriting any existing data.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         INSERT_RANGE = libc::FALLOC_FL_INSERT_RANGE,
     }
 );

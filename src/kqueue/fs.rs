@@ -231,6 +231,32 @@ impl DirectFdOp for AdviseOp {
 #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
 impl_fd_op!(AdviseOp);
 
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+pub(crate) struct AllocateOp;
+
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+impl DirectFdOp for AllocateOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (u64, u32, crate::fs::AllocateFlag); // offset, length, mode
+
+    fn run(
+        fd: &AsyncFd,
+        (): Self::Resources,
+        (offset, length, _): Self::Args,
+    ) -> io::Result<Self::Output> {
+        syscall!(posix_fallocate(
+            fd.fd(),
+            offset.cast_signed(),
+            length.into()
+        ))?;
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+impl_fd_op!(AllocateOp);
+
 pub(crate) struct TruncateOp;
 
 impl DirectFdOp for TruncateOp {
