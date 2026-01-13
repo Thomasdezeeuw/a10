@@ -5,7 +5,7 @@
 use std::ffi::{CString, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use std::{fmt, io, mem, str};
 
 use crate::op::{OpState, fd_operation, operation};
