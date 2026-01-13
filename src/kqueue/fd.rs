@@ -75,6 +75,12 @@ impl State {
             return;
         }
 
+        if lock(unsafe { &*ptr }).ops.is_empty() {
+            // No pending operations, we can safely drop the state.
+            unsafe { ptr::drop_in_place(ptr) };
+            return;
+        }
+
         // Because polling for events is done via a different type (not
         // `AsyncFd`, but `Ring`), it can happen on another thread. Which means
         // we don't know if another thread is currently accessing the operations
