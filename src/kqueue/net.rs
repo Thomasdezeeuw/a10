@@ -108,6 +108,33 @@ impl DirectFdOp for ListenOp {
 
 impl_fd_op!(ListenOp);
 
+pub(crate) struct RecvOp<B>(PhantomData<*const B>);
+
+impl<B: BufMut> FdOp for RecvOp<B> {
+    type Output = B;
+    type Resources = B;
+    type Args = RecvFlag;
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        buf: &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let (ptr, len) = unsafe { buf.parts_mut() };
+        syscall!(recv(fd.fd(), ptr.cast(), len as _, flags.0.cast_signed()))
+    }
+
+    fn map_ok(fd: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recv call.
+        unsafe { buf.set_init(n as usize) };
+        buf
+    }
+}
+
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
