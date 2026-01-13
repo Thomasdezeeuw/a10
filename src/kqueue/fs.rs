@@ -72,6 +72,41 @@ impl DirectOpEtract for CreateDirOp {
     }
 }
 
+pub(crate) struct RenameOp;
+
+impl DirectOp for RenameOp {
+    type Output = ();
+    type Resources = (CString, CString); // from path, to path
+    type Args = ();
+
+    fn run(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: Self::Args,
+    ) -> io::Result<Self::Output> {
+        Self::run_extract(sq, resources, args)?;
+        Ok(())
+    }
+}
+
+impl DirectOpEtract for RenameOp {
+    type ExtractOutput = (PathBuf, PathBuf);
+
+    fn run_extract(
+        sq: &SubmissionQueue,
+        (from, to): Self::Resources,
+        (): Self::Args,
+    ) -> io::Result<Self::ExtractOutput> {
+        syscall!(renameat(
+            libc::AT_FDCWD,
+            from.as_ptr(),
+            libc::AT_FDCWD,
+            to.as_ptr()
+        ))?;
+        Ok((path_from_cstring(from), path_from_cstring(to)))
+    }
+}
+
 pub(crate) use libc::stat as Stat;
 
 pub(crate) const fn file_type(stat: &Stat) -> FileType {
