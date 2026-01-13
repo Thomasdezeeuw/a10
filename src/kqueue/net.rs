@@ -6,12 +6,12 @@ use std::{io, ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{
-    DirectFdOp, DirectFdOpExtract, DirectOp, FdOp, impl_fd_op, impl_fd_op_extract,
+    DirectFdOp, DirectFdOpExtract, DirectOp, FdOp, FdOpExtract, impl_fd_op, impl_fd_op_extract,
 };
 use crate::kqueue::{self, cq, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol,
-    SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, SendCall,
+    SendFlag, SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -107,6 +107,48 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct SendMsgOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
+
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, N> {
+    type Output = usize;
+    type Resources = (
+        B,
+        MsgHeader,
+        [crate::io::IoSlice; N],
+        AddressStorage<A::Storage>,
+    );
+    type Args = (SendCall, SendFlag);
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (_, msg, iovecs, address): &mut Self::Resources,
+        (send_op, flags): &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let ptr = unsafe { msg.init_send::<A>(&mut address.0, iovecs) };
+        let (SendCall::Normal | SendCall::ZeroCopy) = send_op;
+        syscall!(sendmsg(fd.fd(), ptr, flags.0.cast_signed()))
+    }
+
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, n: Self::OperationOutput) -> Self::Output {
+        Self::map_ok_extract(fd, resources, n).1
+    }
+}
+
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp<B, A, N> {
+    type ExtractOutput = (B, usize);
+
+    fn map_ok_extract(
+        _: &AsyncFd,
+        (bufs, _, _, _): Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::ExtractOutput {
+        (bufs, n.cast_unsigned())
+    }
+}
 
 pub(crate) struct AcceptOp<A>(PhantomData<*const A>);
 
