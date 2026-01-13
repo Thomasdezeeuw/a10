@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 use crate::fs::{
     FileType, Metadata, MetadataInterest, Permissions, RemoveFlag, SyncDataFlag, path_from_cstring,
 };
-use crate::kqueue::op::{DirectFdOp, DirectOp, DirectOpEtract, impl_fd_op};
+use crate::kqueue::op::{DirectFdOp, DirectOp, DirectOpExtract, impl_fd_op};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct OpenOp;
@@ -25,7 +25,7 @@ impl DirectOp for OpenOp {
     }
 }
 
-impl DirectOpEtract for OpenOp {
+impl DirectOpExtract for OpenOp {
     type ExtractOutput = (AsyncFd, PathBuf);
 
     fn run_extract(
@@ -60,7 +60,7 @@ impl DirectOp for CreateDirOp {
     }
 }
 
-impl DirectOpEtract for CreateDirOp {
+impl DirectOpExtract for CreateDirOp {
     type ExtractOutput = PathBuf;
 
     fn run_extract(
@@ -91,7 +91,7 @@ impl DirectOp for RenameOp {
     }
 }
 
-impl DirectOpEtract for RenameOp {
+impl DirectOpExtract for RenameOp {
     type ExtractOutput = (PathBuf, PathBuf);
 
     fn run_extract(
@@ -126,7 +126,7 @@ impl DirectOp for DeleteOp {
     }
 }
 
-impl DirectOpEtract for DeleteOp {
+impl DirectOpExtract for DeleteOp {
     type ExtractOutput = PathBuf;
 
     fn run_extract(

@@ -81,7 +81,7 @@ impl<T: DirectOp> crate::op::Op for T {
 }
 
 /// Operation that is done using a synchronous function.
-pub(crate) trait DirectOpEtract: DirectOp {
+pub(crate) trait DirectOpExtract: DirectOp {
     /// Extracted output of the operation.
     type ExtractOutput;
 
@@ -93,8 +93,8 @@ pub(crate) trait DirectOpEtract: DirectOp {
     ) -> io::Result<Self::ExtractOutput>;
 }
 
-impl<T: DirectOpEtract> crate::op::OpExtract for T {
-    type ExtractOutput = io::Result<<Self as DirectOpEtract>::ExtractOutput>;
+impl<T: DirectOpExtract> crate::op::OpExtract for T {
+    type ExtractOutput = io::Result<<Self as DirectOpExtract>::ExtractOutput>;
 
     fn poll_extract(
         state: &mut Self::State,
