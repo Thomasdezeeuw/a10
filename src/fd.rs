@@ -37,8 +37,12 @@ pub use crate::sys::fd::{ToDirect, ToFd};
 pub struct AsyncFd {
     fd: RawFd,
     #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
         target_os = "ios",
         target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
         target_os = "tvos",
         target_os = "visionos",
         target_os = "watchos",
@@ -87,8 +91,12 @@ impl AsyncFd {
         AsyncFd {
             fd,
             #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
                 target_os = "ios",
                 target_os = "macos",
+                target_os = "netbsd",
+                target_os = "openbsd",
                 target_os = "tvos",
                 target_os = "visionos",
                 target_os = "watchos",
@@ -149,8 +157,12 @@ impl AsyncFd {
 
     /// Returns the internal state of the fd.
     #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
         target_os = "ios",
         target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
         target_os = "tvos",
         target_os = "visionos",
         target_os = "watchos",
@@ -172,8 +184,12 @@ impl fmt::Debug for AsyncFd {
         let mut f = f.debug_struct("AsyncFd");
         f.field("fd", &self.fd()).field("kind", &self.kind());
         #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
             target_os = "ios",
             target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
             target_os = "tvos",
             target_os = "visionos",
             target_os = "watchos",
@@ -206,8 +222,12 @@ impl Drop for AsyncFd {
             log::warn!("error closing a10::AsyncFd: {err}");
         }
         #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
             target_os = "ios",
             target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
             target_os = "tvos",
             target_os = "visionos",
             target_os = "watchos",
