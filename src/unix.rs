@@ -128,13 +128,14 @@ impl MsgHeader {
         &mut self,
         address: &mut A::Storage,
         iovecs: &mut [crate::io::IoSlice],
-    ) {
+    ) -> *const libc::msghdr {
         let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         self.0.msg_name = address_ptr.cast_mut().cast();
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
+        &self.0
     }
 
     pub(crate) const fn address_len(&self) -> libc::socklen_t {

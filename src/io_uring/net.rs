@@ -493,7 +493,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
         submission: &mut sq::Submission,
     ) {
         // SAFETY: `address` and `iovecs` outlive `msg`.
-        unsafe { msg.init_send::<A>(&mut address.0, iovecs) };
+        let ptr = unsafe { msg.init_send::<A>(&mut address.0, iovecs) };
 
         submission.0.opcode = match *send_op {
             SendCall::Normal => libc::IORING_OP_SENDMSG as u8,
@@ -501,7 +501,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
         };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut *msg).addr() as u64,
+            addr: ptr.addr() as u64,
         };
         asan::poison_iovecs(iovecs);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
