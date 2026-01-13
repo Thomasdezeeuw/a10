@@ -225,7 +225,7 @@ impl FdOp for SyncDataOp {
     }
 }
 
-pub(crate) const fn default_metadata_interest() -> MetadataInterest {
+pub(crate) fn default_metadata_interest() -> MetadataInterest {
     MetadataInterest::TYPE
         | MetadataInterest::MODE
         | MetadataInterest::ACCESSED_TIME
