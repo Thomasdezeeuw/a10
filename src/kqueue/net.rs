@@ -108,6 +108,39 @@ impl DirectFdOp for ListenOp {
 
 impl_fd_op!(ListenOp);
 
+pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
+
+impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
+    type Output = (B, A, libc::c_int);
+    type Resources = (B, MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>);
+    type Args = RecvFlag;
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (_, msg, iovec, address): &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let ptr = unsafe { msg.init_recv::<A>(address, slice::from_mut(iovec)) };
+        syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()))
+    }
+
+    fn map_ok(
+        fd: &AsyncFd,
+        (mut buf, msg, _, address): Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::Output {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        unsafe { buf.set_init(n as usize) };
+        // SAFETY: kernel initialised the address for us.
+        let address = unsafe { A::init(address, msg.address_len()) };
+        (buf, address, msg.flags())
+    }
+}
+
 pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
 impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVectoredOp<B, A, N> {
