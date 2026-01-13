@@ -1232,13 +1232,12 @@ fd_operation! {
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
 }
 
