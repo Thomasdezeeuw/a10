@@ -204,6 +204,21 @@ impl DirectFdOp for StatOp {
 
 impl_fd_op!(StatOp);
 
+pub(crate) struct TruncateOp;
+
+impl DirectFdOp for TruncateOp {
+    type Output = ();
+    type Resources = ();
+    type Args = u64; // length
+
+    fn run(fd: &AsyncFd, (): Self::Resources, length: Self::Args) -> io::Result<Self::Output> {
+        syscall!(ftruncate(fd.fd(), length.cast_signed()))?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(TruncateOp);
+
 pub(crate) use libc::stat as Stat;
 
 pub(crate) const fn file_type(stat: &Stat) -> FileType {
