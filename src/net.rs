@@ -1287,8 +1287,10 @@ pub struct SendAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
-    fn poll_inner(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
-        match Pin::new(&mut self.send).poll(ctx) {
+    fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving data out of self/this.
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        match unsafe { Pin::new_unchecked(&mut this.send) }.poll(ctx) {
             Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
             Poll::Ready(Ok((mut buf, n))) => {
                 buf.skip += n as u32;
@@ -1299,12 +1301,12 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
                 }
 
                 // Send some more.
-                self.send = match self.send_op {
-                    SendCall::Normal => self.send.fut.fd.send(buf, self.flags),
-                    SendCall::ZeroCopy => self.send.fut.fd.send_zc(buf, self.flags),
+                this.send = match this.send_op {
+                    SendCall::Normal => this.send.fut.fd.send(buf, this.flags),
+                    SendCall::ZeroCopy => this.send.fut.fd.send_zc(buf, this.flags),
                 }
                 .extract();
-                self.poll_inner(ctx)
+                unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
@@ -1325,8 +1327,9 @@ impl<'fd, B: Buf> Extract for SendAll<'fd, B> {}
 impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
     type Output = io::Result<B>;
 
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.fut).poll_inner(ctx)
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving data out of self/this.
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
     }
 }
 
