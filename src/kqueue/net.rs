@@ -6,7 +6,10 @@ use std::{io, ptr, slice};
 use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice};
 use crate::kqueue::op::{DirectFdOp, DirectOp, impl_fd_op};
 use crate::kqueue::{self, cq, sq};
-use crate::net::{AddressStorage, Domain, NoAddress, OptionStorage, Protocol, SocketAddress, Type};
+use crate::net::{
+    AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, SocketAddress, Type,
+    option,
+};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) use crate::unix::MsgHeader;
@@ -101,6 +104,31 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
+
+impl<T: option::Set> DirectFdOp for SetSocketOption2Op<T> {
+    type Output = ();
+    type Resources = OptionStorage<T::Storage>;
+    type Args = (Level, Opt);
+
+    fn run(
+        fd: &AsyncFd,
+        value: Self::Resources,
+        (level, optname): Self::Args,
+    ) -> io::Result<Self::Output> {
+        syscall!(setsockopt(
+            fd.fd(),
+            level.0.cast_signed(),
+            optname.0.cast_signed(),
+            ptr::from_ref(&value.0).cast(),
+            size_of::<T::Storage>() as _,
+        ))?;
+        Ok(())
+    }
+}
+
+impl_fd_op!(SetSocketOption2Op<T>);
 
 pub(crate) struct ShutdownOp;
 
