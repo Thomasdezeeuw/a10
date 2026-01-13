@@ -86,7 +86,7 @@ impl FdOp for ReceiveSignalOp {
 pub(crate) use libc::signalfd_siginfo as SignalInfo;
 
 pub(crate) const fn signal(info: &SignalInfo) -> Signal {
-    Signal(info.ssi_signo as i32)
+    Signal(info.ssi_signo.cast_signed())
 }
 
 pub(crate) const fn pid(info: &SignalInfo) -> u32 {
