@@ -307,6 +307,13 @@ impl AsyncFd {
     #[doc = man_link!(posix_fadvise(2))]
     #[doc(alias = "fadvise")]
     #[doc(alias = "posix_fadvise")]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+    ))]
     pub fn advise<'fd>(&'fd self, offset: u64, length: u32, advice: AdviseFlag) -> Advise<'fd> {
         Advise::new(self, (), (offset, length, advice))
     }
@@ -376,7 +383,13 @@ new_flag!(
     }
 );
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 new_flag!(
     /// Advise about data access.
     ///

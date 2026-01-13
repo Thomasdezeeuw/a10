@@ -204,6 +204,33 @@ impl DirectFdOp for StatOp {
 
 impl_fd_op!(StatOp);
 
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+pub(crate) struct AdviseOp;
+
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+impl DirectFdOp for AdviseOp {
+    type Output = ();
+    type Resources = ();
+    type Args = (u64, u32, crate::fs::AdviseFlag); // offset, length, advice
+
+    fn run(
+        fd: &AsyncFd,
+        (): Self::Resources,
+        (offset, length, advise): Self::Args,
+    ) -> io::Result<Self::Output> {
+        syscall!(posix_fadvise(
+            fd.fd(),
+            offset.cast_signed(),
+            length.into(),
+            advise.0.cast_signed()
+        ))?;
+        Ok(())
+    }
+}
+
+#[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "netbsd"))]
+impl_fd_op!(AdviseOp);
+
 pub(crate) struct TruncateOp;
 
 impl DirectFdOp for TruncateOp {
