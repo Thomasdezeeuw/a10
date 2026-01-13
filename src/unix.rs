@@ -111,13 +111,14 @@ impl MsgHeader {
         &mut self,
         address: &mut MaybeUninit<A::Storage>,
         iovecs: &mut [crate::io::IoMutSlice],
-    ) {
+    ) -> *mut libc::msghdr {
         let (address_ptr, address_length) = unsafe { A::as_mut_ptr(address) };
         self.0.msg_name = address_ptr.cast();
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
+        &mut self.0
     }
 
     /// # Safety

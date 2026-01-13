@@ -10,8 +10,8 @@ use crate::kqueue::op::{
 };
 use crate::kqueue::{self, cq, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, SendCall,
-    SendFlag, SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Level, NoAddress, Opt, OptionStorage, Protocol, RecvFlag,
+    SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -107,6 +107,44 @@ impl DirectFdOp for ListenOp {
 }
 
 impl_fd_op!(ListenOp);
+
+pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
+
+impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVectoredOp<B, A, N> {
+    type Output = (B, A, libc::c_int);
+    type Resources = (
+        B,
+        MsgHeader,
+        [crate::io::IoMutSlice; N],
+        MaybeUninit<A::Storage>,
+    );
+    type Args = RecvFlag;
+    type OperationOutput = libc::ssize_t;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (bufs, msg, iovecs, address): &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let ptr = unsafe { msg.init_recv::<A>(address, iovecs) };
+        syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()))
+    }
+
+    fn map_ok(
+        fd: &AsyncFd,
+        (mut bufs, msg, iovecs, address): Self::Resources,
+        n: Self::OperationOutput,
+    ) -> Self::Output {
+        // SAFETY: the kernel initialised the bytes for us as part of the
+        // recvmsg call.
+        unsafe { bufs.set_init(n as usize) };
+        // SAFETY: kernel initialised the address for us.
+        let address = unsafe { A::init(address, msg.address_len()) };
+        (bufs, address, msg.flags())
+    }
+}
 
 pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
