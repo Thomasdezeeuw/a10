@@ -8,19 +8,24 @@ use std::net::{
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::fd;
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
-    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketName,
-    SocketOpt, Type, socket,
+    Accept, Bind, Domain, Level, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
+    SendAllVectored, SendTo, SetSocketOption, Socket, SocketName, SocketOpt, Type,
 };
-use a10::{AsyncFd, Extract, Ring, fd};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::net::{MultishotAccept, MultishotRecv, socket};
+use a10::{Extract, Ring};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    block_on, expect_io_errno, expect_io_error_kind, fd, init, is_send, is_sync, new_socket, next,
-    require_kernel, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    block_on, expect_io_error_kind, fd, init, is_send, is_sync, new_socket, require_kernel,
+    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{expect_io_errno, next};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -121,6 +126,7 @@ fn accept_no_address() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept() {
     require_kernel!(5, 19);
 
@@ -199,6 +205,7 @@ fn multishot_accept() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept_incorrect_usage() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -397,6 +404,7 @@ fn recv_read_buf_pool_send_read_buf() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
@@ -441,6 +449,7 @@ fn multishot_recv() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv_large_send() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
@@ -487,6 +496,7 @@ fn multishot_recv_large_send() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv_all_buffers_used() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
@@ -1397,13 +1407,16 @@ fn set_socket_option() {
 
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
-    waker
-        .block_on(socket.set_socket_option::<libc::c_int>(
-            Level::SOCKET,
-            SocketOpt::INCOMING_CPU,
-            0,
-        ))
-        .unwrap();
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        waker
+            .block_on(socket.set_socket_option::<libc::c_int>(
+                Level::SOCKET,
+                SocketOpt::INCOMING_CPU,
+                0,
+            ))
+            .unwrap();
+    }
 
     let linger = libc::linger {
         l_onoff: 1,
@@ -1427,6 +1440,7 @@ fn set_socket_option() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn direct_fd() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -1436,7 +1450,7 @@ fn direct_fd() {
     let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
-    let stream: AsyncFd = waker
+    let stream = waker
         .block_on(socket(sq, Domain::IPV4, Type::STREAM, None).kind(fd::Kind::Direct))
         .expect("failed to create socket");
     waker
