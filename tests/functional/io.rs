@@ -350,7 +350,7 @@ fn dropped_futures_do_not_leak_buffers() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file = OpenOptions::new().write().open(sq, tmp_path());
+    let open_file = OpenOptions::new().write().create().open(sq, tmp_path());
     let file = waker.block_on(open_file).unwrap();
 
     let buf = vec![123; 64 * 1024];
