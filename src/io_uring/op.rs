@@ -172,7 +172,11 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
         // SAFETY: if we're called we're dropping the value, thus we should have
         // unique acess.
         let data = unsafe { &mut *ptr };
-        if !matches!(lock(&data.shared).status, Status::Complete) {
+        let shared = match data.shared.get_mut() {
+            Ok(shared) => shared,
+            Err(err) => err.into_inner(),
+        };
+        if !matches!(shared.status, Status::Complete) {
             asan::unpoison(data.tail.resources.get());
             // SAFETY: Resources must always be initialise if the status is not
             // Complete, which we checked above.
