@@ -225,13 +225,15 @@ impl Completion {
         }
 
         let ptr: *const () = ptr::with_exposed_provenance(user_data);
-        let update = if ptr.addr() & MULTISHOT_TAG == 0 {
+        let is_multishot = ptr.addr() & MULTISHOT_TAG == 0;
+        let ptr = ptr.map_addr(|addr| addr & TAG_MASK);
+        let update = if is_multishot {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::SingleShared>() > 1);
             let head: &op::SingleShared = unsafe { &*ptr.cast() };
             lock(head).update(self)
         } else {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::MultiShared>() > 1);
-            let head: &op::MultiShared = unsafe { &*ptr.map_addr(|addr| addr & TAG_MASK).cast() };
+            let head: &op::MultiShared = unsafe { &*ptr.cast() };
             lock(head).update(self)
         };
         match update {
@@ -240,12 +242,12 @@ impl Completion {
                 log::trace!(waker:?; "waking up future to make progress");
                 waker.wake();
             }
-            op::StatusUpdate::Drop { drop, ptr } => {
+            op::StatusUpdate::Drop { drop } => {
                 log::trace!(ptr:?; "dropping operation state");
                 // SAFETY: `update` told use to drop all the operation data. The
                 // operation future itself ensures that we only get here if the
                 // Future is dropped and the state is no longer used.
-                unsafe { drop(ptr) }
+                unsafe { drop(ptr.cast_mut()) }
             }
         }
     }

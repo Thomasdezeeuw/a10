@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 use std::io;
 use std::mem::{self, MaybeUninit, drop as unlock, replace};
 use std::panic::RefUnwindSafe;
-use std::ptr::{self, NonNull};
+use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::task::{self, Poll};
 
@@ -225,10 +225,7 @@ impl<T: OpResult> Shared<T> {
                     StatusUpdate::Ok
                 }
             }
-            Status::Dropped => StatusUpdate::Drop {
-                drop: self.drop,
-                ptr: ptr::from_mut(self).cast(),
-            },
+            Status::Dropped => StatusUpdate::Drop { drop: self.drop },
             Status::NotStarted | Status::Complete => unreachable!(),
         }
     }
@@ -241,11 +238,8 @@ pub(super) enum StatusUpdate {
     Ok,
     /// Wake the task.
     Wake(task::Waker),
-    /// Call `drop` with `ptr`.
-    Drop {
-        drop: unsafe fn(*mut ()),
-        ptr: *mut (),
-    },
+    /// Call `drop` with pointer to `SingleShared` or `MultiShared`.
+    Drop { drop: unsafe fn(*mut ()) },
 }
 
 // SAFETY: UnsafeCell is !Sync, but as long as R is Sync/Send so UnsafeCell<R>.
