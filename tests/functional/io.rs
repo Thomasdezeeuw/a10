@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::env::temp_dir;
 use std::future::Future;
 use std::io;
 use std::os::fd::{FromRawFd, RawFd};
@@ -59,9 +58,7 @@ fn write_all_at_extract() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let mut path = temp_dir();
-    path.push("write_all_at_extract");
-
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
     let open_file: Open = OpenOptions::new()
@@ -106,9 +103,7 @@ fn write_all_vectored_at_extract() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let mut path = temp_dir();
-    path.push("write_all_vectored_at_extract");
-
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
     let open_file: Open = OpenOptions::new()
@@ -279,8 +274,7 @@ fn splice_from() {
 
     let expected = LOREM_IPSUM_50.content;
 
-    let mut path = temp_dir();
-    path.push("splice_from");
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
     let open_file: Open = OpenOptions::new()
@@ -356,7 +350,7 @@ fn dropped_futures_do_not_leak_buffers() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().write().open(sq, temp_dir());
+    let open_file: Open = OpenOptions::new().write().open(sq, tmp_path());
     let file = waker.block_on(open_file).unwrap();
 
     let buf = vec![123; 64 * 1024];
