@@ -241,6 +241,18 @@ pub(crate) trait FdOp {
     type Args;
     type OperationOutput;
 
+    /// Setup to run *before* waiting for an event.
+    ///
+    /// Defaults to doing nothing.
+    fn setup(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> io::Result<()> {
+        _ = (fd, resources, args);
+        Ok(())
+    }
+
     /// What kind of operation is being done.
     const OP_KIND: OpKind;
 
@@ -279,7 +291,10 @@ impl<T: FdOp> crate::op::FdOp for T {
     ) -> Poll<Self::Output> {
         loop {
             match state {
-                EventedState::NotStarted { .. } => {
+                EventedState::NotStarted { resources, args } => {
+                    // Perform any setup required before waiting for an event.
+                    T::setup(fd, resources, args)?;
+
                     let fd_state = fd.state();
                     // Add ourselves to the waiters for the operation.
                     let needs_register = {
