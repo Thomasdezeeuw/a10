@@ -75,24 +75,25 @@ pub(crate) fn test_queue() -> SubmissionQueue {
                 Err(err) => panic!("failed to create test ring: {err}"),
             };
             let sq = ring.sq().clone();
-            thread::spawn(move || {
-                let res = panic::catch_unwind(move || {
-                    loop {
-                        match ring.poll(None) {
-                            Ok(()) => continue,
-                            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                            Err(err) => panic!("unexpected error polling: {err}"),
+            thread::Builder::new()
+                .name("test_queue".into())
+                .spawn(move || {
+                    let res = panic::catch_unwind(move || {
+                        loop {
+                            match ring.poll(None) {
+                                Ok(()) => continue,
+                                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                                    continue;
+                                }
+                                Err(err) => panic!("unexpected error polling: {err}"),
+                            }
                         }
-                    }
-                });
-                match res {
-                    Ok(()) => (),
-                    Err(err) => {
-                        let msg = panic_message(&*err);
-                        panic!("Polling thread panicked: {msg}\n");
-                    }
-                }
-            });
+                    });
+                    let Err(err) = res;
+                    let msg = panic_message(&*err);
+                    panic!("Polling thread panicked: {msg}\n");
+                })
+                .expect("failed to spawn test_queue thread");
             sq
         })
         .clone()
