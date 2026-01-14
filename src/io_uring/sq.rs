@@ -25,11 +25,8 @@ impl Submissions {
         F: FnOnce(&mut Submission),
     {
         let shared = &*self.shared;
-        let len = shared.submissions_len;
         // Before grabbing a lock, see if there is space in the queue.
-        if load_kernel_shared(shared.submissions_tail) - load_kernel_shared(shared.submissions_head)
-            >= len
-        {
+        if shared.unsubmitted_submissions() >= 1 {
             return Err(QueueFull);
         }
 
@@ -38,8 +35,12 @@ impl Submissions {
 
         // NOTE: need to load the tail and head values again as they could have
         // changed since we last loaded them.
-        let tail = load_kernel_shared(shared.submissions_tail);
+        // NOTE: we MUST load the head before the tail to ensure the head is
+        // ALWAYS older. Otherwise it's possible for the subtraction to
+        // underflow.
         let head = load_kernel_shared(shared.submissions_head);
+        let tail = load_kernel_shared(shared.submissions_tail);
+        let len = shared.submissions_len;
         if (tail - head) > len {
             return Err(QueueFull);
         }
@@ -61,8 +62,8 @@ impl Submissions {
         atomic::fence(Ordering::SeqCst);
 
         // SAFETY: submissions_tail is a valid pointer. It's safe to use store
-        // here because we're holding the submission lock and thus have unique
-        // access to the submissions.
+        // here because we're holding the submission lock and thus are the only
+        // ones writing to it (but other threads and the kernel can read it).
         let new_tail = tail.wrapping_add(1);
         unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
         unlock(submissions_guard);
