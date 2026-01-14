@@ -196,6 +196,7 @@ impl Drop for Completions {
 #[repr(transparent)]
 pub(crate) struct Completion(pub(super) libc::io_uring_cqe);
 
+pub(super) const SINGLESHOT_TAG: usize = 0b00;
 pub(super) const MULTISHOT_TAG: usize = 0b01;
 const TAG_MASK: usize = !MULTISHOT_TAG;
 

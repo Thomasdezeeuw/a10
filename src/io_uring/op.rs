@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::task::{self, Poll};
 
 use crate::asan;
-use crate::io_uring::cq::{Completion, MULTISHOT_TAG};
+use crate::io_uring::cq::{Completion, MULTISHOT_TAG, SINGLESHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
@@ -266,6 +266,9 @@ trait OpResult {
     /// Whether or not the operation if a multishot operation. Is used to
     /// determine if we need to wake if more completion events are expected.
     const IS_MULTISHOT: bool;
+
+    /// Return the next result.
+    fn next(&mut self) -> Option<CompletionResult>;
 }
 
 /// Completed result of an operation.
@@ -318,6 +321,10 @@ impl OpResult for Singleshot {
     }
 
     const IS_MULTISHOT: bool = false;
+
+    fn next(&mut self) -> Option<CompletionResult> {
+        Some(self.0)
+    }
 }
 
 /// Multishot operation.
@@ -334,6 +341,13 @@ impl OpResult for Multishot {
     }
 
     const IS_MULTISHOT: bool = true;
+
+    fn next(&mut self) -> Option<CompletionResult> {
+        if self.0.is_empty() {
+            return None;
+        }
+        Some(self.0.remove(0))
+    }
 }
 
 pub(crate) trait Op {
@@ -356,7 +370,6 @@ pub(crate) trait Op {
     ) -> Self::Output;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: Op> crate::op::Op for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -368,83 +381,13 @@ impl<T: Op> crate::op::Op for T {
         ctx: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
-        let data = unsafe { state.data.as_mut() };
-        let mut shared = lock(&data.shared);
-        match &mut shared.status {
-            Status::NotStarted => {
-                let submissions = sq.submissions();
-                let result = submissions.add(|submission| {
-                    // SAFETY: the resources are initialised as the status not
-                    // set to Complete. Furtermore we have unique access as the
-                    // status is not Running.
-                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
-                    let args = &mut data.tail.args;
-                    T::fill_submission(resources, args, submission);
-                    // While the kernel has access to the resources (to use in
-                    // the operation) we can't access them.
-                    asan::poison(resources);
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
-                });
-                match result {
-                    Ok(()) => {
-                        // Make sure we get awoken when the operation is ready.
-                        shared.waker = Some(ctx.waker().clone());
-                        shared.status = Status::Running {
-                            result: Singleshot::empty(),
-                        };
-                        unlock(shared);
-                    }
-                    Err(QueueFull) => {
-                        unlock(shared);
-                        // Make sure we get awoken when we can retry submitting
-                        // the operation.
-                        submissions.wait_for_submission(ctx.waker().clone());
-                    }
-                }
-                Poll::Pending
-            }
-            Status::Running { .. } => {
-                // For a single shot operation we wait until the operation is
-                // done so that we can safely move/deallocate the resources.
-                // This is needed for zero copy operations (e.g. sends), which
-                // returns two completion events, setting the status to Running
-                // and Done respectively.
-
-                // Make sure we wake using the correct waker.
-                match &mut shared.waker {
-                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => waker.clone_from(ctx.waker()),
-                    None => shared.waker = Some(ctx.waker().clone()),
-                }
-                unlock(shared);
-                Poll::Pending
-            }
-            Status::Done { result } => {
-                let result = result.0;
-                shared.status = Status::Complete;
-                unlock(shared);
-
-                // SAFETY: this is only safe because we set the status to
-                // Complete above.
-                asan::unpoison(data.tail.resources.get());
-                let resources =
-                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
-                let op_return = result.as_op_return()?;
-                Poll::Ready(Ok(T::map_ok(sq, resources, op_return)))
-            }
-            // Only the Future sets the Dropped status, which is also the only
-            // one that calls this function, so this should be unreachable.
-            Status::Dropped => {
-                unlock(shared);
-                unreachable!()
-            }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            Status::Complete => {
-                unlock(shared);
-                panic!("polled Future after completion");
-            }
-        }
+        poll(
+            sq,
+            state,
+            ctx,
+            |_, resources, args, submission| T::fill_submission(resources, args, submission),
+            T::map_ok,
+        )
     }
 }
 
@@ -459,7 +402,6 @@ pub(crate) trait OpExtract: Op {
     ) -> Self::ExtractOutput;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: Op + OpExtract> crate::op::OpExtract for T {
     type ExtractOutput = io::Result<T::ExtractOutput>;
 
@@ -468,83 +410,13 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
         ctx: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::ExtractOutput> {
-        let data = unsafe { state.data.as_mut() };
-        let mut shared = lock(&data.shared);
-        match &mut shared.status {
-            Status::NotStarted => {
-                let submissions = sq.submissions();
-                let result = submissions.add(|submission| {
-                    // SAFETY: the resources are initialised as the status not
-                    // set to Complete. Furtermore we have unique access as the
-                    // status is not Running.
-                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
-                    let args = &mut data.tail.args;
-                    T::fill_submission(resources, args, submission);
-                    // While the kernel has access to the resources (to use in
-                    // the operation) we can't access them.
-                    asan::poison(resources);
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
-                });
-                match result {
-                    Ok(()) => {
-                        // Make sure we get awoken when the operation is ready.
-                        shared.waker = Some(ctx.waker().clone());
-                        shared.status = Status::Running {
-                            result: Singleshot::empty(),
-                        };
-                        unlock(shared);
-                    }
-                    Err(QueueFull) => {
-                        unlock(shared);
-                        // Make sure we get awoken when we can retry submitting
-                        // the operation.
-                        submissions.wait_for_submission(ctx.waker().clone());
-                    }
-                }
-                Poll::Pending
-            }
-            Status::Running { .. } => {
-                // For a single shot operation we wait until the operation is
-                // done so that we can safely move/deallocate the resources.
-                // This is needed for zero copy operations (e.g. sends), which
-                // returns two completion events, setting the status to Running
-                // and Done respectively.
-
-                // Make sure we wake using the correct waker.
-                match &mut shared.waker {
-                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => waker.clone_from(ctx.waker()),
-                    None => shared.waker = Some(ctx.waker().clone()),
-                }
-                unlock(shared);
-                Poll::Pending
-            }
-            Status::Done { result } => {
-                let result = result.0;
-                shared.status = Status::Complete;
-                unlock(shared);
-
-                // SAFETY: this is only safe because we set the status to
-                // Complete above.
-                asan::unpoison(data.tail.resources.get());
-                let resources =
-                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
-                let op_return = result.as_op_return()?;
-                Poll::Ready(Ok(T::map_ok_extract(sq, resources, op_return)))
-            }
-            // Only the Future sets the Dropped status, which is also the only
-            // one that calls this function, so this should be unreachable.
-            Status::Dropped => {
-                unlock(shared);
-                unreachable!()
-            }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            Status::Complete => {
-                unlock(shared);
-                panic!("polled Future after completion")
-            }
-        }
+        poll(
+            sq,
+            state,
+            ctx,
+            |_, resources, args, submission| T::fill_submission(resources, args, submission),
+            T::map_ok_extract,
+        )
     }
 }
 
@@ -565,7 +437,6 @@ pub(crate) trait FdOp {
     fn map_ok(fd: &AsyncFd, resources: Self::Resources, op_return: OpReturn) -> Self::Output;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: FdOp> crate::op::FdOp for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -577,84 +448,7 @@ impl<T: FdOp> crate::op::FdOp for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
-        let data = unsafe { state.data.as_mut() };
-        let mut shared = lock(&data.shared);
-        match &mut shared.status {
-            Status::NotStarted => {
-                let submissions = fd.sq().submissions();
-                let result = submissions.add(|submission| {
-                    // SAFETY: the resources are initialised as the status not
-                    // set to Complete. Furtermore we have unique access as the
-                    // status is not Running.
-                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
-                    let args = &mut data.tail.args;
-                    T::fill_submission(fd, resources, args, submission);
-                    fd.kind().use_flags(submission);
-                    // While the kernel has access to the resources (to use in
-                    // the operation) we can't access them.
-                    asan::poison(resources);
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
-                });
-                match result {
-                    Ok(()) => {
-                        // Make sure we get awoken when the operation is ready.
-                        shared.waker = Some(ctx.waker().clone());
-                        shared.status = Status::Running {
-                            result: Singleshot::empty(),
-                        };
-                        unlock(shared);
-                    }
-                    Err(QueueFull) => {
-                        unlock(shared);
-                        // Make sure we get awoken when we can retry submitting
-                        // the operation.
-                        submissions.wait_for_submission(ctx.waker().clone());
-                    }
-                }
-                Poll::Pending
-            }
-            Status::Running { .. } => {
-                // For a single shot operation we wait until the operation is
-                // done so that we can safely move/deallocate the resources.
-                // This is needed for zero copy operations (e.g. sends), which
-                // returns two completion events, setting the status to Running
-                // and Done respectively.
-
-                // Make sure we wake using the correct waker.
-                match &mut shared.waker {
-                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => waker.clone_from(ctx.waker()),
-                    None => shared.waker = Some(ctx.waker().clone()),
-                }
-                unlock(shared);
-                Poll::Pending
-            }
-            Status::Done { result } => {
-                let result = result.0;
-                shared.status = Status::Complete;
-                unlock(shared);
-
-                // SAFETY: this is only safe because we set the status to
-                // Complete above.
-                asan::unpoison(data.tail.resources.get());
-                let resources =
-                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
-                let op_return = result.as_op_return()?;
-                Poll::Ready(Ok(T::map_ok(fd, resources, op_return)))
-            }
-            // Only the Future sets the Dropped status, which is also the only
-            // one that calls this function, so this should be unreachable.
-            Status::Dropped => {
-                unlock(shared);
-                unreachable!()
-            }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            Status::Complete => {
-                unlock(shared);
-                panic!("polled Future after completion")
-            }
-        }
+        poll(fd, state, ctx, T::fill_submission, T::map_ok)
     }
 }
 
@@ -669,7 +463,6 @@ pub(crate) trait FdOpExtract: FdOp {
     ) -> Self::ExtractOutput;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
     type ExtractOutput = io::Result<T::ExtractOutput>;
 
@@ -678,84 +471,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::ExtractOutput> {
-        let data = unsafe { state.data.as_mut() };
-        let mut shared = lock(&data.shared);
-        match &mut shared.status {
-            Status::NotStarted => {
-                let submissions = fd.sq().submissions();
-                let result = submissions.add(|submission| {
-                    // SAFETY: the resources are initialised as the status not
-                    // set to Complete. Furtermore we have unique access as the
-                    // status is not Running.
-                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
-                    let args = &mut data.tail.args;
-                    T::fill_submission(fd, resources, args, submission);
-                    fd.kind().use_flags(submission);
-                    // While the kernel has access to the resources (to use in
-                    // the operation) we can't access them.
-                    asan::poison(resources);
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
-                });
-                match result {
-                    Ok(()) => {
-                        // Make sure we get awoken when the operation is ready.
-                        shared.waker = Some(ctx.waker().clone());
-                        shared.status = Status::Running {
-                            result: Singleshot::empty(),
-                        };
-                        unlock(shared);
-                    }
-                    Err(QueueFull) => {
-                        unlock(shared);
-                        // Make sure we get awoken when we can retry submitting
-                        // the operation.
-                        submissions.wait_for_submission(ctx.waker().clone());
-                    }
-                }
-                Poll::Pending
-            }
-            Status::Running { .. } => {
-                // For a single shot operation we wait until the operation is
-                // done so that we can safely move/deallocate the resources.
-                // This is needed for zero copy operations (e.g. sends), which
-                // returns two completion events, setting the status to Running
-                // and Done respectively.
-
-                // Make sure we wake using the correct waker.
-                match &mut shared.waker {
-                    Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                    Some(waker) => waker.clone_from(ctx.waker()),
-                    None => shared.waker = Some(ctx.waker().clone()),
-                }
-                unlock(shared);
-                Poll::Pending
-            }
-            Status::Done { result } => {
-                let result = result.0;
-                shared.status = Status::Complete;
-                unlock(shared);
-
-                // SAFETY: this is only safe because we set the status to
-                // Complete above.
-                asan::unpoison(data.tail.resources.get());
-                let resources =
-                    unsafe { data.tail.resources.get().cast::<Self::Resources>().read() };
-                let op_return = result.as_op_return()?;
-                Poll::Ready(Ok(T::map_ok_extract(fd, resources, op_return)))
-            }
-            // Only the Future sets the Dropped status, which is also the only
-            // one that calls this function, so this should be unreachable.
-            Status::Dropped => {
-                unlock(shared);
-                unreachable!()
-            }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            Status::Complete => {
-                unlock(shared);
-                panic!("polled Future after completion")
-            }
-        }
+        poll(fd, state, ctx, T::fill_submission, T::map_ok_extract)
     }
 }
 
@@ -778,7 +494,6 @@ pub(crate) trait FdIter {
     fn map_next(fd: &AsyncFd, resources: &Self::Resources, op_return: OpReturn) -> Self::Output;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: FdIter> crate::op::FdIter for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -790,95 +505,255 @@ impl<T: FdIter> crate::op::FdIter for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
-        let data = unsafe { state.data.as_mut() };
-        let mut shared = lock(&data.shared);
-        match &mut shared.status {
-            Status::NotStarted => {
-                let submissions = fd.sq().submissions();
-                let result = submissions.add(|submission| {
-                    // SAFETY: the resources are initialised as the status not
-                    // set to Complete. Furtermore we have unique access as the
-                    // status is not Running.
-                    let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
-                    let args = &mut data.tail.args;
-                    T::fill_submission(fd, resources, args, submission);
-                    fd.kind().use_flags(submission);
-                    // NOTE: we do NOT poison the resources as we need read only
-                    // access to them while the kernel is also reading them.
-                    submission.0.user_data =
-                        (state.data.expose_provenance().get() | MULTISHOT_TAG) as u64;
-                });
-                match result {
-                    Ok(()) => {
-                        // Make sure we get awoken when the operation is ready.
-                        shared.waker = Some(ctx.waker().clone());
-                        shared.status = Status::Running {
-                            result: Multishot::empty(),
-                        };
-                        unlock(shared);
-                    }
-                    Err(QueueFull) => {
-                        unlock(shared);
-                        // Make sure we get awoken when we can retry submitting
-                        // the operation.
-                        submissions.wait_for_submission(ctx.waker().clone());
-                    }
+        poll_next(fd, state, ctx, T::fill_submission, T::map_next)
+    }
+}
+
+fn poll<T, O, R, A, Out>(
+    target: &T,
+    state: &mut State<O, R, A>,
+    ctx: &mut task::Context<'_>,
+    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
+    map_ok: impl Fn(&T, R, OpReturn) -> Out,
+) -> Poll<io::Result<Out>>
+where
+    T: OpTarget,
+    O: OpResult,
+{
+    // SAFETY: this is only safe because we set the status to Complete before we
+    // read the resources here.
+    let read_resources = |resources_ptr: *mut R| unsafe { resources_ptr.read() };
+    poll_inner(target, state, ctx, fill_submission, read_resources, map_ok)
+}
+
+fn poll_next<T, O, R, A, Out>(
+    target: &T,
+    state: &mut State<O, R, A>,
+    ctx: &mut task::Context<'_>,
+    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
+    map_next: impl Fn(&T, &R, OpReturn) -> Out,
+) -> Poll<Option<io::Result<Out>>>
+where
+    T: OpTarget,
+    O: OpResult,
+{
+    // SAFETY: this is only safe because we set the status to Complete before we
+    // read the resources here.
+    let get_resources = |resources_ptr: *mut R| unsafe { &*resources_ptr };
+    poll_inner(target, state, ctx, fill_submission, get_resources, map_next)
+}
+
+/// A (too large) function that polls a `State` to implement any kind of
+/// operation.
+fn poll_inner<T, O, R, R2, A, Ok, Res>(
+    target: &T,
+    state: &mut State<O, R, A>,
+    ctx: &mut task::Context<'_>,
+    fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
+    get_resources: impl FnOnce(*mut R) -> R2,
+    map_ok: impl FnOnce(&T, R2, OpReturn) -> Ok,
+) -> Poll<Res>
+where
+    T: OpTarget,
+    O: OpResult,
+    Res: OpPollResult<Ok>,
+{
+    let data = unsafe { state.data.as_mut() };
+    let mut shared = lock(&data.shared);
+    match &mut shared.status {
+        Status::NotStarted => {
+            let submissions = target.sq().submissions();
+            let result = submissions.add(|submission| {
+                // SAFETY: the resources are initialised as the status not set
+                // to Complete. Furtermore we have unique access as the status
+                // is not Running.
+                let resources = unsafe { data.tail.resources.get_mut().assume_init_mut() };
+                let args = &mut data.tail.args;
+                fill_submission(target, resources, args, submission);
+                target.set_flags(submission);
+
+                submission.0.user_data = state.data.expose_provenance().get() as u64;
+                if O::IS_MULTISHOT {
+                    // For multishot operations we do NOT poison the resources
+                    // as we need read only access to them while the kernel is
+                    // also reading them.
+                    submission.0.user_data |= MULTISHOT_TAG as u64;
+                } else {
+                    // In singleshot operation we can't access the resources
+                    // while the kernel has access to them. E.g. the kernel
+                    // might be writing into a buffer.
+                    asan::poison(resources);
+                    submission.0.user_data |= SINGLESHOT_TAG as u64;
                 }
-                Poll::Pending
+            });
+            match result {
+                Ok(()) => {
+                    // Make sure we get awoken when the operation is ready.
+                    shared.waker = Some(ctx.waker().clone());
+                    shared.status = Status::Running { result: O::empty() };
+                    unlock(shared);
+                }
+                Err(QueueFull) => {
+                    unlock(shared);
+                    // Make sure we get awoken when we can retry submitting the
+                    // operation.
+                    submissions.wait_for_submission(ctx.waker().clone());
+                }
             }
-            Status::Running { result } => {
-                if result.0.is_empty() {
+            Poll::Pending
+        }
+        Status::Running { result } => {
+            if O::IS_MULTISHOT {
+                // For multishot operations we can process completions results
+                // as they are posted by the kernel.
+                let Some(result) = result.next() else {
+                    // No completion yet, try again later.
                     // Make sure we wake using the correct waker.
-                    match &mut shared.waker {
-                        Some(waker) if waker.will_wake(ctx.waker()) => { /* Nothing to do. */ }
-                        Some(waker) => waker.clone_from(ctx.waker()),
-                        None => shared.waker = Some(ctx.waker().clone()),
-                    }
+                    set_waker(&mut shared.waker, ctx.waker());
                     unlock(shared);
                     return Poll::Pending;
-                }
-                let op_return = result.0.remove(0).as_op_return()?;
+                };
                 unlock(shared);
+                let op_return = match result.as_op_return() {
+                    Ok(ret) => ret,
+                    Err(err) => return Poll::Ready(Res::from_err(err)),
+                };
                 // SAFETY: we share the resources with the kernel, so we can
                 // only read them.
-                let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
-                Poll::Ready(Some(Ok(T::map_next(fd, resources, op_return))))
-            }
-            Status::Done { result } => {
-                if result.0.is_empty() {
-                    // Processed all results.
-                    shared.status = Status::Complete;
-                    unlock(shared);
-                    // SAFETY: this is only safe because we set the status to
-                    // Complete above.
-                    unsafe {
-                        data.tail
-                            .resources
-                            .get()
-                            .cast::<Self::Resources>()
-                            .drop_in_place();
-                    }
-                    return Poll::Ready(None);
-                }
-                let op_return = result.0.remove(0).as_op_return()?;
+                let resources = get_resources(data.tail.resources.get().cast::<R>());
+                Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
+            } else {
+                // For a singleshot operation we wait until the operation is
+                // done so that we can safely move/deallocate the resources.
+                // This is needed for zero copy operations (e.g. sends), which
+                // returns two completion events, setting the status to Running
+                // and Done respectively.
+
+                // Make sure we wake using the correct waker.
+                set_waker(&mut shared.waker, ctx.waker());
                 unlock(shared);
-                // SAFETY: the operation is done, so the kernel doesn't access
-                // the resources any more. This gives us unique access to them.
-                let resources = unsafe { &*data.tail.resources.get().cast::<Self::Resources>() };
-                Poll::Ready(Some(Ok(T::map_next(fd, resources, op_return))))
-            }
-            // Only the Future sets the Dropped status, which is also the only
-            // one that calls this function, so this should be unreachable.
-            Status::Dropped => {
-                unlock(shared);
-                unreachable!()
-            }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            Status::Complete => {
-                unlock(shared);
-                panic!("polled Future after completion")
+                Poll::Pending
             }
         }
+        Status::Done { result } => {
+            let Some(result) = result.next() else {
+                // NOTE: this is unreachable for singleshot operations.
+                assert!(O::IS_MULTISHOT);
+
+                // Processed all results.
+                shared.status = Status::Complete;
+                unlock(shared);
+                // SAFETY: this is only safe because we set the status to
+                // Complete above.
+                unsafe { data.tail.resources.get().cast::<R>().drop_in_place() }
+                return Poll::Ready(Res::done());
+            };
+
+            if !O::IS_MULTISHOT {
+                // For singlshot operations we set the status to Complete so
+                // that we can safely read the resources below and pass them to
+                // map_ok.
+                shared.status = Status::Complete;
+                // SAFETY: now that the kernel is Done with the operation and
+                // we've marked it as Complete we can safely access the
+                // resources again.
+                asan::unpoison(data.tail.resources.get());
+            }
+            unlock(shared);
+
+            // NOTE: for singleshot operations this MUST happen before returning
+            // below as we've set the status to Complete. Otherwise we would
+            // leak the resources.
+            let resources = get_resources(data.tail.resources.get().cast::<R>());
+            let op_return = match result.as_op_return() {
+                Ok(ret) => ret,
+                Err(err) => return Poll::Ready(Res::from_err(err)),
+            };
+            Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
+        }
+        // Only the Future sets the Dropped status, which is also the only one
+        // that calls this function, so this should be unreachable.
+        Status::Dropped => {
+            unlock(shared);
+            unreachable!()
+        }
+        // Shouldn't be reachable, but if the Future is used incorrectly it can
+        // be.
+        Status::Complete => {
+            unlock(shared);
+            panic!("polled Future after completion")
+        }
+    }
+}
+
+fn set_waker(waker: &mut Option<task::Waker>, w: &task::Waker) {
+    match waker {
+        Some(waker) if waker.will_wake(w) => { /* Nothing to do. */ }
+        Some(waker) => waker.clone_from(w),
+        None => *waker = Some(w.clone()),
+    }
+}
+
+/// Either an [`AsyncFd`] or [`SubmissionQueue`].
+trait OpTarget {
+    fn sq(&self) -> &SubmissionQueue;
+
+    fn set_flags(&self, submission: &mut Submission);
+}
+
+impl OpTarget for AsyncFd {
+    fn sq(&self) -> &SubmissionQueue {
+        self.sq()
+    }
+
+    fn set_flags(&self, submission: &mut Submission) {
+        self.kind().use_flags(submission);
+    }
+}
+
+impl OpTarget for SubmissionQueue {
+    fn sq(&self) -> &SubmissionQueue {
+        self
+    }
+
+    fn set_flags(&self, _: &mut Submission) {
+        // No flags to set.
+    }
+}
+
+/// Trait to make [`poll`] work with `io::Result` (singleshot) and
+/// `Option<io::Result>` (multishot).
+// Replace this with std::ops::FromResidual once stable.
+trait OpPollResult<T> {
+    fn from_ok(ok: T) -> Self;
+    fn from_err(err: io::Error) -> Self;
+    fn done() -> Self;
+}
+
+impl<T> OpPollResult<T> for io::Result<T> {
+    fn from_ok(ok: T) -> Self {
+        Ok(ok)
+    }
+
+    fn from_err(err: io::Error) -> Self {
+        Err(err)
+    }
+
+    fn done() -> Self {
+        unreachable!()
+    }
+}
+
+impl<T> OpPollResult<T> for Option<io::Result<T>> {
+    fn from_ok(ok: T) -> Self {
+        Some(Ok(ok))
+    }
+
+    fn from_err(err: io::Error) -> Self {
+        Some(Err(err))
+    }
+
+    fn done() -> Self {
+        None
     }
 }
