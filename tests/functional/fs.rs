@@ -1,14 +1,32 @@
 use std::env::temp_dir;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
+use std::path::PathBuf;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use std::time::SystemTime;
 use std::{panic, str};
 
-use a10::fs::{
-    self, Advise, AdviseFlag, Allocate, AllocateFlag, CreateDir, Delete, MetadataInterest, Open,
-    OpenOptions, Rename, Truncate,
-};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::fd;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::fs::MetadataInterest;
+use a10::fs::{self, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
+use a10::fs::{Advise, AdviseFlag, Allocate, AllocateFlag};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
-use a10::{Extract, SubmissionQueue, fd};
+use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
     LOREM_IPSUM_5, LOREM_IPSUM_50, TestFile, Waker, defer, is_send, is_sync, page_size,
@@ -37,6 +55,13 @@ fn open_extractor() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
 fn open_direct_io() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -76,6 +101,7 @@ fn open_direct_io() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn open_direct_fd() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -94,6 +120,7 @@ fn open_direct_fd() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn create_temp_file() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -517,6 +544,7 @@ fn test_metadata(test_file: &TestFile) {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn metadata_select_fields() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -538,6 +566,13 @@ fn metadata_select_fields() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn fadvise() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -600,6 +635,13 @@ fn ftruncate() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn fallocate() {
     let sq = test_queue();
     let waker = Waker::new();
