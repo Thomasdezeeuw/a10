@@ -1,11 +1,19 @@
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use std::thread;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use std::time::Duration;
 
+use a10::Config;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::Ring;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::ReadBufPool;
-use a10::{Config, Ring};
 
-use crate::util::{expect_io_errno, init, is_send, is_sync, require_kernel};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{expect_io_errno, init, require_kernel};
+use crate::util::{is_send, is_sync};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 const BUF_SIZE: usize = 4096;
 
 #[test]
@@ -15,6 +23,7 @@ fn config_is_send_and_sync() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_disabled() {
     require_kernel!(5, 10);
     init();
@@ -29,6 +38,7 @@ fn config_disabled() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_single_issuer() {
     require_kernel!(6, 0);
     init();
@@ -49,6 +59,7 @@ fn config_single_issuer() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_single_issuer_disabled_ring() {
     require_kernel!(6, 0);
     init();
@@ -67,6 +78,7 @@ fn config_single_issuer_disabled_ring() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_defer_task_run() {
     require_kernel!(6, 1);
     init();
