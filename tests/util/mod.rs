@@ -93,7 +93,9 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .get_or_init(|| {
             init();
 
-            let config = Ring::config().with_direct_descriptors(1024);
+            let config = Ring::config();
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            let config = config.with_direct_descriptors(1024);
             let mut ring = match config.clone().build() {
                 Ok(ring) => ring,
                 Err(err) => panic!("failed to create test ring: {err}"),
@@ -262,6 +264,7 @@ where
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 macro_rules! op_async_iter {
     ($name: ty => $item: ty) => {
         #[cfg(not(feature = "nightly"))]
@@ -278,8 +281,11 @@ macro_rules! op_async_iter {
     };
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
