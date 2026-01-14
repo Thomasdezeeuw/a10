@@ -10,7 +10,7 @@ use a10::Ring;
 use a10::io::ReadBufPool;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{expect_io_errno, init, require_kernel};
+use crate::util::{expect_io_errno, init};
 use crate::util::{is_send, is_sync};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -25,7 +25,6 @@ fn config_is_send_and_sync() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_disabled() {
-    require_kernel!(5, 10);
     init();
     let mut ring = Ring::config().disable().build().unwrap();
 
@@ -40,7 +39,6 @@ fn config_disabled() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_single_issuer() {
-    require_kernel!(6, 0);
     init();
 
     let ring = Ring::config().single_issuer().build().unwrap();
@@ -61,7 +59,6 @@ fn config_single_issuer() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_single_issuer_disabled_ring() {
-    require_kernel!(6, 0);
     init();
 
     let mut ring = Ring::config().single_issuer().disable().build().unwrap();
@@ -80,7 +77,6 @@ fn config_single_issuer_disabled_ring() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn config_defer_task_run() {
-    require_kernel!(6, 1);
     init();
 
     let mut ring = Ring::config()

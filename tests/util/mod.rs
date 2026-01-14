@@ -6,7 +6,6 @@ use std::any::Any;
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
 use std::cell::Cell;
-use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
@@ -39,50 +38,25 @@ pub(crate) fn page_size() -> usize {
     *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
 }
 
-/// Return the major.minor version of the kernel.
-pub(crate) fn kernel_version() -> (u32, u32) {
-    static KERNEL_VERSION: OnceLock<(u32, u32)> = OnceLock::new();
-    *KERNEL_VERSION.get_or_init(|| {
-        // SAFETY: all zeros for `utsname` is valid.
-        let mut uname: libc::utsname = unsafe { mem::zeroed() };
-        syscall!(uname(&mut uname)).expect("failed to get kernel info");
-        // SAFETY: kernel initialed `uname.release` for us with a NULL
-        // terminating string.
-        let release = unsafe { CStr::from_ptr(&uname.release as *const _) };
-        let release = str::from_utf8(release.to_bytes()).expect("version not valid UTF-8");
-        let mut parts = release.split('.');
-        let major = parts.next().expect("missing major verison");
-        let minor = parts.next().expect("missing minor verison");
-        (
-            major.parse().expect("invalid major version"),
-            minor.parse().expect("invalid major version"),
-        )
-    })
-}
-
-/// Returns true if the kernel version is greater than major.minor, false
-/// otherwise.
-pub(crate) fn has_kernel_version(major: u32, minor: u32) -> bool {
-    let got = kernel_version();
-    got.0 > major || (got.0 == major && got.1 >= minor)
-}
-
-/// This `return`s from the function if the kernel version is smaller than
-/// major.minor, continues if the kernel version is larger.
+/// This `return`s from the function if the operation is unsupported (see
+/// [`is_unsupported`]).
 #[allow(unused_macros)]
-macro_rules! require_kernel {
-    ($major: expr, $minor: expr) => {{
-        let major = $major;
-        let minor = $minor;
-        if !crate::util::has_kernel_version(major, minor) {
-            println!("skipping test, kernel doesn't have required version {major}.{minor}");
-            return;
+macro_rules! ignore_unsupported {
+    ($expr: expr) => {
+        match $expr {
+            Ok(ok) => Ok(ok),
+            Err(ref err) if $crate::util::is_unsupported(err) => return,
+            Err(err) => Err(err),
         }
-    }};
+    };
 }
 
 #[allow(unused_imports)]
-pub(crate) use require_kernel;
+pub(crate) use ignore_unsupported;
+
+pub(crate) fn is_unsupported(err: &io::Error) -> bool {
+    matches!(err.raw_os_error(), Some(libc::EOPNOTSUPP))
+}
 
 /// Start a single background thread for polling and return the submission
 /// queue.
@@ -405,10 +379,11 @@ pub(crate) async fn new_socket(
     r#type: Type,
     protocol: Option<Protocol>,
 ) -> AsyncFd {
-    if !has_kernel_version(5, 19) {
-        // IORING_OP_SOCKET is only available since 5.19, fall back to a
-        // blocking system call.
-        unsafe {
+    match socket(sq.clone(), domain, r#type, protocol).await {
+        Ok(fd) => Ok(fd),
+        Err(ref err) if is_unsupported(err) => unsafe {
+            // IORING_OP_SOCKET is only available since 5.19, fall back to a
+            // blocking system call.
             // SAFETY: these transmutes aren't safe.
             let domain = std::mem::transmute(domain);
             let r#type = std::mem::transmute(r#type);
@@ -418,9 +393,8 @@ pub(crate) async fn new_socket(
             };
             // SAFETY: kernel initialises the socket for us.
             syscall!(socket(domain, r#type, protocol)).map(|fd| AsyncFd::from_raw_fd(fd, sq))
-        }
-    } else {
-        socket(sq, domain, r#type, protocol).await
+        },
+        Err(err) => Err(err),
     }
     .expect("failed to create socket")
 }
@@ -431,16 +405,17 @@ pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket).await;
     let fd = fd(&socket).as_raw_fd();
     let backlog = 128;
-    if !has_kernel_version(6, 11) {
-        // IORING_OP_LISTEN is only available since 6.11, fall back to a
-        // blocking system call.
-        syscall!(listen(fd, backlog)).expect("failed to listen on socket");
-    } else {
-        socket
-            .listen(backlog)
-            .await
-            .expect("failed to listen on socket");
+
+    match socket.listen(backlog).await {
+        Ok(()) => Ok(()),
+        Err(ref err) if is_unsupported(err) => {
+            // IORING_OP_LISTEN is only available since 6.11, fall back to a
+            // blocking system call.
+            syscall!(listen(fd, backlog)).map(|_| ())
+        }
+        Err(err) => Err(err),
     }
+    .expect("failed to listen on socket");
     address
 }
 
@@ -455,17 +430,17 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         ..unsafe { mem::zeroed() }
     };
     let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    if !has_kernel_version(6, 11) {
-        // IORING_OP_BIND is only available since 6.11, fall back to a blocking
-        // system call.
-        syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
-    } else {
-        socket
-            .bind::<SocketAddr>(([127, 0, 0, 1], 0).into())
-            .await
-            .expect("failed to bind socket");
-    }
 
+    match socket.bind::<SocketAddr>(([127, 0, 0, 1], 0).into()).await {
+        Ok(()) => Ok(()),
+        Err(ref err) if is_unsupported(err) => {
+            // IORING_OP_BIND is only available since 6.11, fall back to a
+            // blocking system call.
+            syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).map(|_| ())
+        }
+        Err(err) => Err(err),
+    }
+    .expect("failed to bind socket");
     syscall!(getsockname(
         fd,
         &mut addr as *mut _ as *mut _,

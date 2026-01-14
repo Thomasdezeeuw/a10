@@ -8,7 +8,7 @@ use a10::process::{
     WaitOption,
 };
 
-use crate::util::{Waker, is_send, is_sync, poll_nop, require_kernel, test_queue};
+use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
 
 #[test]
 fn signal_is_send_and_sync() {
@@ -54,7 +54,6 @@ fn receive_signal_is_send_and_sync() {
 
 #[test]
 fn process_wait_on() {
-    require_kernel!(6, 7);
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -73,7 +72,6 @@ fn process_wait_on() {
 
 #[test]
 fn process_wait_on_drop_before_complete() {
-    require_kernel!(6, 7);
     let sq = test_queue();
 
     let process = Command::new("sleep").arg("1000").spawn().unwrap();

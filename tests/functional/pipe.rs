@@ -1,7 +1,7 @@
 use a10::fd;
-use a10::pipe::{pipe, Pipe};
+use a10::pipe::{Pipe, pipe};
 
-use crate::util::{cancel, is_send, is_sync, require_kernel, start_op, test_queue, Waker};
+use crate::util::{Waker, cancel, is_send, is_sync, start_op, test_queue};
 
 const DATA1: &[u8] = b"Hello from the other side";
 
@@ -22,8 +22,6 @@ fn pipe_direct_descriptor() {
 }
 
 fn test_pipe(fd_kind: fd::Kind) {
-    require_kernel!(6, 16);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -45,8 +43,6 @@ fn test_pipe(fd_kind: fd::Kind) {
 
 #[test]
 fn cancel_pipe() {
-    require_kernel!(6, 16);
-
     let sq = test_queue();
     let waker = Waker::new();
 

@@ -5,7 +5,7 @@ use a10::net::{
     SocketOption2, Type, option,
 };
 
-use crate::util::{Waker, is_send, is_sync, new_socket, require_kernel, test_queue};
+use crate::util::{Waker, is_send, is_sync, new_socket, test_queue};
 
 #[test]
 fn async_fd_socket_option_is_send_and_sync() {
@@ -33,8 +33,6 @@ fn async_fd_set_socket_options_is_send_and_sync() {
 
 #[test]
 fn socket_option() {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -107,8 +105,6 @@ fn socket_option_type() {
 }
 
 fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -156,8 +152,6 @@ where
     T: option::Get + option::Set,
     T::Output: Eq + fmt::Debug,
 {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 

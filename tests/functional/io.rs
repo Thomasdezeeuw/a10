@@ -16,7 +16,7 @@ use crate::util::{
     test_queue, tmp_path,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{fd, next, require_kernel};
+use crate::util::{fd, next};
 
 const NO_OFFSET: u64 = u64::MAX;
 
@@ -136,8 +136,6 @@ fn write_all_vectored_at_extract() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_read() {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 

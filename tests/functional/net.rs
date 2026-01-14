@@ -21,7 +21,7 @@ use a10::{Extract, Ring};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    block_on, expect_io_error_kind, fd, init, is_send, is_sync, new_socket, require_kernel,
+    block_on, expect_io_error_kind, fd, ignore_unsupported, init, is_send, is_sync, new_socket,
     syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -128,8 +128,6 @@ fn accept_no_address() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept() {
-    require_kernel!(5, 19);
-
     test_multishot_accept(0);
     test_multishot_accept(1);
     test_multishot_accept(5);
@@ -263,8 +261,6 @@ fn connect() {
 
 #[test]
 fn socket_name() {
-    require_kernel!(6, 19);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -283,9 +279,8 @@ fn socket_name() {
 
     let (_client, expected_local_addr) = listener.accept().expect("failed to accept connection");
 
-    let got_local_addr: SocketAddr = waker
-        .block_on(stream.local_addr())
-        .expect("failed to get local addr");
+    let got_local_addr: SocketAddr =
+        ignore_unsupported!(waker.block_on(stream.local_addr())).expect("failed to get local addr");
     assert_eq!(got_local_addr, expected_local_addr);
 
     let got_peer_addr: SocketAddr = waker
@@ -333,7 +328,6 @@ fn recv() {
 fn recv_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
     let mut ring = Ring::new().expect("failed to create test ring");
@@ -366,7 +360,6 @@ fn recv_read_buf_pool() {
 fn recv_read_buf_pool_send_read_buf() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
     let mut ring = Ring::new().expect("failed to create test ring");
@@ -409,7 +402,6 @@ fn multishot_recv() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
 
-    require_kernel!(6, 0);
     init();
 
     is_send::<MultishotRecv>();
@@ -456,7 +448,6 @@ fn multishot_recv_large_send() {
     const N: usize = 4;
     const DATA: &[u8] = &[123; N * 4];
 
-    require_kernel!(6, 0);
     init();
 
     let mut ring = Ring::new().expect("failed to create test ring");
@@ -503,7 +494,6 @@ fn multishot_recv_all_buffers_used() {
     const N: usize = 2 + 10;
     const DATA: &[u8] = &[255; BUF_SIZE];
 
-    require_kernel!(6, 0);
     init();
 
     let mut ring = Ring::new().expect("failed to create test ring");
@@ -727,7 +717,6 @@ fn recv_from() {
 fn recv_from_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
     let mut ring = Ring::new().expect("failed to create test ring");
@@ -819,8 +808,6 @@ fn send() {
 
 #[test]
 fn send_zc() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -876,8 +863,6 @@ fn send_extractor() {
 
 #[test]
 fn send_zc_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -996,8 +981,6 @@ fn send_vectored() {
 
 #[test]
 fn send_vectored_zc() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1058,8 +1041,6 @@ fn send_vectored_extractor() {
 
 #[test]
 fn send_vectored_zc_extractor() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1159,8 +1140,6 @@ fn send_all_vectored_extract() {
 
 #[test]
 fn send_to() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1187,8 +1166,6 @@ fn send_to() {
 
 #[test]
 fn send_to_zc() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1212,8 +1189,6 @@ fn send_to_zc() {
 
 #[test]
 fn send_to_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1238,8 +1213,6 @@ fn send_to_extractor() {
 
 #[test]
 fn send_to_zc_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1291,8 +1264,6 @@ fn send_to_vectored() {
 
 #[test]
 fn send_to_vectored_zc() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1342,8 +1313,6 @@ fn send_to_vectored_extractor() {
 
 #[test]
 fn send_to_vectored_zc_extractor() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1397,8 +1366,6 @@ fn shutdown() {
 
 #[test]
 fn set_socket_option() {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 

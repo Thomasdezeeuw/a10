@@ -5,7 +5,7 @@ use a10::fd::{AsyncFd, Kind};
 use a10::fs::OpenOptions;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, require_kernel, test_queue};
+use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, test_queue};
 use crate::util::{is_send, is_sync};
 
 #[test]
@@ -57,14 +57,12 @@ fn to_direct_is_send_and_sync() {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct_descriptor() {
-    require_kernel!(5, 5);
     test_change_descriptor_type(fd::Kind::File);
 }
 
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_file_descriptor() {
-    require_kernel!(6, 8);
     test_change_descriptor_type(fd::Kind::Direct);
 }
 
