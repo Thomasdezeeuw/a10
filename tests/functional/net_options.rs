@@ -40,20 +40,26 @@ fn socket_option() {
 
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
-    let got_domain = waker
-        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::DOMAIN))
-        .unwrap();
-    assert_eq!(libc::AF_INET, got_domain);
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        let got_domain = waker
+            .block_on(socket.socket_option(Level::SOCKET, SocketOpt::DOMAIN))
+            .unwrap();
+        assert_eq!(libc::AF_INET, got_domain);
+    }
 
     let got_type = waker
         .block_on(socket.socket_option(Level::SOCKET, SocketOpt::TYPE))
         .unwrap();
     assert_eq!(libc::SOCK_STREAM, got_type);
 
-    let got_protocol = waker
-        .block_on(socket.socket_option(Level::SOCKET, SocketOpt::PROTOCOL))
-        .unwrap();
-    assert_eq!(libc::IPPROTO_TCP, got_protocol);
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        let got_protocol = waker
+            .block_on(socket.socket_option(Level::SOCKET, SocketOpt::PROTOCOL))
+            .unwrap();
+        assert_eq!(libc::IPPROTO_TCP, got_protocol);
+    }
 
     let got_linger = waker
         .block_on(socket.socket_option::<libc::linger>(Level::SOCKET, SocketOpt::LINGER))
@@ -68,11 +74,18 @@ fn socket_option() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
 fn socket_option_accept() {
     test_socket_option::<option::Accept, _>(|got| assert!(!got));
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_domain() {
     test_socket_option::<option::Domain, _>(|got| assert_eq!(got, Domain::IPV4));
 }
@@ -83,6 +96,7 @@ fn socket_option_error() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_protocol() {
     test_socket_option::<option::Protocol, _>(|got| assert_eq!(got, Protocol::TCP));
 }
@@ -112,6 +126,7 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_incoming_cpu() {
     test_get_set_socket_option::<option::IncomingCpu>(None, 0, Some(0));
 }
