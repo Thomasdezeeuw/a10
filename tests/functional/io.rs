@@ -3,7 +3,7 @@ use std::future::Future;
 use std::io;
 use std::os::fd::{FromRawFd, RawFd};
 
-use a10::fs::{self, Open, OpenOptions};
+use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::Splice;
 use a10::io::{BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
@@ -61,7 +61,7 @@ fn write_all_at_extract() {
     let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -106,7 +106,7 @@ fn write_all_vectored_at_extract() {
     let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -185,7 +185,7 @@ fn read_n_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file: Open = OpenOptions::new().open(sq, path);
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = BadReadBuf {
@@ -223,7 +223,7 @@ fn read_n_vectored_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file: Open = OpenOptions::new().open(sq, path);
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = GrowingBufSlice {
@@ -253,7 +253,7 @@ fn splice_to() {
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
 
-    let open_file: Open = OpenOptions::new().open(sq, path.into());
+    let open_file = OpenOptions::new().open(sq, path.into());
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
@@ -277,7 +277,7 @@ fn splice_from() {
     let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -318,7 +318,7 @@ fn close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     waker.block_on(file.close()).expect("failed to close fd");
 }
@@ -337,7 +337,7 @@ fn dropping_should_close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     drop(file);
 }
@@ -350,7 +350,7 @@ fn dropped_futures_do_not_leak_buffers() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().write().open(sq, tmp_path());
+    let open_file = OpenOptions::new().write().open(sq, tmp_path());
     let file = waker.block_on(open_file).unwrap();
 
     let buf = vec![123; 64 * 1024];
