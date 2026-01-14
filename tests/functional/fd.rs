@@ -1,14 +1,31 @@
-use a10::fd::{self, AsyncFd, Kind, ToDirect, ToFd};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::fd::{self, ToDirect, ToFd};
+use a10::fd::{AsyncFd, Kind};
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::fs::OpenOptions;
 
-use crate::util::{
-    LOREM_IPSUM_5, Waker, expect_io_errno, is_send, is_sync, require_kernel, test_queue,
-};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, require_kernel, test_queue};
+use crate::util::{is_send, is_sync};
 
 #[test]
 fn async_fd_size() {
-    assert_eq!(std::mem::size_of::<AsyncFd>(), 16);
-    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), 16);
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    const SIZE: usize = 16;
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    const SIZE: usize = 24;
+    assert_eq!(std::mem::size_of::<AsyncFd>(), SIZE);
+    assert_eq!(std::mem::size_of::<Option<AsyncFd>>(), SIZE);
 }
 
 #[test]
@@ -24,29 +41,34 @@ fn kind_is_send_and_sync() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_fd_is_send_and_sync() {
     is_send::<ToFd>();
     is_sync::<ToFd>();
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct_is_send_and_sync() {
     is_send::<ToDirect>();
     is_sync::<ToDirect>();
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct_descriptor() {
     require_kernel!(5, 5);
     test_change_descriptor_type(fd::Kind::File);
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_file_descriptor() {
     require_kernel!(6, 8);
     test_change_descriptor_type(fd::Kind::Direct);
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn test_change_descriptor_type(fd_kind: fd::Kind) {
     let sq = test_queue();
     let waker = Waker::new();
@@ -100,6 +122,7 @@ fn test_change_descriptor_type(fd_kind: fd::Kind) {
     debug_assertions,
     should_panic = "can't covert a direct descriptor to a different direct descriptor"
 )]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn direct_to_direct_descriptor() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -118,6 +141,7 @@ fn direct_to_direct_descriptor() {
     debug_assertions,
     should_panic = "can't covert a file descriptor to a different file descriptor"
 )]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn file_to_file_descriptor() {
     let sq = test_queue();
     let waker = Waker::new();
