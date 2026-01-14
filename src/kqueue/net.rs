@@ -29,16 +29,16 @@ impl DirectOp for SocketOp {
     ) -> io::Result<Self::Output> {
         let fd::Kind::File = kind;
 
-        let r#type = r#type.0 as libc::c_int;
+        let r#type = r#type.0.cast_signed();
         #[cfg(any(
             target_os = "dragonfly",
             target_os = "freebsd",
             target_os = "netbsd",
             target_os = "openbsd",
         ))]
-        let r#type = r#type | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
+        let r#type = r#type.0.cast_signed() | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
 
-        let socket = syscall!(socket(domain.0, r#type, protocol.0 as _))?;
+        let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
         // SAFETY: just created the socket above.
         let fd = unsafe { AsyncFd::from_raw_fd(socket, sq.clone()) };
 
@@ -54,7 +54,7 @@ impl DirectOp for SocketOp {
             socket,
             libc::SOL_SOCKET,
             libc::SO_NOSIGPIPE,
-            &1 as *const libc::c_int as *const libc::c_void,
+            ptr::from_ref(&1).cast(),
             size_of::<libc::c_int>() as libc::socklen_t
         ))?;
 
@@ -152,7 +152,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
             libc::SOL_SOCKET,
             libc::SO_ERROR,
             ptr::from_mut(&mut errno).cast(),
-            &mut len,
+            &raw mut len,
         ))?;
         debug_assert!(len == (size_of::<libc::c_int>() as libc::socklen_t));
         if errno != 0 {
@@ -161,7 +161,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
 
         let mut address: MaybeUninit<A::Storage> = MaybeUninit::uninit();
         let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut address) };
-        match syscall!(getpeername(fd.fd(), ptr, &mut length)) {
+        match syscall!(getpeername(fd.fd(), ptr, &raw mut length)) {
             Ok(_) => Ok(()),
             Err(err)
                 if err.kind() == io::ErrorKind::NotConnected
@@ -179,9 +179,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
         }
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (): Self::OperationOutput) -> Self::Output {
-        ()
-    }
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (): Self::OperationOutput) -> Self::Output {}
 }
 
 pub(crate) struct SocketNameOp<A>(PhantomData<*const A>);
@@ -232,7 +230,7 @@ impl<B: BufMut> FdOp for RecvOp<B> {
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recv call.
-        unsafe { buf.set_init(n as usize) };
+        unsafe { buf.set_init(n.cast_unsigned()) };
         buf
     }
 }
@@ -264,7 +262,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
-        unsafe { bufs.set_init(n as usize) };
+        unsafe { bufs.set_init(n.cast_unsigned()) };
         (bufs, msg.flags())
     }
 }
@@ -295,7 +293,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
-        unsafe { buf.set_init(n as usize) };
+        unsafe { buf.set_init(n.cast_unsigned()) };
         // SAFETY: kernel initialised the address for us.
         let address = unsafe { A::init(address, msg.address_len()) };
         (buf, address, msg.flags())
@@ -333,7 +331,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVecto
     ) -> Self::Output {
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
-        unsafe { bufs.set_init(n as usize) };
+        unsafe { bufs.set_init(n.cast_unsigned()) };
         // SAFETY: kernel initialised the address for us.
         let address = unsafe { A::init(address, msg.address_len()) };
         (bufs, address, msg.flags())
@@ -379,7 +377,7 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
         buf: Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        (buf, n as usize)
+        (buf, n.cast_unsigned())
     }
 }
 
@@ -556,7 +554,7 @@ impl<T> DirectFdOp for SocketOptionOp<T> {
             level.0.cast_signed(),
             optname.0.cast_signed(),
             value.as_mut_ptr().cast(),
-            &mut optlen,
+            &raw mut optlen,
         ))?;
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -585,7 +583,7 @@ impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
             level.0.cast_signed(),
             optname.0.cast_signed(),
             optval,
-            &mut optlen,
+            &raw mut optlen,
         ))?;
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.

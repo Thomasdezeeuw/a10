@@ -1,5 +1,5 @@
 use std::io;
-use std::mem::{self, drop as unlock};
+use std::mem::{self, drop as unlock, take};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -24,10 +24,10 @@ impl Submissions {
     where
         F: FnOnce(&mut Event),
     {
-        self._add(false, fill_event)
+        self.submit(false, fill_event);
     }
 
-    fn _add<F>(&self, force_kevent: bool, fill_event: F)
+    fn submit<F>(&self, force_kevent: bool, fill_event: F)
     where
         F: FnOnce(&mut Event),
     {
@@ -53,7 +53,7 @@ impl Submissions {
         }
 
         // Take ownership of the change list to submit it to the kernel.
-        let mut changes = mem::replace(&mut *change_list, Vec::new());
+        let mut changes = take(&mut *change_list);
         unlock(change_list); // Unlock, to not block others.
 
         // Submit the all changes to the kernel.
@@ -66,11 +66,11 @@ impl Submissions {
             // SAFETY: casting `Event` to `libc::kevent` is safe due to
             // `repr(transparent)` on `Event`.
             changes.as_ptr().cast(),
-            changes.len() as _,
+            changes.len().cast_signed() as _,
             // SAFETY: Same cast as above.
             changes.as_mut_ptr().cast(),
-            changes.capacity() as _,
-            &timeout,
+            changes.capacity().cast_signed() as _,
+            &raw const timeout,
         ));
         if let Err(err) = result {
             // According to the manual page of FreeBSD: "When kevent() call
@@ -100,17 +100,18 @@ impl Submissions {
         shared.merge_change_list(changes);
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn wake(&self) -> io::Result<()> {
         if !self.shared.is_polling.load(Ordering::Acquire) {
             // If we're not polling we don't need to wake up.
             return Ok(());
         }
 
-        self._add(true, |kevent| {
+        self.submit(true, |kevent| {
             kevent.0.filter = libc::EVFILT_USER;
             kevent.0.flags = libc::EV_ADD;
             kevent.0.fflags = libc::NOTE_TRIGGER;
-            kevent.0.udata = cq::WAKE_USER_DATA as _;
+            kevent.0.udata = cq::WAKE_USER_DATA;
         });
         Ok(())
     }

@@ -122,7 +122,7 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
         buf: Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        (buf, n as usize)
+        (buf, n.cast_unsigned())
     }
 }
 
@@ -168,7 +168,7 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
         (bufs, _): Self::Resources,
         n: Self::OperationOutput,
     ) -> Self::ExtractOutput {
-        (bufs, n as usize)
+        (bufs, n.cast_unsigned())
     }
 }
 

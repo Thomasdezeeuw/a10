@@ -191,6 +191,7 @@ impl AsyncFd {
 
 impl Unpin for AsyncFd {}
 
+#[allow(clippy::missing_fields_in_debug)] // Don't care about sq.
 impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("AsyncFd");
@@ -246,7 +247,7 @@ impl Drop for AsyncFd {
         ))]
         // SAFETY: we're in the drop implementation.
         unsafe {
-            self.state.drop(&self.sq)
+            self.state.drop(&self.sq);
         }
     }
 }
@@ -267,6 +268,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[allow(clippy::semicolon_if_nothing_returned)]
     pub(crate) fn cloexec_flag(self) -> libc::c_int {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {

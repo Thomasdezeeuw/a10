@@ -312,7 +312,7 @@ impl<T: FdOp> crate::op::FdOp for T {
                                 OpKind::Read => libc::EVFILT_READ,
                                 OpKind::Write => libc::EVFILT_WRITE,
                             };
-                            event.0.ident = fd.fd() as _;
+                            event.0.ident = fd.fd().cast_unsigned() as _;
                             event.0.udata = fd_state.as_udata();
                         });
                     }
@@ -342,7 +342,6 @@ impl<T: FdOp> crate::op::FdOp for T {
                             {
                                 *state = EventedState::NotStarted { resources, args };
                                 // Try again in the next loop iteration.
-                                continue;
                             }
                         }
                         Err(err) => {
@@ -400,7 +399,7 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
                                 OpKind::Read => libc::EVFILT_READ,
                                 OpKind::Write => libc::EVFILT_WRITE,
                             };
-                            event.0.ident = fd.fd() as _;
+                            event.0.ident = fd.fd().cast_unsigned() as _;
                             event.0.udata = fd_state.as_udata();
                         });
                     }
@@ -430,7 +429,6 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
                             {
                                 *state = EventedState::NotStarted { resources, args };
                                 // Try again in the next loop iteration.
-                                continue;
                             }
                         }
                         Err(err) => {

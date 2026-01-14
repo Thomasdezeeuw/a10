@@ -16,7 +16,7 @@ impl DirectOp for AdviseOp {
         (): Self::Resources,
         (address, length, advice): Self::Args,
     ) -> io::Result<Self::Output> {
-        syscall!(madvise(address.cast(), length as _, advice.0 as _))?;
+        syscall!(madvise(address.cast(), length as _, advice.0.cast_signed()))?;
         Ok(())
     }
 }

@@ -95,8 +95,8 @@ impl Event {
         // is accomplished.
         if (self.0.flags & libc::EV_ERROR != 0)
             && data != 0
-            && data != libc::EPIPE as i64
-            && data != libc::ENOENT as i64
+            && data != libc::EPIPE.into()
+            && data != libc::ENOENT.into()
         {
             Some(io::Error::from_raw_os_error(data as i32))
         } else {
@@ -110,6 +110,7 @@ unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
 impl fmt::Debug for Event {
+    #[allow(clippy::too_many_lines)] // The helper types and cfg attributes make this long.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         debug_detail!(
             match FilterDetails(libc::c_short),
