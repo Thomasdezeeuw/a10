@@ -96,20 +96,6 @@ mod private {
 }
 
 new_option! {
-    /// Returns a value indicating whether or not this socket has been
-    /// marked to accept connections with `listen(2)`.
-    #[doc(alias = "SO_ACCEPTCONN")]
-    pub Accept {
-        type Storage = libc::c_int;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::ACCEPT_CONN;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { storage.assume_init() >= 1 }
-        }
-    }
-
     /// Get and clear the pending socket error.
     #[doc(alias = "SO_ERROR")]
     #[doc(alias = "take_error")] // Used by types in std lib.
@@ -216,6 +202,28 @@ new_option! {
         unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Type {
             assert!(length == size_of::<Self::Storage>() as u32);
             unsafe { net::Type(storage.assume_init()) }
+        }
+    }
+}
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
+new_option! {
+    /// Returns a value indicating whether or not this socket has been
+    /// marked to accept connections with `listen(2)`.
+    #[doc(alias = "SO_ACCEPTCONN")]
+    pub Accept {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::ACCEPT_CONN;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
         }
     }
 }
