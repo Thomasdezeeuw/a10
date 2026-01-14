@@ -106,6 +106,84 @@ impl DirectFdOp for ListenOp {
 
 impl_fd_op!(ListenOp);
 
+// Sources of documentation on how to make a non-blocking connect call:
+// * https://cr.yp.to/docs/connect.html
+// * https://stackoverflow.com/questions/17769964/linux-sockets-non-blocking-connect
+// * https://github.com/Thomasdezeeuw/heph/blob/12cb4dc3e828c63c18c1ba7a21bcfc39db3bf468/src/net/tcp/stream.rs#L560-L622
+pub(crate) struct ConnectOp<A>(PhantomData<*const A>);
+
+#[allow(unreachable_patterns)] // EAGAIN and EWOULDBLOCK can be the same value.
+fn is_in_progress(err: &io::Error) -> bool {
+    matches!(
+        err.raw_os_error(),
+        Some(libc::EINPROGRESS | libc::EAGAIN | libc::EWOULDBLOCK)
+    )
+}
+
+impl<A: SocketAddress> FdOp for ConnectOp<A> {
+    type Output = ();
+    type Resources = AddressStorage<A::Storage>;
+    type Args = ();
+    type OperationOutput = ();
+
+    fn setup(fd: &AsyncFd, address: &mut Self::Resources, (): &mut Self::Args) -> io::Result<()> {
+        let (ptr, len) = unsafe { A::as_ptr(&address.0) };
+        match syscall!(connect(fd.fd(), ptr, len)) {
+            Ok(_) => Ok(()),
+            Err(ref err) if is_in_progress(err) => Ok(()),
+            Err(err) => Err(err),
+        }
+
+        // Now we wait for a read able event and continue in `try_run`.
+    }
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        _: &mut Self::Resources,
+        (): &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        // If we hit an error while connecting return that error.
+        let mut errno: libc::c_int = 0;
+        let mut len = size_of::<libc::c_int>() as libc::socklen_t;
+        syscall!(getsockopt(
+            fd.fd(),
+            libc::SOL_SOCKET,
+            libc::SO_ERROR,
+            ptr::from_mut(&mut errno).cast(),
+            &mut len,
+        ))?;
+        debug_assert!(len == (size_of::<libc::c_int>() as libc::socklen_t));
+        if errno != 0 {
+            return Err(io::Error::from_raw_os_error(errno));
+        }
+
+        let mut address: MaybeUninit<A::Storage> = MaybeUninit::uninit();
+        let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut address) };
+        match syscall!(getpeername(fd.fd(), ptr, &mut length)) {
+            Ok(_) => Ok(()),
+            Err(err)
+                if err.kind() == io::ErrorKind::NotConnected
+                // It seems that macOS sometimes returns `EINVAL` when
+                // the socket is not (yet) connected. Since we ensure
+                // all arguments are valid we can safely ignore it.
+                || err.kind() == io::ErrorKind::InvalidInput =>
+            {
+                // Socket is not (yet) connected but haven't hit an
+                // error either. So we return `Pending` and wait for
+                // another event.
+                Err(io::ErrorKind::WouldBlock.into())
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (): Self::OperationOutput) -> Self::Output {
+        ()
+    }
+}
+
 pub(crate) struct SocketNameOp<A>(PhantomData<*const A>);
 
 impl<A: SocketAddress> DirectFdOp for SocketNameOp<A> {
