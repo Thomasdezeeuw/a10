@@ -181,7 +181,7 @@ operation!(
 ///
 /// # fn main() {
 /// async fn main() -> io::Result<()> {
-///     let ring = Ring::new(128)?;
+///     let ring = Ring::new()?;
 ///     let sq = ring.sq().clone();
 ///
 ///     // Create a new `Signals` instance.
