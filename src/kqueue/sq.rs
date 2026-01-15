@@ -44,10 +44,7 @@ impl Submissions {
         change_list.push(event);
         // If we haven't collected enough events yet and we're not polling,
         // we're done quickly.
-        if force_kevent
-            || (change_list.len() < (shared.max_change_list_size as usize)
-                && !shared.is_polling.load(Ordering::Acquire))
-        {
+        if !force_kevent && (change_list.len() < (shared.max_change_list_size as usize)) {
             unlock(change_list); // Unlock first.
             return;
         }
@@ -61,6 +58,7 @@ impl Submissions {
             tv_sec: 0,
             tv_nsec: 0,
         };
+        log::trace!(changes = changes.len(); "submitting changes");
         let result = syscall!(kevent(
             shared.kq.as_raw_fd(),
             // SAFETY: casting `Event` to `libc::kevent` is safe due to

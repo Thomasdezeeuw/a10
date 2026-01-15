@@ -87,6 +87,8 @@ impl Completions {
         }
 
         for event in &mut self.events {
+            log::trace!(event:?; "got event");
+
             if let Some(err) = event.error() {
                 // TODO: see if we can some how get this error to the operation
                 // that submitted it or something to ensure the Future doesn't
@@ -95,7 +97,6 @@ impl Completions {
                 continue;
             }
 
-            log::trace!(event:?; "got event");
             match event.0.filter {
                 libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => continue,
                 libc::EVFILT_USER => {
