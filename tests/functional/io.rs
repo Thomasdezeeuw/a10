@@ -195,7 +195,7 @@ fn read_n_at() {
         data: Vec::with_capacity(test_file.content.len()),
     };
     let buf = waker
-        .block_on(file.read_n_at(buf, 5, test_file.content.len() - 5))
+        .block_on(file.read_n(buf, test_file.content.len() - 5).at(5))
         .unwrap();
     assert_eq!(&buf.data, &test_file.content[5..]);
 }

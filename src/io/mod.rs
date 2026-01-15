@@ -164,20 +164,10 @@ impl AsyncFd {
     where
         B: BufMut,
     {
-        self.read_n_at(buf, NO_OFFSET, n)
-    }
-
-    /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
-    where
-        B: BufMut,
-    {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
-            read: self.read(buf).at(offset),
-            offset,
+            read: self.read(buf),
+            offset: NO_OFFSET,
             left: n,
         }
     }
@@ -515,7 +505,7 @@ fd_iter_operation! {
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
 }
 
-/// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
+/// [`Future`] behind [`AsyncFd::read_n`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadN<'fd, B: BufMut> {
@@ -523,6 +513,19 @@ pub struct ReadN<'fd, B: BufMut> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
+}
+
+impl<'fd, B: BufMut> ReadN<'fd, B> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.read.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
