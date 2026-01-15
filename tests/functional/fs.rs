@@ -69,6 +69,7 @@ fn open_direct_io() {
     // NOTE: we can't use the temp directory as tmpfs (as of v6.1) doesn't
     // support O_DIRECT.
     let path = PathBuf::from("target/tmp_test.open_direct.txt");
+    remove_test_file(&path);
     let _d = defer(|| remove_test_file(&path));
 
     let open_file: Open = OpenOptions::new()
