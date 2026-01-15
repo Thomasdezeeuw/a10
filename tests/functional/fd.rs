@@ -89,7 +89,7 @@ fn test_change_descriptor_type(fd_kind: fd::Kind) {
     let mut buf = Vec::with_capacity(LOREM_IPSUM_5.content.len() + 1);
 
     // Regular file descriptor.
-    let read = regular_fd.read_at(buf, 0);
+    let read = regular_fd.read(buf).at(0);
     buf = waker.block_on(read).unwrap();
     if buf.is_empty() {
         panic!("read zero bytes");
@@ -101,7 +101,7 @@ fn test_change_descriptor_type(fd_kind: fd::Kind) {
 
     // Direct descriptor.
     buf.clear();
-    let read = direct_fd.read_at(buf, 0);
+    let read = direct_fd.read(buf).at(0);
     buf = waker.block_on(read).unwrap();
     if buf.is_empty() {
         panic!("read zero bytes");

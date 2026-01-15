@@ -137,7 +137,7 @@ fn create_temp_file() {
 
     let buf = Vec::with_capacity(expected.len());
     let buf = waker
-        .block_on(file.read_at(buf, 0))
+        .block_on(file.read(buf).at(0))
         .expect("failed to read");
     assert!(buf == expected, "read content is different");
 }
@@ -232,7 +232,7 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
     let mut expected = &test_file.content[offset as usize..];
     loop {
         buf.clear();
-        let read = file.read_at(buf, offset);
+        let read = file.read(buf).at(offset);
         buf = waker.block_on(read).unwrap();
 
         if buf.is_empty() {

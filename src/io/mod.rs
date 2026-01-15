@@ -58,7 +58,7 @@ use crate::extract::{Extract, Extractor};
 use crate::new_flag;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::op::fd_iter_operation;
-use crate::op::{fd_operation, operation};
+use crate::op::{OpState, fd_operation, operation};
 use crate::{AsyncFd, man_link, sys};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -142,20 +142,7 @@ impl AsyncFd {
     where
         B: BufMut,
     {
-        self.read_at(buf, NO_OFFSET)
-    }
-
-    /// Read from this fd into `buf` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function. This means
-    /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
-    /// continue reading at 2kb in the next call to `read`.
-    #[doc = man_link!(pread(2))]
-    pub fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
-    where
-        B: BufMut,
-    {
-        Read::new(self, buf, offset)
+        Read::new(self, buf, NO_OFFSET)
     }
 
     /// Continuously read data from the fd.
@@ -189,7 +176,7 @@ impl AsyncFd {
     {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
-            read: self.read_at(buf, offset),
+            read: self.read(buf).at(offset),
             offset,
             left: n,
         }
@@ -485,7 +472,7 @@ new_flag!(
 );
 
 fd_operation!(
-    /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
+    /// [`Future`] behind [`AsyncFd::read`].
     pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
@@ -499,6 +486,21 @@ fd_operation!(
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 );
+
+impl<'fd, B: BufMut> Read<'fd, B> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that a call `read(buf).at(1024)` with a buffer of 1kb will **not**
+    /// continue reading at 2kb in the next call to `read`.
+    #[doc = man_link!(pread(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_operation!(
@@ -546,7 +548,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.set(read.fd.read_at(buf, this.offset));
+                read.set(read.fd.read(buf).at(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
