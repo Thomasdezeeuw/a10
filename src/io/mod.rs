@@ -216,22 +216,12 @@ impl AsyncFd {
     where
         B: Buf,
     {
-        self.write_all_at(buf, NO_OFFSET)
-    }
-
-    /// Write all of `buf` to this fd at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
-    where
-        B: Buf,
-    {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             write: Extractor {
-                fut: self.write(buf).at(offset),
+                fut: self.write(buf),
             },
-            offset,
+            offset: NO_OFFSET,
         }
     }
 
@@ -603,7 +593,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
     }
 }
 
-/// [`Future`] behind [`AsyncFd::write_all`] and [`AsyncFd::write_all_at`].
+/// [`Future`] behind [`AsyncFd::write_all`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct WriteAll<'fd, B: Buf> {
@@ -612,6 +602,17 @@ pub struct WriteAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> WriteAll<'fd, B> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.write.fut.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
+
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
         // SAFETY: not moving `Future`.
         let this = unsafe { Pin::into_inner_unchecked(self) };

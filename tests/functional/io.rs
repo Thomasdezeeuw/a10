@@ -75,7 +75,7 @@ fn write_all_at_extract() {
     waker.block_on(file.write("Hello world")).unwrap();
 
     waker
-        .block_on(file.write_all_at(BadBuf::new(), 5).extract())
+        .block_on(file.write_all(BadBuf::new()).at(5).extract())
         .unwrap();
 
     let got = std::fs::read(&path).unwrap();
