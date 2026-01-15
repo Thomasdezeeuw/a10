@@ -243,23 +243,9 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        self.write_all_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Write all `bufs` to this file at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_all_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-    ) -> WriteAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
         WriteAllVectored {
-            write: self.write_vectored(bufs).at(offset).extract(),
-            offset,
+            write: self.write_vectored(bufs).extract(),
+            offset: NO_OFFSET,
             skip: 0,
         }
     }
@@ -668,6 +654,17 @@ pub struct WriteAllVectored<'fd, B: BufSlice<N>, const N: usize> {
 }
 
 impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.write.fut.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
+
     /// Poll implementation used by the [`Future`] implement for the naked type
     /// and the type wrapper in an [`Extractor`].
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {

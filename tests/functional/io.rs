@@ -122,7 +122,7 @@ fn write_all_vectored_at_extract() {
     let buf = BadBufSlice {
         calls: Cell::new(0),
     };
-    waker.block_on(file.write_all_vectored_at(buf, 5)).unwrap();
+    waker.block_on(file.write_all_vectored(buf).at(5)).unwrap();
 
     let got = std::fs::read(&path).unwrap();
     expected.extend_from_slice(BadBufSlice::DATA1);
