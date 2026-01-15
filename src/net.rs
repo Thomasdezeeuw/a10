@@ -1245,6 +1245,7 @@ fd_iter_operation! {
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct RecvN<'fd, B: BufMut> {
     recv: Recv<'fd, ReadNBuf<B>>,
     /// Number of bytes we still need to receive to hit our target `N`.
@@ -1282,6 +1283,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
 /// [`Future`] behind [`AsyncFd::send_all`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct SendAll<'fd, B: Buf> {
     send: Extractor<Send<'fd, SkipBuf<B>>>,
     send_op: SendCall,
@@ -1337,6 +1339,7 @@ impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
 
 /// [`Future`] behind [`AsyncFd::recv_n_vectored`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     recv: RecvVectored<'fd, ReadNBuf<B>, N>,
     /// Number of bytes we still need to receive to hit our target `N`.
@@ -1374,6 +1377,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
 /// [`Future`] behind [`AsyncFd::send_all_vectored`] and [`AsyncFd::send_all_vectored_zc`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
     send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
     skip: u64,

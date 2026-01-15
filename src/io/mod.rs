@@ -515,6 +515,7 @@ fd_iter_operation! {
 
 /// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadN<'fd, B: BufMut> {
     read: Read<'fd, ReadNBuf<B>>,
     offset: u64,
@@ -556,6 +557,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
 
 /// [`Future`] behind [`AsyncFd::read_n_vectored`] and [`AsyncFd::read_n_vectored_at`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     read: ReadVectored<'fd, ReadNBuf<B>, N>,
     offset: u64,
@@ -597,6 +599,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
 
 /// [`Future`] behind [`AsyncFd::write_all`] and [`AsyncFd::write_all_at`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct WriteAll<'fd, B: Buf> {
     write: Extractor<Write<'fd, SkipBuf<B>>>,
     offset: u64,
@@ -651,6 +654,7 @@ impl<'fd, B: Buf> Future for Extractor<WriteAll<'fd, B>> {
 
 /// [`Future`] behind [`AsyncFd::write_all_vectored`].
 #[derive(Debug)]
+#[must_use = "`Future`s do nothing unless polled"]
 pub struct WriteAllVectored<'fd, B: BufSlice<N>, const N: usize> {
     write: Extractor<WriteVectored<'fd, B, N>>,
     offset: u64,
