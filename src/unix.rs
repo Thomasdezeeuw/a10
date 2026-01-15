@@ -118,7 +118,7 @@ impl MsgHeader {
         // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
-        &mut self.0
+        &raw mut self.0
     }
 
     /// # Safety
@@ -136,7 +136,7 @@ impl MsgHeader {
         // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
-        &self.0
+        &raw const self.0
     }
 
     pub(crate) const fn address_len(&self) -> libc::socklen_t {

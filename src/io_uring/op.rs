@@ -581,6 +581,7 @@ where
 
 /// A (too large) function that polls a `State` to implement any kind of
 /// operation.
+#[allow(clippy::needless_pass_by_ref_mut)] // For ctx.
 fn poll_inner<T, O, R, R2, A, Ok, Res>(
     target: &T,
     state: &mut State<O, R, A>,
