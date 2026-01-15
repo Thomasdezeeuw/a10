@@ -208,17 +208,7 @@ impl AsyncFd {
     where
         B: Buf,
     {
-        self.write_at(buf, NO_OFFSET)
-    }
-
-    /// Write `buf` to this fd at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
-    where
-        B: Buf,
-    {
-        Write::new(self, buf, offset)
+        Write::new(self, buf, NO_OFFSET)
     }
 
     /// Write all of `buf` to this fd.
@@ -239,7 +229,7 @@ impl AsyncFd {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             write: Extractor {
-                fut: self.write_at(buf, offset),
+                fut: self.write(buf).at(offset),
             },
             offset,
         }
@@ -438,7 +428,7 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::read_vectored`].
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
 
-    /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
+    /// [`Future`] behind [`AsyncFd::write`].
     pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
@@ -467,6 +457,21 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> ReadVectored<'fd, B, N> {
     ///
     /// Also see [`Read::at`].
     #[doc = man_link!(preadv(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: Buf> Write<'fd, B> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that two calls to `write(buf).at(1024)` will overwrite each other's
+    /// data.
+    #[doc = man_link!(pwrite(2))]
     pub fn at(mut self, offset: u64) -> Self {
         if let Some(off) = self.state.args_mut() {
             *off = offset;
@@ -624,7 +629,7 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
                     return Poll::Ready(Ok(buf.buf));
                 }
 
-                write.set(write.fut.fd.write_at(buf, this.offset).extract());
+                write.set(write.fut.fd.write(buf).at(this.offset).extract());
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
