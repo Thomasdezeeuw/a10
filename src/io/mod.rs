@@ -231,22 +231,8 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        self.write_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Write `bufs` to this file at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-    ) -> WriteVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
         let iovecs = unsafe { bufs.as_iovecs() };
-        WriteVectored::new(self, (bufs, iovecs), offset)
+        WriteVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Write all `bufs` to this file.
@@ -272,7 +258,7 @@ impl AsyncFd {
         B: BufSlice<N>,
     {
         WriteAllVectored {
-            write: self.write_vectored_at(bufs, offset).extract(),
+            write: self.write_vectored(bufs).at(offset).extract(),
             offset,
             skip: 0,
         }
@@ -422,7 +408,7 @@ fd_operation!(
     pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
-    /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
+    /// [`Future`] behind [`AsyncFd::write_vectored`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 );
@@ -462,6 +448,19 @@ impl<'fd, B: Buf> Write<'fd, B> {
     /// that two calls to `write(buf).at(1024)` will overwrite each other's
     /// data.
     #[doc = man_link!(pwrite(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> WriteVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    #[doc = man_link!(pwritev(2))]
     pub fn at(mut self, offset: u64) -> Self {
         if let Some(off) = self.state.args_mut() {
             *off = offset;
