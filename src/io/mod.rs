@@ -46,17 +46,20 @@
 //! flush the buffer used by the standard library, so it's not advised to use
 //! both the handle from standard library and Heph simultaneously.
 
-use std::future::Future;
 use std::mem::ManuallyDrop;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
-use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
-use crate::{AsyncFd, man_link, new_flag, sys};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::new_flag;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::op::fd_iter_operation;
+use crate::op::{fd_operation, operation};
+use crate::{AsyncFd, man_link, sys};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod read_buf;
@@ -64,18 +67,13 @@ mod traits;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use read_buf::{ReadBuf, ReadBufPool};
-pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
 #[allow(unused_imports)] // Not used by all OS.
 pub(crate) use traits::{BufGroupId, BufId};
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
 
-/// The io_uring_enter(2) manual says for IORING_OP_READ and IORING_OP_WRITE:
-/// > If offs is set to -1, the offset will use (and advance) the file
-/// > position, like the read(2) and write(2) system calls.
-///
-/// `-1` cast as `unsigned long long` in C is the same as as `u64::MAX`.
-pub(crate) const NO_OFFSET: u64 = u64::MAX;
+#[doc(inline)]
+pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
 
 /// Create a function and type to wraps standard {in,out,error}.
 macro_rules! stdio {
@@ -129,11 +127,18 @@ stdio!(stdin() -> Stdin, libc::STDIN_FILENO);
 stdio!(stdout() -> Stdout, libc::STDOUT_FILENO);
 stdio!(stderr() -> Stderr, libc::STDERR_FILENO);
 
+/// The io_uring_enter(2) manual says for IORING_OP_READ and IORING_OP_WRITE:
+/// > If offs is set to -1, the offset will use (and advance) the file
+/// > position, like the read(2) and write(2) system calls.
+///
+/// `-1` cast as `unsigned long long` in C is the same as as `u64::MAX`.
+pub(crate) const NO_OFFSET: u64 = u64::MAX;
+
 /// I/O system calls.
 impl AsyncFd {
     /// Read from this fd into `buf`.
     #[doc = man_link!(read(2))]
-    pub const fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
+    pub fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
     where
         B: BufMut,
     {
@@ -146,12 +151,11 @@ impl AsyncFd {
     /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
     /// continue reading at 2kb in the next call to `read`.
     #[doc = man_link!(pread(2))]
-    pub const fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
+    pub fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
     where
         B: BufMut,
     {
-        let buf = Buffer { buf };
-        Read(FdOperation::new(self, buf, offset))
+        Read::new(self, buf, offset)
     }
 
     /// Continuously read data from the fd.
@@ -164,12 +168,12 @@ impl AsyncFd {
     /// This will return `ENOBUFS` if no buffer is available in the `pool` to
     /// read into.
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub const fn multishot_read<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRead<'fd> {
-        MultishotRead(FdOperation::new(self, pool, ()))
+    pub fn multishot_read<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRead<'fd> {
+        MultishotRead::new(self, pool, ())
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
-    pub const fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
+    pub fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
     where
         B: BufMut,
     {
@@ -179,7 +183,7 @@ impl AsyncFd {
     /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
+    pub fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
     where
         B: BufMut,
     {
@@ -212,8 +216,8 @@ impl AsyncFd {
     where
         B: BufMutSlice<N>,
     {
-        let iovecs = Box::new(unsafe { bufs.as_iovecs_mut() });
-        ReadVectored(FdOperation::new(self, (bufs, iovecs), offset))
+        let iovecs = unsafe { bufs.as_iovecs_mut() };
+        ReadVectored::new(self, (bufs, iovecs), offset)
     }
 
     /// Read at least `n` bytes from this fd into `bufs`.
@@ -253,7 +257,7 @@ impl AsyncFd {
 
     /// Write `buf` to this fd.
     #[doc = man_link!(write(2))]
-    pub const fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
+    pub fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
     where
         B: Buf,
     {
@@ -263,16 +267,15 @@ impl AsyncFd {
     /// Write `buf` to this fd at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
+    pub fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
     where
         B: Buf,
     {
-        let buf = Buffer { buf };
-        Write(FdOperation::new(self, buf, offset))
+        Write::new(self, buf, offset)
     }
 
     /// Write all of `buf` to this fd.
-    pub const fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
+    pub fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
     where
         B: Buf,
     {
@@ -282,7 +285,7 @@ impl AsyncFd {
     /// Write all of `buf` to this fd at `offset`.
     ///
     /// The current file cursor is not affected by this function.
-    pub const fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
+    pub fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
     where
         B: Buf,
     {
@@ -315,8 +318,8 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        let iovecs = Box::new(unsafe { bufs.as_iovecs() });
-        WriteVectored(FdOperation::new(self, (bufs, iovecs), offset))
+        let iovecs = unsafe { bufs.as_iovecs() };
+        WriteVectored::new(self, (bufs, iovecs), offset)
     }
 
     /// Write all `bufs` to this file.
@@ -438,7 +441,7 @@ impl AsyncFd {
             None => SpliceFlag(0),
         };
         let args = (target_fd, direction, off_in, off_out, length, flags);
-        Splice(FdOperation::new(self, (), args))
+        Splice::new(self, (), args)
     }
 
     /// Explicitly close the file descriptor.
@@ -457,7 +460,7 @@ impl AsyncFd {
         let fd = this.fd();
         let kind = this.kind();
         let sq = unsafe { ptr::read(&raw const this.sq) };
-        Close(Operation::new(sq, (), (fd, kind)))
+        Close::new(sq, (), (fd, kind))
     }
 }
 
@@ -495,7 +498,10 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
+);
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
     /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
@@ -514,16 +520,6 @@ pub struct ReadN<'fd, B: BufMut> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
-}
-
-impl<'fd, B: BufMut> Cancel for ReadN<'fd, B> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.read.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.read.cancel()
-    }
 }
 
 impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
@@ -549,7 +545,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.set(read.0.fd().read_at(buf, this.offset));
+                read.set(read.fd.read_at(buf, this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -565,16 +561,6 @@ pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
-}
-
-impl<'fd, B: BufMutSlice<N>, const N: usize> Cancel for ReadNVectored<'fd, B, N> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.read.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.read.cancel()
-    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N> {
@@ -600,7 +586,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
                     this.offset += bufs.last_read as u64;
                 }
 
-                read.set(read.0.fd().read_vectored_at(bufs, this.offset));
+                read.set(read.fd.read_vectored_at(bufs, this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -634,22 +620,12 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
                     return Poll::Ready(Ok(buf.buf));
                 }
 
-                write.set(write.fut.0.fd().write_at(buf, this.offset).extract());
+                write.set(write.fut.fd.write_at(buf, this.offset).extract());
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-impl<'fd, B: Buf> Cancel for WriteAll<'fd, B> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.write.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.write.cancel()
     }
 }
 
@@ -716,29 +692,12 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                write.set(
-                    WriteVectored(FdOperation::new(
-                        write.fut.0.fd(),
-                        (bufs, Box::new(iovecs)),
-                        this.offset,
-                    ))
-                    .extract(),
-                );
+                write.set(WriteVectored::new(write.fut.fd, (bufs, iovecs), this.offset).extract());
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-impl<'fd, B: BufSlice<N>, const N: usize> Cancel for WriteAllVectored<'fd, B, N> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.write.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.write.cancel()
     }
 }
 
@@ -821,12 +780,4 @@ unsafe impl<B: Buf> Buf for SkipBuf<B> {
             (unsafe { ptr.add(self.skip as usize) }, size - self.skip)
         }
     }
-}
-
-/// Wrapper around a buffer `B` to implement [`DropWake`] on.
-///
-/// [`DropWake`]: crate::drop_waker::DropWake
-#[derive(Debug)]
-pub(crate) struct Buffer<B> {
-    pub(crate) buf: B,
 }

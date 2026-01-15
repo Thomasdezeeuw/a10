@@ -4,11 +4,11 @@ use std::pin::Pin;
 use std::process::Command;
 
 use a10::process::{
-    self, ChildStatus, ReceiveSignal, ReceiveSignals, Signal, SignalInfo, SignalSet, Signals,
-    ToDirect, WaitId, WaitOption,
+    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, ToDirect, WaitId,
+    WaitOption,
 };
 
-use crate::util::{Waker, cancel, is_send, is_sync, poll_nop, require_kernel, test_queue};
+use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
 
 #[test]
 fn signal_is_send_and_sync() {
@@ -53,14 +53,7 @@ fn receive_signal_is_send_and_sync() {
 }
 
 #[test]
-fn receive_signals_is_send_and_sync() {
-    is_send::<ReceiveSignals>();
-    is_sync::<ReceiveSignals>();
-}
-
-#[test]
 fn process_wait_on() {
-    require_kernel!(6, 7);
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -78,31 +71,7 @@ fn process_wait_on() {
 }
 
 #[test]
-fn process_wait_on_cancel() {
-    require_kernel!(6, 7);
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let mut process = Command::new("sleep").arg("1000").spawn().unwrap();
-
-    let mut future = process::wait_on(sq, &process, Some(WaitOption::EXITED));
-
-    cancel(&waker, &mut future, |future| {
-        // NOTE: can't use `start_op` as `siginfo_t` doesn't implemented
-        // `fmt::Debug`.
-        let result = poll_nop(Pin::new(future));
-        if !result.is_pending() {
-            panic!("unexpected result, expected it to return Poll::Pending");
-        }
-    });
-
-    process.kill().unwrap();
-    process.wait().unwrap();
-}
-
-#[test]
 fn process_wait_on_drop_before_complete() {
-    require_kernel!(6, 7);
     let sq = test_queue();
 
     let process = Command::new("sleep").arg("1000").spawn().unwrap();

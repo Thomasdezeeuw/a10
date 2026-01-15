@@ -1,23 +1,21 @@
 use std::alloc::{self, alloc, alloc_zeroed, dealloc};
 use std::marker::PhantomData;
-use std::mem::MaybeUninit;
+use std::mem::{MaybeUninit, drop as unlock};
 use std::os::fd::{AsRawFd, RawFd};
 use std::ptr::{self, NonNull};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU16, Ordering};
-use std::sync::{Mutex, OnceLock};
 use std::{io, slice};
 
 use crate::io::{
-    Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, Buffer, SpliceDirection, SpliceFlag,
+    Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection, SpliceFlag,
 };
-use crate::io_uring::{self, cq, libc, sq};
-use crate::op::{FdIter, FdOpExtract};
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
-
-// Re-export so we don't have to worry about import `std::io` and `crate::io`.
-pub(crate) use std::io::*;
+use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
+use crate::io_uring::{self, libc, sq};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, lock, msan};
 
 pub(crate) use crate::unix::{IoMutSlice, IoSlice};
+pub(crate) use std::io::*; // So we don't have to worry about importing `std::io`.
 
 #[derive(Debug)]
 pub(crate) struct ReadBufPool {
@@ -54,7 +52,7 @@ impl ReadBufPool {
         debug_assert!(pool_size <= 1 << 15);
         debug_assert!(pool_size.is_power_of_two());
 
-        let ring_fd = sq.inner.shared_data().rfd.as_raw_fd();
+        let ring_fd = sq.submissions().ring_fd();
         let id = ID.fetch_add(1, Ordering::AcqRel);
 
         // These allocations must be page aligned.
@@ -79,9 +77,9 @@ impl ReadBufPool {
             // Reserved for future use.
             resv: [0; 3],
         };
-        log::trace!(ring_fd = ring_fd, buffer_group = id, size = pool_size; "registering buffer pool");
+        log::trace!(ring_fd, buffer_group = id, size = pool_size; "registering buffer pool");
 
-        let result = sq.inner.shared_data().register(
+        let result = sq.submissions().shared().register(
             libc::IORING_REGISTER_PBUF_RING,
             ptr::from_ref(&buf_register).cast(),
             1,
@@ -125,7 +123,7 @@ impl ReadBufPool {
         };
         for (i, ring_buf) in bufs.iter_mut().enumerate() {
             let addr = unsafe { pool.bufs_addr.add(i * buf_size as usize) };
-            log::trace!(buffer_group = id, buffer = i, addr:? = addr, len = buf_size; "registering buffer");
+            log::trace!(buffer_group = id, buffer = i, addr:?, len = buf_size; "registering buffer");
             ring_buf.write(libc::io_uring_buf {
                 addr: addr as u64,
                 len: buf_size,
@@ -178,7 +176,7 @@ impl ReadBufPool {
 
         // Because we need to fill the `ring_buf` and then atomatically update
         // the `ring_tail` we do it while holding a lock.
-        let guard = self.reregister_lock.lock().unwrap();
+        let guard = lock(&self.reregister_lock);
         // Get a ring_buf we write into.
         // NOTE: that we allocated at least as many `io_uring_buf`s as we
         // did buffer, so there is always a slot available for us.
@@ -211,7 +209,7 @@ impl ReadBufPool {
         // NOTE: poising the buffer again.
         asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
-        drop(guard);
+        unlock(guard);
     }
 
     /// Returns the tail of buffer ring.
@@ -240,7 +238,7 @@ impl Drop for ReadBufPool {
             // Reserved for future use.
             resv: [0; 3],
         };
-        let result = self.sq.inner.shared_data().register(
+        let result = self.sq.submissions().shared().register(
             libc::IORING_UNREGISTER_PBUF_RING,
             ptr::from_ref(&buf_register).cast(),
             1,
@@ -301,11 +299,17 @@ fn alloc_layout_ring(pool_size: u16, page_size: usize) -> io::Result<alloc::Layo
     }
 }
 
+/// Size of a single page.
+#[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
+fn page_size() -> usize {
+    unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize }
+}
+
 pub(crate) struct ReadOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
+impl<B: BufMut> FdOp for ReadOp<B> {
     type Output = B;
-    type Resources = Buffer<B>;
+    type Resources = B;
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -314,7 +318,7 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, len) = unsafe { buf.buf.parts_mut() };
+        let (ptr, len) = unsafe { buf.parts_mut() };
         submission.0.opcode = libc::IORING_OP_READ as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
@@ -323,27 +327,27 @@ impl<B: BufMut> io_uring::FdOp for ReadOp<B> {
         };
         asan::poison_region(ptr.cast(), len as usize);
         submission.0.len = len;
-        if let Some(buf_group) = buf.buf.buffer_group() {
+        if let Some(buf_group) = buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
             submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         }
     }
 
-    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.buf.parts_mut() };
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+        let (ptr, len) = unsafe { buf.parts_mut() };
         asan::unpoison_region(ptr.cast(), len as usize);
         msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
-            buf.buf.buffer_init(BufId(buf_id), n);
+            buf.buffer_init(BufId(buf_id), n);
         };
-        buf.buf
+        buf
     }
 }
 
 pub(crate) struct MultishotReadOp;
 
-impl io_uring::FdOp for MultishotReadOp {
+impl FdIter for MultishotReadOp {
     type Output = crate::io::ReadBuf;
     type Resources = crate::io::ReadBufPool;
     type Args = ();
@@ -360,21 +364,7 @@ impl io_uring::FdOp for MultishotReadOp {
         submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
     }
 
-    fn map_ok(
-        fd: &AsyncFd,
-        mut buf_pool: Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
-        MultishotReadOp::map_next(fd, &mut buf_pool, (buf_id, n))
-    }
-}
-
-impl FdIter for MultishotReadOp {
-    fn map_next(
-        _: &AsyncFd,
-        buf_pool: &mut Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
         // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
@@ -384,9 +374,9 @@ impl FdIter for MultishotReadOp {
 
 pub(crate) struct ReadVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
     type Output = B;
-    type Resources = (B, Box<[crate::io::IoMutSlice; N]>);
+    type Resources = (B, [crate::io::IoMutSlice; N]);
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -401,17 +391,13 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
-        asan::poison_iovecs_mut(&**iovecs);
+        asan::poison_iovecs_mut(iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok(
-        _: &AsyncFd,
-        (mut bufs, iovecs): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
-        asan::unpoison_iovecs_mut(&*iovecs);
-        msan::unpoison_iovecs_mut(&*iovecs, n as usize);
+    fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_iovecs_mut(&iovecs);
+        msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
@@ -420,9 +406,9 @@ impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for ReadVectoredOp<B, N> 
 
 pub(crate) struct WriteOp<B>(PhantomData<*const B>);
 
-impl<B: Buf> io_uring::FdOp for WriteOp<B> {
+impl<B: Buf> FdOp for WriteOp<B> {
     type Output = usize;
-    type Resources = Buffer<B>;
+    type Resources = B;
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -431,7 +417,7 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, len) = unsafe { buf.buf.parts() };
+        let (ptr, len) = unsafe { buf.parts() };
         submission.0.opcode = libc::IORING_OP_WRITE as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
@@ -442,7 +428,7 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
         submission.0.len = len;
     }
 
-    fn map_ok(fd: &AsyncFd, buf: Self::Resources, ret: cq::OpReturn) -> Self::Output {
+    fn map_ok(fd: &AsyncFd, buf: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(fd, buf, ret).1
     }
 }
@@ -450,22 +436,18 @@ impl<B: Buf> io_uring::FdOp for WriteOp<B> {
 impl<B: Buf> FdOpExtract for WriteOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract(
-        _: &AsyncFd,
-        buf: Self::Resources,
-        (_, n): Self::OperationOutput,
-    ) -> Self::ExtractOutput {
-        let (ptr, len) = unsafe { buf.buf.parts() };
+    fn map_ok_extract(_: &AsyncFd, buf: Self::Resources, (_, n): OpReturn) -> Self::ExtractOutput {
+        let (ptr, len) = unsafe { buf.parts() };
         asan::unpoison_region(ptr.cast(), len as usize);
-        (buf.buf, n as usize)
+        (buf, n as usize)
     }
 }
 
 pub(crate) struct WriteVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
+impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
     type Output = usize;
-    type Resources = (B, Box<[crate::io::IoSlice; N]>);
+    type Resources = (B, [crate::io::IoSlice; N]);
     type Args = u64; // Offset.
 
     fn fill_submission(
@@ -480,13 +462,11 @@ impl<B: BufSlice<N>, const N: usize> io_uring::FdOp for WriteVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_ptr().addr() as u64,
         };
-        asan::poison_iovecs(&**iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
-    fn map_ok(_: &AsyncFd, (_, iovecs): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_iovecs(&*iovecs);
-        n as usize
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret).1
     }
 }
 
@@ -495,17 +475,16 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, iovecs): Self::Resources,
-        (_, n): Self::OperationOutput,
+        (buf, _): Self::Resources,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
-        asan::unpoison_iovecs(&*iovecs);
         (buf, n as usize)
     }
 }
 
 pub(crate) struct SpliceOp;
 
-impl io_uring::FdOp for SpliceOp {
+impl FdOp for SpliceOp {
     type Output = usize;
     type Resources = ();
     type Args = (RawFd, SpliceDirection, u64, u64, u32, SpliceFlag); // target, direction, off_in, off_out, len, flags
@@ -536,14 +515,14 @@ impl io_uring::FdOp for SpliceOp {
         };
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         n as usize
     }
 }
 
 pub(crate) struct CloseOp;
 
-impl io_uring::Op for CloseOp {
+impl Op for CloseOp {
     type Output = ();
     type Resources = ();
     type Args = (RawFd, fd::Kind);
@@ -557,7 +536,7 @@ impl io_uring::Op for CloseOp {
         close_file_fd(*fd, *kind, submission);
     }
 
-    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
@@ -577,7 +556,7 @@ pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring
 
 #[allow(clippy::cast_sign_loss)] // For fd as u32.
 pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
-    let shared = sq.inner.shared_data();
+    let shared = sq.submissions().shared();
     let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
     let update = libc::io_uring_files_update {
         offset: fd as u32, // The fd is also the index/offset into the set.
@@ -589,11 +568,4 @@ pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()>
         ptr::from_ref(&update).cast(),
         1,
     )
-}
-
-/// Size of a single page, often 4096.
-#[allow(clippy::cast_sign_loss)] // Page size shouldn't be negative.
-fn page_size() -> usize {
-    static PAGE_SIZE: OnceLock<usize> = OnceLock::new();
-    *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
 }

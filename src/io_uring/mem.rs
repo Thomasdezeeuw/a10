@@ -1,10 +1,11 @@
 use crate::SubmissionQueue;
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io_uring::op::{Op, OpReturn};
+use crate::io_uring::{libc, sq};
 use crate::mem::AdviseFlag;
 
 pub(crate) struct AdviseOp;
 
-impl io_uring::Op for AdviseOp {
+impl Op for AdviseOp {
     type Output = ();
     type Resources = ();
     type Args = (*mut (), u32, AdviseFlag); // address, length, advice.
@@ -26,7 +27,7 @@ impl io_uring::Op for AdviseOp {
         };
     }
 
-    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

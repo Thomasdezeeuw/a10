@@ -1,10 +1,12 @@
 use std::future::Future;
+use std::io;
 use std::mem::take;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{io, thread};
 
 use a10::fs::{Open, OpenOptions};
 use a10::{Ring, SubmissionQueue};
@@ -13,8 +15,22 @@ use crate::util::{LOREM_IPSUM_50, init, is_send, is_sync, poll_nop};
 
 #[test]
 fn ring_size() {
-    assert_eq!(std::mem::size_of::<Ring>(), 64);
-    assert_eq!(std::mem::size_of::<Option<Ring>>(), 64);
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    const SIZE: usize = 48;
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    const SIZE: usize = 32;
+    assert_eq!(std::mem::size_of::<Ring>(), SIZE);
+    assert_eq!(std::mem::size_of::<Option<Ring>>(), SIZE);
 }
 
 #[test]
@@ -38,7 +54,7 @@ fn sq_size() {
 #[test]
 fn dropping_ring_unmaps_queues() {
     init();
-    let ring = Ring::new(64).unwrap();
+    let ring = Ring::new().unwrap();
     drop(ring);
 }
 
@@ -48,7 +64,7 @@ fn polling_with_timeout() -> io::Result<()> {
     const MARGIN: Duration = Duration::from_millis(10);
 
     init();
-    let mut ring = Ring::new(1).unwrap();
+    let mut ring = Ring::new().unwrap();
 
     let start = Instant::now();
     ring.poll(Some(TIMEOUT)).unwrap();
@@ -67,7 +83,7 @@ fn submission_queue_full_is_handled_internally() {
     const BUF_SIZE: usize = SIZE / N;
 
     init();
-    let mut ring = Ring::new(2).unwrap();
+    let mut ring = Ring::new().unwrap();
     let sq = ring.sq();
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
@@ -147,10 +163,11 @@ fn submission_queue_full_is_handled_internally() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn wake_ring_with_kernel_thread() {
     init();
-    let mut ring = Ring::config(2)
-        .with_kernel_thread(true)
+    let mut ring = Ring::config()
+        .with_kernel_thread()
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
@@ -167,10 +184,11 @@ fn wake_ring_with_kernel_thread() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn wake_ring_no_kernel_thread() {
     init();
-    let mut ring = Ring::config(2)
-        .with_kernel_thread(false)
+    // Defaults to no kernel thread.
+    let mut ring = Ring::config()
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
@@ -189,7 +207,7 @@ fn wake_ring_no_kernel_thread() {
 #[test]
 fn wake_ring_after_ring_dropped() {
     init();
-    let ring = Ring::new(2).unwrap();
+    let ring = Ring::new().unwrap();
     let sq = ring.sq().clone();
 
     drop(ring);

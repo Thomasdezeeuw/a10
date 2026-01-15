@@ -25,6 +25,15 @@ test_sanitizer:
 check:
 	cargo check --all-targets
 
+TARGETS ?= \
+	x86_64-unknown-linux-gnu x86_64-unknown-linux-musl aarch64-linux-android \
+	x86_64-unknown-dragonfly x86_64-unknown-freebsd x86_64-unknown-netbsd x86_64-unknown-openbsd \
+	aarch64-apple-darwin aarch64-apple-ios aarch64-apple-tvos aarch64-apple-visionos aarch64-apple-watchos \
+
+check_all_targets: $(TARGETS)
+$(TARGETS):
+	cargo check --target $@ -Zbuild-std
+
 # Disabled lints:
 # * `doc-markdown`: has some annoying false positives.
 # * `elidable-lifetime-names`: lifetimes serve as documentation.
@@ -74,4 +83,4 @@ doc_private:
 clean:
 	cargo clean
 
-.PHONY: dev test test_sanitizers test_sanitizer check lint clippy doc doc_private clean
+.PHONY: dev test test_sanitizers test_sanitizer check check_all_targets $(TARGETS) lint clippy doc doc_private clean

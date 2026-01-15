@@ -3,20 +3,20 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, Buffer, ReadBuf, ReadBufPool};
-use crate::io_uring::{self, cq, libc, sq};
+use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
+use crate::io_uring::{libc, sq};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
 };
-use crate::op::{FdIter, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
 
 pub(crate) use crate::unix::MsgHeader;
 
 pub(crate) struct SocketOp;
 
-impl io_uring::Op for SocketOp {
+impl Op for SocketOp {
     type Output = AsyncFd;
     type Resources = fd::Kind;
     type Args = (Domain, Type, Protocol);
@@ -35,17 +35,11 @@ impl io_uring::Op for SocketOp {
         submission.0.len = protocol.0;
         // Must currently always be set to zero per the manual.
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { rw_flags: 0 };
-        if let fd::Kind::Direct = *fd_kind {
-            io_uring::fd::create_direct_flags(submission);
-        }
+        fd_kind.create_flags(submission);
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(
-        sq: &SubmissionQueue,
-        fd_kind: Self::Resources,
-        (_, fd): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(sq: &SubmissionQueue, fd_kind: Self::Resources, (_, fd): OpReturn) -> Self::Output {
         // SAFETY: kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
     }
@@ -53,9 +47,9 @@ impl io_uring::Op for SocketOp {
 
 pub(crate) struct BindOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress> io_uring::FdOp for BindOp<A> {
+impl<A: SocketAddress> FdOp for BindOp<A> {
     type Output = ();
-    type Resources = AddressStorage<Box<A::Storage>>;
+    type Resources = AddressStorage<A::Storage>;
     type Args = ();
 
     fn fill_submission(
@@ -73,18 +67,16 @@ impl<A: SocketAddress> io_uring::FdOp for BindOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        asan::poison_box(&address.0);
     }
 
-    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&address.0);
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct ListenOp;
 
-impl io_uring::FdOp for ListenOp {
+impl FdOp for ListenOp {
     type Output = ();
     type Resources = ();
     type Args = libc::c_int; // backlog.
@@ -101,16 +93,16 @@ impl io_uring::FdOp for ListenOp {
         submission.0.len = *backlog as u32;
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct ConnectOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
+impl<A: SocketAddress> FdOp for ConnectOp<A> {
     type Output = ();
-    type Resources = AddressStorage<Box<A::Storage>>;
+    type Resources = AddressStorage<A::Storage>;
     type Args = ();
 
     fn fill_submission(
@@ -128,20 +120,18 @@ impl<A: SocketAddress> io_uring::FdOp for ConnectOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        asan::poison_box(&address.0);
     }
 
-    fn map_ok(_: &AsyncFd, address: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&address.0);
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct SocketNameOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress> io_uring::FdOp for SocketNameOp<A> {
+impl<A: SocketAddress> FdOp for SocketNameOp<A> {
     type Output = A;
-    type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
+    type Resources = AddressStorage<(MaybeUninit<A::Storage>, libc::socklen_t)>;
     type Args = Name;
 
     fn fill_submission(
@@ -176,11 +166,9 @@ impl<A: SocketAddress> io_uring::FdOp for SocketNameOp<A> {
                 __pad2: [0; 1],
             }),
         };
-        asan::poison_box(&resources.0);
     }
 
-    fn map_ok(_: &AsyncFd, resources: Self::Resources, _: cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&resources.0);
+    fn map_ok(_: &AsyncFd, resources: Self::Resources, _: OpReturn) -> Self::Output {
         msan::unpoison_region(
             ptr::from_ref(&(resources.0).1).cast(),
             size_of::<libc::socklen_t>(),
@@ -193,9 +181,9 @@ impl<A: SocketAddress> io_uring::FdOp for SocketNameOp<A> {
 
 pub(crate) struct RecvOp<B>(PhantomData<*const B>);
 
-impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
+impl<B: BufMut> FdOp for RecvOp<B> {
     type Output = B;
-    type Resources = Buffer<B>;
+    type Resources = B;
     type Args = RecvFlag;
 
     #[allow(clippy::cast_sign_loss)]
@@ -207,34 +195,34 @@ impl<B: BufMut> io_uring::FdOp for RecvOp<B> {
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
         submission.0.fd = fd.fd();
-        let (ptr, len) = unsafe { buf.buf.parts_mut() };
+        let (ptr, len) = unsafe { buf.parts_mut() };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
         asan::poison_region(ptr.cast(), len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = len;
-        if let Some(buf_group) = buf.buf.buffer_group() {
+        if let Some(buf_group) = buf.buffer_group() {
             submission.0.__bindgen_anon_4.buf_group = buf_group.0;
             submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         }
     }
 
-    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): cq::OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.buf.parts_mut() };
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+        let (ptr, len) = unsafe { buf.parts_mut() };
         asan::unpoison_region(ptr.cast(), len as usize);
         msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         unsafe {
-            buf.buf.buffer_init(BufId(buf_id), n);
+            buf.buffer_init(BufId(buf_id), n);
         };
-        buf.buf
+        buf
     }
 }
 
 pub(crate) struct MultishotRecvOp;
 
-impl io_uring::FdOp for MultishotRecvOp {
+impl FdIter for MultishotRecvOp {
     type Output = ReadBuf;
     type Resources = ReadBufPool;
     type Args = RecvFlag;
@@ -254,21 +242,7 @@ impl io_uring::FdOp for MultishotRecvOp {
         submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
     }
 
-    fn map_ok(
-        fd: &AsyncFd,
-        mut buf_pool: Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
-        MultishotRecvOp::map_next(fd, &mut buf_pool, (buf_id, n))
-    }
-}
-
-impl FdIter for MultishotRecvOp {
-    fn map_next(
-        _: &AsyncFd,
-        buf_pool: &mut Self::Resources,
-        (buf_id, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
         // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
@@ -278,57 +252,49 @@ impl FdIter for MultishotRecvOp {
 
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
-impl<B: BufMutSlice<N>, const N: usize> io_uring::FdOp for RecvVectoredOp<B, N> {
+impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
     type Output = (B, libc::c_int);
-    type Resources = (B, Box<(MsgHeader, [crate::io::IoMutSlice; N])>);
+    type Resources = (B, MsgHeader, [crate::io::IoMutSlice; N]);
     type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
-        (_, resources): &mut Self::Resources,
+        (_, msg, iovecs): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (msg, iovecs) = &mut **resources;
         let address = &mut MaybeUninit::new(NoAddress);
         fill_recvmsg_submission::<NoAddress>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok(
         _: &AsyncFd,
-        (mut bufs, resources): Self::Resources,
-        (_, n): cq::OpReturn,
+        (mut bufs, msg, iovecs): Self::Resources,
+        (_, n): OpReturn,
     ) -> Self::Output {
-        let (msg, iovecs) = &*resources;
-        asan::unpoison(msg);
-        asan::unpoison_iovecs_mut(iovecs);
-        msan::unpoison_iovecs_mut(iovecs, n as usize);
+        asan::unpoison_iovecs_mut(&iovecs);
+        msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // NOTE: don't need to unpoison the address as we didn't use one.
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
-        (bufs, resources.0.flags())
+        (bufs, msg.flags())
     }
 }
 
 pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
 
-impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
+impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
     type Output = (B, A, libc::c_int);
-    type Resources = (
-        B,
-        // These types need a stable address for the duration of the operation.
-        Box<(MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>)>,
-    );
+    type Resources = (B, MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>);
     type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
-        (buf, resources): &mut Self::Resources,
+        (buf, msg, iovec, address): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (msg, iovec, address) = &mut **resources;
         let iovecs = slice::from_mut(&mut *iovec);
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
         if let Some(buf_group) = buf.buffer_group() {
@@ -339,68 +305,56 @@ impl<B: BufMut, A: SocketAddress> io_uring::FdOp for RecvFromOp<B, A> {
 
     fn map_ok(
         _: &AsyncFd,
-        (mut buf, resources): Self::Resources,
-        (buf_id, n): cq::OpReturn,
+        (mut buf, msg, iovec, address): Self::Resources,
+        (buf_id, n): OpReturn,
     ) -> Self::Output {
-        let (msg, iovecs, address) = &*resources;
-        asan::unpoison(msg);
-        asan::unpoison_iovecs_mut(slice::from_ref(iovecs));
-        msan::unpoison_iovecs_mut(slice::from_ref(iovecs), n as usize);
-        asan::unpoison(address);
+        asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
+        msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { buf.buffer_init(BufId(buf_id), n) };
         // SAFETY: kernel initialised the address for us.
-        let address = unsafe { A::init(resources.2, resources.0.address_len()) };
-        (buf, address, resources.0.flags())
+        let address = unsafe { A::init(address, msg.address_len()) };
+        (buf, address, msg.flags())
     }
 }
 
 pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
-impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp
-    for RecvFromVectoredOp<B, A, N>
-{
+impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVectoredOp<B, A, N> {
     type Output = (B, A, libc::c_int);
     type Resources = (
         B,
-        // These types need a stable address for the duration of the operation.
-        Box<(
-            MsgHeader,
-            [crate::io::IoMutSlice; N],
-            MaybeUninit<A::Storage>,
-        )>,
+        MsgHeader,
+        [crate::io::IoMutSlice; N],
+        MaybeUninit<A::Storage>,
     );
     type Args = RecvFlag;
 
     fn fill_submission(
         fd: &AsyncFd,
-        (_, resources): &mut Self::Resources,
+        (_, msg, iovecs, address): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (msg, iovecs, address) = &mut **resources;
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
     }
 
     fn map_ok(
         _: &AsyncFd,
-        (mut bufs, resources): Self::Resources,
-        (_, n): cq::OpReturn,
+        (mut bufs, msg, iovecs, address): Self::Resources,
+        (_, n): OpReturn,
     ) -> Self::Output {
-        let (msg, iovecs, address) = &*resources;
-        asan::unpoison(msg);
-        asan::unpoison_iovecs_mut(iovecs);
-        msan::unpoison_iovecs_mut(iovecs, n as usize);
-        asan::unpoison(address);
+        asan::unpoison_iovecs_mut(&iovecs);
+        msan::unpoison_iovecs_mut(&iovecs, n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         unsafe { bufs.set_init(n as usize) };
         // SAFETY: kernel initialised the address for us.
-        let address = unsafe { A::init(resources.2, resources.0.address_len()) };
-        (bufs, address, resources.0.flags())
+        let address = unsafe { A::init(address, msg.address_len()) };
+        (bufs, address, msg.flags())
     }
 }
 
@@ -414,25 +368,23 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     submission: &mut sq::Submission,
 ) {
     // SAFETY: `address` and `iovecs` outlive `msg`.
-    unsafe { msg.init_recv::<A>(address, iovecs) };
+    let ptr = unsafe { msg.init_recv::<A>(address, iovecs) };
 
     submission.0.opcode = libc::IORING_OP_RECVMSG as u8;
     submission.0.fd = fd;
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-        addr: ptr::from_mut(&mut *msg).addr() as u64,
+        addr: ptr.addr() as u64,
     };
-    asan::poison(address);
     asan::poison_iovecs_mut(iovecs);
-    asan::poison(msg);
     submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
     submission.0.len = 1;
 }
 
 pub(crate) struct SendOp<B>(PhantomData<*const B>);
 
-impl<B: Buf> io_uring::FdOp for SendOp<B> {
+impl<B: Buf> FdOp for SendOp<B> {
     type Output = usize;
-    type Resources = Buffer<B>;
+    type Resources = B;
     type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
@@ -446,7 +398,7 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
             SendCall::Normal => libc::IORING_OP_SEND as u8,
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
-        let (buf_ptr, buf_len) = unsafe { buf.buf.parts() };
+        let (buf_ptr, buf_len) = unsafe { buf.parts() };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
@@ -456,32 +408,26 @@ impl<B: Buf> io_uring::FdOp for SendOp<B> {
         submission.0.len = buf_len;
     }
 
-    fn map_ok(_: &AsyncFd, buf: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.buf.parts() };
-        asan::unpoison_region(ptr.cast(), len as usize);
-        n as usize
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret).1
     }
 }
 
 impl<B: Buf> FdOpExtract for SendOp<B> {
     type ExtractOutput = (B, usize);
 
-    fn map_ok_extract(
-        _: &AsyncFd,
-        buf: Self::Resources,
-        (_, n): Self::OperationOutput,
-    ) -> Self::ExtractOutput {
-        let (ptr, len) = unsafe { buf.buf.parts() };
+    fn map_ok_extract(_: &AsyncFd, buf: Self::Resources, (_, n): OpReturn) -> Self::ExtractOutput {
+        let (ptr, len) = unsafe { buf.parts() };
         asan::unpoison_region(ptr.cast(), len as usize);
-        (buf.buf, n as usize)
+        (buf, n as usize)
     }
 }
 
 pub(crate) struct SendToOp<B, A = NoAddress>(PhantomData<*const (B, A)>);
 
-impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
+impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
     type Output = usize;
-    type Resources = (B, Box<A::Storage>);
+    type Resources = (B, AddressStorage<A::Storage>);
     type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
@@ -496,10 +442,9 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
             SendCall::ZeroCopy => libc::IORING_OP_SEND_ZC as u8,
         };
         let (buf_ptr, buf_len) = unsafe { buf.parts() };
-        let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
+        let (address_ptr, address_length) = unsafe { A::as_ptr(&address.0) };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1.addr2 = address_ptr.addr() as u64;
-        asan::poison_box(address);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
@@ -509,7 +454,7 @@ impl<B: Buf, A: SocketAddress> io_uring::FdOp for SendToOp<B, A> {
         submission.0.len = buf_len;
     }
 
-    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: cq::OpReturn) -> Self::Output {
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(fd, resources, ret).1
     }
 }
@@ -519,10 +464,9 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, address): Self::Resources,
-        (_, n): Self::OperationOutput,
+        (buf, _): Self::Resources,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
-        asan::unpoison_box(&address);
         let (buf_ptr, buf_len) = unsafe { buf.parts() };
         asan::unpoison_region(buf_ptr.cast(), buf_len as usize);
         (buf, n as usize)
@@ -531,25 +475,25 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
 
 pub(crate) struct SendMsgOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
-impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMsgOp<B, A, N> {
+impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, N> {
     type Output = usize;
     type Resources = (
         B,
-        // These types need a stable address for the duration of the operation.
-        Box<(MsgHeader, [crate::io::IoSlice; N], A::Storage)>,
+        MsgHeader,
+        [crate::io::IoSlice; N],
+        AddressStorage<A::Storage>,
     );
     type Args = (SendCall, SendFlag);
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
         fd: &AsyncFd,
-        (_, resources): &mut Self::Resources,
+        (_, msg, iovecs, address): &mut Self::Resources,
         (send_op, flags): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (msg, iovecs, address) = &mut **resources;
         // SAFETY: `address` and `iovecs` outlive `msg`.
-        unsafe { msg.init_send::<A>(address, iovecs) };
+        let ptr = unsafe { msg.init_send::<A>(&mut address.0, iovecs) };
 
         submission.0.opcode = match *send_op {
             SendCall::Normal => libc::IORING_OP_SENDMSG as u8,
@@ -557,21 +501,15 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> io_uring::FdOp for SendMs
         };
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut *msg).addr() as u64,
+            addr: ptr.addr() as u64,
         };
-        asan::poison(address);
         asan::poison_iovecs(iovecs);
-        asan::poison(msg);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = 1;
     }
 
-    fn map_ok(_: &AsyncFd, (_, resources): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        let (msg, iovecs, address) = &*resources;
-        asan::unpoison(msg);
-        asan::unpoison_iovecs(iovecs);
-        asan::unpoison(address);
-        n as usize
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret).1
     }
 }
 
@@ -580,22 +518,19 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, resources): Self::Resources,
-        (_, n): Self::OperationOutput,
+        (buf, _, iovecs, _): Self::Resources,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
-        let (msg, iovecs, address) = &*resources;
-        asan::unpoison(msg);
-        asan::unpoison(address);
-        asan::unpoison_iovecs(iovecs);
+        asan::unpoison_iovecs(&iovecs);
         (buf, n as usize)
     }
 }
 
 pub(crate) struct AcceptOp<A>(PhantomData<*const A>);
 
-impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
+impl<A: SocketAddress> FdOp for AcceptOp<A> {
     type Output = (AsyncFd, A);
-    type Resources = AddressStorage<Box<(MaybeUninit<A::Storage>, libc::socklen_t)>>;
+    type Resources = AddressStorage<(MaybeUninit<A::Storage>, libc::socklen_t)>;
     type Args = AcceptFlag;
 
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
@@ -617,7 +552,6 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        asan::poison_box(&resources.0);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             accept_flags: flags.0 | fd_kind.cloexec_flag() as u32,
         };
@@ -626,8 +560,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&resources.0);
+    fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): OpReturn) -> Self::Output {
         msan::unpoison_region(
             ptr::from_ref(&(resources.0).1).cast(),
             size_of::<libc::socklen_t>(),
@@ -644,7 +577,7 @@ impl<A: SocketAddress> io_uring::FdOp for AcceptOp<A> {
 
 pub(crate) struct MultishotAcceptOp;
 
-impl io_uring::FdOp for MultishotAcceptOp {
+impl FdIter for MultishotAcceptOp {
     type Output = AsyncFd;
     type Resources = ();
     type Args = AcceptFlag;
@@ -667,14 +600,8 @@ impl io_uring::FdOp for MultishotAcceptOp {
         fd_kind.create_flags(submission);
     }
 
-    fn map_ok(lfd: &AsyncFd, (): Self::Resources, ok: cq::OpReturn) -> Self::Output {
-        MultishotAcceptOp::map_next(lfd, &mut (), ok)
-    }
-}
-
-impl FdIter for MultishotAcceptOp {
     #[allow(clippy::cast_possible_wrap)]
-    fn map_next(lfd: &AsyncFd, (): &mut Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_next(lfd: &AsyncFd, (): &Self::Resources, (_, fd): OpReturn) -> Self::Output {
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) }
@@ -683,9 +610,9 @@ impl FdIter for MultishotAcceptOp {
 
 pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T> io_uring::FdOp for SocketOptionOp<T> {
+impl<T> FdOp for SocketOptionOp<T> {
     type Output = T;
-    type Resources = Box<MaybeUninit<T>>;
+    type Resources = MaybeUninit<T>;
     type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
@@ -715,24 +642,24 @@ impl<T> io_uring::FdOp for SocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(value.as_mut_ptr().addr() as u64),
         };
-        asan::poison_box(value);
+        asan::poison_region(value.as_ptr().cast(), size_of::<T>());
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&value);
-        msan::unpoison_box(&value);
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_region(value.as_ptr().cast(), size_of::<T>());
+        msan::unpoison_region(value.as_ptr().cast(), n as usize);
         debug_assert!(n == (size_of::<T>() as u32));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
-        unsafe { MaybeUninit::assume_init(*value) }
+        unsafe { MaybeUninit::assume_init(value) }
     }
 }
 
 pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
 
-impl<T: option::Get> io_uring::FdOp for SocketOption2Op<T> {
+impl<T: option::Get> FdOp for SocketOption2Op<T> {
     type Output = T::Output;
-    type Resources = OptionStorage<Box<MaybeUninit<T::Storage>>>;
+    type Resources = OptionStorage<MaybeUninit<T::Storage>>;
     type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
@@ -762,23 +689,24 @@ impl<T: option::Get> io_uring::FdOp for SocketOption2Op<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(optval.addr() as u64),
         };
-        asan::poison_box(&value.0);
+        asan::poison_region(optval.cast_const().cast(), optlen as usize);
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&value.0);
-        msan::unpoison_box(&value.0);
+    fn map_ok(_: &AsyncFd, mut value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        let (_, optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+        asan::unpoison_region(value.0.as_ptr().cast(), optlen as usize);
+        msan::unpoison_region(value.0.as_ptr().cast(), n as usize);
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
-        unsafe { T::init(*value.0, n) }
+        unsafe { T::init(value.0, n) }
     }
 }
 
 pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
+impl<T> FdOp for SetSocketOptionOp<T> {
     type Output = ();
-    type Resources = Box<T>;
+    type Resources = T;
     type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
@@ -806,14 +734,13 @@ impl<T> io_uring::FdOp for SetSocketOptionOp<T> {
             optlen: size_of::<T>() as u32,
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
-            optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as u64),
+            optval: ManuallyDrop::new(ptr::from_ref(value).addr() as u64),
         };
-        asan::poison_box(value);
+        asan::poison_region(ptr::from_ref(&value).cast(), size_of::<T>());
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&value);
-        debug_assert!(n == 0);
+    fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(fd, resources, ret);
     }
 }
 
@@ -823,19 +750,19 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
     fn map_ok_extract(
         _: &AsyncFd,
         value: Self::Resources,
-        (_, n): Self::OperationOutput,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
-        asan::unpoison_box(&value);
+        asan::unpoison_region(ptr::from_ref(&value).cast(), size_of::<T>());
         debug_assert!(n == 0);
-        *value
+        value
     }
 }
 
 pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
 
-impl<T: option::Set> io_uring::FdOp for SetSocketOption2Op<T> {
+impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
     type Output = ();
-    type Resources = Box<T::Storage>;
+    type Resources = OptionStorage<T::Storage>;
     type Args = (Level, Opt);
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
@@ -863,20 +790,20 @@ impl<T: option::Set> io_uring::FdOp for SetSocketOption2Op<T> {
             optlen: size_of::<T::Storage>() as u32,
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
-            optval: ManuallyDrop::new(ptr::from_ref(&**value).addr() as u64),
+            optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
-        asan::poison_box(value);
+        asan::poison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&value);
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct ShutdownOp;
 
-impl io_uring::FdOp for ShutdownOp {
+impl FdOp for ShutdownOp {
     type Output = ();
     type Resources = ();
     type Args = std::net::Shutdown;
@@ -897,7 +824,7 @@ impl io_uring::FdOp for ShutdownOp {
         } as u32;
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }

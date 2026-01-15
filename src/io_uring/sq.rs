@@ -1,200 +1,165 @@
-use std::os::fd::AsRawFd;
-use std::sync::atomic::{self, AtomicBool, Ordering};
-use std::{fmt, io, ptr};
+use std::mem::drop as unlock;
+use std::os::fd::RawFd;
+use std::sync::Arc;
+use std::sync::atomic::{self, Ordering};
+use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{Shared, cancel, libc};
-use crate::sq::{Cancelled, QueueFull};
-use crate::{OperationId, WAKE_ID, asan};
+use crate::io_uring::{Shared, cq, libc, load_kernel_shared};
+use crate::{asan, lock};
 
-/// NOTE: all the state is in [`Shared`].
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Submissions {
-    // All state is in `Shared`.
+    shared: Arc<Shared>,
 }
 
 impl Submissions {
-    pub(crate) const fn new() -> Submissions {
-        Submissions {}
+    pub(crate) fn new(shared: Shared) -> Submissions {
+        Submissions {
+            shared: Arc::new(shared),
+        }
     }
-}
 
-impl crate::sq::Submissions for Submissions {
-    type Shared = Shared;
-    type Submission = Submission;
-
-    #[allow(clippy::mutex_integer)]
-    fn add<F>(
-        &self,
-        shared: &Self::Shared,
-        is_polling: &AtomicBool,
-        submit: F,
-    ) -> Result<(), QueueFull>
+    /// Try to submit a new operation.
+    pub(crate) fn add<F>(&self, fill_submission: F) -> Result<(), QueueFull>
     where
-        F: FnOnce(&mut Self::Submission),
+        F: FnOnce(&mut Submission),
     {
-        // First we need to acquire mutable access to an `Submission` entry in
-        // the `entries` array.
-        //
-        // We do this by increasing `pending_tail` by 1, reserving
-        // `entries[pending_tail]` for ourselves, while ensuring we don't go
-        // beyond what the kernel has processed by checking `tail - kernel_read`
-        // is less then the length of the submission queue.
-        let kernel_read = shared.kernel_read();
-        let tail = shared
-            .pending_tail
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |tail| {
-                if tail - kernel_read < shared.entries_len {
-                    // Still an entry available.
-                    Some(tail.wrapping_add(1))
-                } else {
-                    None
-                }
-            });
-        let Ok(tail) = tail else {
-            // If the kernel thread is not awake we'll need to wake it to make
-            // space in the submission queue.
-            shared.maybe_wake_kernel_thread();
+        let shared = &*self.shared;
+        let len = shared.submissions_len;
+        // Before grabbing a lock, see if there is space in the queue.
+        if shared.unsubmitted_submissions() >= len {
             return Err(QueueFull);
-        };
+        }
 
-        // SAFETY: the `ring_mask` ensures we can never get an index larger
-        // then the size of the queue. Above we've already ensured that
-        // we're the only thread  with mutable access to the entry.
-        let submission_index = tail & shared.entries_mask;
-        let submission = unsafe { &mut *shared.entries.add(submission_index as usize) };
-        // We've ensured above that we can access the submission.
+        // Grab the submission lock.
+        let submissions_guard = lock(&shared.submissions_lock);
+
+        // NOTE: need to load the tail and head values again as they could have
+        // changed since we last loaded them.
+        // NOTE: we MUST load the head before the tail to ensure the head is
+        // ALWAYS older. Otherwise it's possible for the subtraction to
+        // underflow.
+        let head = load_kernel_shared(shared.submissions_head);
+        let tail = load_kernel_shared(shared.submissions_tail);
+        if (tail - head) > len {
+            return Err(QueueFull);
+        }
+
+        // SAFETY: with the mask we've ensured above that index is valid for the
+        // number of submissions. Furthermore while holding the lock we're
+        // ensure of unique access to the submission.
+        let index = (tail & (len - 1)) as usize;
+        let submission = unsafe { &mut *shared.submissions.add(index).as_ptr() };
         asan::unpoison(submission);
 
-        // Let the caller fill the `submission`.
+        // Reset and fill the submission.
         submission.reset();
-        submit(submission);
+        fill_submission(submission);
         #[cfg(debug_assertions)]
         debug_assert!(!submission.is_unchanged());
 
-        // Ensure that all writes to the `submission` are done.
+        // Ensure that all writes to the submission are done.
         atomic::fence(Ordering::SeqCst);
 
-        // Now that we've written our submission we need add it to the
-        // `array` so that the kernel can process it.
-        log::trace!(submission:? = submission; "queueing submission");
-        // Now that the submission is fully written we have access to the kernel
-        // (see below), so we poision the submission again.
+        // SAFETY: submissions_tail is a valid pointer. It's safe to use store
+        // here because we're holding the submission lock and thus are the only
+        // ones writing to it (but other threads and the kernel can read it).
+        let new_tail = tail.wrapping_add(1);
+        unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
+
+        log::trace!(submission:?, index, tail, new_tail; "queueing submission");
         asan::poison(submission);
-        {
-            // Now that the submission is filled we need to add it to the
-            // `shared.array` so that the kernel can read from it.
-            //
-            // We do this with a lock to avoid a race condition between two
-            // threads incrementing `shared.tail` concurrently. Consider the
-            // following execution:
-            //
-            // Thread A                           | Thread B
-            // ...                                | ...
-            // ...                                | Got `array_index` 0.
-            // Got `array_index` 1.               |
-            // Writes index to `shared.array[1]`. |
-            // `shared.tail.fetch_add` to 1.      |
-            // At this point the kernel will/can read `shared.array[0]`, but
-            // thread B hasn't filled it yet. So the kernel will read an invalid
-            // index!
-            //                                    | Writes index to `shared.array[0]`.
-            //                                    | `shared.tail.fetch_add` to 2.
+        unlock(submissions_guard);
 
-            let mut array_index = shared.array_index.lock().unwrap();
-            let idx = (*array_index & shared.entries_mask) as usize;
-            // SAFETY: `idx` is masked above to be within the correct bounds.
-            let array_entry = unsafe { &mut *shared.array.add(idx) };
-            // We've ensured unique access to the array entry, so unpoison it
-            // for the write.
-            asan::unpoison(array_entry);
-            array_entry.store(submission_index, Ordering::Release);
-            // Now it's written poison it again until the kernel have read it.
-            asan::poison(array_entry);
-            // SAFETY: we filled the array above.
-            let old_tail = unsafe { (*shared.array_tail).fetch_add(1, Ordering::AcqRel) };
-            debug_assert!(old_tail == *array_index);
-            *array_index += 1;
-        }
-
-        // If the kernel thread is not awake we'll need to wake it for it to
-        // process our submission.
-        shared.maybe_wake_kernel_thread();
-        // When we're not using the kernel polling thread we might have to
-        // submit the event ourselves to ensure we can make progress while the
-        // (user space) polling thread is calling `Ring::poll`.
-        shared.maybe_submit_event(is_polling);
         Ok(())
     }
 
-    fn cancel(
-        &self,
-        shared: &Self::Shared,
-        is_polling: &AtomicBool,
-        op_id: OperationId,
-    ) -> Cancelled {
-        let result = self.add(shared, is_polling, |submission| {
-            use crate::sq::Submission;
-            submission.set_id(op_id);
+    /// Asynchronously cancel an operation.
+    pub(super) fn cancel(&self, user_data: u64) -> Result<(), QueueFull> {
+        self.add(|submission| {
+            submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
+            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: user_data };
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
             submission.no_success_event();
-            cancel::operation(op_id, submission);
-        });
-        if let Ok(()) = result {
-            return Cancelled::Async;
-        }
-
-        // We failed to asynchronously cancel the operation, so we'll fallback
-        // to doing it synchronously.
-        let cancel = libc::io_uring_sync_cancel_reg {
-            addr: op_id as u64,
-            fd: 0,
-            flags: 0,
-            // No timeout, saves the kernel from setting up a timer etc.
-            timeout: libc::__kernel_timespec {
-                tv_sec: libc::__kernel_time64_t::MAX,
-                tv_nsec: std::os::raw::c_longlong::MAX,
-            },
-            opcode: 0,
-            pad: [0; 7],
-            pad2: [0; 3],
-        };
-        let arg = ptr::from_ref(&cancel).cast();
-        match shared.register(libc::IORING_REGISTER_SYNC_CANCEL, arg, 1) {
-            Ok(()) => Cancelled::Immediate,
-            Err(err) => match err.raw_os_error() {
-                // Operation was already completed.
-                Some(libc::ENOENT) => Cancelled::Immediate,
-                // Operation is nearly complete, can't be cancelled
-                // anymore (EALREADY), or the cancellation failed
-                // (ETIME, EINVAL). Either way we'll have to wait until
-                // the operation is completed.
-                Some(libc::EALREADY | libc::ETIME | libc::EINVAL) => Cancelled::Async,
-                _ => {
-                    log::error!(id = op_id; "unexpected error cancelling operation: {err}");
-                    // Waiting is the safest thing we can do.
-                    Cancelled::Async
-                }
-            },
-        }
+        })
     }
 
-    fn wake(&self, shared: &Self::Shared) -> io::Result<()> {
-        use crate::sq::Submission;
-        // This is only called if we're polling.
-        let is_polling = AtomicBool::new(true);
-        let _: Result<(), QueueFull> = self.add(shared, &is_polling, |submission| {
+    pub(crate) fn wake(&self) -> io::Result<()> {
+        if !self.shared.is_polling.load(Ordering::Acquire) {
+            // If we're not polling we don't need to wake up.
+            return Ok(());
+        }
+
+        _ = self.add(|submission| {
             submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
-            submission.0.fd = shared.rfd.as_raw_fd();
+            submission.0.fd = self.ring_fd();
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
                 addr: u64::from(libc::IORING_MSG_DATA),
             };
             submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-                off: WAKE_ID as u64,
+                off: cq::WAKE_USER_DATA,
             };
             submission.no_success_event();
         });
+
+        let (flags, submissions) = if self.shared.kernel_thread {
+            let flags = if load_kernel_shared(self.shared.kernel_flags)
+                & libc::IORING_SQ_NEED_WAKEUP
+                != 0
+            {
+                libc::IORING_ENTER_SQ_WAKEUP
+            } else {
+                0
+            };
+            (flags, 0) // Kernel thread handles the submissions.
+        } else {
+            (0, self.shared.unsubmitted_submissions())
+        };
+        log::trace!(submissions; "entering kernel for wake up");
+        self.shared.enter(submissions, 0, flags, ptr::null(), 0)?;
+
         Ok(())
+    }
+
+    /// Wait for a submission slot, waking `waker` once one is available.
+    pub(crate) fn wait_for_submission(&self, waker: task::Waker) {
+        log::trace!(waker:?; "adding future waiting on submission slot");
+        let shared = &*self.shared;
+        lock(&shared.blocked_futures).push(waker);
+    }
+
+    pub(crate) fn shared(&self) -> &Shared {
+        &self.shared
+    }
+
+    pub(super) fn ring_fd(&self) -> RawFd {
+        self.shared.ring_fd()
+    }
+}
+
+/// Submission queue is full.
+pub(crate) struct QueueFull;
+
+impl From<QueueFull> for io::Error {
+    fn from(_: QueueFull) -> io::Error {
+        #[cfg(not(feature = "nightly"))]
+        let kind = io::ErrorKind::Other;
+        #[cfg(feature = "nightly")]
+        let kind = io::ErrorKind::ResourceBusy;
+        io::Error::new(kind, "submission queue is full")
+    }
+}
+
+impl fmt::Debug for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("QueueFull").finish()
+    }
+}
+
+impl fmt::Display for QueueFull {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("`a10::Ring` submission queue is full")
     }
 }
 
@@ -212,7 +177,7 @@ impl Submission {
     #[allow(clippy::assertions_on_constants)]
     fn reset(&mut self) {
         debug_assert!(libc::IORING_OP_NOP == 0);
-        unsafe { ptr::addr_of_mut!(self.0).write_bytes(0, 1) };
+        unsafe { ptr::from_mut(&mut self.0).write_bytes(0, 1) };
     }
 
     /// Returns `true` if the submission is unchanged after a [`reset`].
@@ -225,17 +190,12 @@ impl Submission {
 
     /// Don't attempt to do the operation non-blocking first, always execute it
     /// in an async manner.
-    pub(crate) fn set_async(&mut self) {
+    pub(super) fn set_async(&mut self) {
         self.0.flags |= libc::IOSQE_ASYNC;
     }
-}
 
-impl crate::sq::Submission for Submission {
-    fn set_id(&mut self, id: OperationId) {
-        self.0.user_data = id as u64;
-    }
-
-    fn no_success_event(&mut self) {
+    /// Don't return a completion event for this submission if it succeeds.
+    pub(super) fn no_success_event(&mut self) {
         self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
     }
 }
@@ -300,10 +260,12 @@ impl fmt::Debug for Submission {
             }
             libc::IORING_OP_SOCKET => {
                 f.field("opcode", &"IORING_OP_SOCKET")
-                    .field("domain", &self.0.fd)
-                    .field("type", unsafe { &self.0.__bindgen_anon_1.off })
+                    .field("domain", &crate::net::Domain(self.0.fd))
+                    .field("type", &unsafe {
+                        crate::net::Type(self.0.__bindgen_anon_1.off as u32)
+                    })
                     .field("file_index", unsafe { &self.0.__bindgen_anon_5.file_index })
-                    .field("protocol", &self.0.len)
+                    .field("protocol", &crate::net::Protocol(self.0.len))
                     .field("rw_flags", unsafe { &self.0.__bindgen_anon_3.rw_flags });
             }
             libc::IORING_OP_CONNECT => {
@@ -523,7 +485,7 @@ impl fmt::Debug for Submission {
             }
         }
         f.field("flags", &self.0.flags)
-            .field("user_data", &self.0.user_data)
+            .field("user_data", &(self.0.user_data as *const ()))
             .finish()
     }
 }

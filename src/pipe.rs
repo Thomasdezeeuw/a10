@@ -6,7 +6,7 @@
 use std::io;
 
 use crate::fd::{self, AsyncFd};
-use crate::op::{Operation, operation};
+use crate::op::{OpState, operation};
 use crate::{SubmissionQueue, man_link, new_flag, sys};
 
 /// Create a new Unix pipe.
@@ -34,14 +34,15 @@ use crate::{SubmissionQueue, man_link, new_flag, sys};
 #[doc = man_link!(pipe(2))]
 pub fn pipe(sq: SubmissionQueue, flags: Option<PipeFlag>) -> Pipe {
     let flags = flags.unwrap_or(PipeFlag(0));
-    let resources = (Box::new([-1, -1]), fd::Kind::File);
-    Pipe(Operation::new(sq, resources, flags))
+    let resources = ([-1, -1], fd::Kind::File);
+    Pipe::new(sq, resources, flags)
 }
 
 new_flag!(
     /// Flags to [`pipe`].
     pub struct PipeFlag(u32) {
         /// Create a pipe that performs I/O in "packet" mode.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         DIRECT = libc::O_DIRECT,
     }
 );
@@ -58,7 +59,7 @@ impl Pipe {
     ///
     /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
-        if let Some(resources) = self.0.update_resources() {
+        if let Some(resources) = self.state.resources_mut() {
             resources.1 = kind;
         }
         self

@@ -8,21 +8,24 @@ use std::net::{
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr;
 
-use a10::cancel::{Cancel, CancelResult};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::fd;
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, Bind, Domain, Level, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN,
-    RecvNVectored, Send, SendAll, SendAllVectored, SendTo, SetSocketOption, Socket, SocketName,
-    SocketOpt, Type, socket,
+    Accept, Bind, Domain, Level, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
+    SendAllVectored, SendTo, SetSocketOption, Socket, SocketName, SocketOpt, Type,
 };
-use a10::{AsyncFd, Extract, Ring, fd};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::net::{MultishotAccept, MultishotRecv, socket};
+use a10::{Extract, Ring};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    block_on, cancel, expect_io_errno, expect_io_error_kind, fd, init, is_send, is_sync,
-    new_socket, next, require_kernel, start_mulitshot_op, start_op, syscall, tcp_ipv4_socket,
-    test_queue, udp_ipv4_socket,
+    block_on, expect_io_error_kind, fd, ignore_unsupported, init, is_send, is_sync, new_socket,
+    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{expect_io_errno, next};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -123,43 +126,8 @@ fn accept_no_address() {
 }
 
 #[test]
-fn cancel_accept() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<NoAddress>();
-
-    // Then cancel the accept multishot call.
-    cancel(&waker, &mut accept, start_op);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn try_cancel_accept_before_poll() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<SocketAddr>();
-
-    // Before we accept we cancel the accept call.
-    if !matches!(accept.try_cancel(), CancelResult::NotStarted) {
-        panic!("failed to cancel");
-    }
-}
-
-#[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept() {
-    require_kernel!(5, 19);
-
     test_multishot_accept(0);
     test_multishot_accept(1);
     test_multishot_accept(5);
@@ -235,112 +203,7 @@ fn multishot_accept() {
 }
 
 #[test]
-fn cancel_multishot_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    // Start two connections.
-    let stream1 = TcpStream::connect(local_addr).expect("failed to connect");
-    let s_addr1 = stream1.local_addr().expect("failed to get address");
-    let stream2 = TcpStream::connect(local_addr).expect("failed to connect");
-
-    // Accept the first.
-    let client1 = waker
-        .block_on(next(&mut accept_stream))
-        .expect("missing a connection")
-        .expect("failed to accept connection");
-    let c_addr1 = peer_addr(fd(&client1)).expect("failed to get address");
-
-    // Then cancel the accept multishot call.
-    cancel(&waker, &mut accept_stream, start_mulitshot_op);
-
-    // We should still be able to accept the second connection.
-    let client2 = waker
-        .block_on(next(&mut accept_stream))
-        .expect("missing a connection")
-        .expect("failed to accept connection");
-
-    // After that we expect no more connections.
-    assert!(waker.block_on(next(&mut accept_stream)).is_none());
-
-    // Match the connections.
-    let tests = if s_addr1 == c_addr1 {
-        [(stream1, client1), (stream2, client2)]
-    } else {
-        [(stream1, client2), (stream2, client1)]
-    };
-
-    // Test each connection.
-    for (mut stream, client) in tests {
-        // Read some data.
-        stream.write(DATA1).expect("failed to write");
-        let mut buf = waker
-            .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
-            .expect("failed to read");
-        assert_eq!(buf, DATA1);
-
-        // Write some data.
-        let n = waker
-            .block_on(client.write(DATA2))
-            .expect("failed to write");
-        assert_eq!(n, DATA2.len());
-        buf.resize(DATA2.len() + 1, 0);
-        let n = stream.read(&mut buf).expect("failed to read");
-        assert_eq!(&buf[..n], DATA2);
-
-        // Closing the client should get a result.
-        drop(stream);
-        buf.clear();
-        let buf = waker.block_on(client.read(buf)).expect("failed to read");
-        assert!(buf.is_empty());
-    }
-}
-
-#[test]
-fn try_cancel_multishot_accept_before_poll() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    let local_addr = waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    // Start a connection.
-    let _stream = TcpStream::connect(local_addr).expect("failed to connect");
-
-    // But before we accept we cancel the accept call.
-    if !matches!(accept_stream.try_cancel(), CancelResult::NotStarted) {
-        panic!("failed to cancel");
-    }
-}
-
-#[test]
-fn cancel_multishot_accept_before_poll() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    // Bind a socket.
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept_stream = listener.multishot_accept();
-
-    waker.block_on(accept_stream.cancel()).unwrap();
-}
-
-#[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept_incorrect_usage() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -398,8 +261,6 @@ fn connect() {
 
 #[test]
 fn socket_name() {
-    require_kernel!(6, 19);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -418,9 +279,8 @@ fn socket_name() {
 
     let (_client, expected_local_addr) = listener.accept().expect("failed to accept connection");
 
-    let got_local_addr: SocketAddr = waker
-        .block_on(stream.local_addr())
-        .expect("failed to get local addr");
+    let got_local_addr: SocketAddr =
+        ignore_unsupported!(waker.block_on(stream.local_addr())).expect("failed to get local addr");
     assert_eq!(got_local_addr, expected_local_addr);
 
     let got_peer_addr: SocketAddr = waker
@@ -468,10 +328,9 @@ fn recv() {
 fn recv_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
@@ -501,10 +360,9 @@ fn recv_read_buf_pool() {
 fn recv_read_buf_pool_send_read_buf() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
@@ -539,17 +397,17 @@ fn recv_read_buf_pool_send_read_buf() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
 
-    require_kernel!(6, 0);
     init();
 
     is_send::<MultishotRecv>();
     is_sync::<MultishotRecv>();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -583,16 +441,16 @@ fn multishot_recv() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv_large_send() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
     const N: usize = 4;
     const DATA: &[u8] = &[123; N * 4];
 
-    require_kernel!(6, 0);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -629,16 +487,16 @@ fn multishot_recv_large_send() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_recv_all_buffers_used() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
     const N: usize = 2 + 10;
     const DATA: &[u8] = &[255; BUF_SIZE];
 
-    require_kernel!(6, 0);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
 
@@ -859,10 +717,9 @@ fn recv_from() {
 fn recv_from_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
@@ -951,8 +808,6 @@ fn send() {
 
 #[test]
 fn send_zc() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1008,8 +863,6 @@ fn send_extractor() {
 
 #[test]
 fn send_zc_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1128,8 +981,6 @@ fn send_vectored() {
 
 #[test]
 fn send_vectored_zc() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1190,8 +1041,6 @@ fn send_vectored_extractor() {
 
 #[test]
 fn send_vectored_zc_extractor() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1291,8 +1140,6 @@ fn send_all_vectored_extract() {
 
 #[test]
 fn send_to() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1319,8 +1166,6 @@ fn send_to() {
 
 #[test]
 fn send_to_zc() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1344,8 +1189,6 @@ fn send_to_zc() {
 
 #[test]
 fn send_to_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1370,8 +1213,6 @@ fn send_to_extractor() {
 
 #[test]
 fn send_to_zc_extractor() {
-    require_kernel!(6, 0);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1423,8 +1264,6 @@ fn send_to_vectored() {
 
 #[test]
 fn send_to_vectored_zc() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1474,8 +1313,6 @@ fn send_to_vectored_extractor() {
 
 #[test]
 fn send_to_vectored_zc_extractor() {
-    require_kernel!(6, 1);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1529,8 +1366,6 @@ fn shutdown() {
 
 #[test]
 fn set_socket_option() {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -1539,13 +1374,16 @@ fn set_socket_option() {
 
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
-    waker
-        .block_on(socket.set_socket_option::<libc::c_int>(
-            Level::SOCKET,
-            SocketOpt::INCOMING_CPU,
-            0,
-        ))
-        .unwrap();
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        waker
+            .block_on(socket.set_socket_option::<libc::c_int>(
+                Level::SOCKET,
+                SocketOpt::INCOMING_CPU,
+                0,
+            ))
+            .unwrap();
+    }
 
     let linger = libc::linger {
         l_onoff: 1,
@@ -1569,6 +1407,7 @@ fn set_socket_option() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn direct_fd() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -1578,7 +1417,7 @@ fn direct_fd() {
     let local_addr = listener.local_addr().unwrap();
 
     // Create a socket and connect the listener.
-    let stream: AsyncFd = waker
+    let stream = waker
         .block_on(socket(sq, Domain::IPV4, Type::STREAM, None).kind(fd::Kind::Direct))
         .expect("failed to create socket");
     waker

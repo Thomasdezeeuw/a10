@@ -1,19 +1,21 @@
 use std::cell::Cell;
-use std::env::temp_dir;
 use std::future::Future;
 use std::io;
 use std::os::fd::{FromRawFd, RawFd};
 
-use a10::fs::{self, Open, OpenOptions};
-use a10::io::{BufMut, Close, ReadBufPool, Splice, Stderr, Stdout, stderr, stdout};
+use a10::fs::{self, OpenOptions};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::io::Splice;
+use a10::io::{BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
-    LOREM_IPSUM_50, Waker, bind_and_listen_ipv4, cancel_all, defer, expect_io_errno, fd, is_send,
-    is_sync, next, pipe, remove_test_file, require_kernel, start_op, tcp_ipv4_socket, test_queue,
-    tmp_path,
+    LOREM_IPSUM_50, Waker, defer, is_send, is_sync, pipe, remove_test_file, tcp_ipv4_socket,
+    test_queue, tmp_path,
 };
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{fd, next};
 
 const NO_OFFSET: u64 = u64::MAX;
 
@@ -56,12 +58,10 @@ fn write_all_at_extract() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let mut path = temp_dir();
-    path.push("write_all_at_extract");
-
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -103,12 +103,10 @@ fn write_all_vectored_at_extract() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let mut path = temp_dir();
-    path.push("write_all_vectored_at_extract");
-
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -131,9 +129,8 @@ fn write_all_vectored_at_extract() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_read() {
-    require_kernel!(6, 7);
-
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -188,7 +185,7 @@ fn read_n_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file: Open = OpenOptions::new().open(sq, path);
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = BadReadBuf {
@@ -226,7 +223,7 @@ fn read_n_vectored_at() {
     let test_file = &LOREM_IPSUM_5;
 
     let path = test_file.path.into();
-    let open_file: Open = OpenOptions::new().open(sq, path);
+    let open_file = OpenOptions::new().open(sq, path);
     let file = waker.block_on(open_file).unwrap();
 
     let buf = GrowingBufSlice {
@@ -243,59 +240,7 @@ fn read_n_vectored_at() {
 }
 
 #[test]
-fn cancel_all_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<a10::net::NoAddress>();
-
-    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_all_twice_accept() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let listener = waker.block_on(tcp_ipv4_socket(sq));
-    waker.block_on(bind_and_listen_ipv4(&listener));
-
-    let mut accept = listener.accept::<a10::net::NoAddress>();
-
-    cancel_all(&waker, &listener, || start_op(&mut accept), 1);
-    let n = waker
-        .block_on(listener.cancel_all())
-        .expect("failed to cancel all operations");
-    assert_eq!(n, 0);
-
-    expect_io_errno(waker.block_on(accept), libc::ECANCELED);
-}
-
-#[test]
-fn cancel_all_no_operation_in_progress() {
-    require_kernel!(5, 19);
-
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    let socket = waker.block_on(tcp_ipv4_socket(sq));
-
-    let n = waker
-        .block_on(socket.cancel_all())
-        .expect("failed to cancel all operations");
-    assert_eq!(n, 0);
-}
-
-#[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn splice_to() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -308,7 +253,7 @@ fn splice_to() {
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
 
-    let open_file: Open = OpenOptions::new().open(sq, path.into());
+    let open_file = OpenOptions::new().open(sq, path.into());
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
@@ -322,17 +267,17 @@ fn splice_to() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn splice_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
     let expected = LOREM_IPSUM_50.content;
 
-    let mut path = temp_dir();
-    path.push("splice_from");
+    let path = tmp_path();
     let _d = defer(|| remove_test_file(&path));
 
-    let open_file: Open = OpenOptions::new()
+    let open_file = OpenOptions::new()
         .write()
         .create()
         .truncate()
@@ -373,7 +318,7 @@ fn close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     waker.block_on(file.close()).expect("failed to close fd");
 }
@@ -392,7 +337,7 @@ fn dropping_should_close_fs_fd() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
+    let open_file = OpenOptions::new().open(sq, "tests/data/lorem_ipsum_5.txt".into());
     let file = waker.block_on(open_file).unwrap();
     drop(file);
 }
@@ -405,7 +350,7 @@ fn dropped_futures_do_not_leak_buffers() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let open_file: Open = OpenOptions::new().write().open_temp_file(sq, temp_dir());
+    let open_file = OpenOptions::new().write().create().open(sq, tmp_path());
     let file = waker.block_on(open_file).unwrap();
 
     let buf = vec![123; 64 * 1024];
@@ -439,7 +384,7 @@ fn stderr_write() {
 
 fn pipe2(sq: SubmissionQueue) -> io::Result<(AsyncFd, AsyncFd)> {
     let mut fds: [RawFd; 2] = [-1, -1];
-    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } == -1 {
         return Err(io::Error::last_os_error());
     }
 

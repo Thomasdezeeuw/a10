@@ -2,36 +2,12 @@ use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
-use crate::drop_waker::DropWake;
-use crate::io_uring::{self, cq, libc, sq};
-use crate::op::{FdOperation, fd_operation};
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
-
-/// No state needed.
-#[derive(Debug)]
-pub(crate) struct State;
-
-impl State {
-    pub(crate) const fn new() -> State {
-        State
-    }
-
-    #[allow(clippy::unused_self)]
-    pub(crate) unsafe fn drop(&mut self, _: &SubmissionQueue) {
-        // Nothing to do.
-    }
-}
-
-pub(crate) fn use_direct_flags(submission: &mut sq::Submission) {
-    submission.0.flags |= libc::IOSQE_FIXED_FILE;
-}
-
-#[allow(clippy::cast_sign_loss)]
-pub(crate) fn create_direct_flags(submission: &mut sq::Submission) {
-    submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-        file_index: libc::IORING_FILE_INDEX_ALLOC as u32,
-    };
-}
+use crate::SubmissionQueue;
+use crate::fd::{self, AsyncFd, Kind};
+use crate::io_uring::libc;
+use crate::io_uring::op::{FdOp, Op, OpReturn};
+use crate::io_uring::sq::{self, Submission};
+use crate::op::fd_operation;
 
 /// io_uring specific methods.
 impl AsyncFd {
@@ -55,16 +31,9 @@ impl AsyncFd {
             matches!(self.kind(), fd::Kind::File),
             "can't covert a direct descriptor to a different direct descriptor"
         );
-        // The `fd` needs to be valid until the operation is complete, so we
-        // need to heap allocate it so we can delay it's allocation in case of
-        // an early drop.
-        let fd = Box::new(self.fd());
-        ToDirect(FdOperation::new(self, ((), fd), ()))
+        ToDirect::new(self, ((), self.fd()), ())
     }
-}
 
-/// Operations only available on direct descriptors (io_uring only).
-impl AsyncFd {
     /// Convert a direct descriptor into a regular file descriptor.
     ///
     /// The direct descriptor can continued to be used and the lifetimes of the
@@ -80,7 +49,7 @@ impl AsyncFd {
             matches!(self.kind(), fd::Kind::Direct),
             "can't covert a file descriptor to a different file descriptor"
         );
-        ToFd(FdOperation::new(self, (), ()))
+        ToFd::new(self, (), ())
     }
 }
 
@@ -94,12 +63,9 @@ fd_operation!(
 
 pub(crate) struct ToDirectOp<M = ()>(PhantomData<*const M>);
 
-impl<M: DirectFdMapper> io_uring::FdOp for ToDirectOp<M>
-where
-    (M, Box<RawFd>): DropWake,
-{
+impl<M: DirectFdMapper> FdOp for ToDirectOp<M> {
     type Output = M::Output;
-    type Resources = (M, Box<RawFd>);
+    type Resources = (M, RawFd);
     type Args = ();
 
     fn fill_submission(
@@ -108,20 +74,17 @@ where
         args: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        <Self as io_uring::Op>::fill_submission(resources, args, submission);
+        <Self as Op>::fill_submission(resources, args, submission);
     }
 
-    fn map_ok(ofd: &AsyncFd, resources: Self::Resources, ret: cq::OpReturn) -> Self::Output {
-        <Self as io_uring::Op>::map_ok(ofd.sq(), resources, ret)
+    fn map_ok(ofd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        <Self as Op>::map_ok(ofd.sq(), resources, ret)
     }
 }
 
-impl<M: DirectFdMapper> io_uring::Op for ToDirectOp<M>
-where
-    (M, Box<RawFd>): DropWake,
-{
+impl<M: DirectFdMapper> Op for ToDirectOp<M> {
     type Output = M::Output;
-    type Resources = (M, Box<RawFd>);
+    type Resources = (M, RawFd);
     type Args = ();
 
     #[allow(clippy::cast_sign_loss)]
@@ -136,23 +99,20 @@ where
             off: libc::IORING_FILE_INDEX_ALLOC as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(&mut **fd).addr() as u64,
+            addr: ptr::from_mut(&mut *fd).addr() as u64,
         };
-        asan::poison_box(fd);
         submission.0.len = 1;
     }
 
     fn map_ok(
         sq: &SubmissionQueue,
         (mapper, dfd): Self::Resources,
-        (_, n): cq::OpReturn,
+        (_, n): OpReturn,
     ) -> Self::Output {
-        asan::unpoison_box(&dfd);
-        msan::unpoison_box(&dfd);
         debug_assert!(n == 1);
         let sq = sq.clone();
         // SAFETY: the kernel ensures that `dfd` is valid.
-        let dfd = unsafe { AsyncFd::from_raw(*dfd, fd::Kind::Direct, sq) };
+        let dfd = unsafe { AsyncFd::from_raw(dfd, fd::Kind::Direct, sq) };
         mapper.map(dfd)
     }
 }
@@ -174,7 +134,7 @@ impl DirectFdMapper for () {
 
 struct ToFdOp;
 
-impl io_uring::FdOp for ToFdOp {
+impl FdOp for ToFdOp {
     type Output = AsyncFd;
     type Resources = ();
     type Args = ();
@@ -194,9 +154,25 @@ impl io_uring::FdOp for ToFdOp {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(ofd: &AsyncFd, (): Self::Resources, (_, fd): cq::OpReturn) -> Self::Output {
+    fn map_ok(ofd: &AsyncFd, (): Self::Resources, (_, fd): OpReturn) -> Self::Output {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd::Kind::File, sq) }
+    }
+}
+
+impl Kind {
+    pub(crate) fn create_flags(self, submission: &mut Submission) {
+        if let Kind::Direct = self {
+            submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+                file_index: libc::IORING_FILE_INDEX_ALLOC.cast_unsigned(),
+            };
+        }
+    }
+
+    pub(crate) fn use_flags(self, submission: &mut Submission) {
+        if let Kind::Direct = self {
+            submission.0.flags |= libc::IOSQE_FIXED_FILE;
+        }
     }
 }

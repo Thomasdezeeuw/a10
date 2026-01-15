@@ -25,7 +25,7 @@ use crate::{SubmissionQueue, sys};
 /// For example it can't grow beyond the pool's buffer size. However it can be
 /// used in write calls like any other buffer.
 #[derive(Clone, Debug)]
-#[allow(clippy::module_name_repetitions)] // Public in `crate::io`, so N/A.
+#[allow(clippy::module_name_repetitions)] // Public in io module, so N/A.
 pub struct ReadBufPool {
     /// Shared between one or more [`ReadBufPool`]s and one or more [`ReadBuf`]s.
     shared: Arc<sys::io::ReadBufPool>,
@@ -83,24 +83,6 @@ impl ReadBufPool {
         ReadBuf {
             shared: self.shared.clone(),
             owned,
-        }
-    }
-
-    /// Converts the queue into a raw pointer, used by the [`DropWake`]
-    /// implementation.
-    ///
-    /// [`DropWake`]: crate::drop_waker::DropWake
-    pub(crate) unsafe fn into_raw(self) -> *const () {
-        Arc::into_raw(self.shared).cast()
-    }
-
-    /// Converts the queue into a raw pointer, used by the [`DropWake`]
-    /// implementation.
-    ///
-    /// [`DropWake`]: crate::drop_waker::DropWake
-    pub(crate) unsafe fn from_raw(ptr: *const ()) -> ReadBufPool {
-        ReadBufPool {
-            shared: unsafe { Arc::from_raw(ptr.cast_mut().cast()) },
         }
     }
 }

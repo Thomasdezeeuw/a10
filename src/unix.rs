@@ -1,5 +1,6 @@
 //! Types shared across Unix-like implementations.
 
+use std::fmt;
 use std::mem::{self, MaybeUninit};
 
 use crate::io::{Buf, BufMut};
@@ -41,6 +42,15 @@ impl IoMutSlice {
 unsafe impl Send for IoMutSlice {}
 unsafe impl Sync for IoMutSlice {}
 
+impl fmt::Debug for IoMutSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("IoMutSlice")
+            .field("ptr", &self.ptr())
+            .field("len", &self.len())
+            .finish()
+    }
+}
+
 #[repr(transparent)] // Needed for I/O.
 pub(crate) struct IoSlice(libc::iovec);
 
@@ -78,6 +88,12 @@ impl IoSlice {
 unsafe impl Send for IoSlice {}
 unsafe impl Sync for IoSlice {}
 
+impl fmt::Debug for IoSlice {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("IoSlice").field(&self.as_bytes()).finish()
+    }
+}
+
 #[repr(transparent)] // Needed for system calls.
 pub(crate) struct MsgHeader(libc::msghdr);
 
@@ -95,13 +111,14 @@ impl MsgHeader {
         &mut self,
         address: &mut MaybeUninit<A::Storage>,
         iovecs: &mut [crate::io::IoMutSlice],
-    ) {
+    ) -> *mut libc::msghdr {
         let (address_ptr, address_length) = unsafe { A::as_mut_ptr(address) };
         self.0.msg_name = address_ptr.cast();
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoMutSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
+        &raw mut self.0
     }
 
     /// # Safety
@@ -112,13 +129,14 @@ impl MsgHeader {
         &mut self,
         address: &mut A::Storage,
         iovecs: &mut [crate::io::IoSlice],
-    ) {
+    ) -> *const libc::msghdr {
         let (address_ptr, address_length) = unsafe { A::as_ptr(address) };
         self.0.msg_name = address_ptr.cast_mut().cast();
         self.0.msg_namelen = address_length;
         // SAFETY: this cast is safe because `IoSlice` is `repr(transparent)`.
         self.0.msg_iov = iovecs.as_mut_ptr().cast();
         self.0.msg_iovlen = iovecs.len() as _;
+        &raw const self.0
     }
 
     pub(crate) const fn address_len(&self) -> libc::socklen_t {
@@ -134,3 +152,17 @@ impl MsgHeader {
 // `iovecs` (`IoMutSlice`/`IoSlice`) are `Send` and `Sync`.
 unsafe impl Send for MsgHeader {}
 unsafe impl Sync for MsgHeader {}
+
+impl fmt::Debug for MsgHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MsgHeader")
+            .field("msg_name", &self.0.msg_name)
+            .field("msg_namelen", &self.0.msg_namelen)
+            .field("msg_iov", &self.0.msg_iov)
+            .field("msg_iovlen", &self.0.msg_iovlen)
+            .field("msg_control", &self.0.msg_control)
+            .field("msg_controllen", &self.0.msg_controllen)
+            .field("msg_flags", &self.0.msg_flags)
+            .finish()
+    }
+}

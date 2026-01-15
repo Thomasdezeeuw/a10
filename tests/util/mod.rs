@@ -6,10 +6,8 @@ use std::any::Any;
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
 use std::cell::Cell;
-use std::ffi::CStr;
 use std::fs::{remove_dir, remove_file};
 use std::future::{Future, IntoFuture};
-use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
@@ -17,11 +15,11 @@ use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, mem, panic, process, str};
+use std::{fmt, io, mem, panic, str};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
-use a10::{AsyncFd, Cancel, Ring, SubmissionQueue};
+use a10::{AsyncFd, Ring, SubmissionQueue};
 
 /// Initialise logging.
 ///
@@ -40,50 +38,25 @@ pub(crate) fn page_size() -> usize {
     *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
 }
 
-/// Return the major.minor version of the kernel.
-pub(crate) fn kernel_version() -> (u32, u32) {
-    static KERNEL_VERSION: OnceLock<(u32, u32)> = OnceLock::new();
-    *KERNEL_VERSION.get_or_init(|| {
-        // SAFETY: all zeros for `utsname` is valid.
-        let mut uname: libc::utsname = unsafe { mem::zeroed() };
-        syscall!(uname(&mut uname)).expect("failed to get kernel info");
-        // SAFETY: kernel initialed `uname.release` for us with a NULL
-        // terminating string.
-        let release = unsafe { CStr::from_ptr(&uname.release as *const _) };
-        let release = str::from_utf8(release.to_bytes()).expect("version not valid UTF-8");
-        let mut parts = release.split('.');
-        let major = parts.next().expect("missing major verison");
-        let minor = parts.next().expect("missing minor verison");
-        (
-            major.parse().expect("invalid major version"),
-            minor.parse().expect("invalid major version"),
-        )
-    })
-}
-
-/// Returns true if the kernel version is greater than major.minor, false
-/// otherwise.
-pub(crate) fn has_kernel_version(major: u32, minor: u32) -> bool {
-    let got = kernel_version();
-    got.0 > major || (got.0 == major && got.1 >= minor)
-}
-
-/// This `return`s from the function if the kernel version is smaller than
-/// major.minor, continues if the kernel version is larger.
+/// This `return`s from the function if the operation is unsupported (see
+/// [`is_unsupported`]).
 #[allow(unused_macros)]
-macro_rules! require_kernel {
-    ($major: expr, $minor: expr) => {{
-        let major = $major;
-        let minor = $minor;
-        if !crate::util::has_kernel_version(major, minor) {
-            println!("skipping test, kernel doesn't have required version {major}.{minor}");
-            return;
+macro_rules! ignore_unsupported {
+    ($expr: expr) => {
+        match $expr {
+            Ok(ok) => Ok(ok),
+            Err(ref err) if $crate::util::is_unsupported(err) => return,
+            Err(err) => Err(err),
         }
-    }};
+    };
 }
 
 #[allow(unused_imports)]
-pub(crate) use require_kernel;
+pub(crate) use ignore_unsupported;
+
+pub(crate) fn is_unsupported(err: &io::Error) -> bool {
+    matches!(err.raw_os_error(), Some(libc::EOPNOTSUPP))
+}
 
 /// Start a single background thread for polling and return the submission
 /// queue.
@@ -94,53 +67,33 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .get_or_init(|| {
             init();
 
-            let config = Ring::config(128)
-                .with_kernel_thread(true)
-                .with_direct_descriptors(1024);
+            let config = Ring::config();
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            let config = config.with_direct_descriptors(1024);
             let mut ring = match config.clone().build() {
                 Ok(ring) => ring,
-                Err(err) => {
-                    log::warn!("creating test ring without a kernel thread");
-                    if let Ok(ring) = config.with_kernel_thread(false).build() {
-                        ring
-                    } else {
-                        panic!("failed to create test ring: {err}");
-                    }
-                }
+                Err(err) => panic!("failed to create test ring: {err}"),
             };
             let sq = ring.sq().clone();
-            thread::spawn(move || {
-                let res = panic::catch_unwind(move || {
-                    loop {
-                        match ring.poll(None) {
-                            Ok(()) => continue,
-                            Err(ref err) if err.kind() == io::ErrorKind::Interrupted => continue,
-                            Err(err) => panic!("unexpected error polling: {err}"),
+            thread::Builder::new()
+                .name("test_queue".into())
+                .spawn(move || {
+                    let res = panic::catch_unwind(move || {
+                        loop {
+                            match ring.poll(None) {
+                                Ok(()) => continue,
+                                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
+                                    continue;
+                                }
+                                Err(err) => panic!("unexpected error polling: {err}"),
+                            }
                         }
-                    }
-                });
-                match res {
-                    Ok(()) => (),
-                    Err(err) => {
-                        let msg = panic_message(&*err);
-                        let msg = format!("Polling thread panicked: {msg}\n");
-
-                        // Bypass the buffered output and write directly to standard
-                        // error.
-                        let stderr = io::stderr();
-                        let mut guard = stderr.lock();
-                        let _ = guard.flush();
-                        let _ = unsafe {
-                            libc::write(libc::STDERR_FILENO, msg.as_ptr().cast(), msg.len())
-                        };
-                        drop(guard);
-
-                        // Since all the tests depend on this thread we'll abort the
-                        // process since otherwise they'll wait for ever.
-                        process::abort()
-                    }
-                }
-            });
+                    });
+                    let Err(err) = res;
+                    let msg = panic_message(&*err);
+                    panic!("Polling thread panicked: {msg}\n");
+                })
+                .expect("failed to spawn test_queue thread");
             sq
         })
         .clone()
@@ -200,73 +153,15 @@ impl Waker {
             match Future::poll(future.as_mut(), &mut task_ctx) {
                 Poll::Ready(res) => return res,
                 // The waking implementation will `unpark` us.
-                Poll::Pending => thread::park(),
+                Poll::Pending => {
+                    // Wake up the thread that polls the shared ring to ensure
+                    // we make progress.
+                    test_queue().wake();
+                    thread::park()
+                }
             }
         }
     }
-}
-
-/// Cancel `operation`.
-///
-/// `Future`s are inert and we can't determine if an operation has actually been
-/// started or the submission queue was full. This means that we can't ensure
-/// that the operation has been queued with the Kernel. This means that in some
-/// cases we won't actually cancel the operation simply because it hasn't
-/// started. This introduces flakyness in the tests.
-///
-/// To work around this we have this cancel function. If we fail to cancel the
-/// operation we try to start the operation using `start_op`, before canceling t
-/// again. Looping until the operation is canceled.
-#[track_caller]
-pub(crate) fn cancel<O, F>(waker: &Arc<Waker>, operation: &mut O, start_op: F)
-where
-    O: Cancel,
-    F: Fn(&mut O),
-{
-    for _ in 0..100 {
-        match waker.block_on(operation.cancel()) {
-            Ok(()) => return,
-            Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
-            Err(err) => panic!("unexpected error canceling operation: {err}"),
-        }
-
-        start_op(operation);
-    }
-    panic!("couldn't cancel operation");
-}
-
-/// Cancel all operations of `fd`.
-///
-/// `Future`s are inert and we can't determine if an operation has actually been
-/// started or the submission queue was full. This means that we can't ensure
-/// that the operation has been queued with the Kernel. This means that in some
-/// cases we won't actually cancel any operations simply because they haven't
-/// started. This introduces flakyness in the tests.
-///
-/// To work around this we have this cancel all function. If we fail to get the
-/// `expected` number of canceled operations we try to start the operations
-/// using `start_op`, before canceling them again. Looping until we get the
-/// expected number of canceled operations.
-#[track_caller]
-pub(crate) fn cancel_all<F: FnMut()>(
-    waker: &Arc<Waker>,
-    fd: &AsyncFd,
-    mut start_op: F,
-    expected: usize,
-) {
-    let mut canceled = 0;
-    for _ in 0..100 {
-        let n = waker
-            .block_on(fd.cancel_all())
-            .expect("failed to cancel all operations");
-        canceled += n;
-        if canceled >= expected {
-            return;
-        }
-
-        start_op();
-    }
-    panic!("couldn't cancel all expected operations");
 }
 
 /// Start an A10 operation, assumes `future` is a A10 `Future`.
@@ -280,16 +175,6 @@ where
     if !result.is_pending() {
         panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
     }
-}
-
-/// Start an A10 multishot operation, assumes `iter` is a A10 `AsyncIterator`.
-#[track_caller]
-pub(crate) fn start_mulitshot_op<I>(iter: &mut I)
-where
-    I: AsyncIterator + Unpin,
-    I::Item: fmt::Debug,
-{
-    start_op(&mut next(iter));
 }
 
 /// Poll the `future` once with a no-op waker.
@@ -354,6 +239,7 @@ where
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 macro_rules! op_async_iter {
     ($name: ty => $item: ty) => {
         #[cfg(not(feature = "nightly"))]
@@ -370,11 +256,12 @@ macro_rules! op_async_iter {
     };
 }
 
-op_async_iter!(a10::msg::Listener => u32);
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
+#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
-op_async_iter!(a10::poll::MultishotPoll => io::Result<a10::poll::Event>);
 
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {
@@ -493,10 +380,11 @@ pub(crate) async fn new_socket(
     r#type: Type,
     protocol: Option<Protocol>,
 ) -> AsyncFd {
-    if !has_kernel_version(5, 19) {
-        // IORING_OP_SOCKET is only available since 5.19, fall back to a
-        // blocking system call.
-        unsafe {
+    match socket(sq.clone(), domain, r#type, protocol).await {
+        Ok(fd) => Ok(fd),
+        Err(ref err) if is_unsupported(err) => unsafe {
+            // IORING_OP_SOCKET is only available since 5.19, fall back to a
+            // blocking system call.
             // SAFETY: these transmutes aren't safe.
             let domain = std::mem::transmute(domain);
             let r#type = std::mem::transmute(r#type);
@@ -506,9 +394,8 @@ pub(crate) async fn new_socket(
             };
             // SAFETY: kernel initialises the socket for us.
             syscall!(socket(domain, r#type, protocol)).map(|fd| AsyncFd::from_raw_fd(fd, sq))
-        }
-    } else {
-        socket(sq, domain, r#type, protocol).await
+        },
+        Err(err) => Err(err),
     }
     .expect("failed to create socket")
 }
@@ -519,16 +406,17 @@ pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket).await;
     let fd = fd(&socket).as_raw_fd();
     let backlog = 128;
-    if !has_kernel_version(6, 11) {
-        // IORING_OP_LISTEN is only available since 6.11, fall back to a
-        // blocking system call.
-        syscall!(listen(fd, backlog)).expect("failed to listen on socket");
-    } else {
-        socket
-            .listen(backlog)
-            .await
-            .expect("failed to listen on socket");
+
+    match socket.listen(backlog).await {
+        Ok(()) => Ok(()),
+        Err(ref err) if is_unsupported(err) => {
+            // IORING_OP_LISTEN is only available since 6.11, fall back to a
+            // blocking system call.
+            syscall!(listen(fd, backlog)).map(|_| ())
+        }
+        Err(err) => Err(err),
     }
+    .expect("failed to listen on socket");
     address
 }
 
@@ -543,17 +431,17 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         ..unsafe { mem::zeroed() }
     };
     let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-    if !has_kernel_version(6, 11) {
-        // IORING_OP_BIND is only available since 6.11, fall back to a blocking
-        // system call.
-        syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).expect("failed to bind socket");
-    } else {
-        socket
-            .bind::<SocketAddr>(([127, 0, 0, 1], 0).into())
-            .await
-            .expect("failed to bind socket");
-    }
 
+    match socket.bind::<SocketAddr>(([127, 0, 0, 1], 0).into()).await {
+        Ok(()) => Ok(()),
+        Err(ref err) if is_unsupported(err) => {
+            // IORING_OP_BIND is only available since 6.11, fall back to a
+            // blocking system call.
+            syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).map(|_| ())
+        }
+        Err(err) => Err(err),
+    }
+    .expect("failed to bind socket");
     syscall!(getsockname(
         fd,
         &mut addr as *mut _ as *mut _,

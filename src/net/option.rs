@@ -5,10 +5,6 @@
 //! [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
 //! [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
 
-// TODO: the new_option! macro doesn't only set the cfg attributes and instead
-// uses all metadata attributes, including the docs, which Rust complains about.
-#![allow(unused_doc_comments)]
-
 use std::io;
 use std::mem::MaybeUninit;
 
@@ -100,34 +96,6 @@ mod private {
 }
 
 new_option! {
-    /// Returns a value indicating whether or not this socket has been
-    /// marked to accept connections with `listen(2)`.
-    #[doc(alias = "SO_ACCEPTCONN")]
-    pub Accept {
-        type Storage = libc::c_int;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::ACCEPT_CONN;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { storage.assume_init() >= 1 }
-        }
-    }
-
-    /// Domain.
-    #[doc(alias = "SO_DOMAIN")]
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub Domain {
-        type Storage = libc::c_int;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::DOMAIN;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Domain {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { net::Domain(storage.assume_init()) }
-        }
-    }
-
     /// Get and clear the pending socket error.
     #[doc(alias = "SO_ERROR")]
     #[doc(alias = "take_error")] // Used by types in std lib.
@@ -144,25 +112,6 @@ new_option! {
             } else {
                 Some(io::Error::from_raw_os_error(errno))
             }
-        }
-    }
-
-    /// CPU affinity.
-    #[doc(alias = "SO_INCOMING_CPU")]
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub IncomingCpu {
-        type Storage = libc::c_int;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::INCOMING_CPU;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<u32> {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            let value = unsafe { storage.assume_init() };
-            if value.is_negative() { None } else { Some(value.cast_unsigned()) }
-        }
-
-        fn as_storage(value: u32) -> Self::Storage {
-            value.cast_signed()
         }
     }
 
@@ -243,20 +192,6 @@ new_option! {
         }
     }
 
-    /// Retrieves the socket protocol.
-    #[doc(alias = "SO_PROTOCOL")]
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub Protocol {
-        type Storage = u32;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::PROTOCOL;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Protocol {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { net::Protocol(storage.assume_init()) }
-        }
-    }
-
     /// Type.
     #[doc(alias = "SO_TYPE")]
     pub Type {
@@ -271,27 +206,78 @@ new_option! {
     }
 }
 
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
+new_option! {
+    /// Returns a value indicating whether or not this socket has been
+    /// marked to accept connections with `listen(2)`.
+    #[doc(alias = "SO_ACCEPTCONN")]
+    pub Accept {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::ACCEPT_CONN;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+    }
+}
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+new_option! {
+    /// Domain.
+    #[doc(alias = "SO_DOMAIN")]
+    pub Domain {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::DOMAIN;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Domain {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Domain(storage.assume_init()) }
+        }
+    }
+
+    /// CPU affinity.
+    #[doc(alias = "SO_INCOMING_CPU")]
+    pub IncomingCpu {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::INCOMING_CPU;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Option<u32> {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            let value = unsafe { storage.assume_init() };
+            if value.is_negative() { None } else { Some(value.cast_unsigned()) }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
+
+    /// Retrieves the socket protocol.
+    #[doc(alias = "SO_PROTOCOL")]
+    pub Protocol {
+        type Storage = u32;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::PROTOCOL;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Protocol {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Protocol(storage.assume_init()) }
+        }
+    }
+}
+
 macro_rules! new_option {
     (
         $(
-        $(#[$type_meta:meta])*
-        $type_vis: vis $type_name: ident {
-            $( $tt: tt)*
-        }
-        )+
-    ) => {
-        $(
-        $(#[$type_meta])*
-        $crate::net::option::new_option!(__impl
-            $(#[$type_meta])*
-            $type_vis $type_name {
-                $( $tt )*
-            }
-        );
-        )+
-    };
-    (
-        __impl
         $(#[$type_meta:meta])*
         $type_vis: vis $type_name: ident {
             type Storage = $storage: ty;
@@ -312,7 +298,9 @@ macro_rules! new_option {
             fn as_storage($as_storage_value: ident: $value: ty) -> Self::Storage $as_storage: block
             )?
         }
+        )*
     ) => {
+        $(
         $(#[$type_meta])*
         #[allow(missing_debug_implementations)]
         pub enum $type_name {}
@@ -354,6 +342,7 @@ macro_rules! new_option {
 
         impl private::Set for $type_name {}
         )?
+        )*
     };
 }
 

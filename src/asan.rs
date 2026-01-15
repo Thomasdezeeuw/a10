@@ -1,7 +1,7 @@
 //! Utilities for address sanitizer support.
 
 // Let's make it easier with all the `cfg`s.
-#![allow(unused_variables)]
+#![allow(unused_variables, dead_code)]
 
 use std::ffi::{CString, c_void};
 use std::mem;
@@ -53,14 +53,6 @@ pub(crate) fn poison_iovecs_mut(iovecs: &[IoMutSlice]) {
 }
 
 /// Mark memory storing `T` as unaddressable.
-#[allow(clippy::borrowed_box)]
-pub(crate) fn poison_box<T>(value: &Box<T>) {
-    // TODO: replace with `Box::as_ptr` once stable
-    // <https://github.com/rust-lang/rust/issues/129090>.
-    poison_region((&raw const **value).cast(), mem::size_of::<T>());
-}
-
-/// Mark memory storing `T` as unaddressable.
 pub(crate) fn poison_cstring(value: &CString) {
     let value = value.as_bytes_with_nul();
     poison_region(value.as_ptr().cast(), value.len());
@@ -95,14 +87,6 @@ pub(crate) fn unpoison_iovecs_mut(iovecs: &[IoMutSlice]) {
     for iovec in iovecs {
         unpoison_region(unsafe { iovec.ptr().cast() }, iovec.len());
     }
-}
-
-/// Mark memory storing `T` as addressable.
-#[allow(clippy::borrowed_box)]
-pub(crate) fn unpoison_box<T>(value: &Box<T>) {
-    // TODO: replace with `Box::as_ptr` once stable
-    // <https://github.com/rust-lang/rust/issues/129090>.
-    unpoison_region((&raw const **value).cast(), mem::size_of::<T>());
 }
 
 /// Mark memory storing `T` as addressable.

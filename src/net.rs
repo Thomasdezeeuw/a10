@@ -16,12 +16,13 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
-use crate::cancel::{Cancel, CancelOperation, CancelResult};
 use crate::extract::{Extract, Extractor};
-use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, Buffer, IoMutSlice, ReadNBuf, SkipBuf};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadNBuf, SkipBuf};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::io::{ReadBuf, ReadBufPool};
-use crate::op::{FdOperation, Operation, fd_iter_operation, fd_operation, operation};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::op::fd_iter_operation;
+use crate::op::{OpState, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
@@ -29,18 +30,14 @@ pub mod option;
 
 /// Creates a new socket.
 #[doc = man_link!(socket(2))]
-pub const fn socket(
+pub fn socket(
     sq: SubmissionQueue,
     domain: Domain,
     r#type: Type,
     protocol: Option<Protocol>,
 ) -> Socket {
-    let protocol = match protocol {
-        Some(protocol) => protocol,
-        None => Protocol(0),
-    };
-    let args = (domain, r#type, protocol);
-    Socket(Operation::new(sq, fd::Kind::File, args))
+    let args = (domain, r#type, protocol.unwrap_or(Protocol(0)));
+    Socket::new(sq, fd::Kind::File, args)
 }
 
 new_flag!(
@@ -132,7 +129,7 @@ impl Socket {
     ///
     /// [`File`]: fd::Kind::File
     pub fn kind(mut self, kind: fd::Kind) -> Self {
-        if let Some(resources) = self.0.update_resources() {
+        if let Some(resources) = self.state.resources_mut() {
             *resources = kind;
         }
         self
@@ -147,8 +144,8 @@ impl AsyncFd {
     where
         A: SocketAddress,
     {
-        let storage = AddressStorage(Box::from(address.into_storage()));
-        Bind(FdOperation::new(self, storage, ()))
+        let storage = AddressStorage(address.into_storage());
+        Bind::new(self, storage, ())
     }
 
     /// Mark the socket as a passive socket, i.e. allow it to accept incoming
@@ -157,7 +154,7 @@ impl AsyncFd {
     /// [`accept`]: AsyncFd::accept
     #[doc = man_link!(listen(2))]
     pub fn listen<'fd>(&'fd self, backlog: libc::c_int) -> Listen<'fd> {
-        Listen(FdOperation::new(self, (), backlog))
+        Listen::new(self, (), backlog)
     }
 
     /// Initiate a connection on this socket to the specified address.
@@ -166,8 +163,8 @@ impl AsyncFd {
     where
         A: SocketAddress,
     {
-        let storage = AddressStorage(Box::from(address.into_storage()));
-        Connect(FdOperation::new(self, storage, ()))
+        let storage = AddressStorage(address.into_storage());
+        Connect::new(self, storage, ())
     }
 
     /// Returns the current address to which the socket is bound.
@@ -185,14 +182,14 @@ impl AsyncFd {
     }
 
     fn socket_name<'fd, A: SocketAddress>(&'fd self, name: Name) -> SocketName<'fd, A> {
-        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
-        SocketName(FdOperation::new(self, address, name))
+        let address = AddressStorage((MaybeUninit::uninit(), 0));
+        SocketName::new(self, address, name)
     }
 
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
-    pub const fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
+    pub fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
     where
         B: BufMut,
     {
@@ -200,8 +197,7 @@ impl AsyncFd {
             Some(flags) => flags,
             None => RecvFlag(0),
         };
-        let buf = Buffer { buf };
-        Recv(FdOperation::new(self, buf, flags))
+        Recv::new(self, buf, flags)
     }
 
     /// Continuously receive data on the socket from the remote address to which
@@ -215,7 +211,7 @@ impl AsyncFd {
     /// Be careful when using this as a peer sending a lot data might take up
     /// all your buffers from your pool!
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub const fn multishot_recv<'fd>(
+    pub fn multishot_recv<'fd>(
         &'fd self,
         pool: ReadBufPool,
         flags: Option<RecvFlag>,
@@ -224,12 +220,12 @@ impl AsyncFd {
             Some(flags) => flags,
             None => RecvFlag(0),
         };
-        MultishotRecv(FdOperation::new(self, pool, flags))
+        MultishotRecv::new(self, pool, flags)
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected.
-    pub const fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
+    pub fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
     where
         B: BufMut,
     {
@@ -256,8 +252,8 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let resources = Box::new((MsgHeader::empty(), iovecs));
-        RecvVectored(FdOperation::new(self, (bufs, resources), flags))
+        let resources = (bufs, MsgHeader::empty(), iovecs);
+        RecvVectored::new(self, resources, flags)
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
@@ -297,8 +293,8 @@ impl AsyncFd {
         };
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
-        let resources = Box::new((MsgHeader::empty(), iovec, MaybeUninit::uninit()));
-        RecvFrom(FdOperation::new(self, (buf, resources), flags))
+        let resources = (buf, MsgHeader::empty(), iovec, MaybeUninit::uninit());
+        RecvFrom::new(self, resources, flags)
     }
 
     /// Receives data on the socket and the source address using vectored I/O.
@@ -317,13 +313,13 @@ impl AsyncFd {
             None => RecvFlag(0),
         };
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        let resources = Box::new((MsgHeader::empty(), iovecs, MaybeUninit::uninit()));
-        RecvFromVectored(FdOperation::new(self, (bufs, resources), flags))
+        let resources = (bufs, MsgHeader::empty(), iovecs, MaybeUninit::uninit());
+        RecvFromVectored::new(self, resources, flags)
     }
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(send(2))]
-    pub const fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
+    pub fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
     where
         B: Buf,
     {
@@ -331,8 +327,7 @@ impl AsyncFd {
             Some(flags) => flags,
             None => SendFlag(0),
         };
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::Normal, flags)))
+        Send::new(self, buf, (SendCall::Normal, flags))
     }
 
     /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
@@ -347,7 +342,7 @@ impl AsyncFd {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
-    pub const fn send_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
+    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
     where
         B: Buf,
     {
@@ -355,13 +350,12 @@ impl AsyncFd {
             Some(flags) => flags,
             None => SendFlag(0),
         };
-        let buf = Buffer { buf };
-        Send(FdOperation::new(self, buf, (SendCall::ZeroCopy, flags)))
+        Send::new(self, buf, (SendCall::ZeroCopy, flags))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub const fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
+    pub fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -377,7 +371,7 @@ impl AsyncFd {
 
     /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
     /// copies of `buf`.
-    pub const fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
+    pub fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
     where
         B: Buf,
     {
@@ -463,13 +457,13 @@ impl AsyncFd {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, Box::new(address.into_storage()));
+        let resources = (buf, AddressStorage(address.into_storage()));
         let flags = match flags {
             Some(flags) => flags,
             None => SendFlag(0),
         };
         let args = (SendCall::Normal, flags);
-        SendTo(FdOperation::new(self, resources, args))
+        SendTo::new(self, resources, args)
     }
 
     /// Same as [`AsyncFd::send_to`], but tries to avoid making intermediate
@@ -486,13 +480,13 @@ impl AsyncFd {
         B: Buf,
         A: SocketAddress,
     {
-        let resources = (buf, Box::new(address.into_storage()));
+        let resources = (buf, AddressStorage(address.into_storage()));
         let flags = match flags {
             Some(flags) => flags,
             None => SendFlag(0),
         };
         let args = (SendCall::ZeroCopy, flags);
-        SendTo(FdOperation::new(self, resources, args))
+        SendTo::new(self, resources, args)
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
@@ -541,9 +535,9 @@ impl AsyncFd {
             None => SendFlag(0),
         };
         let iovecs = unsafe { bufs.as_iovecs() };
-        let address = address.into_storage();
-        let resources = Box::new((MsgHeader::empty(), iovecs, address));
-        SendMsg(FdOperation::new(self, (bufs, resources), (send_op, flags)))
+        let address = AddressStorage(address.into_storage());
+        let resources = (bufs, MsgHeader::empty(), iovecs, address);
+        SendMsg::new(self, resources, (send_op, flags))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
@@ -568,8 +562,8 @@ impl AsyncFd {
         A: SocketAddress,
     {
         let flags = flags.unwrap_or(AcceptFlag(0));
-        let address = AddressStorage(Box::new((MaybeUninit::uninit(), 0)));
-        Accept(FdOperation::new(self, address, flags))
+        let address = AddressStorage((MaybeUninit::uninit(), 0));
+        Accept::new(self, address, flags)
     }
 
     /// Accept multiple socket streams.
@@ -577,6 +571,7 @@ impl AsyncFd {
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
         self.multishot_accept4(None)
     }
@@ -585,15 +580,13 @@ impl AsyncFd {
     /// socket.
     ///
     /// Also see [`AsyncFd::multishot_accept`].
-    pub const fn multishot_accept4<'fd>(
-        &'fd self,
-        flags: Option<AcceptFlag>,
-    ) -> MultishotAccept<'fd> {
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub fn multishot_accept4<'fd>(&'fd self, flags: Option<AcceptFlag>) -> MultishotAccept<'fd> {
         let flags = match flags {
             Some(flags) => flags,
             None => AcceptFlag(0),
         };
-        MultishotAccept(FdOperation::new(self, (), flags))
+        MultishotAccept::new(self, (), flags)
     }
 
     /// Get socket option.
@@ -613,8 +606,8 @@ impl AsyncFd {
         level: Level,
         optname: impl Into<Opt>,
     ) -> SocketOption<'fd, T> {
-        let value = Box::new_uninit();
-        SocketOption(FdOperation::new(self, value, (level, optname.into())))
+        let value = MaybeUninit::uninit();
+        SocketOption::new(self, value, (level, optname.into()))
     }
 
     /// Get socket option.
@@ -624,8 +617,8 @@ impl AsyncFd {
     where
         T: option::Get,
     {
-        let value = OptionStorage(Box::new_uninit());
-        SocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
+        let value = OptionStorage(MaybeUninit::uninit());
+        SocketOption2::new(self, value, (T::LEVEL, T::OPT))
     }
 
     /// Set socket option.
@@ -645,8 +638,7 @@ impl AsyncFd {
         optname: impl Into<Opt>,
         optvalue: T,
     ) -> SetSocketOption<'fd, T> {
-        let value = Box::new(optvalue);
-        SetSocketOption(FdOperation::new(self, value, (level, optname.into())))
+        SetSocketOption::new(self, optvalue, (level, optname.into()))
     }
 
     /// Set socket option.
@@ -656,14 +648,14 @@ impl AsyncFd {
     where
         T: option::Set,
     {
-        let value = Box::new(T::as_storage(value));
-        SetSocketOption2(FdOperation::new(self, value, (T::LEVEL, T::OPT)))
+        let value = OptionStorage(T::as_storage(value));
+        SetSocketOption2::new(self, value, (T::LEVEL, T::OPT))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
     #[doc = man_link!(shutdown(2))]
-    pub const fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
-        Shutdown(FdOperation::new(self, (), how))
+    pub fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
+        Shutdown::new(self, (), how)
     }
 }
 
@@ -1242,9 +1234,9 @@ fd_operation! {
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
@@ -1257,16 +1249,6 @@ pub struct RecvN<'fd, B: BufMut> {
     recv: Recv<'fd, ReadNBuf<B>>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
-}
-
-impl<'fd, B: BufMut> Cancel for RecvN<'fd, B> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.recv.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.recv.cancel()
-    }
 }
 
 impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
@@ -1289,7 +1271,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.0.fd().recv(buf, None));
+                recv.set(recv.fd.recv(buf, None));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1307,8 +1289,10 @@ pub struct SendAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
-    fn poll_inner(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
-        match Pin::new(&mut self.send).poll(ctx) {
+    fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
+        // SAFETY: not moving data out of self/this.
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        match unsafe { Pin::new_unchecked(&mut this.send) }.poll(ctx) {
             Poll::Ready(Ok((_, 0))) => Poll::Ready(Err(io::ErrorKind::WriteZero.into())),
             Poll::Ready(Ok((mut buf, n))) => {
                 buf.skip += n as u32;
@@ -1319,26 +1303,16 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
                 }
 
                 // Send some more.
-                self.send = match self.send_op {
-                    SendCall::Normal => self.send.fut.0.fd().send(buf, self.flags),
-                    SendCall::ZeroCopy => self.send.fut.0.fd().send_zc(buf, self.flags),
+                this.send = match this.send_op {
+                    SendCall::Normal => this.send.fut.fd.send(buf, this.flags),
+                    SendCall::ZeroCopy => this.send.fut.fd.send_zc(buf, this.flags),
                 }
                 .extract();
-                self.poll_inner(ctx)
+                unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-impl<'fd, B: Buf> Cancel for SendAll<'fd, B> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.send.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.send.cancel()
     }
 }
 
@@ -1355,8 +1329,9 @@ impl<'fd, B: Buf> Extract for SendAll<'fd, B> {}
 impl<'fd, B: Buf> Future for Extractor<SendAll<'fd, B>> {
     type Output = io::Result<B>;
 
-    fn poll(mut self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
-        Pin::new(&mut self.fut).poll_inner(ctx)
+    fn poll(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Self::Output> {
+        // SAFETY: not moving data out of self/this.
+        unsafe { Pin::map_unchecked_mut(self, |s| &mut s.fut) }.poll_inner(ctx)
     }
 }
 
@@ -1366,16 +1341,6 @@ pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     recv: RecvVectored<'fd, ReadNBuf<B>, N>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
-}
-
-impl<'fd, B: BufMutSlice<N>, const N: usize> Cancel for RecvNVectored<'fd, B, N> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.recv.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.recv.cancel()
-    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
@@ -1398,7 +1363,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.0.fd().recv_vectored(bufs, None));
+                recv.set(recv.fd.recv_vectored(bufs, None));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1447,30 +1412,15 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                let resources = Box::new((MsgHeader::empty(), iovecs, NoAddress));
+                let resources = (bufs, MsgHeader::empty(), iovecs, AddressStorage(NoAddress));
                 send.set(
-                    SendMsg(FdOperation::new(
-                        send.fut.0.fd(),
-                        (bufs, resources),
-                        (this.send_op, SendFlag(0)),
-                    ))
-                    .extract(),
+                    SendMsg::new(send.fut.fd, resources, (this.send_op, SendFlag(0))).extract(),
                 );
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
             Poll::Pending => Poll::Pending,
         }
-    }
-}
-
-impl<'fd, B: BufSlice<N>, const N: usize> Cancel for SendAllVectored<'fd, B, N> {
-    fn try_cancel(&mut self) -> CancelResult {
-        self.send.try_cancel()
-    }
-
-    fn cancel(&mut self) -> CancelOperation {
-        self.send.cancel()
     }
 }
 
@@ -1767,6 +1717,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
 
         unix::net::SocketAddr::from_pathname(Path::new(OsStr::from_bytes(path)))
             // Fallback to an unnamed address.
+            // SAFETY: unnamed (zero length) address is valid.
             .unwrap_or_else(|_| unix::net::SocketAddr::from_pathname("").unwrap())
     }
 

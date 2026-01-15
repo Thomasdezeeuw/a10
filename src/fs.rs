@@ -5,10 +5,12 @@
 use std::ffi::{CString, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use std::{fmt, io, mem, str};
 
-use crate::op::{FdOperation, Operation, fd_operation, operation};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::op::OpState;
+use crate::op::{fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
 /// Options used to configure how a file ([`AsyncFd`]) is opened.
@@ -136,6 +138,13 @@ impl OpenOptions {
     /// transferred. To guarantee synchronous I/O, `O_SYNC` must be used in
     /// addition to `O_DIRECT`.
     #[doc(alias = "O_DIRECT")]
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd"
+    ))]
     pub const fn direct(mut self) -> Self {
         self.flags |= libc::O_DIRECT;
         self
@@ -143,7 +152,7 @@ impl OpenOptions {
 
     /// Sets the mode bits that a new file will be created with.
     pub const fn mode(mut self, mode: u32) -> Self {
-        self.mode = mode;
+        self.mode = mode as _;
         self
     }
 
@@ -165,6 +174,7 @@ impl OpenOptions {
     /// [`OpenOptions::write`] must be set. The `linkat(2)` system call can be
     /// used to make the temporary file permanent.
     #[doc(alias = "O_TMPFILE")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn open_temp_file(mut self, sq: SubmissionQueue, dir: PathBuf) -> Open {
         self.flags |= libc::O_TMPFILE;
         self.open(sq, dir)
@@ -175,7 +185,7 @@ impl OpenOptions {
     #[doc(alias = "openat")]
     pub fn open(self, sq: SubmissionQueue, path: PathBuf) -> Open {
         let args = (self.flags | self.kind.cloexec_flag(), self.mode);
-        Open(Operation::new(sq, (path_to_cstring(path), self.kind), args))
+        Open::new(sq, (path_to_cstring(path), self.kind), args)
     }
 }
 
@@ -188,14 +198,14 @@ pub fn open_file(sq: SubmissionQueue, path: PathBuf) -> Open {
 /// Creates a new, empty directory.
 #[doc = man_link!(mkdirat(2))]
 pub fn create_dir(sq: SubmissionQueue, path: PathBuf) -> CreateDir {
-    CreateDir(Operation::new(sq, path_to_cstring(path), ()))
+    CreateDir::new(sq, path_to_cstring(path), ())
 }
 
 /// Rename a file or directory to a new name.
 #[doc = man_link!(rename(2))]
 pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
     let resources = (path_to_cstring(from), path_to_cstring(to));
-    Rename(Operation::new(sq, resources, ()))
+    Rename::new(sq, resources, ())
 }
 
 /// Remove a file.
@@ -203,7 +213,7 @@ pub fn rename(sq: SubmissionQueue, from: PathBuf, to: PathBuf) -> Rename {
 #[doc(alias = "unlink")]
 #[doc(alias = "unlinkat")]
 pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
-    Delete(Operation::new(sq, path_to_cstring(path), RemoveFlag::File))
+    Delete::new(sq, path_to_cstring(path), RemoveFlag::File)
 }
 
 /// Remove a directory.
@@ -212,7 +222,7 @@ pub fn remove_file(sq: SubmissionQueue, path: PathBuf) -> Delete {
 #[doc(alias = "unlinkat")]
 pub fn remove_dir(sq: SubmissionQueue, path: PathBuf) -> Delete {
     let path = path_to_cstring(path);
-    Delete(Operation::new(sq, path, RemoveFlag::Directory))
+    Delete::new(sq, path, RemoveFlag::Directory)
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -246,10 +256,13 @@ impl AsyncFd {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    ///
+    /// On macOS this uses `fcntl(fd, F_FULLFSYNC, 0)` as `fsync(2)` doesn't
+    /// behave as it does on other OS and `F_FULLFSYNC` is.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fsync")]
-    pub const fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
-        SyncData(FdOperation::new(self, (), SyncDataFlag::All))
+    pub fn sync_all<'fd>(&'fd self) -> SyncData<'fd> {
+        SyncData::new(self, (), SyncDataFlag::All)
     }
 
     /// This function is similar to [`sync_all`], except that it may not
@@ -264,26 +277,24 @@ impl AsyncFd {
     /// # Notes
     ///
     /// Any uncompleted writes may not be synced to disk.
+    ///
+    /// On macOS this uses `fcntl(fd, F_FULLFSYNC, 0)` as `fsync(2)` doesn't
+    /// behave as it does on other OS and `F_FULLFSYNC` is.
     #[doc = man_link!(fsync(2))]
     #[doc(alias = "fdatasync")]
-    pub const fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
-        SyncData(FdOperation::new(self, (), SyncDataFlag::Data))
+    pub fn sync_data<'fd>(&'fd self) -> SyncData<'fd> {
+        SyncData::new(self, (), SyncDataFlag::Data)
     }
 
     /// Retrieve metadata about the file.
     #[doc = man_link!(statx(2))]
+    #[doc(alias = "stat")]
     #[doc(alias = "statx")]
     pub fn metadata<'fd>(&'fd self) -> Stat<'fd> {
-        // SAFETY: fully zeroed `libc::statx` is a valid value.
-        let metadata = unsafe { Box::new(mem::zeroed()) };
-        let interest = MetadataInterest::TYPE
-            | MetadataInterest::MODE
-            | MetadataInterest::ACCESSED_TIME
-            | MetadataInterest::MODIFIED_TIME
-            | MetadataInterest::CREATED_TIME
-            | MetadataInterest::SIZE
-            | MetadataInterest::BLOCKS;
-        Stat(FdOperation::new(self, metadata, interest))
+        // SAFETY: fully zeroed `libc::statx` and `libc::stat` are valid values.
+        let metadata = unsafe { mem::zeroed() };
+        let interest = sys::fs::default_metadata_interest();
+        Stat::new(self, metadata, interest)
     }
 
     /// Predeclare an access pattern for file data.
@@ -298,13 +309,15 @@ impl AsyncFd {
     #[doc = man_link!(posix_fadvise(2))]
     #[doc(alias = "fadvise")]
     #[doc(alias = "posix_fadvise")]
-    pub const fn advise<'fd>(
-        &'fd self,
-        offset: u64,
-        length: u32,
-        advice: AdviseFlag,
-    ) -> Advise<'fd> {
-        Advise(FdOperation::new(self, (), (offset, length, advice)))
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+    ))]
+    pub fn advise<'fd>(&'fd self, offset: u64, length: u32, advice: AdviseFlag) -> Advise<'fd> {
+        Advise::new(self, (), (offset, length, advice))
     }
 
     /// Manipulate file space.
@@ -314,7 +327,14 @@ impl AsyncFd {
     #[doc = man_link!(fallocate(2))]
     #[doc(alias = "fallocate")]
     #[doc(alias = "posix_fallocate")]
-    pub const fn allocate<'fd>(
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+    ))]
+    pub fn allocate<'fd>(
         &'fd self,
         offset: u64,
         length: u32,
@@ -324,7 +344,7 @@ impl AsyncFd {
             Some(mode) => mode,
             None => AllocateFlag(0),
         };
-        Allocate(FdOperation::new(self, (), (offset, length, mode)))
+        Allocate::new(self, (), (offset, length, mode))
     }
 
     /// Truncate the file to `length`.
@@ -334,8 +354,8 @@ impl AsyncFd {
     /// extended part reads as null bytes.
     #[doc = man_link!(ftruncate(2))]
     #[doc(alias = "ftruncate")]
-    pub const fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd> {
-        Truncate(FdOperation::new(self, (), length))
+    pub fn truncate<'fd>(&'fd self, length: u64) -> Truncate<'fd> {
+        Truncate::new(self, (), length)
     }
 }
 
@@ -349,21 +369,37 @@ new_flag!(
     /// Interest in specific metadata.
     pub struct MetadataInterest(u32) impl BitOr {
         /// Enables [`Metadata::file_type`] and related `is_*` methods.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         TYPE = libc::STATX_TYPE,
         /// Enables [`Metadata::len`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         SIZE = libc::STATX_SIZE,
         /// Enables [`Metadata::block_size`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         BLOCKS = libc::STATX_BLOCKS,
         /// Enables [`Metadata::permissions`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MODE = libc::STATX_MODE,
         /// Enables [`Metadata::modified`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MODIFIED_TIME = libc::STATX_MTIME,
         /// Enables [`Metadata::accessed`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         ACCESSED_TIME = libc::STATX_ATIME,
         /// Enables [`Metadata::created`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         CREATED_TIME = libc::STATX_BTIME,
     }
+);
 
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
+new_flag!(
     /// Advise about data access.
     ///
     /// See [`AsyncFd::advise`].
@@ -385,17 +421,23 @@ new_flag!(
     /// Mode for call to [`AsyncFd::allocate`].
     pub struct AllocateFlag(u32) impl BitOr {
         /// Keep the same file size.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         KEEP_SIZE = libc::FALLOC_FL_KEEP_SIZE,
         /// Guarantee that a subsequent write will not fail due to lack of
         /// space.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         UNSHARE_RANGE = libc::FALLOC_FL_UNSHARE_RANGE,
         /// Deallocate the space.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         PUNCH_HOLE = libc::FALLOC_FL_PUNCH_HOLE,
         /// Remove the byte range from the file, without leaving a hole.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         COLLAPSE_RANGE = libc::FALLOC_FL_COLLAPSE_RANGE,
         /// Zero the byte range.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         ZERO_RANGE = libc::FALLOC_FL_ZERO_RANGE,
         /// Inserta  hole in the file without overwriting any existing data.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         INSERT_RANGE = libc::FALLOC_FL_INSERT_RANGE,
     }
 );
@@ -407,22 +449,32 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::metadata`].
     pub struct Stat(sys::fs::StatOp) -> io::Result<Metadata>;
 
+    /// [`Future`] behind [`AsyncFd::truncate`].
+    pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
+);
+
+#[cfg(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
+fd_operation!(
     /// [`Future`] behind [`AsyncFd::advise`].
     pub struct Advise(sys::fs::AdviseOp) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::allocate`].
     pub struct Allocate(sys::fs::AllocateOp) -> io::Result<()>;
-
-    /// [`Future`] behind [`AsyncFd::truncate`].
-    pub struct Truncate(sys::fs::TruncateOp) -> io::Result<()>;
 );
 
 impl<'fd> Stat<'fd> {
     /// Set which field(s) of the metadata the kernel should fill.
     ///
     /// Defaults to filling some basic fields.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn only(mut self, mask: MetadataInterest) -> Self {
-        if let Some(args) = self.0.update_args() {
+        if let Some(args) = self.state.args_mut() {
             *args = mask;
         }
         self
@@ -433,20 +485,19 @@ impl<'fd> Stat<'fd> {
 ///
 /// See [`AsyncFd::metadata`] and [`Stat`].
 #[repr(transparent)]
-pub struct Metadata {
-    inner: libc::statx,
-}
+pub struct Metadata(pub(crate) sys::fs::Stat);
 
 impl Metadata {
     /// Which field(s) of the metadata are filled (based on the provided
     /// interest).
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub const fn filled(&self) -> MetadataInterest {
-        MetadataInterest(self.inner.stx_mask)
+        sys::fs::filled(&self.0)
     }
 
     /// Returns the file type for this metadata.
     pub const fn file_type(&self) -> FileType {
-        FileType(self.inner.stx_mode)
+        sys::fs::file_type(&self.0)
     }
 
     /// Returns `true` if this represents a directory.
@@ -470,22 +521,22 @@ impl Metadata {
     /// Returns the size of the file, in bytes, this metadata is for.
     #[allow(clippy::len_without_is_empty)] // Makes no sense.
     pub const fn len(&self) -> u64 {
-        self.inner.stx_size
+        sys::fs::len(&self.0)
     }
 
     /// The "preferred" block size for efficient filesystem I/O.
     pub const fn block_size(&self) -> u32 {
-        self.inner.stx_blksize
+        sys::fs::block_size(&self.0)
     }
 
     /// Returns the permissions of the file this metadata is for.
     pub const fn permissions(&self) -> Permissions {
-        Permissions(self.inner.stx_mode)
+        sys::fs::permissions(&self.0)
     }
 
     /// Returns the time this file was last modified.
     pub fn modified(&self) -> SystemTime {
-        timestamp(&self.inner.stx_mtime)
+        sys::fs::modified(&self.0)
     }
 
     /// Returns the time this file was last accessed.
@@ -495,22 +546,12 @@ impl Metadata {
     /// It's possible to disable keeping track of this access time, which makes
     /// this function return an invalid value.
     pub fn accessed(&self) -> SystemTime {
-        timestamp(&self.inner.stx_atime)
+        sys::fs::accessed(&self.0)
     }
 
     /// Returns the time this file was created.
     pub fn created(&self) -> SystemTime {
-        timestamp(&self.inner.stx_btime)
-    }
-}
-
-#[allow(clippy::cast_sign_loss)] // Checked.
-fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
-    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
-    if ts.tv_sec.is_negative() {
-        SystemTime::UNIX_EPOCH - dur
-    } else {
-        SystemTime::UNIX_EPOCH + dur
+        sys::fs::created(&self.0)
     }
 }
 
@@ -532,7 +573,7 @@ impl fmt::Debug for Metadata {
 ///
 /// See [`Metadata`].
 #[derive(Copy, Clone)]
-pub struct FileType(u16);
+pub struct FileType(pub(crate) u16);
 
 impl FileType {
     /// Returns `true` if this represents a directory.
@@ -623,7 +664,7 @@ impl fmt::Debug for FileType {
 ///
 /// See [`Metadata`].
 #[derive(Copy, Clone)]
-pub struct Permissions(u16);
+pub struct Permissions(pub(crate) u16);
 
 impl Permissions {
     /// Return `true` if the owner has read permission.
@@ -712,7 +753,8 @@ impl fmt::Debug for Permissions {
         if self.others_can_execute() {
             buf[8] = b'x';
         }
-        let permissions = str::from_utf8(&buf).unwrap();
+        // SAFETY: we only set ASCII bytes, which makes the string valid UTF-8.
+        let permissions = unsafe { str::from_utf8_unchecked(&buf) };
         f.debug_tuple("Permissions").field(&permissions).finish()
     }
 }

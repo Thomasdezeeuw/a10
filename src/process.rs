@@ -3,14 +3,12 @@
 //! [`wait`] and [`wait_on`] can be used to wait on started processes.
 //! [`Signals`] can be used for process signal handling.
 
-use std::mem::{self, ManuallyDrop, MaybeUninit};
+use std::mem::{self, MaybeUninit};
 use std::os::unix::process::ExitStatusExt;
-use std::pin::Pin;
 use std::process::{Child, ExitStatus};
-use std::task::{self, Poll};
 use std::{fmt, io, ptr};
 
-use crate::op::{self, FdIter, FdOp, FdOperation, Operation, fd_operation, operation};
+use crate::op::{fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
 
 /// Wait on the child `process`.
@@ -28,12 +26,12 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>
 #[doc(alias = "waitid")]
 pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> WaitId {
     // SAFETY: fully zeroed `libc::siginfo_t` is a valid value.
-    let info = unsafe { Box::new(mem::zeroed()) };
+    let info = unsafe { mem::zeroed() };
     let options = match options {
         Some(options) => options,
         None => WaitOption(0),
     };
-    WaitId(Operation::new(sq, info, (wait, options)))
+    WaitId::new(sq, info, (wait, options))
 }
 
 /// Defines on what process (or processes) to wait.
@@ -183,7 +181,7 @@ operation!(
 ///
 /// # fn main() {
 /// async fn main() -> io::Result<()> {
-///     let ring = Ring::new(128)?;
+///     let ring = Ring::new()?;
 ///     let sq = ring.sq().clone();
 ///
 ///     // Create a new `Signals` instance.
@@ -205,7 +203,7 @@ pub struct Signals {
 impl Signals {
     /// Create a new signal notifier from a signal set.
     pub fn from_set(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
-        log::trace!(signals:? = signals; "setting up signal handling");
+        log::trace!(signals:?; "setting up signal handling");
         let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
         // SAFETY: `signalfd(2)` ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw(fd, fd::Kind::File, sq) };
@@ -236,6 +234,7 @@ impl Signals {
     /// descriptor.
     ///
     /// See [`AsyncFd::to_direct_descriptor`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn to_direct_descriptor(self) -> ToDirect {
         debug_assert!(
             matches!(self.fd.kind(), fd::Kind::File),
@@ -243,28 +242,15 @@ impl Signals {
         );
         let sq = self.fd.sq().clone();
         let fd = self.fd.fd();
-        ToDirect(Operation::new(sq, (self, Box::new(fd)), ()))
+        ToDirect::new(sq, (self, fd), ())
     }
 
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
-        // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
-        let info = unsafe { Box::new(mem::zeroed()) };
-        ReceiveSignal(FdOperation::new(&self.fd, info, ()))
-    }
-
-    /// Receive multiple signals.
-    ///
-    /// This is an combined, owned version of `Signals` and [`ReceiveSignal`]
-    /// (the future behind `Signals::receive`). This is useful if you don't want
-    /// to deal with the `'fd` lifetime.
-    pub fn receive_signals(self) -> ReceiveSignals {
-        // SAFETY: fully zeroed `libc::signalfd_siginfo` is a valid value.
-        let resources = unsafe { Box::new(mem::zeroed()) };
-        ReceiveSignals {
-            signals: self,
-            state: op::State::new(resources, ()),
-        }
+        // SAFETY: fully zeroed libc::signalfd_siginfo and Signal are valid
+        // values.
+        let info = unsafe { mem::zeroed() };
+        ReceiveSignal::new(&self.fd, info, ())
     }
 
     /// Change the file descriptor on the `Signals`.
@@ -272,6 +258,7 @@ impl Signals {
     /// # Safety
     ///
     /// Caller must ensure `fd` is a valid signalfd descriptor.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
         self.fd = fd;
     }
@@ -295,6 +282,7 @@ impl Drop for Signals {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 operation!(
     /// [`Future`] behind [`Signals::to_direct_descriptor`].
     pub struct ToDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
@@ -307,112 +295,38 @@ fd_operation!(
 
 /// Process signal information.
 ///
-/// See [`Signals::receive`] and [`Signals::receive_signals`].
+/// See [`Signals::receive`].
 #[repr(transparent)]
-pub struct SignalInfo(pub(crate) libc::signalfd_siginfo);
+pub struct SignalInfo(pub(crate) crate::sys::process::SignalInfo);
 
 impl SignalInfo {
     /// Signal send.
-    #[allow(clippy::cast_possible_wrap)]
     pub fn signal(&self) -> Signal {
-        Signal(self.0.ssi_signo as i32)
+        crate::sys::process::signal(&self.0)
     }
 
     /// Process id of the sender.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn pid(&self) -> u32 {
-        self.0.ssi_pid
+        crate::sys::process::pid(&self.0)
     }
 
     /// Real user ID of the sender.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn real_user_id(&self) -> u32 {
-        self.0.ssi_uid
+        crate::sys::process::real_user_id(&self.0)
     }
 }
 
 impl fmt::Debug for SignalInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SignalInfo")
-            .field("signal", &self.signal())
-            .field("pid", &self.pid())
-            .field("real_user_id", &self.real_user_id())
-            .finish()
-    }
-}
-
-/// [`AsyncIterator`] behind [`Signals::receive_signals`].
-///
-/// [`AsyncIterator`]: std::async_iter::AsyncIterator
-#[must_use = "`AsyncIterator`s do nothing unless polled"]
-#[derive(Debug)]
-pub struct ReceiveSignals {
-    signals: Signals,
-    state: op::State<Box<SignalInfo>, ()>,
-}
-
-impl ReceiveSignals {
-    /// This is the same as the [`AsyncIterator::poll_next`] function, but
-    /// then available on stable Rust.
-    ///
-    /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
-    pub fn poll_next(
-        self: Pin<&mut Self>,
-        ctx: &mut task::Context<'_>,
-    ) -> Poll<Option<io::Result<SignalInfo>>> {
-        // SAFETY: not moving `signals` or `state`.
-        let ReceiveSignals { signals, state } = unsafe { self.get_unchecked_mut() };
-        let fd = &signals.fd;
-        let mut reset = None;
-        // NOTE: not using `poll_next` as it's not a multishot operation.
-        let result = state.poll(
-            ctx,
-            fd.sq(),
-            |resources, args, submission| {
-                fd.use_flags(submission);
-                sys::process::ReceiveSignalOp::fill_submission(fd, resources, args, submission);
-            },
-            |resources, args, state| {
-                sys::process::ReceiveSignalOp::check_result(fd, resources, args, state)
-            },
-            |_, mut resources, output| {
-                let info = sys::process::ReceiveSignalOp::map_next(fd, &mut resources, output);
-                reset = Some(resources);
-                info
-            },
-        );
-        if let Some(resources) = reset {
-            *state = op::State::new(resources, ());
-        }
-        result.map(Some)
-    }
-
-    /// Returns the underlying [`Signals`].
-    pub fn into_inner(self) -> Signals {
-        let mut this = ManuallyDrop::new(self);
-        let ReceiveSignals { signals, state } = &mut *this;
-        // SAFETY: not using `state` any more.
-        unsafe {
-            state.drop(signals.fd.sq());
-            ptr::drop_in_place(state);
-        }
-        // SAFETY: we're not dropping `self`/ (due to the the `ManuallyDrop`, so
-        // `signals` is safe to return.
-        unsafe { ptr::read(signals) }
-    }
-}
-
-#[cfg(feature = "nightly")]
-impl std::async_iter::AsyncIterator for ReceiveSignals {
-    type Item = io::Result<SignalInfo>;
-
-    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
-        self.poll_next(ctx)
-    }
-}
-
-impl Drop for ReceiveSignals {
-    fn drop(&mut self) {
-        // SAFETY: we're in the `Drop` implementation.
-        unsafe { self.state.drop(self.signals.fd.sq()) }
+        let mut f = f.debug_struct("SignalInfo");
+        f.field("signal", &self.signal());
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        f.field("pid", &self.pid());
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        f.field("real_user_id", &self.real_user_id());
+        f.finish()
     }
 }
 
@@ -453,49 +367,9 @@ impl SignalSet {
     }
 }
 
-/// Known signals supported by Linux as of v6.3.
-const KNOWN_SIGNALS: [(libc::c_int, &str); 33] = [
-    (libc::SIGHUP, "SIGHUP"),
-    (libc::SIGINT, "SIGINT"),
-    (libc::SIGQUIT, "SIGQUIT"),
-    (libc::SIGILL, "SIGILL"),
-    (libc::SIGTRAP, "SIGTRAP"),
-    (libc::SIGABRT, "SIGABRT"),
-    (libc::SIGIOT, "SIGIOT"),
-    (libc::SIGBUS, "SIGBUS"),
-    (libc::SIGFPE, "SIGFPE"),
-    (libc::SIGKILL, "SIGKILL"),
-    (libc::SIGUSR1, "SIGUSR1"),
-    (libc::SIGSEGV, "SIGSEGV"),
-    (libc::SIGUSR2, "SIGUSR2"),
-    (libc::SIGPIPE, "SIGPIPE"),
-    (libc::SIGALRM, "SIGALRM"),
-    (libc::SIGTERM, "SIGTERM"),
-    (libc::SIGSTKFLT, "SIGSTKFLT"),
-    (libc::SIGCHLD, "SIGCHLD"),
-    (libc::SIGCONT, "SIGCONT"),
-    (libc::SIGSTOP, "SIGSTOP"),
-    (libc::SIGTSTP, "SIGTSTP"),
-    (libc::SIGTTIN, "SIGTTIN"),
-    (libc::SIGTTOU, "SIGTTOU"),
-    (libc::SIGURG, "SIGURG"),
-    (libc::SIGXCPU, "SIGXCPU"),
-    (libc::SIGXFSZ, "SIGXFSZ"),
-    (libc::SIGVTALRM, "SIGVTALRM"),
-    (libc::SIGPROF, "SIGPROF"),
-    (libc::SIGWINCH, "SIGWINCH"),
-    (libc::SIGIO, "SIGIO"),
-    (libc::SIGPOLL, "SIGPOLL"), // NOTE: same value as `SIGIO`.
-    //(libc::SIGLOST, "SIGLOST"),
-    (libc::SIGPWR, "SIGPWR"),
-    (libc::SIGSYS, "SIGSYS"),
-];
-
 impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let signals = KNOWN_SIGNALS
-            .into_iter()
-            .filter_map(|(signal, name)| self.contains(Signal(signal)).then_some(name));
+        let signals = Signal::ALL.iter().filter(|signal| self.contains(**signal));
         f.debug_set().entries(signals).finish()
     }
 }
@@ -560,8 +434,10 @@ new_flag!(
         /// Pollable event.
         ///
         /// NOTE: same value as [`Signal::IO`].
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         POLL = libc::SIGPOLL,
         /// Power failure.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         PWR = libc::SIGPWR,
         /// Bad system call.
         SYS = libc::SIGSYS,

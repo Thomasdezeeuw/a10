@@ -2,18 +2,19 @@ use std::ffi::CString;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
 use std::ptr;
+use std::time::{Duration, SystemTime};
 
 use crate::fs::{
-    AdviseFlag, AllocateFlag, Metadata, MetadataInterest, RemoveFlag, SyncDataFlag,
-    path_from_cstring,
+    AdviseFlag, AllocateFlag, FileType, Metadata, MetadataInterest, Permissions, RemoveFlag,
+    SyncDataFlag, path_from_cstring,
 };
-use crate::io_uring::{self, cq, libc, sq};
-use crate::op::OpExtract;
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
+use crate::io_uring::op::{FdOp, Op, OpExtract, OpReturn};
+use crate::io_uring::{libc, sq};
+use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
 pub(crate) struct OpenOp;
 
-impl io_uring::Op for OpenOp {
+impl Op for OpenOp {
     type Output = AsyncFd;
     type Resources = (CString, fd::Kind); // path.
     type Args = (libc::c_int, libc::mode_t); // flags, mode.
@@ -34,20 +35,12 @@ impl io_uring::Op for OpenOp {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
             open_flags: *flags as u32,
         };
-        if let fd::Kind::Direct = fd_kind {
-            io_uring::fd::create_direct_flags(submission);
-        }
+        fd_kind.create_flags(submission);
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(
-        sq: &SubmissionQueue,
-        (path, fd_kind): Self::Resources,
-        (_, fd): cq::OpReturn,
-    ) -> Self::Output {
-        asan::unpoison_cstring(&path);
-        // SAFETY: kernel ensures that `fd` is valid.
-        unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) }
+    fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(sq, resources, ret).0
     }
 }
 
@@ -58,7 +51,7 @@ impl OpExtract for OpenOp {
     fn map_ok_extract(
         sq: &SubmissionQueue,
         (path, fd_kind): Self::Resources,
-        (_, fd): Self::OperationOutput,
+        (_, fd): OpReturn,
     ) -> Self::ExtractOutput {
         asan::unpoison_cstring(&path);
         // SAFETY: kernel ensures that `fd` is valid.
@@ -70,7 +63,7 @@ impl OpExtract for OpenOp {
 
 pub(crate) struct CreateDirOp;
 
-impl io_uring::Op for CreateDirOp {
+impl Op for CreateDirOp {
     type Output = ();
     type Resources = CString; // path.
     type Args = ();
@@ -89,7 +82,7 @@ impl io_uring::Op for CreateDirOp {
         submission.0.len = 0o777; // Same as used by the standard library.
     }
 
-    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): OpReturn) -> Self::Output {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
     }
@@ -101,7 +94,7 @@ impl OpExtract for CreateDirOp {
     fn map_ok_extract(
         _: &SubmissionQueue,
         path: Self::Resources,
-        (_, n): Self::OperationOutput,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
@@ -111,7 +104,7 @@ impl OpExtract for CreateDirOp {
 
 pub(crate) struct RenameOp;
 
-impl io_uring::Op for RenameOp {
+impl Op for RenameOp {
     type Output = ();
     type Resources = (CString, CString); // from path, to path
     type Args = ();
@@ -135,11 +128,7 @@ impl io_uring::Op for RenameOp {
         submission.0.len = libc::AT_FDCWD as u32;
     }
 
-    fn map_ok(
-        _: &SubmissionQueue,
-        (from, to): Self::Resources,
-        (_, n): cq::OpReturn,
-    ) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, (from, to): Self::Resources, (_, n): OpReturn) -> Self::Output {
         asan::unpoison_cstring(&from);
         asan::unpoison_cstring(&to);
         debug_assert!(n == 0);
@@ -152,7 +141,7 @@ impl OpExtract for RenameOp {
     fn map_ok_extract(
         _: &SubmissionQueue,
         (from, to): Self::Resources,
-        (_, n): Self::OperationOutput,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         asan::unpoison_cstring(&from);
         asan::unpoison_cstring(&to);
@@ -163,7 +152,7 @@ impl OpExtract for RenameOp {
 
 pub(crate) struct DeleteOp;
 
-impl io_uring::Op for DeleteOp {
+impl Op for DeleteOp {
     type Output = ();
     type Resources = CString; // path
     type Args = RemoveFlag;
@@ -189,7 +178,7 @@ impl io_uring::Op for DeleteOp {
         };
     }
 
-    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): OpReturn) -> Self::Output {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
     }
@@ -201,7 +190,7 @@ impl OpExtract for DeleteOp {
     fn map_ok_extract(
         _: &SubmissionQueue,
         path: Self::Resources,
-        (_, n): Self::OperationOutput,
+        (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
@@ -211,7 +200,7 @@ impl OpExtract for DeleteOp {
 
 pub(crate) struct SyncDataOp;
 
-impl io_uring::FdOp for SyncDataOp {
+impl FdOp for SyncDataOp {
     type Output = ();
     type Resources = ();
     type Args = SyncDataFlag;
@@ -231,16 +220,26 @@ impl io_uring::FdOp for SyncDataOp {
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { fsync_flags };
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
+pub(crate) fn default_metadata_interest() -> MetadataInterest {
+    MetadataInterest::TYPE
+        | MetadataInterest::MODE
+        | MetadataInterest::ACCESSED_TIME
+        | MetadataInterest::MODIFIED_TIME
+        | MetadataInterest::CREATED_TIME
+        | MetadataInterest::SIZE
+        | MetadataInterest::BLOCKS
+}
+
 pub(crate) struct StatOp;
 
-impl io_uring::FdOp for StatOp {
+impl FdOp for StatOp {
     type Output = Metadata;
-    type Resources = Box<Metadata>;
+    type Resources = Metadata;
     type Args = MetadataInterest;
 
     fn fill_submission(
@@ -253,9 +252,8 @@ impl io_uring::FdOp for StatOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             // SAFETY: this is safe because `Metadata` is transparent.
-            off: ptr::from_mut(&mut **metadata).addr() as u64,
+            off: ptr::from_mut(metadata).addr() as u64,
         };
-        asan::poison_box(metadata);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: c"".as_ptr().addr() as u64, // Not using a path.
         };
@@ -265,17 +263,15 @@ impl io_uring::FdOp for StatOp {
         };
     }
 
-    fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
-        asan::unpoison_box(&metadata);
-        msan::unpoison_box(&metadata);
+    fn map_ok(_: &AsyncFd, metadata: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
-        *metadata
+        metadata
     }
 }
 
 pub(crate) struct AdviseOp;
 
-impl io_uring::FdOp for AdviseOp {
+impl FdOp for AdviseOp {
     type Output = ();
     type Resources = ();
     type Args = (u64, u32, AdviseFlag); // offset, length, advice
@@ -296,14 +292,14 @@ impl io_uring::FdOp for AdviseOp {
         };
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct AllocateOp;
 
-impl io_uring::FdOp for AllocateOp {
+impl FdOp for AllocateOp {
     type Output = ();
     type Resources = ();
     type Args = (u64, u32, AllocateFlag); // offset, length, mode
@@ -324,14 +320,14 @@ impl io_uring::FdOp for AllocateOp {
         submission.0.len = mode.0;
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 }
 
 pub(crate) struct TruncateOp;
 
-impl io_uring::FdOp for TruncateOp {
+impl FdOp for TruncateOp {
     type Output = ();
     type Resources = ();
     type Args = u64; // length
@@ -347,7 +343,51 @@ impl io_uring::FdOp for TruncateOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *length };
     }
 
-    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): cq::OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+    }
+}
+
+pub(crate) use libc::statx as Stat;
+
+pub(crate) const fn filled(stat: &Stat) -> MetadataInterest {
+    MetadataInterest(stat.stx_mask)
+}
+
+pub(crate) const fn file_type(stat: &Stat) -> FileType {
+    FileType(stat.stx_mode)
+}
+
+pub(crate) const fn len(stat: &Stat) -> u64 {
+    stat.stx_size
+}
+
+pub(crate) const fn block_size(stat: &Stat) -> u32 {
+    stat.stx_blksize
+}
+
+pub(crate) const fn permissions(stat: &Stat) -> Permissions {
+    Permissions(stat.stx_mode)
+}
+
+pub(crate) fn modified(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_mtime)
+}
+
+pub(crate) fn accessed(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_atime)
+}
+
+pub(crate) fn created(stat: &Stat) -> SystemTime {
+    timestamp(&stat.stx_btime)
+}
+
+#[allow(clippy::cast_sign_loss)] // Checked.
+fn timestamp(ts: &libc::statx_timestamp) -> SystemTime {
+    let dur = Duration::new(ts.tv_sec as u64, ts.tv_nsec);
+    if ts.tv_sec.is_negative() {
+        SystemTime::UNIX_EPOCH - dur
+    } else {
+        SystemTime::UNIX_EPOCH + dur
     }
 }

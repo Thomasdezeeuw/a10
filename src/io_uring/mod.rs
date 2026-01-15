@@ -1,32 +1,31 @@
 //! io_uring implementation.
+//!
+//! Manuals:
+//! * <https://man7.org/linux/man-pages/man7/io_uring.7.html>
 
-use std::os::fd::{AsRawFd, OwnedFd};
-use std::ptr;
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::{ptr, task};
 
 use crate::{asan, syscall};
 
-pub(crate) mod cancel;
 pub(crate) mod config;
-mod cq;
+pub(crate) mod cq;
 pub(crate) mod fd;
 pub(crate) mod fs;
 pub(crate) mod io;
 mod libc;
 pub(crate) mod mem;
-pub(crate) mod msg;
 pub(crate) mod net;
-mod op;
+pub(crate) mod op;
 pub(crate) mod pipe;
-pub(crate) mod poll;
 pub(crate) mod process;
-mod sq;
+pub(crate) mod sq;
 
 pub(crate) use config::Config;
 pub(crate) use cq::Completions;
-use op::{FdOp, Op};
-pub(crate) use sq::{Submission, Submissions};
+pub(crate) use sq::Submissions;
 
 /// io_uring specific methods.
 impl crate::Ring {
@@ -39,136 +38,96 @@ impl crate::Ring {
     #[allow(clippy::needless_pass_by_ref_mut)]
     #[doc(alias = "IORING_REGISTER_ENABLE_RINGS")]
     pub fn enable(&mut self) -> io::Result<()> {
-        self.cq
+        self.sq
             .shared()
-            .data
             .register(libc::IORING_REGISTER_ENABLE_RINGS, ptr::null(), 0)
     }
 }
 
-/// io_uring implementation.
-pub(crate) enum Implementation {}
-
-impl crate::Implementation for Implementation {
-    type Shared = Shared;
-    type Submissions = Submissions;
-    type Completions = Completions;
-}
-
+/// Data shared between [`Submissions`] and [`Completions`].
 #[derive(Debug)]
-#[allow(clippy::mutex_integer)]
 pub(crate) struct Shared {
-    /// File descriptor of the io_uring.
-    rfd: OwnedFd,
-    /// Mmap-ed pointer.
-    ptr: *mut libc::c_void,
-    /// Mmap-ed size in bytes.
-    size: libc::c_uint,
-    /// Increased in `queue` to give the caller mutable access to a
-    /// submission in [`Submissions`].
-    /// Used by [`Completions`] to determine the number of submissions to
-    /// submit.
-    pending_tail: AtomicU32,
+    /// Pointer and length to the mmaped page(s).
+    submission_ring: ptr::NonNull<libc::c_void>,
+    submission_ring_len: u32,
+    // NOTE: the following fields reference mmaped pages shared with the kernel,
+    // thus all need atomic/synchronised access.
+    /// Flags set by the kernel to communicate information.
+    kernel_flags: ptr::NonNull<AtomicU32>,
+    /// Head of the submissions queue, i.e. the numbers of submissions read by
+    /// the kernel. Incremented by the kernel when submissions has succesfully
+    /// been processed.
+    submissions_head: ptr::NonNull<AtomicU32>,
+    /// Tail of the submissions queue, i.e. the number of submissions we've
+    /// submitted to the kernel.
+    submissions_tail: ptr::NonNull<AtomicU32>,
+    /// Array of [`Shared::submissions_len`] submission entries shared with the
+    /// kernel. We're the only one modifiying the structures, but the kernel can
+    /// read from them.
+    submissions: ptr::NonNull<sq::Submission>,
+    /// Lock to submit the next submission.
+    submissions_lock: Mutex<()>,
+    // Fixed values that don't change after the setup.
+    /// Length of [`Shared::submissions`].
+    submissions_len: u32,
     /// True if we're using a kernel thread to do submission polling, i.e. if
     /// `IORING_SETUP_SQPOLL` is enabled.
     kernel_thread: bool,
-    // NOTE: the following fields reference mmaped pages shared with the kernel,
-    // thus all need atomic/synchronised access.
-    /// Flags set by the kernel to communicate state information.
-    flags: *const AtomicU32,
-    /// Head to queue, i.e. the submussions read by the kernel. Incremented by
-    /// the kernel when submissions has succesfully been processed.
-    kernel_read: *const AtomicU32,
-    /// Array of `len` submission entries shared with the kernel. We're the only
-    /// one modifiying the structures, but the kernel can read from them.
-    ///
-    /// This pointer is also used in the `unmmap` call.
-    entries: *mut sq::Submission,
-    /// Number of `entries`.
-    entries_len: u32,
-    /// Mask used to index into the `entries` queue.
-    entries_mask: u32,
-    /// Variable used to get an index into `array`. The lock must be held while
-    /// writing into `array` to prevent race conditions with other threads.
-    array_index: Mutex<u32>,
-    /// Array of `len` indices (into `entries`) shared with the kernel. We're
-    /// the only one modifiying the structures, but the kernel can read from it.
-    ///
-    /// This is protected by `array_index`.
-    array: *mut AtomicU32,
-    /// Incremented by us when submitting new submissions.
-    array_tail: *mut AtomicU32,
+    /// Boolean indicating a thread is [`Ring::poll`]ing.
+    is_polling: AtomicBool,
+    /// Futures that are waiting for a slot in submissions.
+    blocked_futures: Mutex<Vec<task::Waker>>,
+    /// File descriptor of the io_uring.
+    /// NOTE: must come last to ensure it's dropped (closed) last.
+    rfd: OwnedFd,
 }
 
 impl Shared {
     pub(crate) fn new(rfd: OwnedFd, parameters: &libc::io_uring_params) -> io::Result<Shared> {
-        let submission_queue_size =
+        let submission_ring_len =
             parameters.sq_off.array + parameters.sq_entries * (size_of::<libc::__u32>() as u32);
-        let submission_queue = mmap(
-            submission_queue_size as usize,
+        let submission_ring = mmap(
+            submission_ring_len as usize,
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_SHARED | libc::MAP_POPULATE,
             rfd.as_raw_fd(),
             libc::off_t::from(libc::IORING_OFF_SQ_RING),
         )?;
-        // We poison the entire allocation and then unpoison on a per submission
-        // basis (see Submissions::add) when we get write something to it.
-        let array: *mut AtomicU32 = unsafe {
-            submission_queue
-                .add(parameters.sq_off.array as usize)
-                .cast()
-        };
-        asan::poison_region(array.cast(), submission_queue_size as usize);
 
-        let submission_queue_entries_size =
-            parameters.sq_entries as usize * size_of::<libc::io_uring_sqe>();
-        let submission_queue_entries = mmap(
-            submission_queue_entries_size,
+        let submissions_len = parameters.sq_entries as usize * size_of::<sq::Submission>();
+        let submissions_ptr = mmap(
+            submissions_len,
             libc::PROT_READ | libc::PROT_WRITE,
             libc::MAP_SHARED | libc::MAP_POPULATE,
             rfd.as_raw_fd(),
             libc::off_t::from(libc::IORING_OFF_SQES),
         )
         .inspect_err(|_| {
-            _ = munmap(submission_queue, submission_queue_size as usize); // Can't handle two errors.
+            _ = munmap(submission_ring, submission_ring_len as usize); // Can't handle two errors.
         })?;
         // Same as what we did for the submission array, but this time with the
         // actual submissions.
-        asan::poison_region(
-            submission_queue_entries.cast(),
-            submission_queue_entries_size,
-        );
-
-        let entries_len = unsafe {
-            load_atomic_u32(submission_queue.add(parameters.sq_off.ring_entries as usize))
-        };
-        debug_assert!(entries_len == parameters.sq_entries);
-        let entries_mask =
-            unsafe { load_atomic_u32(submission_queue.add(parameters.sq_off.ring_mask as usize)) };
-        debug_assert!(entries_mask == parameters.sq_entries - 1);
+        asan::poison_region(submissions_ptr.cast().as_ptr(), submissions_len);
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
         // ensures all of this stuff is set up for us with the mmap calls above.
-        #[allow(clippy::mutex_integer)] // For `array_index`, need to the lock for more.
-        Ok(unsafe {
-            Shared {
-                rfd,
-                ptr: submission_queue,
-                size: submission_queue_size,
-                pending_tail: AtomicU32::new(0),
-                kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
-                // Fields are shared with the kernel.
-                kernel_read: submission_queue.add(parameters.sq_off.head as usize).cast(),
-                flags: submission_queue
-                    .add(parameters.sq_off.flags as usize)
-                    .cast(),
-                entries: submission_queue_entries.cast(),
-                entries_len,
-                entries_mask,
-                array_index: Mutex::new(0),
-                array,
-                array_tail: submission_queue.add(parameters.sq_off.tail as usize).cast(),
-            }
+        Ok(Shared {
+            submission_ring,
+            submission_ring_len,
+            kernel_flags: unsafe { submission_ring.add(parameters.sq_off.flags as usize).cast() },
+            submissions_head: unsafe {
+                submission_ring.add(parameters.sq_off.head as usize).cast()
+            },
+            submissions_tail: unsafe {
+                submission_ring.add(parameters.sq_off.tail as usize).cast()
+            },
+            submissions: submissions_ptr.cast(),
+            submissions_lock: Mutex::new(()),
+            submissions_len: parameters.sq_entries,
+            kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
+            is_polling: AtomicBool::new(false),
+            blocked_futures: Mutex::new(Vec::new()),
+            rfd,
         })
     }
 
@@ -183,68 +142,38 @@ impl Shared {
         Ok(())
     }
 
-    /// Wake up the kernel thread polling for submission events, if the kernel
-    /// thread needs a wakeup.
-    fn maybe_wake_kernel_thread(&self) {
-        if self.kernel_thread && (self.flags() & libc::IORING_SQ_NEED_WAKEUP != 0) {
-            log::debug!("waking io_uring submission queue polling kernel thread");
-            let res = syscall!(io_uring_enter2(
-                self.rfd.as_raw_fd(),
-                0,                            // We've already queued our submissions.
-                0,                            // Don't wait for any completion events.
-                libc::IORING_ENTER_SQ_WAKEUP, // Wake up the kernel.
-                ptr::null(),                  // We don't pass any additional arguments.
-                0,
-            ));
-            if let Err(err) = res {
-                log::warn!("failed to wake io_uring submission queue polling kernel thread: {err}");
-            }
-        }
-    }
-
-    /// Submit the event to the kernel when not using a kernel polling thread
-    /// and another thread is currently [`Ring::poll`]ing.
-    ///
-    /// [`Ring::poll`]: crate::Ring::poll
-    fn maybe_submit_event(&self, is_polling: &AtomicBool) {
-        if !self.kernel_thread && is_polling.load(Ordering::Acquire) {
-            log::debug!("submitting submission event while another thread is `Ring::poll`ing");
-            let rfd = self.rfd.as_raw_fd();
-            let res = syscall!(io_uring_enter2(rfd, 1, 0, 0, ptr::null(), 0));
-            if let Err(err) = res {
-                log::warn!("failed to io_uring submit event: {err}");
-            }
-        }
+    /// Make a `io_uring_enter2(2)` system call.
+    pub(crate) fn enter(
+        &self,
+        to_submit: libc::c_uint,
+        min_complete: libc::c_uint,
+        flags: libc::c_uint,
+        arg: *const libc::c_void,
+        arg_size: libc::size_t,
+    ) -> io::Result<u32> {
+        let n = syscall!(io_uring_enter2(
+            self.ring_fd(),
+            to_submit,
+            min_complete,
+            flags,
+            arg,
+            arg_size
+        ))?;
+        Ok(n.cast_unsigned())
     }
 
     /// Returns the number of unsumitted submission queue entries.
-    pub(crate) fn unsubmitted(&self) -> u32 {
+    pub(crate) fn unsubmitted_submissions(&self) -> u32 {
         // NOTE: we MUST load the head before the tail to ensure the head is
         // ALWAYS older. Otherwise it's possible for the subtraction to
         // underflow.
-        let head = self.kernel_read();
-        let tail = self.pending_tail();
+        let head = load_kernel_shared(self.submissions_head);
+        let tail = load_kernel_shared(self.submissions_tail);
         tail - head
     }
 
-    /// Returns `self.kernel_read`.
-    fn kernel_read(&self) -> u32 {
-        // SAFETY: this written to by the kernel so we need to use `Acquire`
-        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (*self.kernel_read).load(Ordering::Acquire) }
-    }
-
-    /// Returns `self.pending_tail`.
-    fn pending_tail(&self) -> u32 {
-        // SAFETY: to sync with other threads use `Acquire` ordering.
-        self.pending_tail.load(Ordering::Acquire)
-    }
-
-    /// Returns `self.flags`.
-    fn flags(&self) -> u32 {
-        // SAFETY: this written to by the kernel so we need to use `Acquire`
-        // ordering. The pointer itself is valid as long as `Ring.fd` is alive.
-        unsafe { (*self.flags).load(Ordering::Acquire) }
+    fn ring_fd(&self) -> RawFd {
+        self.rfd.as_raw_fd()
     }
 }
 
@@ -254,18 +183,26 @@ unsafe impl Sync for Shared {}
 
 impl Drop for Shared {
     fn drop(&mut self) {
-        let ptr = self.entries.cast();
-        let size = self.entries_len as usize * size_of::<sq::Submission>();
-        asan::unpoison_region(ptr, size);
-        if let Err(err) = munmap(ptr, size) {
-            log::warn!(ptr:? = ptr, size = size; "error unmapping io_uring entries: {err}");
+        let ptr = self.submissions.cast();
+        let len = (self.submissions_len as usize) * size_of::<sq::Submission>();
+        asan::unpoison_region(ptr.as_ptr(), len);
+        if let Err(err) = munmap(ptr, len) {
+            log::warn!(ptr:?, len; "error unmapping io_uring submissions: {err}");
         }
 
-        asan::unpoison_region(self.ptr, self.size as usize);
-        if let Err(err) = munmap(self.ptr, self.size as usize) {
-            log::warn!(ptr:? = self.ptr, size = self.size; "error unmapping io_uring submission queue: {err}");
+        let ptr = self.submission_ring;
+        let len = self.submission_ring_len as usize;
+        asan::unpoison_region(ptr.as_ptr(), len);
+        if let Err(err) = munmap(ptr, len) {
+            log::warn!(ptr:?, len; "error unmapping io_uring submission ring: {err}");
         }
     }
+}
+
+fn load_kernel_shared(ptr: ptr::NonNull<AtomicU32>) -> u32 {
+    // SAFETY: since the value is shared with the kernel we need to use Acquire
+    // memory ordering.
+    unsafe { (*ptr.as_ptr()).load(Ordering::Acquire) }
 }
 
 /// `mmap(2)` wrapper that also sets `MADV_DONTFORK`.
@@ -275,13 +212,14 @@ fn mmap(
     flags: libc::c_int,
     fd: libc::c_int,
     offset: libc::off_t,
-) -> io::Result<*mut libc::c_void> {
+) -> io::Result<ptr::NonNull<libc::c_void>> {
     let addr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
         libc::MAP_FAILED => return Err(io::Error::last_os_error()),
-        addr => addr,
+        // SAFETY: mmap ensure the pointer is not null.
+        addr => unsafe { ptr::NonNull::new_unchecked(addr) },
     };
 
-    match unsafe { libc::madvise(addr, len, libc::MADV_DONTFORK) } {
+    match unsafe { libc::madvise(addr.as_ptr(), len, libc::MADV_DONTFORK) } {
         0 => Ok(addr),
         _ => {
             let err = io::Error::last_os_error();
@@ -292,14 +230,9 @@ fn mmap(
 }
 
 /// `munmap(2)` wrapper.
-pub(crate) fn munmap(addr: *mut libc::c_void, len: libc::size_t) -> io::Result<()> {
-    match unsafe { libc::munmap(addr, len) } {
+pub(crate) fn munmap(addr: ptr::NonNull<libc::c_void>, len: libc::size_t) -> io::Result<()> {
+    match unsafe { libc::munmap(addr.as_ptr(), len) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
-}
-
-/// Load a `u32` using relaxed ordering from `ptr`.
-unsafe fn load_atomic_u32(ptr: *mut libc::c_void) -> u32 {
-    unsafe { (*ptr.cast::<AtomicU32>()).load(Ordering::Acquire) }
 }

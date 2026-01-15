@@ -5,7 +5,7 @@ use a10::Ring;
 use a10::fs::OpenOptions;
 use a10::io::{ReadBuf, ReadBufPool};
 
-use crate::util::{LOREM_IPSUM_50, block_on, init, is_send, is_sync, require_kernel, start_op};
+use crate::util::{LOREM_IPSUM_50, block_on, init, is_send, is_sync, start_op};
 
 const BUF_SIZE: usize = 4096;
 
@@ -33,10 +33,9 @@ fn read_buf_is_send_and_sync() {
 
 #[test]
 fn read_read_buf_pool() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -56,10 +55,9 @@ fn read_read_buf_pool() {
 
 #[test]
 fn read_buf() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -125,10 +123,9 @@ fn read_buf() {
 
 #[test]
 fn read_read_buf_pool_multiple_buffers() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -157,10 +154,9 @@ fn read_read_buf_pool_multiple_buffers() {
 
 #[test]
 fn read_read_buf_pool_reuse_buffers() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -181,10 +177,9 @@ fn read_read_buf_pool_reuse_buffers() {
 
 #[test]
 fn read_read_buf_pool_reuse_same_buffer() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -214,10 +209,9 @@ fn read_read_buf_pool_reuse_same_buffer() {
 
 #[test]
 fn read_read_buf_pool_out_of_buffers() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let test_file = &LOREM_IPSUM_50;
@@ -254,10 +248,9 @@ fn read_read_buf_pool_out_of_buffers() {
 
 #[test]
 fn two_read_buf_pools() {
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
     let test_file = &LOREM_IPSUM_50;
 
@@ -281,10 +274,9 @@ fn two_read_buf_pools() {
 fn read_buf_remove() {
     const BUF_SIZE: usize = 64;
 
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();
@@ -357,10 +349,9 @@ fn read_buf_remove() {
 fn read_buf_remove_invalid_range() {
     const BUF_SIZE: usize = 64;
 
-    require_kernel!(5, 19);
     init();
 
-    let mut ring = Ring::new(2).expect("failed to create test ring");
+    let mut ring = Ring::new().expect("failed to create test ring");
     let sq = ring.sq().clone();
 
     let buf_pool = ReadBufPool::new(sq.clone(), 1, BUF_SIZE as u32).unwrap();

@@ -13,7 +13,7 @@ mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
-    let mut ring = Ring::new(2)?;
+    let mut ring = Ring::new()?;
 
     // Read the host, e.g. thomasdezeeuw.nl, this doesn't accept a scheme, path
     // or anything else.

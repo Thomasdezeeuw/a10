@@ -1,17 +1,17 @@
 //! Configuration of a [`Ring`].
 
 use std::mem::{self, size_of};
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::time::Duration;
 use std::{io, ptr};
 
-use crate::io_uring::{self, Completions, Shared, Submissions, libc};
+use crate::io_uring::{self, Completions, Submissions, libc};
 use crate::{Ring, SubmissionQueue, syscall};
 
 #[derive(Debug, Clone)]
 #[allow(clippy::struct_excessive_bools)] // This is just stupid.
 pub(crate) struct Config<'r> {
-    submission_entries: Option<u32>,
+    submission_entries: u32,
     completion_entries: Option<u32>,
     disabled: bool,
     single_issuer: bool,
@@ -27,13 +27,13 @@ pub(crate) struct Config<'r> {
 impl<'r> Config<'r> {
     pub(crate) const fn new() -> Config<'r> {
         Config {
-            submission_entries: None,
+            submission_entries: 32,
             completion_entries: None,
             disabled: false,
             single_issuer: false,
             defer_taskrun: false,
             clamp: false,
-            kernel_thread: true,
+            kernel_thread: false,
             cpu_affinity: None,
             idle_timeout: None,
             direct_descriptors: None,
@@ -44,13 +44,36 @@ impl<'r> Config<'r> {
 
 /// io_uring specific configuration.
 impl<'r> crate::Config<'r> {
-    /// Start the ring in a disabled state.
+    /// Set the size of the io_uring submission queue.
     ///
-    /// While the ring is disabled submissions are not allowed. To enable the
-    /// ring use [`Ring::enable`].
-    #[doc(alias = "IORING_SETUP_R_DISABLED")]
-    pub const fn disable(mut self) -> Self {
-        self.sys.disabled = true;
+    /// It must be a power of two. Defaults to 32. Also see
+    /// [`Config::with_maximum_queue_size`] to set the maximum queue size.
+    ///
+    /// [`Config::with_maximum_queue_size`]: crate::Config::with_maximum_queue_size
+    #[doc(alias = "io_uring_setup")]
+    pub const fn with_submission_queue_size(mut self, entries: u32) -> Self {
+        self.sys.submission_entries = entries;
+        self
+    }
+
+    /// Set the size of the io_uring completion queue.
+    ///
+    /// It must be a power of two. Defaults to twice the size of the submission
+    /// queue. Also see [`Config::with_maximum_queue_size`] to set the maximum
+    /// queue size.
+    ///
+    /// [`Config::with_maximum_queue_size`]: crate::Config::with_maximum_queue_size
+    #[doc(alias = "IORING_SETUP_CQSIZE")]
+    pub const fn with_completion_queue_size(mut self, entries: u32) -> Self {
+        self.sys.completion_entries = Some(entries);
+        self
+    }
+
+    /// Use the largest possible submission and completion queue sizes.
+    #[doc(alias = "IORING_SETUP_CLAMP")]
+    pub const fn with_maximum_queue_size(mut self) -> Self {
+        self.sys.submission_entries = u32::MAX;
+        self.sys.clamp = true;
         self
     }
 
@@ -63,7 +86,7 @@ impl<'r> crate::Config<'r> {
     /// the [`ReadBufPool`].
     ///
     /// This optimisation is enforces by the kernel, which will return `EEXIST`
-    /// or `AlreadyExists` if another thread attempt to register resource or
+    /// or `AlreadyExists` if another thread attempts to register resource or
     /// otherwise use the [`Ring`] in a way that is not allowed.
     ///
     /// [`build`]: crate::Config::build
@@ -96,61 +119,14 @@ impl<'r> crate::Config<'r> {
         self
     }
 
-    /// Set the size of the io_uring submission queue.
-    ///
-    /// `entries` is passed to `io_uring_setup(2)`. It must be a power of two
-    /// and in the range 1..=4096.
-    ///
-    /// Defaults to the same value as the maximum number of queued operations
-    /// (see [`Ring::config`]).
-    ///
-    /// [`Ring::config`]: crate::Ring::config
-    #[doc(alias = "io_uring_setup")]
-    pub const fn with_submission_queue_size(mut self, entries: u32) -> Self {
-        self.sys.submission_entries = Some(entries);
-        self
-    }
-
-    /// Set the size of the io_uring completion queue.
-    ///
-    /// By default the kernel will use a completion queue twice as large as the
-    /// submission queue (`entries` in the call to [`Ring::config`]).
-    ///
-    /// Uses `IORING_SETUP_CQSIZE`, added in Linux kernel 5.5.
-    #[doc(alias = "IORING_SETUP_CQSIZE")]
-    pub const fn with_completion_queue_size(mut self, entries: u32) -> Self {
-        self.sys.completion_entries = Some(entries);
-        self
-    }
-
-    /// Clamp queue sizes to the maximum.
-    ///
-    /// The maximum queue sizes aren't exposed by the kernel, making this the
-    /// only way (currently) to get the largest possible queues.
-    ///
-    /// Uses `IORING_SETUP_CLAMP`, added in Linux kernel 5.6.
-    #[doc(alias = "IORING_SETUP_CLAMP")]
-    pub const fn clamp_queue_sizes(mut self) -> Self {
-        self.sys.clamp = true;
-        self
-    }
-
     /// Start a kernel thread polling the [`Ring`].
     ///
     /// When this option is enabled a kernel thread is created to perform
     /// submission queue polling. This allows issuing I/O without ever context
     /// switching into the kernel.
-    ///
-    /// # Notes
-    ///
-    /// When setting this to false it significantly changes the way A10 works.
-    /// With this disabled you need to call [`Ring::poll`] to *submit* I/O work,
-    /// with this enabled this is done by the kernel thread. That means that if
-    /// multiple threads use the same [`SubmissionQueue`] their submissions
-    /// might not actually be submitted until `Ring::poll` is called.
     #[doc(alias = "IORING_SETUP_SQPOLL")]
-    pub const fn with_kernel_thread(mut self, enabled: bool) -> Self {
-        self.sys.kernel_thread = enabled;
+    pub const fn with_kernel_thread(mut self) -> Self {
+        self.sys.kernel_thread = true;
         self
     }
 
@@ -174,14 +150,20 @@ impl<'r> crate::Config<'r> {
     ///
     /// The accuracy of `timeout` is only in milliseconds, anything more precise
     /// will be discarded.
+    ///
+    /// Only works in combination with [`Config::with_kernel_thread`].
+    ///
+    /// [`Config::with_kernel_thread`]: crate::Config::with_kernel_thread
     #[doc(alias = "sq_thread_idle")]
     pub const fn with_idle_timeout(mut self, timeout: Duration) -> Self {
-        let ms = timeout.as_millis();
-        let ms = if ms <= u32::MAX as u128 {
-            // SAFETY: just check above that `millis` is less then `u32::MAX`
-            ms as u32
-        } else {
+        let millis = timeout.as_millis();
+        let ms = if millis > (u32::MAX as u128) {
             u32::MAX
+        } else {
+            // SAFETY: checked if the value fits above.
+            // TODO: use `millis.try_into().unwrap_or(u32::MAX)` once that is
+            // stable in const fns.
+            millis as u32
         };
         self.sys.idle_timeout = Some(ms);
         self
@@ -202,6 +184,16 @@ impl<'r> crate::Config<'r> {
         self
     }
 
+    /// Start the ring in a disabled state.
+    ///
+    /// While the ring is disabled submissions are not allowed. To enable the
+    /// ring use [`Ring::enable`].
+    #[doc(alias = "IORING_SETUP_R_DISABLED")]
+    pub const fn disable(mut self) -> Self {
+        self.sys.disabled = true;
+        self
+    }
+
     /// Attach the new (to be created) ring to `other_ring`.
     ///
     /// This will cause the `Ring` being created to share the asynchronous
@@ -210,7 +202,7 @@ impl<'r> crate::Config<'r> {
     ///
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach(self, other_ring: &'r Ring) -> Self {
+    pub fn attach(self, other_ring: &'r Ring) -> Self {
         self.attach_queue(other_ring.sq())
     }
 
@@ -218,15 +210,16 @@ impl<'r> crate::Config<'r> {
     ///
     /// [`Config::attach`]: crate::Config::attach
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
-    pub const fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
+    pub fn attach_queue(mut self, other_sq: &'r SubmissionQueue) -> Self {
         self.sys.attach = Some(other_sq);
         self
     }
 
-    pub(crate) fn build_sys(self) -> io::Result<(Submissions, Shared, Completions)> {
+    pub(crate) fn build_sys(self) -> io::Result<(Completions, Submissions)> {
         // SAFETY: all zero is valid for `io_uring_params`.
         let mut parameters: libc::io_uring_params = unsafe { mem::zeroed() };
-        parameters.flags = libc::IORING_SETUP_SUBMIT_ALL; // Submit all submissions on error.
+        parameters.flags = libc::IORING_SETUP_SUBMIT_ALL // Submit all submissions on error.
+            | libc::IORING_SETUP_NO_SQARRAY; // Don't use indirection for submissions.
         if self.sys.kernel_thread {
             parameters.flags |= libc::IORING_SETUP_SQPOLL; // Kernel thread for polling.
         } else {
@@ -244,8 +237,7 @@ impl<'r> crate::Config<'r> {
         if self.sys.defer_taskrun {
             parameters.flags |= libc::IORING_SETUP_DEFER_TASKRUN;
         }
-        #[rustfmt::skip]
-        let submission_entries = self.sys.submission_entries.unwrap_or(self.queued_operations as u32);
+        parameters.sq_entries = self.sys.submission_entries;
         if let Some(completion_entries) = self.sys.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -262,36 +254,14 @@ impl<'r> crate::Config<'r> {
         }
         #[allow(clippy::cast_sign_loss)] // File descriptors are always positive.
         if let Some(other_sq) = self.sys.attach {
-            parameters.wq_fd = other_sq.inner.shared_data().rfd.as_raw_fd() as u32;
+            parameters.wq_fd = other_sq.submissions().ring_fd() as u32;
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let mut first_err = None;
-        let rfd = loop {
-            match syscall!(io_uring_setup(submission_entries, &raw mut parameters)) {
-                // SAFETY: just created the fd (and checked the error).
-                Ok(rfd) => break unsafe { OwnedFd::from_raw_fd(rfd) },
-                Err(err) => {
-                    if let io::ErrorKind::InvalidInput = err.kind() {
-                        // We set some flags which are not strictly required by
-                        // A10, but provide various benefits. However in doing
-                        // so we also increases our minimal supported Kernel
-                        // version.
-                        // Here we remove the flags one by one and try again.
-                        // NOTE: this is mainly done to support the CI, which
-                        // currently uses Linux 5.15.
-                        remove_flag!(
-                            parameters,
-                            first_err,
-                            err,
-                            IORING_SETUP_SUBMIT_ALL,    // 5.18.
-                            IORING_SETUP_COOP_TASKRUN,  // 5.19.
-                            IORING_SETUP_SINGLE_ISSUER, // 6.0.
-                        );
-                    }
-                    return Err(first_err.unwrap_or(err));
-                }
-            };
+        let rfd = match syscall!(io_uring_setup(parameters.sq_entries, &raw mut parameters)) {
+            // SAFETY: just created the fd (and checked the error).
+            Ok(rfd) => unsafe { OwnedFd::from_raw_fd(rfd) },
+            Err(err) => return Err(err),
         };
         check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.
         check_feature!(parameters.features, IORING_FEAT_SUBMIT_STABLE); // All data for async offload must be consumed.
@@ -299,8 +269,8 @@ impl<'r> crate::Config<'r> {
         check_feature!(parameters.features, IORING_FEAT_SQPOLL_NONFIXED); // No need for fixed files.
 
         let shared = io_uring::Shared::new(rfd, &parameters)?;
-        let submissions = io_uring::Submissions::new();
-        let completions = io_uring::Completions::new(shared.rfd.as_fd(), &parameters)?;
+        let submissions = io_uring::Submissions::new(shared);
+        let completions = io_uring::Completions::new(submissions.ring_fd(), &parameters)?;
 
         if let Some(size) = self.sys.direct_descriptors {
             let register = libc::io_uring_rsrc_register {
@@ -312,37 +282,28 @@ impl<'r> crate::Config<'r> {
             };
             let arg = ptr::from_ref(&register).cast();
             let size = size_of::<libc::io_uring_rsrc_register>();
-            shared.register(libc::IORING_REGISTER_FILES2, arg, size as u32)?;
+            submissions
+                .shared()
+                .register(libc::IORING_REGISTER_FILES2, arg, size as u32)?;
         }
 
-        Ok((submissions, shared, completions))
+        Ok((completions, submissions))
     }
 }
 
 macro_rules! check_feature {
-    ($features: expr, $required: ident $(,)?) => {{
-        assert!(
-            $features & libc::$required != 0,
-            concat!(
-                "Kernel doesn't have required `",
-                stringify!($required),
-                "` feature"
-            )
-        );
-    }};
-}
-
-macro_rules! remove_flag {
-    ($parameters: ident, $first_err: ident, $err: ident, $( $flag: ident, )+ ) => {
-        $(
-        if $parameters.flags & libc::$flag != 0 {
-            log::debug!(concat!("failed to create io_uring: {}, dropping ", stringify!($flag), " flag and trying again"), $err);
-            $parameters.flags &= !libc::$flag;
-            $first_err.get_or_insert($err);
-            continue;
-        }
-        )+
+    ($features: expr, $required: ident $(,)?) => {
+        if $features & libc::$required == 0 {
+            return Err(::std::io::Error::new(
+                ::std::io::ErrorKind::Unsupported,
+                ::std::concat!(
+                    "Kernel doesn't have required `",
+                    stringify!($required),
+                    "` feature"
+                ),
+            ));
+        };
     };
 }
 
-use {check_feature, remove_flag};
+use check_feature;

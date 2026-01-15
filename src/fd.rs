@@ -5,7 +5,7 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{Submission, SubmissionQueue, sys, syscall};
+use crate::{SubmissionQueue, syscall};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{ToDirect, ToFd};
@@ -36,7 +36,18 @@ pub use crate::sys::fd::{ToDirect, ToFd};
 #[allow(clippy::module_name_repetitions)]
 pub struct AsyncFd {
     fd: RawFd,
-    state: sys::fd::State,
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    state: crate::sys::fd::State,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
 }
@@ -77,8 +88,34 @@ impl AsyncFd {
         } else {
             fd
         };
-        let state = sys::fd::State::new();
-        AsyncFd { fd, state, sq }
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        let Kind::File = kind;
+        AsyncFd {
+            fd,
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos",
+            ))]
+            state: crate::sys::fd::State::new(),
+            sq,
+        }
     }
 
     /// Returns the kind of descriptor.
@@ -130,27 +167,46 @@ impl AsyncFd {
         self.fd & !(1 << 31)
     }
 
+    /// Returns the internal state of the fd.
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    pub(crate) const fn state(&self) -> &crate::sys::fd::State {
+        &self.state
+    }
+
     /// Returns the `SubmissionQueue` of this `AsyncFd`.
     pub(crate) const fn sq(&self) -> &SubmissionQueue {
         &self.sq
-    }
-
-    pub(crate) fn use_flags(&self, submission: &mut Submission) {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        if let Kind::Direct = self.kind() {
-            crate::sys::fd::use_direct_flags(submission);
-        }
     }
 }
 
 impl Unpin for AsyncFd {}
 
+#[allow(clippy::missing_fields_in_debug)] // Don't care about sq.
 impl fmt::Debug for AsyncFd {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("AsyncFd");
         f.field("fd", &self.fd()).field("kind", &self.kind());
-        // Always empty for Linux.
-        #[cfg(not(any(target_os = "android", target_os = "linux")))]
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
         f.field("state", &self.state);
         f.finish()
     }
@@ -161,7 +217,7 @@ impl Drop for AsyncFd {
         // Try to asynchronously close the desctiptor (if the OS supports it).
         #[cfg(any(target_os = "android", target_os = "linux"))]
         {
-            let result = self.sq.inner.submit_no_completion(|submission| {
+            let result = self.sq.submissions().add(|submission| {
                 crate::sys::io::close_file_fd(self.fd(), self.kind(), submission);
             });
             if let Ok(()) = result {
@@ -172,16 +228,26 @@ impl Drop for AsyncFd {
         // Fall back to synchronously closing the descriptor.
         let result = match self.kind() {
             #[cfg(any(target_os = "android", target_os = "linux"))]
-            Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), self.sq()),
-            Kind::File => {
-                let res = syscall!(close(self.fd())).map(|_| ());
-                // SAFETY: we're in the Drop implementation.
-                unsafe { self.state.drop(&self.sq) }
-                res
-            }
+            Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), &self.sq),
+            Kind::File => syscall!(close(self.fd())).map(|_| ()),
         };
         if let Err(err) = result {
             log::warn!("error closing a10::AsyncFd: {err}");
+        }
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        // SAFETY: we're in the drop implementation.
+        unsafe {
+            self.state.drop(&self.sq);
         }
     }
 }
@@ -202,6 +268,7 @@ pub enum Kind {
 }
 
 impl Kind {
+    #[allow(clippy::semicolon_if_nothing_returned)]
     pub(crate) fn cloexec_flag(self) -> libc::c_int {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {
@@ -210,16 +277,9 @@ impl Kind {
         // We also use `O_CLOEXEC` when we technically should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
         // expected.
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         #[allow(clippy::items_after_statements)]
         const _: () = assert!(libc::SOCK_CLOEXEC == libc::O_CLOEXEC);
         libc::O_CLOEXEC
-    }
-
-    pub(crate) fn create_flags(self, submission: &mut Submission) {
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        if let Kind::Direct = self {
-            crate::sys::fd::create_direct_flags(submission);
-        }
     }
 }

@@ -12,7 +12,7 @@ mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
-    let mut ring = Ring::new(1)?;
+    let mut ring = Ring::new()?;
 
     // Path of the file to read.
     let path = env::args()
