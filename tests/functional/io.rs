@@ -236,7 +236,7 @@ fn read_n_vectored_at() {
         ],
     };
     let buf = waker
-        .block_on(file.read_n_vectored_at(buf, 5, test_file.content.len() - 5))
+        .block_on(file.read_n_vectored(buf, test_file.content.len() - 5).at(5))
         .unwrap();
     assert_eq!(&buf.data[0], &test_file.content[5..105]);
     assert_eq!(&buf.data[1], &test_file.content[105..]);

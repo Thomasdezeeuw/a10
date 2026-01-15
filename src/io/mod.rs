@@ -191,28 +191,13 @@ impl AsyncFd {
     where
         B: BufMutSlice<N>,
     {
-        self.read_n_vectored_at(bufs, NO_OFFSET, n)
-    }
-
-    /// Read at least `n` bytes from this fd into `bufs`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn read_n_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-        n: usize,
-    ) -> ReadNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
         };
         ReadNVectored {
-            read: self.read_vectored(bufs).at(offset),
-            offset,
+            read: self.read_vectored(bufs),
+            offset: NO_OFFSET,
             left: n,
         }
     }
@@ -558,7 +543,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
     }
 }
 
-/// [`Future`] behind [`AsyncFd::read_n_vectored`] and [`AsyncFd::read_n_vectored_at`].
+/// [`Future`] behind [`AsyncFd::read_n_vectored`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
@@ -566,6 +551,19 @@ pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> ReadNVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.read.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N> {
