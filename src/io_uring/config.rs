@@ -237,8 +237,7 @@ impl<'r> crate::Config<'r> {
         if self.sys.defer_taskrun {
             parameters.flags |= libc::IORING_SETUP_DEFER_TASKRUN;
         }
-        #[rustfmt::skip]
-        let submission_entries = self.sys.submission_entries;
+        parameters.sq_entries = self.sys.submission_entries;
         if let Some(completion_entries) = self.sys.completion_entries {
             parameters.cq_entries = completion_entries;
             parameters.flags |= libc::IORING_SETUP_CQSIZE;
@@ -259,7 +258,7 @@ impl<'r> crate::Config<'r> {
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let rfd = match syscall!(io_uring_setup(submission_entries, &raw mut parameters)) {
+        let rfd = match syscall!(io_uring_setup(parameters.sq_entries, &raw mut parameters)) {
             // SAFETY: just created the fd (and checked the error).
             Ok(rfd) => unsafe { OwnedFd::from_raw_fd(rfd) },
             Err(err) => return Err(err),
