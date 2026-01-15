@@ -137,7 +137,7 @@ fn create_temp_file() {
 
     let buf = Vec::with_capacity(expected.len());
     let buf = waker
-        .block_on(file.read(buf).at(0))
+        .block_on(file.read(buf).from(0))
         .expect("failed to read");
     assert!(buf == expected, "read content is different");
 }
@@ -202,7 +202,7 @@ fn test_read(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize) {
 #[test]
 fn read_at_one_page() {
     let sq = test_queue();
-    test_read_at(sq, &LOREM_IPSUM_5, LOREM_IPSUM_5.content.len() + 1, 100)
+    test_read_from(sq, &LOREM_IPSUM_5, LOREM_IPSUM_5.content.len() + 1, 100)
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn read_at_multiple_pages_one_read() {
     let sq = test_queue();
     let offset = 8192;
     let buf_len = LOREM_IPSUM_50.content.len() + 1 - offset as usize;
-    test_read_at(sq, &LOREM_IPSUM_50, buf_len, offset)
+    test_read_from(sq, &LOREM_IPSUM_50, buf_len, offset)
 }
 
 #[test]
@@ -218,10 +218,10 @@ fn read_at_multiple_pages_multiple_reads() {
     // Tests that multiple reads work like expected w.r.t. things like offset
     // advancement.
     let sq = test_queue();
-    test_read_at(sq, &LOREM_IPSUM_50, 4096, 16384)
+    test_read_from(sq, &LOREM_IPSUM_50, 4096, 16384)
 }
 
-fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut offset: u64) {
+fn test_read_from(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut offset: u64) {
     let waker = Waker::new();
 
     let path = test_file.path.into();
@@ -232,7 +232,7 @@ fn test_read_at(sq: SubmissionQueue, test_file: &TestFile, buf_size: usize, mut 
     let mut expected = &test_file.content[offset as usize..];
     loop {
         buf.clear();
-        let read = file.read(buf).at(offset);
+        let read = file.read(buf).from(offset);
         buf = waker.block_on(read).unwrap();
 
         if buf.is_empty() {

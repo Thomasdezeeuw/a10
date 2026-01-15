@@ -44,7 +44,7 @@ fn read_read_buf_pool() {
     let path = test_file.path.into();
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
-    let buf = block_on(&mut ring, file.read(buf_pool.get()).at(0)).unwrap();
+    let buf = block_on(&mut ring, file.read(buf_pool.get()).from(0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
     assert!(!buf.is_empty());
     assert!(
@@ -66,7 +66,7 @@ fn read_buf() {
     let path = test_file.path.into();
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
-    let mut buf = block_on(&mut ring, file.read(buf_pool.get()).at(0)).unwrap();
+    let mut buf = block_on(&mut ring, file.read(buf_pool.get()).from(0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
     assert!(!buf.is_empty());
     assert!(
@@ -134,9 +134,9 @@ fn read_read_buf_pool_multiple_buffers() {
     let path = test_file.path.into();
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
-    let mut read1 = file.read(buf_pool.get()).at(0);
-    let mut read2 = file.read(buf_pool.get()).at(0);
-    let mut read3 = file.read(buf_pool.get()).at(0);
+    let mut read1 = file.read(buf_pool.get()).from(0);
+    let mut read2 = file.read(buf_pool.get()).from(0);
+    let mut read3 = file.read(buf_pool.get()).from(0);
     start_op(&mut read1);
     start_op(&mut read2);
     start_op(&mut read3);
@@ -166,7 +166,7 @@ fn read_read_buf_pool_reuse_buffers() {
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     for _ in 0..4 {
-        let buf = block_on(&mut ring, file.read(buf_pool.get()).at(0)).unwrap();
+        let buf = block_on(&mut ring, file.read(buf_pool.get()).from(0)).unwrap();
         assert_eq!(buf.len(), BUF_SIZE);
         assert!(
             &*buf == &test_file.content[..buf.len()],
@@ -188,13 +188,13 @@ fn read_read_buf_pool_reuse_same_buffer() {
     let path = test_file.path.into();
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
-    let mut buf = block_on(&mut ring, file.read(buf_pool.get()).at(0)).unwrap();
+    let mut buf = block_on(&mut ring, file.read(buf_pool.get()).from(0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
     assert_eq!(&*buf, &test_file.content[..buf.len()]);
 
     // When reusing the buffer it shouldn't overwrite the existing data.
     buf.truncate(100);
-    let mut buf = block_on(&mut ring, file.read(buf).at(0)).unwrap();
+    let mut buf = block_on(&mut ring, file.read(buf).from(0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
     assert_eq!(&buf[0..100], &test_file.content[0..100]);
     assert_eq!(&buf[100..], &test_file.content[0..BUF_SIZE - 100]);
@@ -202,7 +202,7 @@ fn read_read_buf_pool_reuse_same_buffer() {
     // After releasing the buffer to the pool it should "overwrite" everything
     // again.
     buf.release();
-    let buf = block_on(&mut ring, file.read(buf).at(0)).unwrap();
+    let buf = block_on(&mut ring, file.read(buf).from(0)).unwrap();
     assert_eq!(buf.len(), BUF_SIZE);
     assert_eq!(&*buf, &test_file.content[..buf.len()]);
 }
@@ -222,7 +222,7 @@ fn read_read_buf_pool_out_of_buffers() {
 
     let futures = (0..8)
         .map(|_| {
-            let mut read = file.read(buf_pool.get()).at(0);
+            let mut read = file.read(buf_pool.get()).from(0);
             start_op(&mut read);
             read
         })
@@ -261,7 +261,7 @@ fn two_read_buf_pools() {
     let file = block_on(&mut ring, OpenOptions::new().open(sq, path)).unwrap();
 
     for buf_pool in [buf_pool1, buf_pool2] {
-        let buf = block_on(&mut ring, file.read(buf_pool.get()).at(0)).unwrap();
+        let buf = block_on(&mut ring, file.read(buf_pool.get()).from(0)).unwrap();
         assert_eq!(buf.len(), BUF_SIZE);
         assert!(
             &*buf == &test_file.content[..buf.len()],

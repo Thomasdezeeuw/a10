@@ -178,7 +178,7 @@ fn read_n() {
 }
 
 #[test]
-fn read_n_at() {
+fn read_n_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -192,7 +192,7 @@ fn read_n_at() {
         data: Vec::with_capacity(test_file.content.len()),
     };
     let buf = waker
-        .block_on(file.read_n(buf, test_file.content.len() - 5).at(5))
+        .block_on(file.read_n(buf, test_file.content.len() - 5).from(5))
         .unwrap();
     assert_eq!(&buf.data, &test_file.content[5..]);
 }
@@ -216,7 +216,7 @@ fn read_n_vectored() {
 }
 
 #[test]
-fn read_n_vectored_at() {
+fn read_n_vectored_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -233,7 +233,10 @@ fn read_n_vectored_at() {
         ],
     };
     let buf = waker
-        .block_on(file.read_n_vectored(buf, test_file.content.len() - 5).at(5))
+        .block_on(
+            file.read_n_vectored(buf, test_file.content.len() - 5)
+                .from(5),
+        )
         .unwrap();
     assert_eq!(&buf.data[0], &test_file.content[5..105]);
     assert_eq!(&buf.data[1], &test_file.content[105..]);
@@ -257,7 +260,6 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        //.block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, None))
         .block_on(file.splice_to(fd(&w), expected.len() as u32, None).from(10))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);

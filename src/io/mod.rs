@@ -360,7 +360,7 @@ impl<'fd, B: BufMut> Read<'fd, B> {
     /// that a call `read(buf).at(1024)` with a buffer of 1kb will **not**
     /// continue reading at 2kb in the next call to `read`.
     #[doc = man_link!(pread(2))]
-    pub fn at(mut self, offset: u64) -> Self {
+    pub fn from(mut self, offset: u64) -> Self {
         if let Some(off) = self.state.args_mut() {
             *off = offset;
         }
@@ -371,9 +371,9 @@ impl<'fd, B: BufMut> Read<'fd, B> {
 impl<'fd, B: BufMutSlice<N>, const N: usize> ReadVectored<'fd, B, N> {
     /// Change to a positional read starting at `offset`.
     ///
-    /// Also see [`Read::at`].
+    /// Also see [`Read::from`].
     #[doc = man_link!(preadv(2))]
-    pub fn at(mut self, offset: u64) -> Self {
+    pub fn from(mut self, offset: u64) -> Self {
         if let Some(off) = self.state.args_mut() {
             *off = offset;
         }
@@ -456,8 +456,8 @@ pub struct ReadN<'fd, B: BufMut> {
 impl<'fd, B: BufMut> ReadN<'fd, B> {
     /// Change to a positional read starting at `offset`.
     ///
-    /// Also see [`Read::at`].
-    pub fn at(mut self, offset: u64) -> Self {
+    /// Also see [`Read::from`].
+    pub fn from(mut self, offset: u64) -> Self {
         if let Some(off) = self.read.state.args_mut() {
             *off = offset;
             self.offset = offset;
@@ -489,7 +489,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.set(read.fd.read(buf).at(this.offset));
+                read.set(read.fd.read(buf).from(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -511,8 +511,8 @@ pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
 impl<'fd, B: BufMutSlice<N>, const N: usize> ReadNVectored<'fd, B, N> {
     /// Change to a positional read starting at `offset`.
     ///
-    /// Also see [`Read::at`].
-    pub fn at(mut self, offset: u64) -> Self {
+    /// Also see [`Read::from`].
+    pub fn from(mut self, offset: u64) -> Self {
         if let Some(off) = self.read.state.args_mut() {
             *off = offset;
             self.offset = offset;
@@ -544,7 +544,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
                     this.offset += bufs.last_read as u64;
                 }
 
-                read.set(read.fd.read_vectored(bufs).at(this.offset));
+                read.set(read.fd.read_vectored(bufs).from(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
