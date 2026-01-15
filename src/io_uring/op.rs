@@ -13,22 +13,59 @@ use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
 use crate::{AsyncFd, SubmissionQueue, lock};
 
+// # Usage
+//
+// A new State is created for each operation. Part of the state is shared
+// between the operation and the completion event handler, this data is stored
+// in Shared. For safe shared access this is wrapped in a Mutex. The following
+// describes the common flow.
+//
+// 1. The State is created, with status NotStarted, the operation has unique
+//    access to all of the state.
+//
+// 2. Once the operation is submitted the status is changed to Running. A
+//    pointer to Mutex<Shared> is set a the user_data of a Submission (later to
+//    return as the user_data of a Completion). While the operation is Running,
+//    the data in Shared is shared between the kernel and the operation and is
+//    thus read-only for both. The ownership of the resources, stored in
+//    Tai::resources, is also changed. For singleshot operations the kernel has
+//    unique/mutable access to the resources. For multishot opererations the
+//    access is shared, thus both having read-only access.
+//
+// 3. Once the operation proceses result (via Completion events) they are stored
+//    in the shared Status. Once the kernel send the final Completion for the
+//    operation the status is set to Done. The relevant code to process a
+//    completion is in Completion::process and Shared::update. When the Status
+//    is Done th operation has unique access to all of the state (including the
+//    resources) again.
+//
+// 4. Once the future is polled again with the Status set to Done it process the
+//    remaining results (for multishot operations, for singleshot this will be
+//    one result). For singleshot operations we set the status to Complete,
+//    allowing us to safely read the resources (effectively removing them from
+//    the state).
+//
+// # Dropping
+//
+// What happens When an operation is dropped depends on the Status. If the
+// Status is
+//  * NotStarted, then it's easy as the entire state can be dropped as normal,
+//    nothing is shared with the kernel yet. The resources have to be manually
+//    dropped, see drop_state.
+//  * Running, this is tricky. The kernel has access to the state (see above),
+//    so we can't deallocate the state yet. The operation sets the Status to
+//    Dropped, indicating that the operation side is dropped and doesn't have
+//    access any more. During the processing of completions (in Shared::update)
+//    we check if the the status. If it's Dropped and no more completions are
+//    coming the update function returns StatusUpdate::Drop which is used to
+//    drop the entire State.
+//  * Done, this is an easy one again, the kernel doesn't have access so we can
+//    safely drop the State.
+//  * Dropped, this shouldn't be reachable as it means the operation is already
+//    Dropped.
+//  * Complete, same as Done, but this time we don't need to drop the resources.
+
 /// State of an operation.
-///
-/// # SAFETY
-///
-/// This state is shared between the future that holds runs the operation and
-/// the completion event handler (via the `io_uring_cqe::user_data`, see
-/// [`Completion::process`]). This is stored in the `shared` field.
-///
-/// The `tail` holds the resources needed for operation. These must stay alive
-/// while the operation is ongoing (stored in `Shared::status`/`Status`).
-///
-/// TODO: doc:
-///  * usage & interactions.
-///  * drop function
-///  * how to keep the resources alive.
-///  * how operations are canceled on drop.
 #[derive(Debug)]
 pub(crate) struct State<T, R, A> {
     data: NonNull<Data<T, R, A>>,
