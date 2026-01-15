@@ -6,6 +6,51 @@ use crate::kqueue::fd::OpKind;
 use crate::op::OpState;
 use crate::{AsyncFd, SubmissionQueue};
 
+// # Usage
+//
+// We have two kinds of states for operations DirectState and EventedState. The
+// first is for operations for which we can't poll for readiness, e.g.
+// socket(2). The latter is for operations for which we can poll for readiness,
+// e.g. read(2).
+//
+// ## Direct
+//
+// For a direct operation (not to be confused with direct descriptors) we create
+// a new DirectState. The operation has unique access to the entire state for
+// the entire duration. The following in the common flow.
+//
+// 1. The DirectState is created as NotStarted.
+// 2. The operation is polled, the state is set to Complete, and using the
+//    resources and arguments the operation is executed.
+//
+// Yes, it's that simple.
+//
+// ## Evented
+//
+// For evented operations the flow is a little more complex.
+//
+// 1. The EventedState is created as NotStarted.
+// 2. After the operation is polled the Future's Waker is added to the list of
+//    waiting futures stored in fd::State (see fd::OpState for more details).
+//    If this operation is the first OpKind in the list it will also submit an
+//    event to poll for the readiness.
+// 3. Once we get a readiness event for the fd we wake all operation waiting for
+//    that kind of operation (OpKind).
+// 4. Once the operation is awoken again, not in the Waiting state, it will try
+//    the operation. If this returns a WouldBlock error we got back to step 2
+//    and set the state to NotStarted. If it does succeed we return the result
+//    and we're done.
+//
+// # Dropping
+//
+// Since neither the DirectState or EventedState shares any resources with the
+// OS we can safely drop both of them without any special handling.
+//
+// TODO: document dropping of state.
+// This is not true for fd::State (part of AsyncFd). Because there could be
+// outstanding readiness polls that use the fd::State as user_data we delay the
+// allocation. We do this by
+
 /// State of an operation that is done synchronously, e.g. opening a socket.
 #[derive(Debug)]
 pub(crate) enum DirectState<R, A> {
