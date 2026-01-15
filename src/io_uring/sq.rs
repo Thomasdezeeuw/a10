@@ -25,8 +25,9 @@ impl Submissions {
         F: FnOnce(&mut Submission),
     {
         let shared = &*self.shared;
+        let len = shared.submissions_len;
         // Before grabbing a lock, see if there is space in the queue.
-        if shared.unsubmitted_submissions() >= 1 {
+        if shared.unsubmitted_submissions() >= len {
             return Err(QueueFull);
         }
 
@@ -40,7 +41,6 @@ impl Submissions {
         // underflow.
         let head = load_kernel_shared(shared.submissions_head);
         let tail = load_kernel_shared(shared.submissions_tail);
-        let len = shared.submissions_len;
         if (tail - head) > len {
             return Err(QueueFull);
         }
