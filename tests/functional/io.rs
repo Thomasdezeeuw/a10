@@ -5,8 +5,10 @@ use std::os::fd::{FromRawFd, RawFd};
 
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::io::ReadBufPool;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::Splice;
-use a10::io::{BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
+use a10::io::{BufMut, Close, Stderr, Stdout, stderr, stdout};
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
@@ -17,6 +19,7 @@ use crate::util::{
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{fd, next};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 const NO_OFFSET: u64 = u64::MAX;
 
 #[test]

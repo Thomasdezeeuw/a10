@@ -17,8 +17,10 @@ mod net;
 #[path = "functional/net_options.rs"]
 mod net_options;
 #[path = "functional/process.rs"]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 mod process;
 #[path = "functional/read_buf.rs"]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 mod read_buf;
 #[path = "functional/ring.rs"]
 mod ring;

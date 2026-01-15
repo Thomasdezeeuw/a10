@@ -8,8 +8,12 @@ use std::net::{
 use std::os::fd::{AsRawFd, BorrowedFd};
 use std::ptr;
 
+use a10::Extract;
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::Ring;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::fd;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::ReadBufPool;
 use a10::net::{
     Accept, Bind, Domain, Level, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
@@ -17,13 +21,14 @@ use a10::net::{
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::net::{MultishotAccept, MultishotRecv, socket};
-use a10::{Extract, Ring};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    block_on, expect_io_error_kind, fd, ignore_unsupported, init, is_send, is_sync, new_socket,
-    syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, new_socket, syscall,
+    tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::{block_on, init};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{expect_io_errno, next};
 
@@ -325,6 +330,7 @@ fn recv() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn recv_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
@@ -357,6 +363,7 @@ fn recv_read_buf_pool() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn recv_read_buf_pool_send_read_buf() {
     const BUF_SIZE: usize = 4096;
 
@@ -714,6 +721,7 @@ fn recv_from() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn recv_from_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
@@ -1450,6 +1458,7 @@ fn direct_fd() {
     assert!(buf.is_empty());
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
     let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
     let mut len = size_of::<libc::sockaddr_storage>() as u32;
