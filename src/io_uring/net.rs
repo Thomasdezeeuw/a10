@@ -642,9 +642,12 @@ impl<T> FdOp for SocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(value.as_mut_ptr().addr() as u64),
         };
+        asan::poison_region(value.as_ptr().cast(), size_of::<T>());
     }
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_region(value.as_ptr().cast(), size_of::<T>());
+        msan::unpoison_region(value.as_ptr().cast(), n as usize);
         debug_assert!(n == (size_of::<T>() as u32));
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -686,9 +689,13 @@ impl<T: option::Get> FdOp for SocketOption2Op<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(optval.addr() as u64),
         };
+        asan::poison_region(optval.cast_const().cast(), optlen as usize);
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        let (_, optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+        asan::unpoison_region(value.0.as_ptr().cast(), optlen as usize);
+        msan::unpoison_region(value.0.as_ptr().cast(), n as usize);
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
         unsafe { T::init(value.0, n) }
@@ -729,6 +736,7 @@ impl<T> FdOp for SetSocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(ptr::from_ref(value).addr() as u64),
         };
+        asan::poison_region(ptr::from_ref(&value).cast(), size_of::<T>());
     }
 
     fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
@@ -744,6 +752,7 @@ impl<T> FdOpExtract for SetSocketOptionOp<T> {
         value: Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        asan::unpoison_region(ptr::from_ref(&value).cast(), size_of::<T>());
         debug_assert!(n == 0);
         value
     }
@@ -783,9 +792,11 @@ impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
+        asan::poison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
     }
 
-    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        asan::unpoison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
         debug_assert!(n == 0);
     }
 }
