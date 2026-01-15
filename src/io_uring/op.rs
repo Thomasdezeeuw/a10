@@ -260,10 +260,16 @@ impl<T: OpResult> Shared<T> {
                     StatusUpdate::Ok
                 }
             }
-            // Operation is complete, we can safely drop the state.
-            Status::Dropped if completion.complete() => StatusUpdate::Drop { drop: self.drop },
-            // More operations are coming, so we can't deallocate yet.
-            Status::Dropped => StatusUpdate::Ok,
+            Status::Dropped => {
+                if completion.complete() {
+                    // Future is dropped and the operation is complete, we can
+                    // safely drop the state.
+                    StatusUpdate::Drop { drop: self.drop }
+                } else {
+                    // More completions are coming, so we can't deallocate yet.
+                    StatusUpdate::Ok
+                }
+            }
             Status::NotStarted | Status::Complete => unreachable!(),
         }
     }
