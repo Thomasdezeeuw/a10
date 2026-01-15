@@ -34,7 +34,6 @@ check_all_targets: $(TARGETS)
 $(TARGETS):
 	cargo check --target $@ -Zbuild-std
 
-
 # Disabled lints:
 # * `doc-markdown`: has some annoying false positives.
 # * `elidable-lifetime-names`: lifetimes serve as documentation.
