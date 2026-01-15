@@ -254,11 +254,13 @@ impl Completion {
     ///
     /// [`QueuedOperation`]: crate::QueuedOperation
     pub(super) const fn operation_flags(&self) -> u16 {
-        if self.0.flags & libc::IORING_CQE_F_BUFFER != 0 {
-            (self.0.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16
-        } else {
-            0
-        }
+        // Lower 16 bits contain the flags.
+        self.0.flags as u16
+    }
+
+    /// Returns true if the operation is complete.
+    pub(super) const fn complete(&self) -> bool {
+        self.0.flags & libc::IORING_CQE_F_MORE == 0
     }
 }
 

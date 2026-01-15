@@ -202,9 +202,7 @@ impl<T: OpResult> Shared<T> {
                 let completion_flags = completion.0.flags;
                 result.update(completion_result, completion_flags);
 
-                // IORING_CQE_F_MORE indicates that more completions are coming
-                // for this operation.
-                let done = if completion_flags & libc::IORING_CQE_F_MORE == 0
+                let done = if completion.complete()
                     && let Status::Running { result } | Status::Done { result } =
                         replace(&mut self.status, Status::Complete)
                 {
@@ -225,7 +223,10 @@ impl<T: OpResult> Shared<T> {
                     StatusUpdate::Ok
                 }
             }
-            Status::Dropped => StatusUpdate::Drop { drop: self.drop },
+            // Operation is complete, we can safely drop the state.
+            Status::Dropped if completion.complete() => StatusUpdate::Drop { drop: self.drop },
+            // More operations are coming, so we can't deallocate yet.
+            Status::Dropped => StatusUpdate::Ok,
             Status::NotStarted | Status::Complete => unreachable!(),
         }
     }
