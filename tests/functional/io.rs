@@ -19,9 +19,6 @@ use crate::util::{
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{fd, next};
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-const NO_OFFSET: u64 = u64::MAX;
-
 #[test]
 fn try_clone() {
     let sq = test_queue();
@@ -260,7 +257,8 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        .block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, None))
+        //.block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, None))
+        .block_on(file.splice_to(fd(&w), expected.len() as u32, None).from(10))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);
 
@@ -294,7 +292,7 @@ fn splice_from() {
         .expect("failed to write all");
 
     let n = waker
-        .block_on(file.splice_from_at(10, fd(&r), NO_OFFSET, expected.len() as u32, None))
+        .block_on(file.splice_from(fd(&r), expected.len() as u32, None).at(10))
         .expect("failed to splice");
     assert_eq!(n, expected.len());
 

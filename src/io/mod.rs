@@ -262,34 +262,13 @@ impl AsyncFd {
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
-        self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
-    }
-
-    /// Same as [`AsyncFd::splice_to`], but starts reading data at `offset` from
-    /// the file (instead of the current position of the read cursor) and starts
-    /// writing at `target_offset` to `target`.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_to_at<'fd>(
-        &'fd self,
-        offset: u64,
-        target: BorrowedFd<'fd>,
-        target_offset: u64,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(
-            target,
-            SpliceDirection::To,
-            offset,
-            target_offset,
-            length,
-            flags,
-        )
+        self.splice(target, SpliceDirection::To, length, flags)
     }
 
     /// Splice `length` bytes from `target` fd.
     ///
     /// See the `splice(2)` manual for correct usage.
+    #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_from<'fd>(
@@ -298,30 +277,7 @@ impl AsyncFd {
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
-        self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
-    }
-
-    /// Same as [`AsyncFd::splice_from`], but starts reading writing at `offset`
-    /// to the file (instead of the current position of the write cursor) and
-    /// starts reading at `target_offset` from `target`.
-    #[doc(alias = "splice")]
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_from_at<'fd>(
-        &'fd self,
-        offset: u64,
-        target: BorrowedFd<'fd>,
-        target_offset: u64,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(
-            target,
-            SpliceDirection::From,
-            target_offset,
-            offset,
-            length,
-            flags,
-        )
+        self.splice(target, SpliceDirection::From, length, flags)
     }
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -329,8 +285,6 @@ impl AsyncFd {
         &'fd self,
         target: BorrowedFd<'fd>,
         direction: SpliceDirection,
-        off_in: u64,
-        off_out: u64,
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
@@ -339,7 +293,7 @@ impl AsyncFd {
             Some(flags) => flags,
             None => SpliceFlag(0),
         };
-        let args = (target_fd, direction, off_in, off_out, length, flags);
+        let args = (target_fd, direction, NO_OFFSET, NO_OFFSET, length, flags);
         Splice::new(self, (), args)
     }
 
@@ -457,10 +411,31 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteVectored<'fd, B, N> {
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_operation!(
-    /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
-    /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
+    /// [`Future`] behind [`AsyncFd::splice_to`] and [`AsyncFd::splice_from`].
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
+
+impl<'fd> Splice<'fd> {
+    /// Start reading from input at `offset`.
+    ///
+    /// The operation will fail if the input is a pipe.
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some((_, _, off_in, _, _, _)) = self.state.args_mut() {
+            *off_in = offset;
+        }
+        self
+    }
+
+    /// Start writing to output at `offset`.
+    ///
+    /// The operation will fail if the output is a pipe.
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some((_, _, _, off_out, _, _)) = self.state.args_mut() {
+            *off_out = offset;
+        }
+        self
+    }
+}
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
