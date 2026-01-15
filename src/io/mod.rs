@@ -174,27 +174,12 @@ impl AsyncFd {
 
     /// Read from this fd into `bufs`.
     #[doc = man_link!(readv(2))]
-    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
-        self.read_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Read from this fd into `bufs` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    #[doc = man_link!(preadv(2))]
-    pub fn read_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        mut bufs: B,
-        offset: u64,
-    ) -> ReadVectored<'fd, B, N>
+    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, mut bufs: B) -> ReadVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        ReadVectored::new(self, (bufs, iovecs), offset)
+        ReadVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Read at least `n` bytes from this fd into `bufs`.
@@ -226,7 +211,7 @@ impl AsyncFd {
             last_read: 0,
         };
         ReadNVectored {
-            read: self.read_vectored_at(bufs, offset),
+            read: self.read_vectored(bufs).at(offset),
             offset,
             left: n,
         }
@@ -465,7 +450,7 @@ fd_operation!(
     /// [`Future`] behind [`AsyncFd::read`].
     pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
 
-    /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
+    /// [`Future`] behind [`AsyncFd::read_vectored`].
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
@@ -484,6 +469,19 @@ impl<'fd, B: BufMut> Read<'fd, B> {
     /// that a call `read(buf).at(1024)` with a buffer of 1kb will **not**
     /// continue reading at 2kb in the next call to `read`.
     #[doc = man_link!(pread(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> ReadVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::at`].
+    #[doc = man_link!(preadv(2))]
     pub fn at(mut self, offset: u64) -> Self {
         if let Some(off) = self.state.args_mut() {
             *off = offset;
@@ -593,7 +591,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
                     this.offset += bufs.last_read as u64;
                 }
 
-                read.set(read.fd.read_vectored_at(bufs, this.offset));
+                read.set(read.fd.read_vectored(bufs).at(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
