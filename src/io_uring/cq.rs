@@ -139,6 +139,7 @@ impl Completions {
     /// Wake any futures that were blocked on a submission slot.
     #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
     fn wake_blocked_futures(&mut self, shared: &Shared) {
+        // Only wake up futures if a submission slot is available for them.
         let available = (shared.submissions_len - shared.unsubmitted_submissions()) as usize;
         if available == 0 {
             return;
@@ -146,9 +147,9 @@ impl Completions {
 
         let mut blocked_futures = lock(&shared.blocked_futures);
         if blocked_futures.is_empty() {
+            // No futures to wake up.
             return;
         }
-
         let mut wakers = take(&mut *blocked_futures);
         unlock(blocked_futures); // Unblock others.
         let awoken = min(available, wakers.len());
@@ -160,17 +161,13 @@ impl Completions {
         // Reuse allocation.
         let mut blocked_futures = lock(&shared.blocked_futures);
         swap(&mut *blocked_futures, &mut wakers);
-        if wakers.len() <= available - awoken {
-            unlock(blocked_futures); // Unblock others.
-            for waker in wakers {
-                log::trace!(waker:?; "waking up future for submission");
-                waker.wake();
-            }
-        } else {
-            // Can't wake up all the additional waiting futures, so add them
-            // back to the waiting list.
-            blocked_futures.extend(wakers);
-            unlock(blocked_futures); // Unblock others.
+        // Add back any wakers for which we don't have a slot.
+        let awoken = min(available - awoken, wakers.len());
+        blocked_futures.extend(wakers.drain(wakers.len() - awoken..));
+        unlock(blocked_futures); // Unblock others.
+        for waker in wakers {
+            log::trace!(waker:?; "waking up future for submission");
+            waker.wake();
         }
     }
 }
