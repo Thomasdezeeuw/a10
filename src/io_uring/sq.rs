@@ -66,10 +66,10 @@ impl Submissions {
         // ones writing to it (but other threads and the kernel can read it).
         let new_tail = tail.wrapping_add(1);
         unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
-        unlock(submissions_guard);
 
         log::trace!(submission:?, index, tail, new_tail; "queueing submission");
         asan::poison(submission);
+        unlock(submissions_guard);
 
         Ok(())
     }
