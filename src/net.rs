@@ -358,20 +358,7 @@ impl AsyncFd {
     /// created kernel side, making this more efficient.
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
-        self.multishot_accept4(None)
-    }
-
-    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
-    /// socket.
-    ///
-    /// Also see [`AsyncFd::multishot_accept`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn multishot_accept4<'fd>(&'fd self, flags: Option<AcceptFlag>) -> MultishotAccept<'fd> {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => AcceptFlag(0),
-        };
-        MultishotAccept::new(self, (), flags)
+        MultishotAccept::new(self, (), AcceptFlag(0))
     }
 
     /// Get socket option.
@@ -510,7 +497,7 @@ new_flag!(
 
     /// Flags in calls to accept.
     ///
-    /// Set using [`Accept::flags`].
+    /// Set using [`Accept::flags`] and [`MultishotAccept::flags`].
     pub struct AcceptFlag(u32) {
         // NOTE: we don't need SOCK_NONBLOCK and SOCK_CLOEXEC.
     }
@@ -1140,7 +1127,7 @@ fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 
-    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`].
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
 }
 
@@ -1148,6 +1135,16 @@ fd_iter_operation! {
 impl<'fd> MultishotRecv<'fd> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd> MultishotAccept<'fd> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: AcceptFlag) -> Self {
         if let Some(f) = self.state.args_mut() {
             *f = flags;
         }
