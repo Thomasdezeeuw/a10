@@ -1,11 +1,12 @@
 use std::os::fd::RawFd;
-use std::ptr;
+use std::{io, ptr};
 
 use crate::io::NO_OFFSET;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::{self, libc, sq};
-use crate::process::{Signal, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{AsyncFd, SubmissionQueue};
+use crate::op::operation;
+use crate::process::{Signal, SignalSet, Signals, WaitInfo, WaitOn, WaitOption};
+use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct WaitIdOp;
 
@@ -43,13 +44,56 @@ impl Op for WaitIdOp {
     }
 }
 
-impl io_uring::fd::DirectFdMapper for Signals {
+/// io_uring specific methods.
+impl Signals {
+    pub(crate) fn new(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
+        let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
+        // SAFETY: signalfd(2) ensures that fd is valid.
+        let sfd = unsafe { AsyncFd::from_raw(fd, fd::Kind::File, sq) };
+        // Block all signals as we're going to read them from the signalfd.
+        sigprocmask(libc::SIG_BLOCK, &signals.0)?;
+        Ok(Signals { fd: sfd, signals })
+    }
+
+    /// Convert `Signals` from using a regular file descriptor to using a direct
+    /// descriptor.
+    ///
+    /// See [`AsyncFd::to_direct_descriptor`].
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub fn to_direct_descriptor(self) -> ToDirect {
+        debug_assert!(
+            matches!(self.fd.kind(), fd::Kind::File),
+            "can't covert a direct descriptor to a different direct descriptor"
+        );
+        let sq = self.fd.sq().clone();
+        let fd = self.fd.fd();
+        ToDirect::new(sq, (self, fd), ())
+    }
+}
+
+impl Drop for Signals {
+    fn drop(&mut self) {
+        if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
+            log::error!(signals:? = self.signals; "error unblocking signals: {err}");
+        }
+    }
+}
+
+fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
+    syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
+    Ok(())
+}
+
+operation!(
+    /// [`Future`] behind [`Signals::to_direct_descriptor`].
+    pub struct ToDirect(io_uring::fd::ToDirectOp<crate::process::Signals>) -> io::Result<crate::process::Signals>;
+);
+
+impl io_uring::fd::DirectFdMapper for crate::process::Signals {
     type Output = Self;
 
     fn map(mut self, dfd: AsyncFd) -> Self::Output {
-        // SAFETY: since we used the original descriptor to make this direct
-        // descriptor we're ensure that it still a signalfd.
-        unsafe { self.set_fd(dfd) }
+        self.fd = dfd;
         self
     }
 }

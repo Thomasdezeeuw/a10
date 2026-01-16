@@ -14,7 +14,7 @@ use a10::process::{Signal, Signals};
 mod util;
 use util::{poll_nop, syscall};
 
-const SIGNALS: [Signal; 30] = [
+const SIGNALS: &[Signal] = &[
     Signal::HUP,
     Signal::INTERRUPT,
     Signal::QUIT,
@@ -42,7 +42,9 @@ const SIGNALS: [Signal; 30] = [
     Signal::PROFILE_ALARM,
     Signal::WINDOW_RESIZE,
     Signal::IO,
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     Signal::POLL, // NOTE: same value as `IO`.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     Signal::PWR,
     Signal::SYS,
 ];
@@ -75,7 +77,9 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
     "SIGPROF",
     "SIGWINCH",
     "SIGIO",
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     "SIGPOLL",
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     "SIGPWR",
     "SIGSYS",
 ];
@@ -88,13 +92,16 @@ fn main() {
     let mut harness = TestHarness::setup(quiet);
     harness.run_tests();
 
-    // Switch to use a direct descriptor.
-    harness.signals = Some(to_direct(
-        &mut harness.ring,
-        harness.signals.take().unwrap(),
-    ));
-    harness.fd_kind = fd::Kind::Direct;
-    harness.run_tests();
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    {
+        // Switch to use a direct descriptor.
+        harness.signals = Some(to_direct(
+            &mut harness.ring,
+            harness.signals.take().unwrap(),
+        ));
+        harness.fd_kind = fd::Kind::Direct;
+        harness.run_tests();
+    }
 
     // Final test, make sure the cleanup is done properly.
     drop(harness.signals.take());
@@ -119,11 +126,14 @@ struct TestHarness {
 
 impl TestHarness {
     fn setup(quiet: bool) -> TestHarness {
-        let ring = Ring::config().with_direct_descriptors(2).build().unwrap();
+        let config = Ring::config();
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        let config = config.with_direct_descriptors(2);
+        let ring = config.build().unwrap();
         let sq = ring.sq().clone();
         TestHarness {
             ring,
-            signals: Some(Signals::from_signals(sq, SIGNALS).unwrap()),
+            signals: Some(Signals::from_signals(sq, SIGNALS.iter().copied()).unwrap()),
             fd_kind: fd::Kind::File,
             passed: 0,
             failed: 0,
@@ -141,7 +151,7 @@ impl TestHarness {
         F: FnMut(&mut Ring, &Signals, Signal),
     {
         let signals = self.signals.as_ref().unwrap();
-        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
+        for (signal, name) in SIGNALS.into_iter().copied().zip(SIGNAL_NAMES) {
             print_test_start(
                 self.quiet,
                 format_args!("{test_name} ({:?}, {name})", self.fd_kind),
@@ -175,7 +185,7 @@ impl TestHarness {
         let b = barrier.clone();
         let handle = thread::spawn(move || {
             let pid = process::id();
-            for signal in SIGNALS {
+            for signal in SIGNALS.iter().copied() {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
                 #[cfg(feature = "nightly")]
                 if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
@@ -204,7 +214,7 @@ impl TestHarness {
         let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
             // After `Signals` is dropped all signals should be unblocked.
             let set = blocked_signalset().unwrap();
-            for signal in SIGNALS.into_iter() {
+            for signal in SIGNALS.iter().copied() {
                 assert!(!in_signalset(&set, signal_to_os(signal)));
             }
         }));
@@ -223,6 +233,7 @@ fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
     assert_eq!(signal_info.signal(), expected_signal);
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
     let mut to_direct = signals.to_direct_descriptor();
     loop {

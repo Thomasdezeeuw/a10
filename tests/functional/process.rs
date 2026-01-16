@@ -6,8 +6,7 @@ use std::process::Command;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::process::ToDirect;
 use a10::process::{
-    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, WaitId,
-    WaitOption,
+    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, WaitId, WaitOption,
 };
 
 use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
@@ -37,6 +36,7 @@ fn signal_info_is_send_and_sync() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct_is_send_and_sync() {
     is_send::<ToDirect>();
     is_sync::<ToDirect>();
