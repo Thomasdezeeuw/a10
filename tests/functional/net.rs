@@ -711,7 +711,7 @@ fn recv_from() {
 
     // Receive some data.
     let (buf, address, flags): (_, SocketAddr, _) = waker
-        .block_on(socket.recv_from(Vec::with_capacity(DATA1.len() + 1), None))
+        .block_on(socket.recv_from(Vec::with_capacity(DATA1.len() + 1)))
         .expect("failed to receive");
     assert_eq!(buf, DATA1);
     assert_eq!(address, local_addr);
@@ -743,7 +743,7 @@ fn recv_from_read_buf_pool() {
 
     // Receive some data.
     let (buf, address, flags): (_, SocketAddr, _) =
-        block_on(&mut ring, socket.recv_from(buf_pool.get(), None)).expect("failed to receive");
+        block_on(&mut ring, socket.recv_from(buf_pool.get())).expect("failed to receive");
     assert_eq!(&*buf, DATA1);
     assert_eq!(address, local_addr);
     assert_eq!(flags, 0);

@@ -245,23 +245,14 @@ impl AsyncFd {
 
     /// Receives data on the socket and returns the source address.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from<'fd, B, A>(
+    pub fn recv_from<'fd, B: BufMut, A: SocketAddress>(
         &'fd self,
         mut buf: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvFrom<'fd, B, A>
-    where
-        B: BufMut,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvFrom<'fd, B, A> {
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
         let resources = (buf, MsgHeader::empty(), iovec, MaybeUninit::uninit());
-        RecvFrom::new(self, resources, flags)
+        RecvFrom::new(self, resources, RecvFlag(0))
     }
 
     /// Receives data on the socket and the source address using vectored I/O.
@@ -535,7 +526,7 @@ new_flag!(
     /// Flags in calls to recv.
     ///
     /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`],
-    /// [`RecvVectored::flags`], [`RecvNVectored::flags`].
+    /// [`RecvVectored::flags`], [`RecvNVectored::flags`], [`RecvFrom::flags`].
     ///
     /// See [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
     pub struct RecvFlag(u32) impl BitOr {
@@ -1105,6 +1096,16 @@ impl<'fd, B: BufMut> Recv<'fd, B> {
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> RecvVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMut, A: SocketAddress> RecvFrom<'fd, B, A> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: RecvFlag) -> Self {
         if let Some(f) = self.state.args_mut() {
