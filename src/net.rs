@@ -330,29 +330,6 @@ impl AsyncFd {
         Send::new(self, buf, (SendCall::Normal, flags))
     }
 
-    /// Same as [`AsyncFd::send`], but tries to avoid making intermediate copies
-    /// of `buf`.
-    ///
-    /// # Notes
-    ///
-    /// Zerocopy execution is not guaranteed and may fall back to copying. The
-    /// request may also fail with `EOPNOTSUPP`, when a protocol doesn't support
-    /// zerocopy, in which case users are recommended to use [`AsyncFd::send`]
-    /// instead.
-    ///
-    /// The `Future` only returns once it safe for the buffer to be used again,
-    /// for TCP for example this means until the data is ACKed by the peer.
-    pub fn send_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
-    where
-        B: Buf,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        Send::new(self, buf, (SendCall::ZeroCopy, flags))
-    }
-
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
     pub fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
@@ -468,8 +445,6 @@ impl AsyncFd {
 
     /// Same as [`AsyncFd::send_to`], but tries to avoid making intermediate
     /// copies of `buf`.
-    ///
-    /// See [`AsyncFd::send_zc`] for additional notes.
     pub fn send_to_zc<'fd, B, A>(
         &'fd self,
         buf: B,
@@ -1200,7 +1175,7 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::recv_from_vectored`].
     pub struct RecvFromVectored<B: BufMutSlice<N>, A: SocketAddress; const N: usize>(sys::net::RecvFromVectoredOp<B, A, N>) -> io::Result<(B, A, libc::c_int)>;
 
-    /// [`Future`] behind [`AsyncFd::send`] and [`AsyncFd::send_zc`].
+    /// [`Future`] behind [`AsyncFd::send`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
@@ -1232,6 +1207,25 @@ fd_operation! {
 
     /// [`Future`] behind [`AsyncFd::shutdown`].
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
+}
+
+impl<'fd, B: Buf> Send<'fd, B> {
+    /// Enable zero copy.
+    ///
+    /// # Notes
+    ///
+    /// Zerocopy execution is not guaranteed and may fall back to copying. The
+    /// request may also fail with `EOPNOTSUPP` when a protocol doesn't support
+    /// zerocopy.
+    ///
+    /// The `Future` only returns once it safe for the buffer to be used again,
+    /// for TCP for example this means until the data is ACKed by the peer.
+    pub fn zc(mut self) -> Self {
+        if let Some((send_op, _)) = self.state.args_mut() {
+            *send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -1307,7 +1301,7 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
                 // Send some more.
                 this.send = match this.send_op {
                     SendCall::Normal => this.send.fut.fd.send(buf, this.flags),
-                    SendCall::ZeroCopy => this.send.fut.fd.send_zc(buf, this.flags),
+                    SendCall::ZeroCopy => this.send.fut.fd.send(buf, this.flags).zc(),
                 }
                 .extract();
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)

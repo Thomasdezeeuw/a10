@@ -833,7 +833,7 @@ fn send_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send_zc(DATA2, None))
+        .block_on(stream.send(DATA2, None).zc())
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -888,7 +888,7 @@ fn send_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send_zc(DATA2, None).extract())
+        .block_on(stream.send(DATA2, None).zc().extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
