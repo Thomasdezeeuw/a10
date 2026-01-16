@@ -16,11 +16,11 @@ use a10::fd;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, Bind, Domain, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll, SendAllVectored,
-    SendTo, Socket, SocketName, Type,
+    Accept, Bind, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo,
+    Socket, SocketName,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::net::{MultishotAccept, MultishotRecv, socket};
+use a10::net::{Domain, MultishotAccept, MultishotRecv, Type, socket};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
