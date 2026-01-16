@@ -204,14 +204,12 @@ impl AsyncFd {
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected.
-    pub fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn recv_n<'fd, B: BufMut>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B> {
         let buf = ReadNBuf { buf, last_read: 0 };
         RecvN {
             recv: self.recv(buf),
             left: n,
+            flags: RecvFlag(0),
         }
     }
 
@@ -546,7 +544,7 @@ pub(crate) enum SendCall {
 new_flag!(
     /// Flags in calls to recv.
     ///
-    /// Set using [`Recv::flags`], [`MultishotRecv::flags`].
+    /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`].
     ///
     /// See [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
     /// [`AsyncFd::recv_from_vectored`].
@@ -1186,6 +1184,18 @@ pub struct RecvN<'fd, B: BufMut> {
     recv: Recv<'fd, ReadNBuf<B>>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
+    flags: RecvFlag,
+}
+
+impl<'fd, B: BufMut> RecvN<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.recv.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
@@ -1208,7 +1218,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.fd.recv(buf));
+                recv.set(recv.fd.recv(buf).flags(this.flags));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
