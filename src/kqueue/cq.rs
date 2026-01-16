@@ -2,7 +2,7 @@ use std::mem::{self, drop as unlock};
 use std::os::fd::AsRawFd;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
-use std::{cmp, io, ptr};
+use std::{cmp, io, ptr, task};
 
 use crate::kqueue::{self, Event, Shared};
 use crate::{lock, syscall};
@@ -111,6 +111,11 @@ impl Completions {
                     // SAFETY: in kqueue::op we ensure that the pointer is
                     // always valid (the kernel should copy it over for us).
                     lock(unsafe { &*ptr }).wake(&event);
+                }
+                libc::EVFILT_PROC => {
+                    // Wake the future that was waiting for the result.
+                    // SAFETY: WaitIdOp set this pointer for us.
+                    unsafe { Box::<task::Waker>::from_raw(event.0.udata.cast()).wake() };
                 }
                 _ => log::debug!(event:?; "unexpected event, ignoring it"),
             }

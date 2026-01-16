@@ -44,9 +44,11 @@ pub enum WaitOn {
     Process(u32),
     /// Wait for any child process in the process group with ID.
     #[doc(alias = "P_PGID")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     Group(u32),
     /// Wait for all childeren.
     #[doc(alias = "P_ALL")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     All,
 }
 
@@ -75,7 +77,7 @@ new_flag!(
 ///
 /// See [`wait`] and [`wait_on`].
 #[repr(transparent)]
-pub struct WaitInfo(libc::siginfo_t);
+pub struct WaitInfo(pub(crate) libc::siginfo_t);
 
 impl WaitInfo {
     /// Process id of the child.

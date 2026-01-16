@@ -57,7 +57,6 @@ pub mod io;
 pub mod mem;
 pub mod net;
 pub mod pipe;
-#[cfg(any(target_os = "android", target_os = "linux"))]
 pub mod process;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
