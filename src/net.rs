@@ -285,15 +285,11 @@ impl AsyncFd {
 
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
-    pub fn send_vectored<'fd, B, const N: usize>(
+    pub fn send_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, NoAddress, N>
-    where
-        B: BufSlice<N>,
-    {
-        self.sendmsg(bufs, NoAddress, flags)
+    ) -> SendMsg<'fd, B, NoAddress, N> {
+        self.sendmsg(bufs, NoAddress, Some(SendFlag(0)))
     }
 
     /// Sends all data in `bufs` on the socket to a connected peer, using
@@ -308,7 +304,7 @@ impl AsyncFd {
         B: BufSlice<N>,
     {
         SendAllVectored {
-            send: self.send_vectored(bufs, None).extract(),
+            send: self.send_vectored(bufs).extract(),
             skip: 0,
             send_op: SendCall::Normal,
         }
@@ -530,7 +526,7 @@ new_flag!(
 
     /// Flags in calls to send.
     ///
-    /// Set using [`Send::flags`], [`SendAll::flags`].
+    /// Set using [`Send::flags`], [`SendAll::flags`], [`SendMsg::flags`].
     ///
     /// See functions such as [`AsyncFd::send_vectored`] and
     /// [`AsyncFd::send_to`].
@@ -1145,6 +1141,14 @@ impl<'fd, B: Buf, A: SocketAddress> SendTo<'fd, B, A> {
 }
 
 impl<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize> SendMsg<'fd, B, A, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].

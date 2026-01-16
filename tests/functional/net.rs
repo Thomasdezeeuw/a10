@@ -975,7 +975,7 @@ fn send_vectored() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(stream.send_vectored(bufs, None))
+        .block_on(stream.send_vectored(bufs))
         .expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1006,7 +1006,7 @@ fn send_vectored_zc() {
     // Send some data.
     let bufs = ["Hello", ", ", "World!"];
     let n = waker
-        .block_on(stream.send_vectored(bufs, None).zc())
+        .block_on(stream.send_vectored(bufs).zc())
         .expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 2];
@@ -1034,7 +1034,7 @@ fn send_vectored_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (bufs, n) = waker
-        .block_on(stream.send_vectored(bufs, None).extract())
+        .block_on(stream.send_vectored(bufs).extract())
         .expect("failed to send");
     assert_eq!(bufs[0], "Hello");
     assert_eq!(n, DATA2.len());
@@ -1063,7 +1063,7 @@ fn send_vectored_zc_extractor() {
     // Send some data.
     let bufs = ["Hello", ", ", "Mars!"];
     let (bufs, n) = waker
-        .block_on(stream.send_vectored(bufs, None).zc().extract())
+        .block_on(stream.send_vectored(bufs).zc().extract())
         .expect("failed to send");
     assert_eq!(bufs[0], "Hello");
     assert_eq!(n, DATA2.len());
