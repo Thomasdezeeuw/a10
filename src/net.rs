@@ -359,19 +359,6 @@ impl AsyncFd {
         self.sendmsg(SendCall::Normal, bufs, NoAddress, flags)
     }
 
-    /// Same as [`AsyncFd::send_vectored`], but tries to avoid making
-    /// intermediate copies of `buf`.
-    pub fn send_vectored_zc<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, NoAddress, N>
-    where
-        B: BufSlice<N>,
-    {
-        self.sendmsg(SendCall::ZeroCopy, bufs, NoAddress, flags)
-    }
-
     /// Sends all data in `bufs` on the socket to a connected peer, using
     /// vectored I/O.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
@@ -1168,8 +1155,7 @@ fd_operation! {
       impl Extract -> io::Result<(B, usize)>;
 
     /// [`Future`] behind [`AsyncFd::send_vectored`],
-    /// [`AsyncFd::send_vectored_zc`], [`AsyncFd::send_to_vectored`],
-    /// [`AsyncFd::send_to_vectored_zc`].
+    /// [`AsyncFd::send_to_vectored`], [`AsyncFd::send_to_vectored_zc`].
     pub struct SendMsg<B: BufSlice<N>, A: SocketAddress; const N: usize>(sys::net::SendMsgOp<B, A, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
@@ -1204,6 +1190,18 @@ impl<'fd, B: Buf> Send<'fd, B> {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
+    pub fn zc(mut self) -> Self {
+        if let Some((send_op, _)) = self.state.args_mut() {
+            *send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize> SendMsg<'fd, B, A, N> {
+    /// Enable zero copy.
+    ///
+    /// See [`Send::zc`].
     pub fn zc(mut self) -> Self {
         if let Some((send_op, _)) = self.state.args_mut() {
             *send_op = SendCall::ZeroCopy;
