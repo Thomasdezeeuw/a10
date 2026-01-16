@@ -216,21 +216,13 @@ impl AsyncFd {
     /// Receives data on the socket from the remote address to which it is
     /// connected, using vectored I/O.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_vectored<'fd, B, const N: usize>(
+    pub fn recv_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = (bufs, MsgHeader::empty(), iovecs);
-        RecvVectored::new(self, resources, flags)
+        RecvVectored::new(self, resources, RecvFlag(0))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
@@ -248,7 +240,7 @@ impl AsyncFd {
             last_read: 0,
         };
         RecvNVectored {
-            recv: self.recv_vectored(bufs, None),
+            recv: self.recv_vectored(bufs),
             left: n,
         }
     }
@@ -544,10 +536,10 @@ pub(crate) enum SendCall {
 new_flag!(
     /// Flags in calls to recv.
     ///
-    /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`].
+    /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`],
+    /// [`RecvVectored::flags`].
     ///
-    /// See [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
-    /// [`AsyncFd::recv_from_vectored`].
+    /// See [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
@@ -1114,6 +1106,16 @@ impl<'fd, B: BufMut> Recv<'fd, B> {
     }
 }
 
+impl<'fd, B: BufMutSlice<N>, const N: usize> RecvVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
 impl<'fd, B: Buf> Send<'fd, B> {
     /// Enable zero copy.
     ///
@@ -1323,7 +1325,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.fd.recv_vectored(bufs, None));
+                recv.set(recv.fd.recv_vectored(bufs));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
