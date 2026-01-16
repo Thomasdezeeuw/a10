@@ -15,21 +15,15 @@ use crate::net::{self, Level, Opt, SocketOpt};
 /// See [`AsyncFd::socket_option2`].
 ///
 /// [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
-pub trait Get: private::Get + Sized {
+pub trait Get {
     /// Returned output.
     type Output: Sized;
-    /// Type used by the OS.
-    ///
-    /// Often this is an `i32` (`libc::c_int`), which can be mean different
-    /// things depending on the socket retrieved.
-    #[doc(hidden)]
+    /// Type passed to the OS in the `getsockopt(2)` call.
     type Storage: Sized;
 
     /// Level to use, see [`Level`].
-    #[doc(hidden)]
     const LEVEL: Level;
-    /// Option to reitreve, see [`Opt`].
-    #[doc(hidden)]
+    /// Option to retrieve, see [`Opt`].
     const OPT: Opt;
 
     /// Returns a mutable raw pointer and length to `storage`.
@@ -40,7 +34,6 @@ pub trait Get: private::Get + Sized {
     /// # Safety
     ///
     /// Only initialised bytes may be written to the pointer returned.
-    #[doc(hidden)]
     unsafe fn as_mut_ptr(storage: &mut MaybeUninit<Self::Storage>) -> (*mut std::ffi::c_void, u32) {
         (
             storage.as_mut_ptr().cast(),
@@ -55,7 +48,6 @@ pub trait Get: private::Get + Sized {
     ///
     /// Caller must ensure that at least `length` bytes have been written to
     /// `address`.
-    #[doc(hidden)]
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> Self::Output;
 }
 
@@ -64,35 +56,19 @@ pub trait Get: private::Get + Sized {
 /// See [`AsyncFd::set_socket_option2`].
 ///
 /// [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
-pub trait Set: private::Set + Sized {
+pub trait Set {
     /// Value to set.
     type Value: Sized;
-    /// Type used by the OS.
-    #[doc(hidden)]
+    /// Type passed to the OS in the `setsockopt(2)` call.
     type Storage: Sized;
 
     /// Level to use, see [`Level`].
-    #[doc(hidden)]
     const LEVEL: Level;
-    /// Option to reitreve, see [`Opt`].
-    #[doc(hidden)]
+    /// Option to retrieve, see [`Opt`].
     const OPT: Opt;
 
     /// Returns the value as storage for the OS to read.
-    #[doc(hidden)]
     fn as_storage(value: Self::Value) -> Self::Storage;
-}
-
-mod private {
-    pub trait Get {
-        // Just here to ensure it can't be implemented outside of the crate.
-        // Because need `Output` to be public we need to have the methods on the
-        // public trait, otherwise they would be moved here.
-    }
-
-    pub trait Set {
-        // Just here to ensure it can't be implemented outside of the crate.
-    }
 }
 
 new_option! {
@@ -323,8 +299,6 @@ macro_rules! new_option {
                 $init
             }
         }
-
-        impl private::Get for $type_name {}
         )?
 
         $(
@@ -339,8 +313,6 @@ macro_rules! new_option {
                 $as_storage
             }
         }
-
-        impl private::Set for $type_name {}
         )?
         )*
     };
