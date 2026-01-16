@@ -289,7 +289,7 @@ impl AsyncFd {
         &'fd self,
         bufs: B,
     ) -> SendMsg<'fd, B, NoAddress, N> {
-        self.sendmsg(bufs, NoAddress, Some(SendFlag(0)))
+        self.sendmsg(bufs, NoAddress)
     }
 
     /// Sends all data in `bufs` on the socket to a connected peer, using
@@ -327,27 +327,18 @@ impl AsyncFd {
         bufs: B,
         address: A,
     ) -> SendMsg<'fd, B, A, N> {
-        self.sendmsg(bufs, address, Some(SendFlag(0)))
+        self.sendmsg(bufs, address)
     }
 
-    fn sendmsg<'fd, B, A, const N: usize>(
+    fn sendmsg<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         bufs: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, A, N>
-    where
-        B: BufSlice<N>,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
+    ) -> SendMsg<'fd, B, A, N> {
         let iovecs = unsafe { bufs.as_iovecs() };
         let address = AddressStorage(address.into_storage());
         let resources = (bufs, MsgHeader::empty(), iovecs, address);
-        SendMsg::new(self, resources, (SendCall::Normal, flags))
+        SendMsg::new(self, resources, (SendCall::Normal, SendFlag(0)))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
