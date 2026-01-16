@@ -383,6 +383,7 @@ fd_operation!(
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> Splice<'fd> {
     /// Start reading from input at `offset`.
     ///

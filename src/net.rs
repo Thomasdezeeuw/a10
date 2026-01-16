@@ -1097,6 +1097,7 @@ impl<'fd> MultishotRecv<'fd> {
     }
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> MultishotAccept<'fd> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: AcceptFlag) -> Self {
