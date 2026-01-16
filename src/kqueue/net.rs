@@ -4,9 +4,7 @@ use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufMut, BufMutSlice, BufSlice};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{
-    DirectFdOp, DirectFdOpExtract, DirectOp, FdOp, FdOpExtract, impl_fd_op, impl_fd_op_extract,
-};
+use crate::kqueue::op::{DirectFdOp, DirectOp, FdOp, FdOpExtract, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
