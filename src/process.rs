@@ -109,6 +109,9 @@ impl WaitInfo {
     }
 }
 
+unsafe impl Send for WaitInfo {}
+unsafe impl Sync for WaitInfo {}
+
 impl fmt::Debug for WaitInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("WaitInfo")
