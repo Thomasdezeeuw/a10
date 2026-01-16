@@ -140,10 +140,7 @@ impl Socket {
 impl AsyncFd {
     /// Assign a name to the socket.
     #[doc = man_link!(bind(2))]
-    pub fn bind<'fd, A>(&'fd self, address: A) -> Bind<'fd, A>
-    where
-        A: SocketAddress,
-    {
+    pub fn bind<'fd, A: SocketAddress>(&'fd self, address: A) -> Bind<'fd, A> {
         let storage = AddressStorage(address.into_storage());
         Bind::new(self, storage, ())
     }
@@ -159,10 +156,7 @@ impl AsyncFd {
 
     /// Initiate a connection on this socket to the specified address.
     #[doc = man_link!(connect(2))]
-    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
-    where
-        A: SocketAddress,
-    {
+    pub fn connect<'fd, A: SocketAddress>(&'fd self, address: A) -> Connect<'fd, A> {
         let storage = AddressStorage(address.into_storage());
         Connect::new(self, storage, ())
     }
