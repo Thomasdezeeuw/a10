@@ -362,27 +362,6 @@ impl AsyncFd {
     }
 
     /// Get socket option.
-    ///
-    /// Also see [`AsyncFd::socket_option2`] for a type safe variant.
-    ///
-    /// At the time of writing this limited to the `SOL_SOCKET` level for
-    /// io_uring.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `T` is the valid type for the option.
-    #[doc = man_link!(getsockopt(2))]
-    #[doc(alias = "getsockopt")]
-    pub fn socket_option<'fd, T>(
-        &'fd self,
-        level: Level,
-        optname: impl Into<Opt>,
-    ) -> SocketOption<'fd, T> {
-        let value = MaybeUninit::uninit();
-        SocketOption::new(self, value, (level, optname.into()))
-    }
-
-    /// Get socket option.
     #[doc = man_link!(getsockopt(2))]
     #[doc(alias = "getsockopt")]
     pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
@@ -391,26 +370,6 @@ impl AsyncFd {
     {
         let value = OptionStorage(MaybeUninit::uninit());
         SocketOption2::new(self, value, (T::LEVEL, T::OPT))
-    }
-
-    /// Set socket option.
-    ///
-    /// Also see [`AsyncFd::set_socket_option2`] for a type safe variant.
-    ///
-    /// At the time of writing this limited to the `SOL_SOCKET` level.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that `T` is the valid type for the option.
-    #[doc = man_link!(setsockopt(2))]
-    #[doc(alias = "setsockopt")]
-    pub fn set_socket_option<'fd, T>(
-        &'fd self,
-        level: Level,
-        optname: impl Into<Opt>,
-        optvalue: T,
-    ) -> SetSocketOption<'fd, T> {
-        SetSocketOption::new(self, optvalue, (level, optname.into()))
     }
 
     /// Set socket option.
@@ -988,15 +947,8 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::accept`].
     pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A>) -> io::Result<(AsyncFd, A)>;
 
-    /// [`Future`] behind [`AsyncFd::socket_option`].
-    pub struct SocketOption<T>(sys::net::SocketOptionOp<T>) -> io::Result<T>;
-
     /// [`Future`] behind [`AsyncFd::socket_option2`].
     pub struct SocketOption2<T: option::Get>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
-
-    /// [`Future`] behind [`AsyncFd::set_socket_option`].
-    pub struct SetSocketOption<T>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>,
-      impl Extract -> io::Result<T>;
 
     /// [`Future`] behind [`AsyncFd::set_socket_option2`].
     pub struct SetSocketOption2<T: option::Set>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;

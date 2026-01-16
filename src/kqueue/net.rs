@@ -536,35 +536,6 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     }
 }
 
-pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
-
-impl<T> DirectFdOp for SocketOptionOp<T> {
-    type Output = T;
-    type Resources = MaybeUninit<T>;
-    type Args = (Level, Opt);
-
-    fn run(
-        fd: &AsyncFd,
-        mut value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::Output> {
-        let mut optlen = size_of::<T>() as libc::socklen_t;
-        syscall!(getsockopt(
-            fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
-            value.as_mut_ptr().cast(),
-            &raw mut optlen,
-        ))?;
-        // SAFETY: the kernel initialised the value for us as part of the
-        // getsockopt call.
-        debug_assert!(optlen == (size_of::<T>() as libc::socklen_t));
-        Ok(unsafe { MaybeUninit::assume_init(value) })
-    }
-}
-
-impl_fd_op!(SocketOptionOp<T>);
-
 pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
 
 impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
@@ -592,42 +563,6 @@ impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
 }
 
 impl_fd_op!(SocketOption2Op<T>);
-
-pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
-
-impl<T> DirectFdOp for SetSocketOptionOp<T> {
-    type Output = ();
-    type Resources = T;
-    type Args = (Level, Opt);
-
-    fn run(fd: &AsyncFd, resources: Self::Resources, args: Self::Args) -> io::Result<Self::Output> {
-        Self::run_extract(fd, resources, args)?;
-        Ok(())
-    }
-}
-
-impl_fd_op!(SetSocketOptionOp<T>);
-
-impl<T> DirectFdOpExtract for SetSocketOptionOp<T> {
-    type ExtractOutput = T;
-
-    fn run_extract(
-        fd: &AsyncFd,
-        value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::ExtractOutput> {
-        syscall!(setsockopt(
-            fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
-            ptr::from_ref(&value).cast(),
-            size_of::<T>() as _,
-        ))?;
-        Ok(value)
-    }
-}
-
-impl_fd_op_extract!(SetSocketOptionOp<T>);
 
 pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
 
