@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
@@ -13,8 +13,12 @@ permissions:
 
 jobs:
   Test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@1.91
@@ -23,8 +27,12 @@ jobs:
     - name: Run Tests (release build)
       run: cargo test --release
   Nightly:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
@@ -37,8 +45,12 @@ jobs:
     - name: Run Tests (nightly feature, release build)
       run: cargo test --features nightly --release
   Clippy:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
     steps:
     - uses: actions/checkout@v4
     - uses: dtolnay/rust-toolchain@nightly
