@@ -8,7 +8,7 @@ use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, ExitStatus};
 use std::{fmt, io};
 
-use crate::op::{fd_operation, operation};
+use crate::op::{OpState, fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, man_link, new_flag, sys, syscall};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -17,8 +17,8 @@ pub use crate::sys::process::ToDirect;
 /// Wait on the child `process`.
 ///
 /// See [`wait`].
-pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>) -> WaitId {
-    wait(sq, WaitOn::Process(process.id()), options)
+pub fn wait_on(sq: SubmissionQueue, process: &Child) -> WaitId {
+    wait(sq, WaitOn::Process(process.id()))
 }
 
 /// Obtain status information on termination, stop, and/or continue events in
@@ -27,14 +27,10 @@ pub fn wait_on(sq: SubmissionQueue, process: &Child, options: Option<WaitOption>
 /// Also see [`wait_on`] to wait on a [`Child`] process.
 #[doc = man_link!(waitid(2))]
 #[doc(alias = "waitid")]
-pub fn wait(sq: SubmissionQueue, wait: WaitOn, options: Option<WaitOption>) -> WaitId {
+pub fn wait(sq: SubmissionQueue, wait: WaitOn) -> WaitId {
     // SAFETY: fully zeroed `libc::siginfo_t` is a valid value.
     let info = unsafe { mem::zeroed() };
-    let options = match options {
-        Some(options) => options,
-        None => WaitOption(0),
-    };
-    WaitId::new(sq, info, (wait, options))
+    WaitId::new(sq, info, (wait, WaitOption(0)))
 }
 
 /// Defines on what process (or processes) to wait.
@@ -149,6 +145,16 @@ operation!(
     /// [`Future`] behind [`wait_on`] and [`wait`].
     pub struct WaitId(sys::process::WaitIdOp) -> io::Result<WaitInfo>;
 );
+
+impl WaitId {
+    /// Set the `flags`.
+    pub fn flags(mut self, options: WaitOption) -> Self {
+        if let Some((_, o)) = self.state.args_mut() {
+            *o = options;
+        }
+        self
+    }
+}
 
 /// Notification of process signals.
 ///
