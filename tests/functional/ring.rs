@@ -113,7 +113,9 @@ fn submission_queue_full_is_handled_internally() {
     let mut futures = (0..N)
         .into_iter()
         .map(|i| {
-            let fut = file.read_at(Vec::with_capacity(BUF_SIZE), (i * BUF_SIZE) as u64);
+            let fut = file
+                .read(Vec::with_capacity(BUF_SIZE))
+                .from((i * BUF_SIZE) as u64);
             let waker = Arc::new(Waker {
                 index: i,
                 indices: indices.clone(),

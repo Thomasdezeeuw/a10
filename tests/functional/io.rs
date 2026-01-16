@@ -19,9 +19,6 @@ use crate::util::{
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{fd, next};
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-const NO_OFFSET: u64 = u64::MAX;
-
 #[test]
 fn try_clone() {
     let sq = test_queue();
@@ -75,7 +72,7 @@ fn write_all_at_extract() {
     waker.block_on(file.write("Hello world")).unwrap();
 
     waker
-        .block_on(file.write_all_at(BadBuf::new(), 5).extract())
+        .block_on(file.write_all(BadBuf::new()).at(5).extract())
         .unwrap();
 
     let got = std::fs::read(&path).unwrap();
@@ -122,7 +119,7 @@ fn write_all_vectored_at_extract() {
     let buf = BadBufSlice {
         calls: Cell::new(0),
     };
-    waker.block_on(file.write_all_vectored_at(buf, 5)).unwrap();
+    waker.block_on(file.write_all_vectored(buf).at(5)).unwrap();
 
     let got = std::fs::read(&path).unwrap();
     expected.extend_from_slice(BadBufSlice::DATA1);
@@ -181,7 +178,7 @@ fn read_n() {
 }
 
 #[test]
-fn read_n_at() {
+fn read_n_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -195,7 +192,7 @@ fn read_n_at() {
         data: Vec::with_capacity(test_file.content.len()),
     };
     let buf = waker
-        .block_on(file.read_n_at(buf, 5, test_file.content.len() - 5))
+        .block_on(file.read_n(buf, test_file.content.len() - 5).from(5))
         .unwrap();
     assert_eq!(&buf.data, &test_file.content[5..]);
 }
@@ -219,7 +216,7 @@ fn read_n_vectored() {
 }
 
 #[test]
-fn read_n_vectored_at() {
+fn read_n_vectored_from() {
     let sq = test_queue();
     let waker = Waker::new();
 
@@ -236,7 +233,10 @@ fn read_n_vectored_at() {
         ],
     };
     let buf = waker
-        .block_on(file.read_n_vectored_at(buf, 5, test_file.content.len() - 5))
+        .block_on(
+            file.read_n_vectored(buf, test_file.content.len() - 5)
+                .from(5),
+        )
         .unwrap();
     assert_eq!(&buf.data[0], &test_file.content[5..105]);
     assert_eq!(&buf.data[1], &test_file.content[105..]);
@@ -260,7 +260,7 @@ fn splice_to() {
     let file = waker.block_on(open_file).unwrap();
 
     let n = waker
-        .block_on(file.splice_to_at(10, fd(&w), NO_OFFSET, expected.len() as u32, None))
+        .block_on(file.splice_to(fd(&w), expected.len() as u32, None).from(10))
         .expect("failed to splice");
     assert_eq!(n, expected.len() - 10);
 
@@ -294,7 +294,7 @@ fn splice_from() {
         .expect("failed to write all");
 
     let n = waker
-        .block_on(file.splice_from_at(10, fd(&r), NO_OFFSET, expected.len() as u32, None))
+        .block_on(file.splice_from(fd(&r), expected.len() as u32, None).at(10))
         .expect("failed to splice");
     assert_eq!(n, expected.len());
 

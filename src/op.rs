@@ -103,7 +103,6 @@ pub(crate) trait OpState {
     fn resources_mut(&mut self) -> Option<&mut Self::Resources>;
 
     /// Mutable reference to the arguments if the operation wasn't started yet.
-    #[allow(dead_code)] // Not used on all OS.
     fn args_mut(&mut self) -> Option<&mut Self::Args>;
 
     /// Drop the operation state.

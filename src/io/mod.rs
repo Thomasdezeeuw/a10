@@ -58,7 +58,7 @@ use crate::extract::{Extract, Extractor};
 use crate::new_flag;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::op::fd_iter_operation;
-use crate::op::{fd_operation, operation};
+use crate::op::{OpState, fd_operation, operation};
 use crate::{AsyncFd, man_link, sys};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -142,20 +142,7 @@ impl AsyncFd {
     where
         B: BufMut,
     {
-        self.read_at(buf, NO_OFFSET)
-    }
-
-    /// Read from this fd into `buf` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function. This means
-    /// that a call `read_at(buf, 1024)` with a buffer of 1kb will **not**
-    /// continue reading at 2kb in the next call to `read`.
-    #[doc = man_link!(pread(2))]
-    pub fn read_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Read<'fd, B>
-    where
-        B: BufMut,
-    {
-        Read::new(self, buf, offset)
+        Read::new(self, buf, NO_OFFSET)
     }
 
     /// Continuously read data from the fd.
@@ -177,47 +164,22 @@ impl AsyncFd {
     where
         B: BufMut,
     {
-        self.read_n_at(buf, NO_OFFSET, n)
-    }
-
-    /// Read at least `n` bytes from this fd into `buf` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn read_n_at<'fd, B>(&'fd self, buf: B, offset: u64, n: usize) -> ReadN<'fd, B>
-    where
-        B: BufMut,
-    {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
-            read: self.read_at(buf, offset),
-            offset,
+            read: self.read(buf),
+            offset: NO_OFFSET,
             left: n,
         }
     }
 
     /// Read from this fd into `bufs`.
     #[doc = man_link!(readv(2))]
-    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> ReadVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
-        self.read_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Read from this fd into `bufs` starting at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    #[doc = man_link!(preadv(2))]
-    pub fn read_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        mut bufs: B,
-        offset: u64,
-    ) -> ReadVectored<'fd, B, N>
+    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, mut bufs: B) -> ReadVectored<'fd, B, N>
     where
         B: BufMutSlice<N>,
     {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
-        ReadVectored::new(self, (bufs, iovecs), offset)
+        ReadVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Read at least `n` bytes from this fd into `bufs`.
@@ -229,28 +191,13 @@ impl AsyncFd {
     where
         B: BufMutSlice<N>,
     {
-        self.read_n_vectored_at(bufs, NO_OFFSET, n)
-    }
-
-    /// Read at least `n` bytes from this fd into `bufs`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn read_n_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-        n: usize,
-    ) -> ReadNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
         };
         ReadNVectored {
-            read: self.read_vectored_at(bufs, offset),
-            offset,
+            read: self.read_vectored(bufs),
+            offset: NO_OFFSET,
             left: n,
         }
     }
@@ -261,17 +208,7 @@ impl AsyncFd {
     where
         B: Buf,
     {
-        self.write_at(buf, NO_OFFSET)
-    }
-
-    /// Write `buf` to this fd at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_at<'fd, B>(&'fd self, buf: B, offset: u64) -> Write<'fd, B>
-    where
-        B: Buf,
-    {
-        Write::new(self, buf, offset)
+        Write::new(self, buf, NO_OFFSET)
     }
 
     /// Write all of `buf` to this fd.
@@ -279,22 +216,12 @@ impl AsyncFd {
     where
         B: Buf,
     {
-        self.write_all_at(buf, NO_OFFSET)
-    }
-
-    /// Write all of `buf` to this fd at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_all_at<'fd, B>(&'fd self, buf: B, offset: u64) -> WriteAll<'fd, B>
-    where
-        B: Buf,
-    {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             write: Extractor {
-                fut: self.write_at(buf, offset),
+                fut: self.write(buf),
             },
-            offset,
+            offset: NO_OFFSET,
         }
     }
 
@@ -304,22 +231,8 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        self.write_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Write `bufs` to this file at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-    ) -> WriteVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
         let iovecs = unsafe { bufs.as_iovecs() };
-        WriteVectored::new(self, (bufs, iovecs), offset)
+        WriteVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Write all `bufs` to this file.
@@ -330,23 +243,9 @@ impl AsyncFd {
     where
         B: BufSlice<N>,
     {
-        self.write_all_vectored_at(bufs, NO_OFFSET)
-    }
-
-    /// Write all `bufs` to this file at `offset`.
-    ///
-    /// The current file cursor is not affected by this function.
-    pub fn write_all_vectored_at<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-        offset: u64,
-    ) -> WriteAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
         WriteAllVectored {
-            write: self.write_vectored_at(bufs, offset).extract(),
-            offset,
+            write: self.write_vectored(bufs).extract(),
+            offset: NO_OFFSET,
             skip: 0,
         }
     }
@@ -363,34 +262,13 @@ impl AsyncFd {
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
-        self.splice_to_at(NO_OFFSET, target, NO_OFFSET, length, flags)
-    }
-
-    /// Same as [`AsyncFd::splice_to`], but starts reading data at `offset` from
-    /// the file (instead of the current position of the read cursor) and starts
-    /// writing at `target_offset` to `target`.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_to_at<'fd>(
-        &'fd self,
-        offset: u64,
-        target: BorrowedFd<'fd>,
-        target_offset: u64,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(
-            target,
-            SpliceDirection::To,
-            offset,
-            target_offset,
-            length,
-            flags,
-        )
+        self.splice(target, SpliceDirection::To, length, flags)
     }
 
     /// Splice `length` bytes from `target` fd.
     ///
     /// See the `splice(2)` manual for correct usage.
+    #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn splice_from<'fd>(
@@ -399,30 +277,7 @@ impl AsyncFd {
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
-        self.splice_from_at(NO_OFFSET, target, NO_OFFSET, length, flags)
-    }
-
-    /// Same as [`AsyncFd::splice_from`], but starts reading writing at `offset`
-    /// to the file (instead of the current position of the write cursor) and
-    /// starts reading at `target_offset` from `target`.
-    #[doc(alias = "splice")]
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_from_at<'fd>(
-        &'fd self,
-        offset: u64,
-        target: BorrowedFd<'fd>,
-        target_offset: u64,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(
-            target,
-            SpliceDirection::From,
-            target_offset,
-            offset,
-            length,
-            flags,
-        )
+        self.splice(target, SpliceDirection::From, length, flags)
     }
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -430,8 +285,6 @@ impl AsyncFd {
         &'fd self,
         target: BorrowedFd<'fd>,
         direction: SpliceDirection,
-        off_in: u64,
-        off_out: u64,
         length: u32,
         flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
@@ -440,7 +293,7 @@ impl AsyncFd {
             Some(flags) => flags,
             None => SpliceFlag(0),
         };
-        let args = (target_fd, direction, off_in, off_out, length, flags);
+        let args = (target_fd, direction, NO_OFFSET, NO_OFFSET, length, flags);
         Splice::new(self, (), args)
     }
 
@@ -485,27 +338,104 @@ new_flag!(
 );
 
 fd_operation!(
-    /// [`Future`] behind [`AsyncFd::read`] and [`AsyncFd::read_at`].
+    /// [`Future`] behind [`AsyncFd::read`].
     pub struct Read<B: BufMut>(sys::io::ReadOp<B>) -> io::Result<B>;
 
-    /// [`Future`] behind [`AsyncFd::read_vectored`] and [`AsyncFd::read_vectored_at`].
+    /// [`Future`] behind [`AsyncFd::read_vectored`].
     pub struct ReadVectored<B: BufMutSlice<N>; const N: usize>(sys::io::ReadVectoredOp<B, N>) -> io::Result<B>;
 
-    /// [`Future`] behind [`AsyncFd::write`] and [`AsyncFd::write_at`].
+    /// [`Future`] behind [`AsyncFd::write`].
     pub struct Write<B: Buf>(sys::io::WriteOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
-    /// [`Future`] behind [`AsyncFd::write_vectored`] and [`AsyncFd::write_vectored_at`].
+    /// [`Future`] behind [`AsyncFd::write_vectored`].
     pub struct WriteVectored<B: BufSlice<N>; const N: usize>(sys::io::WriteVectoredOp<B, N>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 );
 
+impl<'fd, B: BufMut> Read<'fd, B> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that a call `read(buf).at(1024)` with a buffer of 1kb will **not**
+    /// continue reading at 2kb in the next call to `read`.
+    #[doc = man_link!(pread(2))]
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> ReadVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::from`].
+    #[doc = man_link!(preadv(2))]
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: Buf> Write<'fd, B> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// The current file cursor is not affected by this function. This means
+    /// that two calls to `write(buf).at(1024)` will overwrite each other's
+    /// data.
+    #[doc = man_link!(pwrite(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufSlice<N>, const N: usize> WriteVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    #[doc = man_link!(pwritev(2))]
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.state.args_mut() {
+            *off = offset;
+        }
+        self
+    }
+}
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_operation!(
-    /// [`Future`] behind [`AsyncFd::splice_to`], [`AsyncFd::splice_to_at`],
-    /// [`AsyncFd::splice_from`] and [`AsyncFd::splice_from_at`].
+    /// [`Future`] behind [`AsyncFd::splice_to`] and [`AsyncFd::splice_from`].
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
+
+impl<'fd> Splice<'fd> {
+    /// Start reading from input at `offset`.
+    ///
+    /// The operation will fail if the input is a pipe.
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some((_, _, off_in, _, _, _)) = self.state.args_mut() {
+            *off_in = offset;
+        }
+        self
+    }
+
+    /// Start writing to output at `offset`.
+    ///
+    /// The operation will fail if the output is a pipe.
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some((_, _, _, off_out, _, _)) = self.state.args_mut() {
+            *off_out = offset;
+        }
+        self
+    }
+}
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
@@ -513,7 +443,7 @@ fd_iter_operation! {
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;
 }
 
-/// [`Future`] behind [`AsyncFd::read_n`] and [`AsyncFd::read_n_at`].
+/// [`Future`] behind [`AsyncFd::read_n`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadN<'fd, B: BufMut> {
@@ -521,6 +451,19 @@ pub struct ReadN<'fd, B: BufMut> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
+}
+
+impl<'fd, B: BufMut> ReadN<'fd, B> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::from`].
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some(off) = self.read.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
@@ -546,7 +489,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.set(read.fd.read_at(buf, this.offset));
+                read.set(read.fd.read(buf).from(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -555,7 +498,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
     }
 }
 
-/// [`Future`] behind [`AsyncFd::read_n_vectored`] and [`AsyncFd::read_n_vectored_at`].
+/// [`Future`] behind [`AsyncFd::read_n_vectored`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
@@ -563,6 +506,19 @@ pub struct ReadNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     offset: u64,
     /// Number of bytes we still need to read to hit our minimum.
     left: usize,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> ReadNVectored<'fd, B, N> {
+    /// Change to a positional read starting at `offset`.
+    ///
+    /// Also see [`Read::from`].
+    pub fn from(mut self, offset: u64) -> Self {
+        if let Some(off) = self.read.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N> {
@@ -588,7 +544,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
                     this.offset += bufs.last_read as u64;
                 }
 
-                read.set(read.fd.read_vectored_at(bufs, this.offset));
+                read.set(read.fd.read_vectored(bufs).from(this.offset));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -597,7 +553,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
     }
 }
 
-/// [`Future`] behind [`AsyncFd::write_all`] and [`AsyncFd::write_all_at`].
+/// [`Future`] behind [`AsyncFd::write_all`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct WriteAll<'fd, B: Buf> {
@@ -606,6 +562,17 @@ pub struct WriteAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> WriteAll<'fd, B> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.write.fut.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
+
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
         // SAFETY: not moving `Future`.
         let this = unsafe { Pin::into_inner_unchecked(self) };
@@ -623,7 +590,7 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
                     return Poll::Ready(Ok(buf.buf));
                 }
 
-                write.set(write.fut.fd.write_at(buf, this.offset).extract());
+                write.set(write.fut.fd.write(buf).at(this.offset).extract());
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -662,6 +629,17 @@ pub struct WriteAllVectored<'fd, B: BufSlice<N>, const N: usize> {
 }
 
 impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
+    /// Change to a positional write starting at `offset`.
+    ///
+    /// Also see [`Write::at`].
+    pub fn at(mut self, offset: u64) -> Self {
+        if let Some(off) = self.write.fut.state.args_mut() {
+            *off = offset;
+            self.offset = offset;
+        }
+        self
+    }
+
     /// Poll implementation used by the [`Future`] implement for the naked type
     /// and the type wrapper in an [`Extractor`].
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
