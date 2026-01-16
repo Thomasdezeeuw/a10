@@ -915,7 +915,7 @@ fn send_all() {
 
     // Send all data.
     waker
-        .block_on(stream.send_all(BadBuf::new(), None))
+        .block_on(stream.send_all(BadBuf::new()))
         .expect("failed to send");
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();
@@ -943,7 +943,7 @@ fn send_all_extract() {
 
     // Send all data.
     waker
-        .block_on(stream.send_all(BadBuf::new(), None).extract())
+        .block_on(stream.send_all(BadBuf::new()).extract())
         .expect("failed to send");
     let mut buf = vec![0; BadBuf::DATA.len() + 1];
     let n = client.read(&mut buf).unwrap();

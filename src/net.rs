@@ -274,17 +274,12 @@ impl AsyncFd {
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn send_all<'fd, B: Buf>(&'fd self, buf: B) -> SendAll<'fd, B> {
         let buf = SkipBuf { buf, skip: 0 };
         SendAll {
-            send: Extractor {
-                fut: self.send(buf),
-            },
+            send: self.send(buf).extract(),
             send_op: SendCall::Normal,
-            flags: flags.unwrap_or(SendFlag(0)),
+            flags: SendFlag(0),
         }
     }
 
@@ -535,7 +530,7 @@ new_flag!(
 
     /// Flags in calls to send.
     ///
-    /// Set using [`Send::flags`].
+    /// Set using [`Send::flags`], [`SendAll::flags`].
     ///
     /// See functions such as [`AsyncFd::send_vectored`] and
     /// [`AsyncFd::send_to`].
@@ -1241,6 +1236,15 @@ pub struct SendAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.send.fut.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
