@@ -57,8 +57,6 @@ new_flag!(
     ///
     /// See [`wait`] and [`wait_on`].
     pub struct WaitOption(u32) {
-        /// Return immediately if no child has exited.
-        NO_HANG = libc::WNOHANG,
         /// Return if a child has stopped (but not traced via `ptrace(2)`).
         UNTRACED = libc::WUNTRACED,
         /// Wait for children that have been stopped by delivery of a signal.
