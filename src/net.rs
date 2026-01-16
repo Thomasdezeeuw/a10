@@ -346,22 +346,6 @@ impl AsyncFd {
         }
     }
 
-    /// Same as [`AsyncFd::send_all`], but tries to avoid making intermediate
-    /// copies of `buf`.
-    pub fn send_all_zc<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
-    where
-        B: Buf,
-    {
-        let buf = SkipBuf { buf, skip: 0 };
-        SendAll {
-            send: Extractor {
-                fut: self.send(buf, flags),
-            },
-            send_op: SendCall::ZeroCopy,
-            flags,
-        }
-    }
-
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
     pub fn send_vectored<'fd, B, const N: usize>(
@@ -1285,6 +1269,17 @@ pub struct SendAll<'fd, B: Buf> {
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
+    /// Enable zero copy.
+    ///
+    /// See [`Send::zc`].
+    pub fn zc(mut self) -> Self {
+        if let Some((send_op, _)) = self.send.fut.state.args_mut() {
+            *send_op = SendCall::ZeroCopy;
+            self.send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
+
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
         // SAFETY: not moving data out of self/this.
         let this = unsafe { Pin::get_unchecked_mut(self) };
