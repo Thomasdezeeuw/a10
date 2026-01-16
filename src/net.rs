@@ -296,17 +296,15 @@ impl AsyncFd {
     /// vectored I/O.
     ///
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub fn send_all_vectored<'fd, B, const N: usize>(
+    pub fn send_all_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> SendAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    ) -> SendAllVectored<'fd, B, N> {
         SendAllVectored {
             send: self.send_vectored(bufs).extract(),
             skip: 0,
             send_op: SendCall::Normal,
+            flags: SendFlag(0),
         }
     }
 
@@ -526,10 +524,9 @@ new_flag!(
 
     /// Flags in calls to send.
     ///
-    /// Set using [`Send::flags`], [`SendAll::flags`], [`SendMsg::flags`].
+    /// Set using [`Send::flags`], [`SendAll::flags`], [`SendMsg::flags`],
+    /// [`SendAllVectored::flags`].
     ///
-    /// See functions such as [`AsyncFd::send_vectored`] and
-    /// [`AsyncFd::send_to`].
     pub struct SendFlag(u32) impl BitOr {
         /// Tell the link layer that forward progress happened: you got a
         /// successful reply from the other side.
@@ -1363,9 +1360,19 @@ pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
     send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
     skip: u64,
     send_op: SendCall,
+    flags: SendFlag,
 }
 
 impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.send.fut.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
