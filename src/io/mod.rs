@@ -256,13 +256,8 @@ impl AsyncFd {
     #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_to<'fd>(
-        &'fd self,
-        target: BorrowedFd<'fd>,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(target, SpliceDirection::To, length, flags)
+    pub fn splice_to<'fd>(&'fd self, target: BorrowedFd<'fd>, length: u32) -> Splice<'fd> {
+        self.splice(target, SpliceDirection::To, length)
     }
 
     /// Splice `length` bytes from `target` fd.
@@ -271,13 +266,8 @@ impl AsyncFd {
     #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_from<'fd>(
-        &'fd self,
-        target: BorrowedFd<'fd>,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(target, SpliceDirection::From, length, flags)
+    pub fn splice_from<'fd>(&'fd self, target: BorrowedFd<'fd>, length: u32) -> Splice<'fd> {
+        self.splice(target, SpliceDirection::From, length)
     }
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -286,13 +276,9 @@ impl AsyncFd {
         target: BorrowedFd<'fd>,
         direction: SpliceDirection,
         length: u32,
-        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         let target_fd = target.as_raw_fd();
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SpliceFlag(0),
-        };
+        let flags = SpliceFlag(0);
         let args = (target_fd, direction, NO_OFFSET, NO_OFFSET, length, flags);
         Splice::new(self, (), args)
     }
@@ -328,7 +314,7 @@ pub(crate) enum SpliceDirection {
 new_flag!(
     /// Splice flags.
     ///
-    /// See [`AsyncFd::splice_to`] and related function.
+    /// Set using [`Splice::flags`].
     pub struct SpliceFlag(u32) impl BitOr {
         /// Attempt to move pages instead of copying.
         MOVE = libc::SPLICE_F_MOVE,
@@ -432,6 +418,14 @@ impl<'fd> Splice<'fd> {
     pub fn at(mut self, offset: u64) -> Self {
         if let Some((_, _, _, off_out, _, _)) = self.state.args_mut() {
             *off_out = offset;
+        }
+        self
+    }
+
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SpliceFlag) -> Self {
+        if let Some((_, _, _, _, _, f)) = self.state.args_mut() {
+            *f = flags;
         }
         self
     }
