@@ -63,7 +63,7 @@ fn process_wait_on() {
     let pid = process.id();
 
     let info = waker
-        .block_on(process::wait_on(sq, &process, Some(WaitOption::EXITED)))
+        .block_on(process::wait_on(sq, &process).flags(WaitOption::EXITED))
         .expect("failed wait");
 
     assert_eq!(info.signal(), Signal::CHILD);
@@ -78,7 +78,7 @@ fn process_wait_on_process_that_does_not_stop() {
 
     let process = Command::new("sleep").arg("10000").spawn().unwrap();
 
-    let mut fut = pin!(process::wait_on(sq, &process, Some(WaitOption::EXITED)));
+    let mut fut = pin!(process::wait_on(sq, &process).flags(WaitOption::EXITED));
     for _ in 0..=3 {
         let res = poll_nop(fut.as_mut());
         assert!(res.is_pending(), "unexpected poll result: {res:?}");
@@ -91,7 +91,7 @@ fn process_wait_on_drop_before_complete() {
 
     let process = Command::new("sleep").arg("1000").spawn().unwrap();
 
-    let mut future = process::wait_on(sq, &process, Some(WaitOption::EXITED));
+    let mut future = process::wait_on(sq, &process).flags(WaitOption::EXITED);
     let result = poll_nop(Pin::new(&mut future));
     if !result.is_pending() {
         panic!("unexpected result, expected it to return Poll::Pending");
