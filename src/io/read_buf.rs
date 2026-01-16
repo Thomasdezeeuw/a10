@@ -159,10 +159,7 @@ impl ReadBuf {
     /// # Panics
     ///
     /// This will panic if the `range` is invalid.
-    pub fn remove<R>(&mut self, range: R)
-    where
-        R: RangeBounds<usize>,
-    {
+    pub fn remove<R: RangeBounds<usize>>(&mut self, range: R) {
         let original_len = self.len();
         let start = match range.start_bound() {
             Bound::Unbounded => 0,

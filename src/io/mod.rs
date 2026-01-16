@@ -138,10 +138,7 @@ pub(crate) const NO_OFFSET: u64 = u64::MAX;
 impl AsyncFd {
     /// Read from this fd into `buf`.
     #[doc = man_link!(read(2))]
-    pub fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn read<'fd, B: BufMut>(&'fd self, buf: B) -> Read<'fd, B> {
         Read::new(self, buf, NO_OFFSET)
     }
 
@@ -160,10 +157,7 @@ impl AsyncFd {
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
-    pub fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn read_n<'fd, B: BufMut>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B> {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
             read: self.read(buf),
@@ -174,23 +168,20 @@ impl AsyncFd {
 
     /// Read from this fd into `bufs`.
     #[doc = man_link!(readv(2))]
-    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, mut bufs: B) -> ReadVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    pub fn read_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+    ) -> ReadVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         ReadVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Read at least `n` bytes from this fd into `bufs`.
-    pub fn read_n_vectored<'fd, B, const N: usize>(
+    pub fn read_n_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> ReadNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    ) -> ReadNVectored<'fd, B, N> {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
@@ -204,18 +195,12 @@ impl AsyncFd {
 
     /// Write `buf` to this fd.
     #[doc = man_link!(write(2))]
-    pub fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn write<'fd, B: Buf>(&'fd self, buf: B) -> Write<'fd, B> {
         Write::new(self, buf, NO_OFFSET)
     }
 
     /// Write all of `buf` to this fd.
-    pub fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn write_all<'fd, B: Buf>(&'fd self, buf: B) -> WriteAll<'fd, B> {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             write: Extractor {
@@ -227,22 +212,19 @@ impl AsyncFd {
 
     /// Write `bufs` to this file.
     #[doc = man_link!(writev(2))]
-    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    pub fn write_vectored<'fd, B: BufSlice<N>, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> WriteVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs() };
         WriteVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Write all `bufs` to this file.
-    pub fn write_all_vectored<'fd, B, const N: usize>(
+    pub fn write_all_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> WriteAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    ) -> WriteAllVectored<'fd, B, N> {
         WriteAllVectored {
             write: self.write_vectored(bufs).extract(),
             offset: NO_OFFSET,
