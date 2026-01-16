@@ -257,22 +257,13 @@ impl AsyncFd {
 
     /// Receives data on the socket and the source address using vectored I/O.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from_vectored<'fd, B, A, const N: usize>(
+    pub fn recv_from_vectored<'fd, B: BufMutSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvFromVectored<'fd, B, A, N>
-    where
-        B: BufMutSlice<N>,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvFromVectored<'fd, B, A, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = (bufs, MsgHeader::empty(), iovecs, MaybeUninit::uninit());
-        RecvFromVectored::new(self, resources, flags)
+        RecvFromVectored::new(self, resources, RecvFlag(0))
     }
 
     /// Sends data on the socket to a connected peer.
@@ -526,9 +517,8 @@ new_flag!(
     /// Flags in calls to recv.
     ///
     /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`],
-    /// [`RecvVectored::flags`], [`RecvNVectored::flags`], [`RecvFrom::flags`].
-    ///
-    /// See [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
+    /// [`RecvVectored::flags`], [`RecvNVectored::flags`], [`RecvFrom::flags`],
+    /// [`RecvFromVectored::flags`].
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
@@ -1106,6 +1096,16 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> RecvVectored<'fd, B, N> {
 }
 
 impl<'fd, B: BufMut, A: SocketAddress> RecvFrom<'fd, B, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, A: SocketAddress, const N: usize> RecvFromVectored<'fd, B, A, N> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: RecvFlag) -> Self {
         if let Some(f) = self.state.args_mut() {

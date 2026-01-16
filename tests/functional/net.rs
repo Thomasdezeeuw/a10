@@ -773,7 +773,7 @@ fn recv_from_vectored() {
         Vec::with_capacity(7),
     ];
     let (bufs, address, flags): (_, SocketAddr, _) = waker
-        .block_on(socket.recv_from_vectored(bufs, None))
+        .block_on(socket.recv_from_vectored(bufs))
         .expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");
