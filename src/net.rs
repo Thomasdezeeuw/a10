@@ -310,22 +310,13 @@ impl AsyncFd {
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(sendto(2))]
-    pub fn send_to<'fd, B, A>(
+    pub fn send_to<'fd, B: Buf, A: SocketAddress>(
         &'fd self,
         buf: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendTo<'fd, B, A>
-    where
-        B: Buf,
-        A: SocketAddress,
-    {
+    ) -> SendTo<'fd, B, A> {
         let resources = (buf, AddressStorage(address.into_storage()));
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        let args = (SendCall::Normal, flags);
+        let args = (SendCall::Normal, SendFlag(0));
         SendTo::new(self, resources, args)
     }
 
@@ -525,8 +516,7 @@ new_flag!(
     /// Flags in calls to send.
     ///
     /// Set using [`Send::flags`], [`SendAll::flags`], [`SendMsg::flags`],
-    /// [`SendAllVectored::flags`].
-    ///
+    /// [`SendAllVectored::flags`], [`SendTo::flags`].
     pub struct SendFlag(u32) impl BitOr {
         /// Tell the link layer that forward progress happened: you got a
         /// successful reply from the other side.
@@ -1126,6 +1116,14 @@ impl<'fd, B: Buf> Send<'fd, B> {
 }
 
 impl<'fd, B: Buf, A: SocketAddress> SendTo<'fd, B, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
