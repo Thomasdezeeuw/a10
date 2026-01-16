@@ -24,22 +24,23 @@ use crate::{SubmissionQueue, man_link, new_flag, sys};
 /// # use a10::fd;
 /// # async fn new_pipe(sq: &a10::SubmissionQueue) -> io::Result<()> {
 /// // Creating a new pipe using file descriptors.
-/// let [receiver, sender] = pipe(sq.clone(), None).await?;
+/// let [receiver, sender] = pipe(sq.clone()).await?;
 ///
 /// // Using direct descriptors.
-/// let [receiver, sender] = pipe(sq.clone(), None).kind(fd::Kind::Direct).await?;
+/// let [receiver, sender] = pipe(sq.clone()).kind(fd::Kind::Direct).await?;
 /// # Ok(())
 /// # }
 /// ```
 #[doc = man_link!(pipe(2))]
-pub fn pipe(sq: SubmissionQueue, flags: Option<PipeFlag>) -> Pipe {
-    let flags = flags.unwrap_or(PipeFlag(0));
+pub fn pipe(sq: SubmissionQueue) -> Pipe {
     let resources = ([-1, -1], fd::Kind::File);
-    Pipe::new(sq, resources, flags)
+    Pipe::new(sq, resources, PipeFlag(0))
 }
 
 new_flag!(
-    /// Flags to [`pipe`].
+    /// Pipe flags.
+    ///
+    /// Set using [`Pipe::flags`].
     pub struct PipeFlag(u32) {
         /// Create a pipe that performs I/O in "packet" mode.
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -61,6 +62,14 @@ impl Pipe {
     pub fn kind(mut self, kind: fd::Kind) -> Self {
         if let Some(resources) = self.state.resources_mut() {
             resources.1 = kind;
+        }
+        self
+    }
+
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: PipeFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
         }
         self
     }
