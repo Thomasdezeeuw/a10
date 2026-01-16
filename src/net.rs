@@ -198,16 +198,8 @@ impl AsyncFd {
     /// Be careful when using this as a peer sending a lot data might take up
     /// all your buffers from your pool!
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn multishot_recv<'fd>(
-        &'fd self,
-        pool: ReadBufPool,
-        flags: Option<RecvFlag>,
-    ) -> MultishotRecv<'fd> {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
-        MultishotRecv::new(self, pool, flags)
+    pub fn multishot_recv<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRecv<'fd> {
+        MultishotRecv::new(self, pool, RecvFlag(0))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
@@ -554,10 +546,10 @@ pub(crate) enum SendCall {
 new_flag!(
     /// Flags in calls to recv.
     ///
-    /// Set using [`Recv::flags`].
+    /// Set using [`Recv::flags`], [`MultishotRecv::flags`].
     ///
-    /// See [`AsyncFd::multishot_recv`], [`AsyncFd::recv_vectored`],
-    /// [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
+    /// See [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
+    /// [`AsyncFd::recv_from_vectored`].
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
@@ -1174,6 +1166,17 @@ fd_iter_operation! {
 
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
+}
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+impl<'fd> MultishotRecv<'fd> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].

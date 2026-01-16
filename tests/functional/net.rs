@@ -426,7 +426,7 @@ fn multishot_recv() {
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
-    let mut stream_recv = stream.multishot_recv(buf_pool, None);
+    let mut stream_recv = stream.multishot_recv(buf_pool);
 
     // Write some data and read it back.
     client.write_all(DATA1).expect("failed to write");
@@ -469,7 +469,7 @@ fn multishot_recv_large_send() {
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
-    let mut stream_recv = stream.multishot_recv(buf_pool, None);
+    let mut stream_recv = stream.multishot_recv(buf_pool);
 
     // Write some data and read it back.
     client.write_all(DATA).expect("failed to write");
@@ -515,7 +515,7 @@ fn multishot_recv_all_buffers_used() {
 
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
-    let mut stream_recv = stream.multishot_recv(buf_pool, None);
+    let mut stream_recv = stream.multishot_recv(buf_pool);
 
     // Write some much data that all buffers are used.
     for _ in 0..N {
