@@ -346,25 +346,9 @@ impl AsyncFd {
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
     #[doc = man_link!(accept(2))]
-    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A>
-    where
-        A: SocketAddress,
-    {
-        self.accept4(None)
-    }
-
-    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
-    /// socket.
-    ///
-    /// Also see [`AsyncFd::accept`].
-    #[doc = man_link!(accept4(2))]
-    pub fn accept4<'fd, A>(&'fd self, flags: Option<AcceptFlag>) -> Accept<'fd, A>
-    where
-        A: SocketAddress,
-    {
-        let flags = flags.unwrap_or(AcceptFlag(0));
+    pub fn accept<'fd, A: SocketAddress>(&'fd self) -> Accept<'fd, A> {
         let address = AddressStorage((MaybeUninit::uninit(), 0));
-        Accept::new(self, address, flags)
+        Accept::new(self, address, AcceptFlag(0))
     }
 
     /// Accept multiple socket streams.
@@ -526,7 +510,7 @@ new_flag!(
 
     /// Flags in calls to accept.
     ///
-    /// See [`AsyncFd::accept4`] and [`AsyncFd::multishot_accept4`].
+    /// Set using [`Accept::flags`].
     pub struct AcceptFlag(u32) {
         // NOTE: we don't need SOCK_NONBLOCK and SOCK_CLOEXEC.
     }
@@ -1136,6 +1120,16 @@ impl<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize> SendMsg<'fd, B, A, N
     pub fn zc(mut self) -> Self {
         if let Some((send_op, _)) = self.state.args_mut() {
             *send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
+}
+
+impl<'fd, A: SocketAddress> Accept<'fd, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: AcceptFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
         }
         self
     }
