@@ -398,27 +398,6 @@ impl AsyncFd {
         SendTo::new(self, resources, args)
     }
 
-    /// Same as [`AsyncFd::send_to`], but tries to avoid making intermediate
-    /// copies of `buf`.
-    pub fn send_to_zc<'fd, B, A>(
-        &'fd self,
-        buf: B,
-        address: A,
-        flags: Option<SendFlag>,
-    ) -> SendTo<'fd, B, A>
-    where
-        B: Buf,
-        A: SocketAddress,
-    {
-        let resources = (buf, AddressStorage(address.into_storage()));
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        let args = (SendCall::ZeroCopy, flags);
-        SendTo::new(self, resources, args)
-    }
-
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
     pub fn send_to_vectored<'fd, B, A, const N: usize>(
@@ -1134,7 +1113,7 @@ fd_operation! {
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
-    /// [`Future`] behind [`AsyncFd::send_to`] and [`AsyncFd::send_to_zc`].
+    /// [`Future`] behind [`AsyncFd::send_to`].
     pub struct SendTo<B: Buf, A: SocketAddress>(sys::net::SendToOp<B, A>) -> io::Result<usize>,
       impl Extract -> io::Result<(B, usize)>;
 
@@ -1174,6 +1153,18 @@ impl<'fd, B: Buf> Send<'fd, B> {
     ///
     /// The `Future` only returns once it safe for the buffer to be used again,
     /// for TCP for example this means until the data is ACKed by the peer.
+    pub fn zc(mut self) -> Self {
+        if let Some((send_op, _)) = self.state.args_mut() {
+            *send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
+}
+
+impl<'fd, B: Buf, A: SocketAddress> SendTo<'fd, B, A> {
+    /// Enable zero copy.
+    ///
+    /// See [`Send::zc`].
     pub fn zc(mut self) -> Self {
         if let Some((send_op, _)) = self.state.args_mut() {
             *send_op = SendCall::ZeroCopy;

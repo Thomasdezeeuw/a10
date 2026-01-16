@@ -1185,7 +1185,7 @@ fn send_to_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(socket.send_to_zc(DATA1, local_addr, None))
+        .block_on(socket.send_to(DATA1, local_addr, None).zc())
         .expect("failed to send_to");
     assert_eq!(n, DATA1.len());
 
@@ -1232,7 +1232,7 @@ fn send_to_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(socket.send_to_zc(DATA1, local_addr, None).extract())
+        .block_on(socket.send_to(DATA1, local_addr, None).zc().extract())
         .expect("failed to send_to");
     assert!(buf == DATA1);
     assert_eq!(n, DATA1.len());
