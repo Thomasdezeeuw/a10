@@ -388,7 +388,7 @@ fn recv_read_buf_pool_send_read_buf() {
     assert_eq!(buf.as_slice(), DATA1);
 
     // Send the data back.
-    let n = block_on(&mut ring, stream.send(buf, None)).expect("failed to send");
+    let n = block_on(&mut ring, stream.send(buf)).expect("failed to send");
     assert_eq!(n, DATA1.len());
     let mut buf = vec![0; DATA1.len() + 1];
     let n = client.read(&mut buf).expect("failed to read data");
@@ -803,9 +803,7 @@ fn send() {
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
     // Send some data.
-    let n = waker
-        .block_on(stream.send(DATA2, None))
-        .expect("failed to send");
+    let n = waker.block_on(stream.send(DATA2)).expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
     let n = client.read(&mut buf).expect("failed to send data");
@@ -831,7 +829,7 @@ fn send_zc() {
 
     // Send some data.
     let n = waker
-        .block_on(stream.send(DATA2, None).zc())
+        .block_on(stream.send(DATA2).zc())
         .expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
@@ -858,7 +856,7 @@ fn send_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send(DATA2, None).extract())
+        .block_on(stream.send(DATA2).extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
@@ -886,7 +884,7 @@ fn send_zc_extractor() {
 
     // Send some data.
     let (buf, n) = waker
-        .block_on(stream.send(DATA2, None).zc().extract())
+        .block_on(stream.send(DATA2).zc().extract())
         .expect("failed to send");
     assert_eq!(buf, DATA2);
     assert_eq!(n, DATA2.len());
@@ -1438,9 +1436,7 @@ fn direct_fd() {
     let (mut client, _) = listener.accept().expect("failed to accept connection");
 
     // Send some data.
-    let n = waker
-        .block_on(stream.send(DATA2, None))
-        .expect("failed to send");
+    let n = waker.block_on(stream.send(DATA2)).expect("failed to send");
     assert_eq!(n, DATA2.len());
     let mut buf = vec![0; DATA2.len() + 2];
     let n = client.read(&mut buf).expect("failed to send data");

@@ -268,15 +268,8 @@ impl AsyncFd {
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(send(2))]
-    pub fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
-    where
-        B: Buf,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        Send::new(self, buf, (SendCall::Normal, flags))
+    pub fn send<'fd, B: Buf>(&'fd self, buf: B) -> Send<'fd, B> {
+        Send::new(self, buf, (SendCall::Normal, SendFlag(0)))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
@@ -288,10 +281,10 @@ impl AsyncFd {
         let buf = SkipBuf { buf, skip: 0 };
         SendAll {
             send: Extractor {
-                fut: self.send(buf, flags),
+                fut: self.send(buf),
             },
             send_op: SendCall::Normal,
-            flags,
+            flags: flags.unwrap_or(SendFlag(0)),
         }
     }
 
@@ -542,7 +535,9 @@ new_flag!(
 
     /// Flags in calls to send.
     ///
-    /// See functions such as [`AsyncFd::send`], [`AsyncFd::send_vectored`] and
+    /// Set using [`Send::flags`].
+    ///
+    /// See functions such as [`AsyncFd::send_vectored`] and
     /// [`AsyncFd::send_to`].
     pub struct SendFlag(u32) impl BitOr {
         /// Tell the link layer that forward progress happened: you got a
@@ -1116,6 +1111,14 @@ impl<'fd, B: BufMutSlice<N>, A: SocketAddress, const N: usize> RecvFromVectored<
 }
 
 impl<'fd, B: Buf> Send<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// # Notes
@@ -1234,7 +1237,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 pub struct SendAll<'fd, B: Buf> {
     send: Extractor<Send<'fd, SkipBuf<B>>>,
     send_op: SendCall,
-    flags: Option<SendFlag>,
+    flags: SendFlag,
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
@@ -1264,8 +1267,8 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
 
                 // Send some more.
                 this.send = match this.send_op {
-                    SendCall::Normal => this.send.fut.fd.send(buf, this.flags),
-                    SendCall::ZeroCopy => this.send.fut.fd.send(buf, this.flags).zc(),
+                    SendCall::Normal => this.send.fut.fd.send(buf).flags(this.flags),
+                    SendCall::ZeroCopy => this.send.fut.fd.send(buf).flags(this.flags).zc(),
                 }
                 .extract();
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
