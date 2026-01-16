@@ -600,7 +600,7 @@ fn recv_vectored() {
         Vec::with_capacity(2),
         Vec::with_capacity(7),
     ];
-    let recv_future = stream.recv_vectored(bufs, None);
+    let recv_future = stream.recv_vectored(bufs);
     client.write_all(DATA1).expect("failed to send data");
     let (mut bufs, flags) = waker.block_on(recv_future).expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
@@ -614,7 +614,7 @@ fn recv_vectored() {
         buf.clear();
     }
     let (bufs, flags) = waker
-        .block_on(stream.recv_vectored(bufs, None))
+        .block_on(stream.recv_vectored(bufs))
         .expect("failed to receive");
     assert!(bufs[0].is_empty());
     assert!(bufs[1].is_empty());
@@ -644,7 +644,7 @@ fn recv_vectored_truncated() {
     // Receive some data.
     let bufs = [Vec::with_capacity(5), Vec::with_capacity(2)];
     let (bufs, flags) = waker
-        .block_on(socket.recv_vectored(bufs, None))
+        .block_on(socket.recv_vectored(bufs))
         .expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");

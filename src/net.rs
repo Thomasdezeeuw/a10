@@ -227,14 +227,11 @@ impl AsyncFd {
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected, using vectored I/O.
-    pub fn recv_n_vectored<'fd, B, const N: usize>(
+    pub fn recv_n_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> RecvNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    ) -> RecvNVectored<'fd, B, N> {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
@@ -242,6 +239,7 @@ impl AsyncFd {
         RecvNVectored {
             recv: self.recv_vectored(bufs),
             left: n,
+            flags: RecvFlag(0),
         }
     }
 
@@ -537,7 +535,7 @@ new_flag!(
     /// Flags in calls to recv.
     ///
     /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`],
-    /// [`RecvVectored::flags`].
+    /// [`RecvVectored::flags`], [`RecvNVectored::flags`].
     ///
     /// See [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
     pub struct RecvFlag(u32) impl BitOr {
@@ -1303,6 +1301,18 @@ pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     recv: RecvVectored<'fd, ReadNBuf<B>, N>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
+    flags: RecvFlag,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> RecvNVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.recv.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
@@ -1325,7 +1335,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.fd.recv_vectored(bufs));
+                recv.set(recv.fd.recv_vectored(bufs).flags(this.flags));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
