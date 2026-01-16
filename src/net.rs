@@ -189,15 +189,8 @@ impl AsyncFd {
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
-    pub fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
-    where
-        B: BufMut,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
-        Recv::new(self, buf, flags)
+    pub fn recv<'fd, B: BufMut>(&'fd self, buf: B) -> Recv<'fd, B> {
+        Recv::new(self, buf, RecvFlag(0))
     }
 
     /// Continuously receive data on the socket from the remote address to which
@@ -231,7 +224,7 @@ impl AsyncFd {
     {
         let buf = ReadNBuf { buf, last_read: 0 };
         RecvN {
-            recv: self.recv(buf, None),
+            recv: self.recv(buf),
             left: n,
         }
     }
@@ -567,9 +560,10 @@ pub(crate) enum SendCall {
 new_flag!(
     /// Flags in calls to recv.
     ///
-    /// See [`AsyncFd::recv`], [`AsyncFd::multishot_recv`],
-    /// [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
-    /// [`AsyncFd::recv_from_vectored`].
+    /// Set using [`Recv::flags`].
+    ///
+    /// See [`AsyncFd::multishot_recv`], [`AsyncFd::recv_vectored`],
+    /// [`AsyncFd::recv_from`] and [`AsyncFd::recv_from_vectored`].
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
@@ -1126,6 +1120,16 @@ fd_operation! {
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
+impl<'fd, B: BufMut> Recv<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
 impl<'fd, B: Buf> Send<'fd, B> {
     /// Enable zero copy.
     ///
@@ -1207,7 +1211,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.fd.recv(buf, None));
+                recv.set(recv.fd.recv(buf));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
