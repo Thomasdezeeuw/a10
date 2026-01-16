@@ -6,10 +6,13 @@
 use std::mem::{self, MaybeUninit};
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Child, ExitStatus};
-use std::{fmt, io, ptr};
+use std::{fmt, io};
 
 use crate::op::{fd_operation, operation};
-use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
+use crate::{AsyncFd, SubmissionQueue, man_link, new_flag, sys, syscall};
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub use crate::sys::process::ToDirect;
 
 /// Wait on the child `process`.
 ///
@@ -44,9 +47,11 @@ pub enum WaitOn {
     Process(u32),
     /// Wait for any child process in the process group with ID.
     #[doc(alias = "P_PGID")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     Group(u32),
     /// Wait for all childeren.
     #[doc(alias = "P_ALL")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     All,
 }
 
@@ -55,8 +60,6 @@ new_flag!(
     ///
     /// See [`wait`] and [`wait_on`].
     pub struct WaitOption(u32) {
-        /// Return immediately if no child has exited.
-        NO_HANG = libc::WNOHANG,
         /// Return if a child has stopped (but not traced via `ptrace(2)`).
         UNTRACED = libc::WUNTRACED,
         /// Wait for children that have been stopped by delivery of a signal.
@@ -75,7 +78,7 @@ new_flag!(
 ///
 /// See [`wait`] and [`wait_on`].
 #[repr(transparent)]
-pub struct WaitInfo(libc::siginfo_t);
+pub struct WaitInfo(pub(crate) libc::siginfo_t);
 
 impl WaitInfo {
     /// Process id of the child.
@@ -108,6 +111,9 @@ impl WaitInfo {
         ChildStatus(self.0.si_code)
     }
 }
+
+unsafe impl Send for WaitInfo {}
+unsafe impl Sync for WaitInfo {}
 
 impl fmt::Debug for WaitInfo {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -157,7 +163,13 @@ operation!(
 /// default process signals behaviour, i.e. sending it a signal will interrupt
 /// or stop it.
 ///
+/// Furthermore only a single instance of `Signals` should be active for a given
+/// signal set. In other words, no two `Signals` instances should be created
+/// for the signal. Easiest is to limit yourself to a single instance.
+///
 /// # Implementation Notes
+///
+/// ## io_uring
 ///
 /// This will block all signals in the signal set given when creating `Signals`,
 /// using [`pthread_sigmask(3)`]. This means that the thread in which `Signals`
@@ -169,6 +181,16 @@ operation!(
 /// [`pthread_sigmask(3)`]: https://man7.org/linux/man-pages/man3/pthread_sigmask.3.html
 /// [`Future`]: std::future::Future
 /// [`signalfd(2)`]: http://man7.org/linux/man-pages/man2/signalfd.2.html
+///
+/// ## kqueue
+///
+/// This will block all signals in the signal set given when creating `Signals`,
+/// by setting the handler action to `SIG_IGN` using [`sigaction(2)`], meaning
+/// that all signals will be ignored. Same as on io_uring based systems; the
+/// program is not interrupted, or in any way notified of signal until the
+/// assiocated `Ring` is polled.
+///
+/// [`sigaction(2)`]: https://www.freebsd.org/cgi/man.cgi?query=sigaction&sektion=2
 ///
 /// # Examples
 ///
@@ -194,22 +216,17 @@ operation!(
 /// # }
 /// ```
 pub struct Signals {
-    /// `signalfd(2)` file descriptor.
-    fd: AsyncFd,
+    /// `signalfd(2)` or `kqueue(2)` file descriptor.
+    pub(crate) fd: AsyncFd,
     /// All signals this is listening for, used in resetting the signal handlers.
-    signals: SignalSet,
+    pub(crate) signals: SignalSet,
 }
 
 impl Signals {
     /// Create a new signal notifier from a signal set.
     pub fn from_set(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
         log::trace!(signals:?; "setting up signal handling");
-        let fd = syscall!(signalfd(-1, &raw const signals.0, libc::SFD_CLOEXEC))?;
-        // SAFETY: `signalfd(2)` ensures that `fd` is valid.
-        let fd = unsafe { AsyncFd::from_raw(fd, fd::Kind::File, sq) };
-        // Block all `signals` as we're going to read them from the signalfd.
-        sigprocmask(libc::SIG_BLOCK, &signals.0)?;
-        Ok(Signals { fd, signals })
+        Signals::new(sq, signals) // See sys::process.
     }
 
     /// Create a new signal notifier from a collection of signals.
@@ -230,37 +247,12 @@ impl Signals {
         Signals::from_set(sq, set)
     }
 
-    /// Convert `Signals` from using a regular file descriptor to using a direct
-    /// descriptor.
-    ///
-    /// See [`AsyncFd::to_direct_descriptor`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn to_direct_descriptor(self) -> ToDirect {
-        debug_assert!(
-            matches!(self.fd.kind(), fd::Kind::File),
-            "can't covert a direct descriptor to a different direct descriptor"
-        );
-        let sq = self.fd.sq().clone();
-        let fd = self.fd.fd();
-        ToDirect::new(sq, (self, fd), ())
-    }
-
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
         // SAFETY: fully zeroed libc::signalfd_siginfo and Signal are valid
         // values.
         let info = unsafe { mem::zeroed() };
         ReceiveSignal::new(&self.fd, info, ())
-    }
-
-    /// Change the file descriptor on the `Signals`.
-    ///
-    /// # Safety
-    ///
-    /// Caller must ensure `fd` is a valid signalfd descriptor.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub(crate) unsafe fn set_fd(&mut self, fd: AsyncFd) {
-        self.fd = fd;
     }
 }
 
@@ -272,21 +264,6 @@ impl fmt::Debug for Signals {
             .finish()
     }
 }
-
-impl Drop for Signals {
-    fn drop(&mut self) {
-        // Reverse the blocking of signals.
-        if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
-            log::error!(signals:? = self.signals; "error unblocking signals: {err}");
-        }
-    }
-}
-
-#[cfg(any(target_os = "android", target_os = "linux"))]
-operation!(
-    /// [`Future`] behind [`Signals::to_direct_descriptor`].
-    pub struct ToDirect(sys::fd::ToDirectOp<Signals>) -> io::Result<Signals>;
-);
 
 fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
@@ -332,7 +309,7 @@ impl fmt::Debug for SignalInfo {
 
 /// Set of signals.
 #[repr(transparent)]
-pub struct SignalSet(libc::sigset_t);
+pub struct SignalSet(pub(crate) libc::sigset_t);
 
 impl SignalSet {
     /// Create an empty set.
@@ -443,8 +420,3 @@ new_flag!(
         SYS = libc::SIGSYS,
     }
 );
-
-fn sigprocmask(how: libc::c_int, set: &libc::sigset_t) -> io::Result<()> {
-    syscall!(pthread_sigmask(how, set, ptr::null_mut()))?;
-    Ok(())
-}

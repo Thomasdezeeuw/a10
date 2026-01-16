@@ -1,11 +1,12 @@
 //! NOTE: see `tests/signals.rs` for testing of signal handling.
 
-use std::pin::Pin;
+use std::pin::{Pin, pin};
 use std::process::Command;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::process::ToDirect;
 use a10::process::{
-    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, ToDirect, WaitId,
-    WaitOption,
+    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, WaitId, WaitOption,
 };
 
 use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
@@ -35,6 +36,7 @@ fn signal_info_is_send_and_sync() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn to_direct_is_send_and_sync() {
     is_send::<ToDirect>();
     is_sync::<ToDirect>();
@@ -68,6 +70,19 @@ fn process_wait_on() {
     assert_eq!(info.code(), ChildStatus::EXITED);
     assert_eq!(info.pid(), pid as i32);
     assert_eq!(info.status().code(), Some(libc::EXIT_SUCCESS));
+}
+
+#[test]
+fn process_wait_on_process_that_does_not_stop() {
+    let sq = test_queue();
+
+    let process = Command::new("sleep").arg("10000").spawn().unwrap();
+
+    let mut fut = pin!(process::wait_on(sq, &process, Some(WaitOption::EXITED)));
+    for _ in 0..=3 {
+        let res = poll_nop(fut.as_mut());
+        assert!(res.is_pending(), "unexpected poll result: {res:?}");
+    }
 }
 
 #[test]

@@ -57,7 +57,6 @@ pub mod io;
 pub mod mem;
 pub mod net;
 pub mod pipe;
-#[cfg(any(target_os = "android", target_os = "linux"))]
 pub mod process;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -247,7 +246,7 @@ macro_rules! new_flag {
             // Need the value_meta to set the cfg attribute, but that also
             // includes documentation, which we can ignore.
             #[allow(unused_doc_comments, dead_code)]
-            const ALL: &[$type_name] = &[
+            pub(crate) const ALL: &[$type_name] = &[
                 $(
                 $(#[$value_meta])*
                 $type_name::$value_name,
