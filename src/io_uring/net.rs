@@ -608,9 +608,9 @@ impl FdIter for MultishotAcceptOp {
     }
 }
 
-pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
+pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T: option::Get> FdOp for SocketOption2Op<T> {
+impl<T: option::Get> FdOp for SocketOptionOp<T> {
     type Output = T::Output;
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
     type Args = (Level, Opt);
@@ -655,9 +655,9 @@ impl<T: option::Get> FdOp for SocketOption2Op<T> {
     }
 }
 
-pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
+pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T: option::Set> FdOp for SetSocketOption2Op<T> {
+impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = OptionStorage<T::Storage>;
     type Args = (Level, Opt);

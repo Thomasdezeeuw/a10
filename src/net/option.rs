@@ -1,9 +1,9 @@
 //! Socket options.
 //!
-//! See [`AsyncFd::socket_option2`] and [`AsyncFd::set_socket_option2`].
+//! See [`AsyncFd::socket_option`] and [`AsyncFd::set_socket_option`].
 //!
-//! [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
-//! [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
+//! [`AsyncFd::socket_option`]: crate::fd::AsyncFd::socket_option
+//! [`AsyncFd::set_socket_option`]: crate::fd::AsyncFd::set_socket_option
 
 use std::io;
 use std::mem::MaybeUninit;
@@ -12,9 +12,9 @@ use crate::net::{self, Level, Opt, SocketOpt};
 
 /// Trait that defines how get the value of a socket option.
 ///
-/// See [`AsyncFd::socket_option2`].
+/// See [`AsyncFd::socket_option`].
 ///
-/// [`AsyncFd::socket_option2`]: crate::fd::AsyncFd::socket_option2
+/// [`AsyncFd::socket_option`]: crate::fd::AsyncFd::socket_option
 pub trait Get {
     /// Returned output.
     type Output: Sized;
@@ -53,9 +53,9 @@ pub trait Get {
 
 /// Trait that defines how set the value of a socket option.
 ///
-/// See [`AsyncFd::set_socket_option2`].
+/// See [`AsyncFd::set_socket_option`].
 ///
-/// [`AsyncFd::set_socket_option2`]: crate::fd::AsyncFd::set_socket_option2
+/// [`AsyncFd::set_socket_option`]: crate::fd::AsyncFd::set_socket_option
 pub trait Set {
     /// Value to set.
     type Value: Sized;

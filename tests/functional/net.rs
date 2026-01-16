@@ -16,16 +16,16 @@ use a10::fd;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, Bind, Domain, Level, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
-    SendAllVectored, SendTo, SetSocketOption, Socket, SocketName, SocketOpt, Type,
+    Accept, Bind, Domain, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll, SendAllVectored,
+    SendTo, Socket, SocketName, Type,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::net::{MultishotAccept, MultishotRecv, socket};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, new_socket, syscall,
-    tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, syscall, tcp_ipv4_socket,
+    test_queue, udp_ipv4_socket,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{block_on, init};
@@ -1366,48 +1366,6 @@ fn shutdown() {
     let mut buf = vec![0; 10];
     let n = client.read(&mut buf).expect("failed to send data");
     assert_eq!(n, 0);
-}
-
-#[test]
-fn set_socket_option() {
-    let sq = test_queue();
-    let waker = Waker::new();
-
-    is_send::<SetSocketOption<libc::c_int>>();
-    is_sync::<SetSocketOption<libc::c_int>>();
-
-    let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
-
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    {
-        waker
-            .block_on(socket.set_socket_option::<libc::c_int>(
-                Level::SOCKET,
-                SocketOpt::INCOMING_CPU,
-                0,
-            ))
-            .unwrap();
-    }
-
-    let linger = libc::linger {
-        l_onoff: 1,
-        l_linger: 100,
-    };
-    let got_linger = waker
-        .block_on(
-            socket
-                .set_socket_option(Level::SOCKET, SocketOpt::LINGER, linger)
-                .extract(),
-        )
-        .unwrap();
-    assert_eq!(linger.l_onoff, got_linger.l_onoff);
-    assert_eq!(linger.l_linger, got_linger.l_linger);
-
-    let got_linger = waker
-        .block_on(socket.socket_option::<libc::linger>(Level::SOCKET, SocketOpt::LINGER))
-        .unwrap();
-    assert_eq!(linger.l_onoff, got_linger.l_onoff);
-    assert_eq!(linger.l_linger, got_linger.l_linger);
 }
 
 #[test]

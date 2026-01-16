@@ -536,9 +536,9 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     }
 }
 
-pub(crate) struct SocketOption2Op<T>(PhantomData<*const T>);
+pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
+impl<T: option::Get> DirectFdOp for SocketOptionOp<T> {
     type Output = T::Output;
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
     type Args = (Level, Opt);
@@ -562,11 +562,11 @@ impl<T: option::Get> DirectFdOp for SocketOption2Op<T> {
     }
 }
 
-impl_fd_op!(SocketOption2Op<T>);
+impl_fd_op!(SocketOptionOp<T>);
 
-pub(crate) struct SetSocketOption2Op<T>(PhantomData<*const T>);
+pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 
-impl<T: option::Set> DirectFdOp for SetSocketOption2Op<T> {
+impl<T: option::Set> DirectFdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = OptionStorage<T::Storage>;
     type Args = (Level, Opt);
@@ -587,7 +587,7 @@ impl<T: option::Set> DirectFdOp for SetSocketOption2Op<T> {
     }
 }
 
-impl_fd_op!(SetSocketOption2Op<T>);
+impl_fd_op!(SetSocketOptionOp<T>);
 
 pub(crate) struct ShutdownOp;
 

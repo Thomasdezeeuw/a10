@@ -362,25 +362,28 @@ impl AsyncFd {
     }
 
     /// Get socket option.
+    ///
+    /// At the time of writing this is limited to the `SOL_SOCKET` level for
+    /// io_uring.
     #[doc = man_link!(getsockopt(2))]
     #[doc(alias = "getsockopt")]
-    pub fn socket_option2<'fd, T>(&'fd self) -> SocketOption2<'fd, T>
-    where
-        T: option::Get,
-    {
+    pub fn socket_option<'fd, T: option::Get>(&'fd self) -> SocketOption<'fd, T> {
         let value = OptionStorage(MaybeUninit::uninit());
-        SocketOption2::new(self, value, (T::LEVEL, T::OPT))
+        SocketOption::new(self, value, (T::LEVEL, T::OPT))
     }
 
     /// Set socket option.
+    ///
+    /// At the time of writing this is limited to the `SOL_SOCKET` level for
+    /// io_uring.
     #[doc = man_link!(setsockopt(2))]
     #[doc(alias = "setsockopt")]
-    pub fn set_socket_option2<'fd, T>(&'fd self, value: T::Value) -> SetSocketOption2<'fd, T>
-    where
-        T: option::Set,
-    {
+    pub fn set_socket_option<'fd, T: option::Set>(
+        &'fd self,
+        value: T::Value,
+    ) -> SetSocketOption<'fd, T> {
         let value = OptionStorage(T::as_storage(value));
-        SetSocketOption2::new(self, value, (T::LEVEL, T::OPT))
+        SetSocketOption::new(self, value, (T::LEVEL, T::OPT))
     }
 
     /// Shuts down the read, write, or both halves of this connection.
@@ -947,11 +950,11 @@ fd_operation! {
     /// [`Future`] behind [`AsyncFd::accept`].
     pub struct Accept<A: SocketAddress>(sys::net::AcceptOp<A>) -> io::Result<(AsyncFd, A)>;
 
-    /// [`Future`] behind [`AsyncFd::socket_option2`].
-    pub struct SocketOption2<T: option::Get>(sys::net::SocketOption2Op<T>) -> io::Result<T::Output>;
+    /// [`Future`] behind [`AsyncFd::socket_option`].
+    pub struct SocketOption<T: option::Get>(sys::net::SocketOptionOp<T>) -> io::Result<T::Output>;
 
-    /// [`Future`] behind [`AsyncFd::set_socket_option2`].
-    pub struct SetSocketOption2<T: option::Set>(sys::net::SetSocketOption2Op<T>) -> io::Result<()>;
+    /// [`Future`] behind [`AsyncFd::set_socket_option`].
+    pub struct SetSocketOption<T: option::Set>(sys::net::SetSocketOptionOp<T>) -> io::Result<()>;
 
     /// [`Future`] behind [`AsyncFd::shutdown`].
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
