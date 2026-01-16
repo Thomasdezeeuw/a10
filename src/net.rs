@@ -322,17 +322,12 @@ impl AsyncFd {
 
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
-    pub fn send_to_vectored<'fd, B, A, const N: usize>(
+    pub fn send_to_vectored<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         bufs: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, A, N>
-    where
-        B: BufSlice<N>,
-        A: SocketAddress,
-    {
-        self.sendmsg(bufs, address, flags)
+    ) -> SendMsg<'fd, B, A, N> {
+        self.sendmsg(bufs, address, Some(SendFlag(0)))
     }
 
     fn sendmsg<'fd, B, A, const N: usize>(
