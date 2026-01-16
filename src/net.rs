@@ -361,6 +361,7 @@ impl AsyncFd {
 
     /// Sends all data in `bufs` on the socket to a connected peer, using
     /// vectored I/O.
+    ///
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
     pub fn send_all_vectored<'fd, B, const N: usize>(
         &'fd self,
@@ -373,23 +374,6 @@ impl AsyncFd {
             send: self.send_vectored(bufs, None).extract(),
             skip: 0,
             send_op: SendCall::Normal,
-        }
-    }
-
-    /// Sends all data in `bufs` on the socket to a connected peer, using
-    /// vectored I/O.
-    /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub fn send_all_vectored_zc<'fd, B, const N: usize>(
-        &'fd self,
-        bufs: B,
-    ) -> SendAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
-        SendAllVectored {
-            send: self.send_vectored(bufs, None).extract(),
-            skip: 0,
-            send_op: SendCall::ZeroCopy,
         }
     }
 
@@ -1362,7 +1346,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
     }
 }
 
-/// [`Future`] behind [`AsyncFd::send_all_vectored`] and [`AsyncFd::send_all_vectored_zc`].
+/// [`Future`] behind [`AsyncFd::send_all_vectored`].
 #[derive(Debug)]
 #[must_use = "`Future`s do nothing unless polled"]
 pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
@@ -1372,6 +1356,17 @@ pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
 }
 
 impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
+    /// Enable zero copy.
+    ///
+    /// See [`Send::zc`].
+    pub fn zc(mut self) -> Self {
+        if let Some((send_op, _)) = self.send.fut.state.args_mut() {
+            *send_op = SendCall::ZeroCopy;
+            self.send_op = SendCall::ZeroCopy;
+        }
+        self
+    }
+
     /// Poll implementation used by the [`Future`] implement for the naked type
     /// and the type wrapper in an [`Extractor`].
     fn poll_inner(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<io::Result<B>> {
