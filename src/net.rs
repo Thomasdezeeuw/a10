@@ -140,10 +140,7 @@ impl Socket {
 impl AsyncFd {
     /// Assign a name to the socket.
     #[doc = man_link!(bind(2))]
-    pub fn bind<'fd, A>(&'fd self, address: A) -> Bind<'fd, A>
-    where
-        A: SocketAddress,
-    {
+    pub fn bind<'fd, A: SocketAddress>(&'fd self, address: A) -> Bind<'fd, A> {
         let storage = AddressStorage(address.into_storage());
         Bind::new(self, storage, ())
     }
@@ -159,10 +156,7 @@ impl AsyncFd {
 
     /// Initiate a connection on this socket to the specified address.
     #[doc = man_link!(connect(2))]
-    pub fn connect<'fd, A>(&'fd self, address: A) -> Connect<'fd, A>
-    where
-        A: SocketAddress,
-    {
+    pub fn connect<'fd, A: SocketAddress>(&'fd self, address: A) -> Connect<'fd, A> {
         let storage = AddressStorage(address.into_storage());
         Connect::new(self, storage, ())
     }
@@ -189,15 +183,8 @@ impl AsyncFd {
     /// Receives data on the socket from the remote address to which it is
     /// connected.
     #[doc = man_link!(recv(2))]
-    pub fn recv<'fd, B>(&'fd self, buf: B, flags: Option<RecvFlag>) -> Recv<'fd, B>
-    where
-        B: BufMut,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
-        Recv::new(self, buf, flags)
+    pub fn recv<'fd, B: BufMut>(&'fd self, buf: B) -> Recv<'fd, B> {
+        Recv::new(self, buf, RecvFlag(0))
     }
 
     /// Continuously receive data on the socket from the remote address to which
@@ -211,226 +198,147 @@ impl AsyncFd {
     /// Be careful when using this as a peer sending a lot data might take up
     /// all your buffers from your pool!
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn multishot_recv<'fd>(
-        &'fd self,
-        pool: ReadBufPool,
-        flags: Option<RecvFlag>,
-    ) -> MultishotRecv<'fd> {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
-        MultishotRecv::new(self, pool, flags)
+    pub fn multishot_recv<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRecv<'fd> {
+        MultishotRecv::new(self, pool, RecvFlag(0))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected.
-    pub fn recv_n<'fd, B>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn recv_n<'fd, B: BufMut>(&'fd self, buf: B, n: usize) -> RecvN<'fd, B> {
         let buf = ReadNBuf { buf, last_read: 0 };
         RecvN {
-            recv: self.recv(buf, None),
+            recv: self.recv(buf),
             left: n,
+            flags: RecvFlag(0),
         }
     }
 
     /// Receives data on the socket from the remote address to which it is
     /// connected, using vectored I/O.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_vectored<'fd, B, const N: usize>(
+    pub fn recv_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = (bufs, MsgHeader::empty(), iovecs);
-        RecvVectored::new(self, resources, flags)
+        RecvVectored::new(self, resources, RecvFlag(0))
     }
 
     /// Receives at least `n` bytes on the socket from the remote address to
     /// which it is connected, using vectored I/O.
-    pub fn recv_n_vectored<'fd, B, const N: usize>(
+    pub fn recv_n_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> RecvNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    ) -> RecvNVectored<'fd, B, N> {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
         };
         RecvNVectored {
-            recv: self.recv_vectored(bufs, None),
+            recv: self.recv_vectored(bufs),
             left: n,
+            flags: RecvFlag(0),
         }
     }
 
     /// Receives data on the socket and returns the source address.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from<'fd, B, A>(
+    pub fn recv_from<'fd, B: BufMut, A: SocketAddress>(
         &'fd self,
         mut buf: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvFrom<'fd, B, A>
-    where
-        B: BufMut,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvFrom<'fd, B, A> {
         // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
         let resources = (buf, MsgHeader::empty(), iovec, MaybeUninit::uninit());
-        RecvFrom::new(self, resources, flags)
+        RecvFrom::new(self, resources, RecvFlag(0))
     }
 
     /// Receives data on the socket and the source address using vectored I/O.
     #[doc = man_link!(recvmsg(2))]
-    pub fn recv_from_vectored<'fd, B, A, const N: usize>(
+    pub fn recv_from_vectored<'fd, B: BufMutSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         mut bufs: B,
-        flags: Option<RecvFlag>,
-    ) -> RecvFromVectored<'fd, B, A, N>
-    where
-        B: BufMutSlice<N>,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => RecvFlag(0),
-        };
+    ) -> RecvFromVectored<'fd, B, A, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         let resources = (bufs, MsgHeader::empty(), iovecs, MaybeUninit::uninit());
-        RecvFromVectored::new(self, resources, flags)
+        RecvFromVectored::new(self, resources, RecvFlag(0))
     }
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(send(2))]
-    pub fn send<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> Send<'fd, B>
-    where
-        B: Buf,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        Send::new(self, buf, (SendCall::Normal, flags))
+    pub fn send<'fd, B: Buf>(&'fd self, buf: B) -> Send<'fd, B> {
+        Send::new(self, buf, (SendCall::Normal, SendFlag(0)))
     }
 
     /// Sends all data in `buf` on the socket to a connected peer.
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub fn send_all<'fd, B>(&'fd self, buf: B, flags: Option<SendFlag>) -> SendAll<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn send_all<'fd, B: Buf>(&'fd self, buf: B) -> SendAll<'fd, B> {
         let buf = SkipBuf { buf, skip: 0 };
         SendAll {
-            send: Extractor {
-                fut: self.send(buf, flags),
-            },
+            send: self.send(buf).extract(),
             send_op: SendCall::Normal,
-            flags,
+            flags: SendFlag(0),
         }
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
-    pub fn send_vectored<'fd, B, const N: usize>(
+    pub fn send_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, NoAddress, N>
-    where
-        B: BufSlice<N>,
-    {
-        self.sendmsg(bufs, NoAddress, flags)
+    ) -> SendMsg<'fd, B, NoAddress, N> {
+        self.sendmsg(bufs, NoAddress)
     }
 
     /// Sends all data in `bufs` on the socket to a connected peer, using
     /// vectored I/O.
     ///
     /// Returns [`io::ErrorKind::WriteZero`] if not all bytes could be written.
-    pub fn send_all_vectored<'fd, B, const N: usize>(
+    pub fn send_all_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> SendAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    ) -> SendAllVectored<'fd, B, N> {
         SendAllVectored {
-            send: self.send_vectored(bufs, None).extract(),
+            send: self.send_vectored(bufs).extract(),
             skip: 0,
             send_op: SendCall::Normal,
+            flags: SendFlag(0),
         }
     }
 
     /// Sends data on the socket to a connected peer.
     #[doc = man_link!(sendto(2))]
-    pub fn send_to<'fd, B, A>(
+    pub fn send_to<'fd, B: Buf, A: SocketAddress>(
         &'fd self,
         buf: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendTo<'fd, B, A>
-    where
-        B: Buf,
-        A: SocketAddress,
-    {
+    ) -> SendTo<'fd, B, A> {
         let resources = (buf, AddressStorage(address.into_storage()));
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
-        let args = (SendCall::Normal, flags);
+        let args = (SendCall::Normal, SendFlag(0));
         SendTo::new(self, resources, args)
     }
 
     /// Sends data in `bufs` on the socket to a connected peer.
     #[doc = man_link!(sendmsg(2))]
-    pub fn send_to_vectored<'fd, B, A, const N: usize>(
+    pub fn send_to_vectored<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         bufs: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, A, N>
-    where
-        B: BufSlice<N>,
-        A: SocketAddress,
-    {
-        self.sendmsg(bufs, address, flags)
+    ) -> SendMsg<'fd, B, A, N> {
+        self.sendmsg(bufs, address)
     }
 
-    fn sendmsg<'fd, B, A, const N: usize>(
+    fn sendmsg<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize>(
         &'fd self,
         bufs: B,
         address: A,
-        flags: Option<SendFlag>,
-    ) -> SendMsg<'fd, B, A, N>
-    where
-        B: BufSlice<N>,
-        A: SocketAddress,
-    {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SendFlag(0),
-        };
+    ) -> SendMsg<'fd, B, A, N> {
         let iovecs = unsafe { bufs.as_iovecs() };
         let address = AddressStorage(address.into_storage());
         let resources = (bufs, MsgHeader::empty(), iovecs, address);
-        SendMsg::new(self, resources, (SendCall::Normal, flags))
+        SendMsg::new(self, resources, (SendCall::Normal, SendFlag(0)))
     }
 
     /// Accept a new socket stream ([`AsyncFd`]).
@@ -438,25 +346,9 @@ impl AsyncFd {
     /// If an accepted stream is returned, the remote address of the peer is
     /// returned along with it.
     #[doc = man_link!(accept(2))]
-    pub fn accept<'fd, A>(&'fd self) -> Accept<'fd, A>
-    where
-        A: SocketAddress,
-    {
-        self.accept4(None)
-    }
-
-    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
-    /// socket.
-    ///
-    /// Also see [`AsyncFd::accept`].
-    #[doc = man_link!(accept4(2))]
-    pub fn accept4<'fd, A>(&'fd self, flags: Option<AcceptFlag>) -> Accept<'fd, A>
-    where
-        A: SocketAddress,
-    {
-        let flags = flags.unwrap_or(AcceptFlag(0));
+    pub fn accept<'fd, A: SocketAddress>(&'fd self) -> Accept<'fd, A> {
         let address = AddressStorage((MaybeUninit::uninit(), 0));
-        Accept::new(self, address, flags)
+        Accept::new(self, address, AcceptFlag(0))
     }
 
     /// Accept multiple socket streams.
@@ -466,20 +358,7 @@ impl AsyncFd {
     /// created kernel side, making this more efficient.
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
-        self.multishot_accept4(None)
-    }
-
-    /// Accept a new socket stream ([`AsyncFd`]) setting `flags` on the accepted
-    /// socket.
-    ///
-    /// Also see [`AsyncFd::multishot_accept`].
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn multishot_accept4<'fd>(&'fd self, flags: Option<AcceptFlag>) -> MultishotAccept<'fd> {
-        let flags = match flags {
-            Some(flags) => flags,
-            None => AcceptFlag(0),
-        };
-        MultishotAccept::new(self, (), flags)
+        MultishotAccept::new(self, (), AcceptFlag(0))
     }
 
     /// Get socket option.
@@ -567,9 +446,9 @@ pub(crate) enum SendCall {
 new_flag!(
     /// Flags in calls to recv.
     ///
-    /// See [`AsyncFd::recv`], [`AsyncFd::multishot_recv`],
-    /// [`AsyncFd::recv_vectored`], [`AsyncFd::recv_from`] and
-    /// [`AsyncFd::recv_from_vectored`].
+    /// Set using [`Recv::flags`], [`RecvN::flags`], [`MultishotRecv::flags`],
+    /// [`RecvVectored::flags`], [`RecvNVectored::flags`], [`RecvFrom::flags`],
+    /// [`RecvFromVectored::flags`].
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
@@ -593,8 +472,8 @@ new_flag!(
 
     /// Flags in calls to send.
     ///
-    /// See functions such as [`AsyncFd::send`], [`AsyncFd::send_vectored`] and
-    /// [`AsyncFd::send_to`].
+    /// Set using [`Send::flags`], [`SendAll::flags`], [`SendMsg::flags`],
+    /// [`SendAllVectored::flags`], [`SendTo::flags`].
     pub struct SendFlag(u32) impl BitOr {
         /// Tell the link layer that forward progress happened: you got a
         /// successful reply from the other side.
@@ -618,7 +497,7 @@ new_flag!(
 
     /// Flags in calls to accept.
     ///
-    /// See [`AsyncFd::accept4`] and [`AsyncFd::multishot_accept4`].
+    /// Set using [`Accept::flags`] and [`MultishotAccept::flags`].
     pub struct AcceptFlag(u32) {
         // NOTE: we don't need SOCK_NONBLOCK and SOCK_CLOEXEC.
     }
@@ -1126,7 +1005,55 @@ fd_operation! {
     pub struct Shutdown(sys::net::ShutdownOp) -> io::Result<()>;
 }
 
+impl<'fd, B: BufMut> Recv<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> RecvVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMut, A: SocketAddress> RecvFrom<'fd, B, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd, B: BufMutSlice<N>, A: SocketAddress, const N: usize> RecvFromVectored<'fd, B, A, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
 impl<'fd, B: Buf> Send<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// # Notes
@@ -1146,6 +1073,14 @@ impl<'fd, B: Buf> Send<'fd, B> {
 }
 
 impl<'fd, B: Buf, A: SocketAddress> SendTo<'fd, B, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
@@ -1158,6 +1093,14 @@ impl<'fd, B: Buf, A: SocketAddress> SendTo<'fd, B, A> {
 }
 
 impl<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize> SendMsg<'fd, B, A, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
@@ -1169,13 +1112,44 @@ impl<'fd, B: BufSlice<N>, A: SocketAddress, const N: usize> SendMsg<'fd, B, A, N
     }
 }
 
+impl<'fd, A: SocketAddress> Accept<'fd, A> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: AcceptFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
 
-    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`] and [`AsyncFd::multishot_accept4`].
+    /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`].
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
+}
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+impl<'fd> MultishotRecv<'fd> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
+}
+
+impl<'fd> MultishotAccept<'fd> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: AcceptFlag) -> Self {
+        if let Some(f) = self.state.args_mut() {
+            *f = flags;
+        }
+        self
+    }
 }
 
 /// [`Future`] behind [`AsyncFd::recv_n`].
@@ -1185,6 +1159,18 @@ pub struct RecvN<'fd, B: BufMut> {
     recv: Recv<'fd, ReadNBuf<B>>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
+    flags: RecvFlag,
+}
+
+impl<'fd, B: BufMut> RecvN<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.recv.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
@@ -1207,7 +1193,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.fd.recv(buf, None));
+                recv.set(recv.fd.recv(buf).flags(this.flags));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1222,10 +1208,19 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 pub struct SendAll<'fd, B: Buf> {
     send: Extractor<Send<'fd, SkipBuf<B>>>,
     send_op: SendCall,
-    flags: Option<SendFlag>,
+    flags: SendFlag,
 }
 
 impl<'fd, B: Buf> SendAll<'fd, B> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.send.fut.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].
@@ -1252,8 +1247,8 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
 
                 // Send some more.
                 this.send = match this.send_op {
-                    SendCall::Normal => this.send.fut.fd.send(buf, this.flags),
-                    SendCall::ZeroCopy => this.send.fut.fd.send(buf, this.flags).zc(),
+                    SendCall::Normal => this.send.fut.fd.send(buf).flags(this.flags),
+                    SendCall::ZeroCopy => this.send.fut.fd.send(buf).flags(this.flags).zc(),
                 }
                 .extract();
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
@@ -1290,6 +1285,18 @@ pub struct RecvNVectored<'fd, B: BufMutSlice<N>, const N: usize> {
     recv: RecvVectored<'fd, ReadNBuf<B>, N>,
     /// Number of bytes we still need to receive to hit our target `N`.
     left: usize,
+    flags: RecvFlag,
+}
+
+impl<'fd, B: BufMutSlice<N>, const N: usize> RecvNVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: RecvFlag) -> Self {
+        if let Some(f) = self.recv.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
 }
 
 impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N> {
@@ -1312,7 +1319,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.fd.recv_vectored(bufs, None));
+                recv.set(recv.fd.recv_vectored(bufs).flags(this.flags));
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1328,9 +1335,19 @@ pub struct SendAllVectored<'fd, B: BufSlice<N>, const N: usize> {
     send: Extractor<SendMsg<'fd, B, NoAddress, N>>,
     skip: u64,
     send_op: SendCall,
+    flags: SendFlag,
 }
 
 impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SendFlag) -> Self {
+        if let Some((_, f)) = self.send.fut.state.args_mut() {
+            *f = flags;
+            self.flags = flags;
+        }
+        self
+    }
+
     /// Enable zero copy.
     ///
     /// See [`Send::zc`].

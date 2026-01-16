@@ -138,10 +138,7 @@ pub(crate) const NO_OFFSET: u64 = u64::MAX;
 impl AsyncFd {
     /// Read from this fd into `buf`.
     #[doc = man_link!(read(2))]
-    pub fn read<'fd, B>(&'fd self, buf: B) -> Read<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn read<'fd, B: BufMut>(&'fd self, buf: B) -> Read<'fd, B> {
         Read::new(self, buf, NO_OFFSET)
     }
 
@@ -160,10 +157,7 @@ impl AsyncFd {
     }
 
     /// Read at least `n` bytes from this fd into `buf`.
-    pub fn read_n<'fd, B>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B>
-    where
-        B: BufMut,
-    {
+    pub fn read_n<'fd, B: BufMut>(&'fd self, buf: B, n: usize) -> ReadN<'fd, B> {
         let buf = ReadNBuf { buf, last_read: 0 };
         ReadN {
             read: self.read(buf),
@@ -174,23 +168,20 @@ impl AsyncFd {
 
     /// Read from this fd into `bufs`.
     #[doc = man_link!(readv(2))]
-    pub fn read_vectored<'fd, B, const N: usize>(&'fd self, mut bufs: B) -> ReadVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    pub fn read_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
+        &'fd self,
+        mut bufs: B,
+    ) -> ReadVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs_mut() };
         ReadVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Read at least `n` bytes from this fd into `bufs`.
-    pub fn read_n_vectored<'fd, B, const N: usize>(
+    pub fn read_n_vectored<'fd, B: BufMutSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
         n: usize,
-    ) -> ReadNVectored<'fd, B, N>
-    where
-        B: BufMutSlice<N>,
-    {
+    ) -> ReadNVectored<'fd, B, N> {
         let bufs = ReadNBuf {
             buf: bufs,
             last_read: 0,
@@ -204,18 +195,12 @@ impl AsyncFd {
 
     /// Write `buf` to this fd.
     #[doc = man_link!(write(2))]
-    pub fn write<'fd, B>(&'fd self, buf: B) -> Write<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn write<'fd, B: Buf>(&'fd self, buf: B) -> Write<'fd, B> {
         Write::new(self, buf, NO_OFFSET)
     }
 
     /// Write all of `buf` to this fd.
-    pub fn write_all<'fd, B>(&'fd self, buf: B) -> WriteAll<'fd, B>
-    where
-        B: Buf,
-    {
+    pub fn write_all<'fd, B: Buf>(&'fd self, buf: B) -> WriteAll<'fd, B> {
         let buf = SkipBuf { buf, skip: 0 };
         WriteAll {
             write: Extractor {
@@ -227,22 +212,19 @@ impl AsyncFd {
 
     /// Write `bufs` to this file.
     #[doc = man_link!(writev(2))]
-    pub fn write_vectored<'fd, B, const N: usize>(&'fd self, bufs: B) -> WriteVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    pub fn write_vectored<'fd, B: BufSlice<N>, const N: usize>(
+        &'fd self,
+        bufs: B,
+    ) -> WriteVectored<'fd, B, N> {
         let iovecs = unsafe { bufs.as_iovecs() };
         WriteVectored::new(self, (bufs, iovecs), NO_OFFSET)
     }
 
     /// Write all `bufs` to this file.
-    pub fn write_all_vectored<'fd, B, const N: usize>(
+    pub fn write_all_vectored<'fd, B: BufSlice<N>, const N: usize>(
         &'fd self,
         bufs: B,
-    ) -> WriteAllVectored<'fd, B, N>
-    where
-        B: BufSlice<N>,
-    {
+    ) -> WriteAllVectored<'fd, B, N> {
         WriteAllVectored {
             write: self.write_vectored(bufs).extract(),
             offset: NO_OFFSET,
@@ -256,13 +238,8 @@ impl AsyncFd {
     #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_to<'fd>(
-        &'fd self,
-        target: BorrowedFd<'fd>,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(target, SpliceDirection::To, length, flags)
+    pub fn splice_to<'fd>(&'fd self, target: BorrowedFd<'fd>, length: u32) -> Splice<'fd> {
+        self.splice(target, SpliceDirection::To, length)
     }
 
     /// Splice `length` bytes from `target` fd.
@@ -271,13 +248,8 @@ impl AsyncFd {
     #[doc = man_link!(splice(2))]
     #[doc(alias = "splice")]
     #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub fn splice_from<'fd>(
-        &'fd self,
-        target: BorrowedFd<'fd>,
-        length: u32,
-        flags: Option<SpliceFlag>,
-    ) -> Splice<'fd> {
-        self.splice(target, SpliceDirection::From, length, flags)
+    pub fn splice_from<'fd>(&'fd self, target: BorrowedFd<'fd>, length: u32) -> Splice<'fd> {
+        self.splice(target, SpliceDirection::From, length)
     }
 
     #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -286,13 +258,9 @@ impl AsyncFd {
         target: BorrowedFd<'fd>,
         direction: SpliceDirection,
         length: u32,
-        flags: Option<SpliceFlag>,
     ) -> Splice<'fd> {
         let target_fd = target.as_raw_fd();
-        let flags = match flags {
-            Some(flags) => flags,
-            None => SpliceFlag(0),
-        };
+        let flags = SpliceFlag(0);
         let args = (target_fd, direction, NO_OFFSET, NO_OFFSET, length, flags);
         Splice::new(self, (), args)
     }
@@ -328,7 +296,7 @@ pub(crate) enum SpliceDirection {
 new_flag!(
     /// Splice flags.
     ///
-    /// See [`AsyncFd::splice_to`] and related function.
+    /// Set using [`Splice::flags`].
     pub struct SpliceFlag(u32) impl BitOr {
         /// Attempt to move pages instead of copying.
         MOVE = libc::SPLICE_F_MOVE,
@@ -432,6 +400,14 @@ impl<'fd> Splice<'fd> {
     pub fn at(mut self, offset: u64) -> Self {
         if let Some((_, _, _, off_out, _, _)) = self.state.args_mut() {
             *off_out = offset;
+        }
+        self
+    }
+
+    /// Set the `flags`.
+    pub fn flags(mut self, flags: SpliceFlag) -> Self {
+        if let Some((_, _, _, _, _, f)) = self.state.args_mut() {
+            *f = flags;
         }
         self
     }
