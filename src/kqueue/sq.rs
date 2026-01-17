@@ -75,8 +75,6 @@ impl Submissions {
             // fails with EINTR error, all changes in the changelist have been
             // applied", so we can safely ignore it.
             if err.raw_os_error() != Some(libc::EINTR) {
-                // TODO: do we want to put in fake error events or something to
-                // ensure the Futures don't stall?
                 log::warn!(change_list:? = changes; "failed to submit change list: {err}, dropping changes");
             }
         }
@@ -86,9 +84,6 @@ impl Submissions {
             // before the change was submitted to the kernel. We'll log it, but
             // otherwise ignore it.
             if let Some(err) = event.error() {
-                // TODO: see if we can some how get this error to the operation
-                // that submitted it or something to ensure the Future doesn't
-                // stall.
                 log::warn!(kevent:? = event; "submitted change has an error: {err}, dropping it");
             }
         }

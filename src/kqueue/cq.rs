@@ -70,8 +70,6 @@ impl Completions {
                 // completions though.
                 if err.raw_os_error() != Some(libc::EINTR) {
                     if !changes.is_empty() {
-                        // TODO: do we want to put in fake error events or
-                        // something to ensure the Futures don't stall?
                         log::warn!(change_list:? = changes; "failed to submit change list: {err}, dropping changes");
                     }
                     result_err = Some(err);
@@ -90,9 +88,6 @@ impl Completions {
             log::trace!(event:?; "got event");
 
             if let Some(err) = event.error() {
-                // TODO: see if we can some how get this error to the operation
-                // that submitted it or something to ensure the Future doesn't
-                // stall.
                 log::warn!(kevent:? = event; "submitted change has an error: {err}, dropping it");
                 continue;
             }
