@@ -1336,7 +1336,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                         unsafe { iovec.set_len(0) };
                     } else {
                         // SAFETY: checked above that the length > skip.
-                        unsafe { iovec.set_len(skip as usize) };
+                        unsafe { iovec.skip(skip as usize) };
                         break;
                     }
                 }

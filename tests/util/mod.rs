@@ -619,7 +619,7 @@ pub(crate) struct BadBufSlice {
 impl BadBufSlice {
     pub(crate) const DATA1: &'static [u8] = &[123, 123, 123, 123, 123, 123, 123, 123, 123, 123];
     pub(crate) const DATA2: &'static [u8] = &[200, 200, 200, 200, 200, 200, 200, 200, 200, 200];
-    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+    pub(crate) const DATA3: &'static [u8] = &[255, 255, 255, 255, 255, 111, 111, 111, 111, 111];
 }
 
 unsafe impl BufSlice<3> for BadBufSlice {
