@@ -135,7 +135,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
         // Now we wait for a read able event and continue in `try_run`.
     }
 
-    const OP_KIND: OpKind = OpKind::Read;
+    const OP_KIND: OpKind = OpKind::Write;
 
     fn try_run(
         fd: &AsyncFd,
