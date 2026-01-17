@@ -909,8 +909,8 @@ fn send_all() {
     conn_test(
         move || {
             let (mut client, _) = listener.accept().expect("failed to accept connection");
-            let mut buf = vec![0; BadBuf::DATA.len() + 1];
-            let n = client.read(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(31);
+            let n = client.read_to_end(&mut buf).unwrap();
             assert_eq!(n, BadBuf::DATA.len());
             buf.resize(n, 0);
             assert_eq!(buf, BadBuf::DATA);
@@ -937,8 +937,8 @@ fn send_all_extract() {
     conn_test(
         move || {
             let (mut client, _) = listener.accept().expect("failed to accept connection");
-            let mut buf = vec![0; BadBuf::DATA.len() + 1];
-            let n = client.read(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(BadBuf::DATA.len() + 1);
+            let n = client.read_to_end(&mut buf).unwrap();
             assert_eq!(n, BadBuf::DATA.len());
             buf.resize(n, 0);
             assert_eq!(buf, BadBuf::DATA);
@@ -1090,8 +1090,8 @@ fn send_all_vectored() {
     conn_test(
         move || {
             let (mut client, _) = listener.accept().expect("failed to accept connection");
-            let mut buf = vec![0; 31];
-            let n = client.read(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(31);
+            let n = client.read_to_end(&mut buf).unwrap();
             assert_eq!(n, 30);
             buf.resize(n, 0);
             assert_eq!(&buf[..10], BadBufSlice::DATA1);
@@ -1120,8 +1120,8 @@ fn send_all_vectored_extract() {
     conn_test(
         move || {
             let (mut client, _) = listener.accept().expect("failed to accept connection");
-            let mut buf = vec![0; 31];
-            let n = client.read(&mut buf).unwrap();
+            let mut buf = Vec::with_capacity(31);
+            let n = client.read_to_end(&mut buf).unwrap();
             assert_eq!(n, 30);
             buf.resize(n, 0);
             assert_eq!(&buf[..10], BadBufSlice::DATA1);
