@@ -46,10 +46,19 @@ use crate::{AsyncFd, SubmissionQueue};
 // Since neither the DirectState or EventedState shares any resources with the
 // OS we can safely drop both of them without any special handling.
 //
-// TODO: document dropping of state.
 // This is not true for fd::State (part of AsyncFd). Because there could be
 // outstanding readiness polls that use the fd::State as user_data we delay the
-// allocation. We do this by
+// allocation. We do this by checking if the state has been initialised and if
+// there are any pending ops. If there are no pending ops we can safely drop the
+// state. If there are pending ops we need to delay the deallcation since a
+// readiness poll could be returned at any time in the completion queue, which
+// would access the state.
+//
+// We delay the deallcation by sending a user-space event (EVFILT_USER) to the
+// polling thread with the pointer as identifier, which returns as user_data in
+// the completion event where we can safely deallocate it. Since we close the
+// file descriptor *before* we send this event we're ensured that any previous
+// events that may hold a pointer to the fd::State will have been processed.
 
 /// State of an operation that is done synchronously, e.g. opening a socket.
 #[derive(Debug)]
