@@ -3,7 +3,8 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::{ptr, task};
 
-use crate::{SubmissionQueue, kqueue, lock};
+use crate::fd::{self, AsyncFd};
+use crate::{get_mut, kqueue, lock, syscall};
 
 /// State of a file descriptor.
 #[derive(Debug)]
@@ -64,37 +65,6 @@ impl State {
         // written to once it can't change, making Relaxed ordering ok.
         self.shared.load(Ordering::Relaxed).cast()
     }
-
-    /// # SAFETY
-    ///
-    /// Only call this if the state needs to be dropped.
-    pub(crate) unsafe fn drop(&mut self, sq: &SubmissionQueue) {
-        let ptr = replace(self.shared.get_mut(), ptr::null_mut());
-        if ptr.is_null() {
-            // Never started any operations, so we don't have to clean anything up.
-            return;
-        }
-
-        if lock(unsafe { &*ptr }).ops.is_empty() {
-            // No pending operations, we can safely drop the state.
-            unsafe { ptr::drop_in_place(ptr) };
-            return;
-        }
-
-        // Because polling for events is done via a different type (not
-        // `AsyncFd`, but `Ring`), it can happen on another thread. Which means
-        // we don't know if another thread is currently accessing the operations
-        // state (via `Ring::poll`). So, we have to delay its deallocation until
-        // we know for sure that no other thread is accessing it to prevent a
-        // use-after-free.
-        //
-        // We do this by sending an event to the polling thread to deallocate
-        // the operation state for us.
-        sq.submissions().add(|event| {
-            event.0.ident = ptr as _;
-            event.0.filter = libc::EVFILT_USER;
-        });
-    }
 }
 
 /// For kqueue the pair `ident` and `filter` is unique. For our use case here
@@ -136,5 +106,42 @@ impl OpState {
                 OpKind::Write => event.0.filter == libc::EVFILT_WRITE,
             })
             .for_each(|(_, waker)| waker.wake())
+    }
+}
+
+impl Drop for AsyncFd {
+    fn drop(&mut self) {
+        let result = match self.kind() {
+            fd::Kind::File => syscall!(close(self.fd())).map(|_| ()),
+        };
+        if let Err(err) = result {
+            log::warn!("error closing a10::AsyncFd: {err}");
+        }
+
+        let ptr = replace(self.state.shared.get_mut(), ptr::null_mut());
+        if ptr.is_null() {
+            // Never started any operations, so we don't have to clean anything up.
+            return;
+        }
+
+        if get_mut(unsafe { &mut *ptr }).ops.is_empty() {
+            // No pending operations, we can safely drop the state.
+            unsafe { ptr::drop_in_place(ptr) };
+            return;
+        }
+
+        // Because polling for events is done via a different type (not
+        // `AsyncFd`, but `Ring`), it can happen on another thread. Which means
+        // we don't know if another thread is currently accessing the operations
+        // state (via `Ring::poll`). So, we have to delay its deallocation until
+        // we know for sure that no other thread is accessing the state to
+        // prevent use-after-free.
+        //
+        // We do this by sending an event to the polling thread to deallocate
+        // the operation state for us.
+        self.sq.submissions().add(|event| {
+            event.0.ident = ptr as _;
+            event.0.filter = libc::EVFILT_USER;
+        });
     }
 }

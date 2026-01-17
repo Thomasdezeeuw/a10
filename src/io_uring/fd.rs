@@ -2,12 +2,12 @@ use std::marker::PhantomData;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
-use crate::SubmissionQueue;
 use crate::fd::{self, AsyncFd, Kind};
-use crate::io_uring::libc;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::sq::{self, Submission};
+use crate::io_uring::{self, libc};
 use crate::op::fd_operation;
+use crate::{SubmissionQueue, syscall};
 
 /// io_uring specific methods.
 impl AsyncFd {
@@ -173,6 +173,26 @@ impl Kind {
     pub(crate) fn use_flags(self, submission: &mut Submission) {
         if let Kind::Direct = self {
             submission.0.flags |= libc::IOSQE_FIXED_FILE;
+        }
+    }
+}
+
+impl Drop for AsyncFd {
+    fn drop(&mut self) {
+        let res = self.sq.submissions().add(|submission| {
+            io_uring::io::close_file_fd(self.fd(), self.kind(), submission);
+        });
+        if let Ok(()) = res {
+            return;
+        }
+
+        // Fall back to synchronously closing the descriptor.
+        let result = match self.kind() {
+            Kind::Direct => io_uring::io::close_direct_fd(self.fd(), &self.sq),
+            Kind::File => syscall!(close(self.fd())).map(|_| ()),
+        };
+        if let Err(err) = result {
+            log::warn!("error closing a10::AsyncFd: {err}");
         }
     }
 }
