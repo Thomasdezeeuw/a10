@@ -33,10 +33,7 @@
 //!
 //! [available online on GitHub]: https://github.com/Thomasdezeeuw/a10/tree/main/examples
 
-#![cfg_attr(
-    feature = "nightly",
-    feature(async_iterator, cfg_sanitize, io_error_more)
-)]
+#![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
 use std::ptr;
 use std::time::Duration;

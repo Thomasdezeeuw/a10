@@ -142,12 +142,8 @@ impl Submissions {
 pub(crate) struct QueueFull;
 
 impl From<QueueFull> for io::Error {
-    fn from(_: QueueFull) -> io::Error {
-        #[cfg(not(feature = "nightly"))]
-        let kind = io::ErrorKind::Other;
-        #[cfg(feature = "nightly")]
-        let kind = io::ErrorKind::ResourceBusy;
-        io::Error::new(kind, "submission queue is full")
+    fn from(QueueFull: QueueFull) -> io::Error {
+        io::Error::new(io::ErrorKind::ResourceBusy, "submission queue is full")
     }
 }
 
