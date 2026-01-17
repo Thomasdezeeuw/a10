@@ -35,7 +35,8 @@ impl Submissions {
         // Create and fill the submission event.
         // SAFETY: all zero is valid for `libc::kevent`.
         let mut event: Event = unsafe { mem::zeroed() };
-        event.0.flags |= libc::EV_RECEIPT | libc::EV_DISPATCH | libc::EV_ENABLE | libc::EV_ADD;
+        event.0.flags |=
+            libc::EV_CLEAR | libc::EV_DISPATCH | libc::EV_ENABLE | libc::EV_ADD | libc::EV_RECEIPT;
         fill_event(&mut event);
         log::trace!(event:?; "registering event");
 
