@@ -1472,7 +1472,17 @@ impl private::SocketAddress for SocketAddr {
 
     unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self {
         debug_assert!(length as usize >= size_of::<libc::sa_family_t>());
-        let family = unsafe { storage.as_ptr().cast::<libc::sa_family_t>().read() };
+        // SAFETY: the first couple of fields of sockaddr_in and sockaddr_in6
+        // (namely len, family and port) overlap with sockaddr so we can safely
+        // use it to read the family field.
+        let family = unsafe {
+            storage
+                .as_ptr()
+                .cast::<libc::sockaddr>()
+                .byte_offset(mem::offset_of!(libc::sockaddr, sa_family).cast_signed())
+                .cast::<libc::sa_family_t>()
+                .read()
+        };
         if family == libc::AF_INET as libc::sa_family_t {
             let storage = unsafe { storage.as_ptr().cast::<libc::sockaddr_in>().read() };
             unsafe { SocketAddrV4::init(MaybeUninit::new(storage), length).into() }
@@ -1496,15 +1506,15 @@ impl private::SocketAddress for SocketAddrV4 {
 
     fn into_storage(self) -> Self::Storage {
         libc::sockaddr_in {
+            // A number of OS have `sin_len`, but we don't use it.
+            #[cfg(not(any(target_os = "android", target_os = "linux")))]
+            sin_len: 0,
             sin_family: libc::AF_INET as libc::sa_family_t,
             sin_port: self.port().to_be(),
             sin_addr: libc::in_addr {
                 s_addr: u32::from_ne_bytes(self.ip().octets()),
             },
             sin_zero: [0; 8],
-            // A number of OS have `sin_len`, but we don't use it.
-            #[cfg(not(any(target_os = "android", target_os = "linux")))]
-            sin_len: 0,
         }
     }
 
@@ -1544,6 +1554,9 @@ impl private::SocketAddress for SocketAddrV6 {
 
     fn into_storage(self) -> Self::Storage {
         libc::sockaddr_in6 {
+            // A number of OS have `sin6_len`, but we don't use it.
+            #[cfg(not(any(target_os = "android", target_os = "linux")))]
+            sin6_len: 0,
             sin6_family: libc::AF_INET6 as libc::sa_family_t,
             sin6_port: self.port().to_be(),
             sin6_flowinfo: self.flowinfo(),
@@ -1551,9 +1564,6 @@ impl private::SocketAddress for SocketAddrV6 {
                 s6_addr: self.ip().octets(),
             },
             sin6_scope_id: self.scope_id(),
-            // A number of OS have `sin6_len`, but we don't use it.
-            #[cfg(not(any(target_os = "android", target_os = "linux")))]
-            sin6_len: 0,
         }
     }
 
@@ -1593,6 +1603,9 @@ impl private::SocketAddress for unix::net::SocketAddr {
 
     fn into_storage(self) -> Self::Storage {
         let mut storage = libc::sockaddr_un {
+            // A number of OS have `sin6_len`, but we don't use it.
+            #[cfg(not(any(target_os = "android", target_os = "linux")))]
+            sun_len: 0,
             sun_family: libc::AF_UNIX as libc::sa_family_t,
             // SAFETY: all zero is valid for `sockaddr_un`.
             ..unsafe { mem::zeroed() }
