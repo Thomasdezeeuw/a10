@@ -1,9 +1,9 @@
 name: CI
 on:
   push:
-    branches: [ "main" ]
+    branches: [ main ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ main ]
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
@@ -13,20 +13,28 @@ permissions:
 
 jobs:
   Test:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@1.91
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)
       run: cargo test --release
   Nightly:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
     - name: Run Tests
       run: cargo test
@@ -36,11 +44,31 @@ jobs:
       run: cargo test --release
     - name: Run Tests (nightly feature, release build)
       run: cargo test --features nightly --release
-  Clippy:
+  Check:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+        - aarch64-apple-ios
+        - aarch64-apple-tvos
+        - aarch64-apple-visionos
+        - aarch64-apple-watchos
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
+    - uses: dtolnay/rust-toolchain@nightly
+    - name: Check build
+      run: cargo check --target ${{ matrix.target }} -Zbuild-std --all-targets
+  Clippy:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
+    steps:
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: clippy
@@ -50,7 +78,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
     - name: Check docs
       run: RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
@@ -58,7 +86,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@stable
       with:
         components: rustfmt
@@ -72,7 +100,7 @@ jobs:
       matrix:
         sanitizer: [address, thread, memory, leak]
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rust-src
