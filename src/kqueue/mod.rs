@@ -136,6 +136,13 @@ impl Shared {
                     lock(unsafe { &*ptr }).wake(&event);
                 }
                 libc::EVFILT_PROC => {
+                    // In some cases a second EVFILT_PROC is returned, at least
+                    // on macOS, that would case a use after free if we tried to
+                    // use the same user_data to wake the Waker again.
+                    if event.0.flags & libc::EV_EOF == 0 {
+                        continue;
+                    }
+
                     // Wake the future that was waiting for the result.
                     // SAFETY: WaitIdOp set this pointer for us.
                     unsafe { Box::<task::Waker>::from_raw(event.0.udata.cast()).wake() };

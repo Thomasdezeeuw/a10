@@ -30,7 +30,7 @@ impl crate::op::Op for WaitIdOp {
                 sq.submissions().add(|event| {
                     event.0.filter = libc::EVFILT_PROC;
                     event.0.ident = pid as _;
-                    event.0.flags |= libc::EV_RECEIPT | libc::EV_ONESHOT | libc::EV_ADD;
+                    event.0.flags = libc::EV_RECEIPT | libc::EV_ONESHOT | libc::EV_ADD;
                     event.0.fflags = libc::NOTE_EXIT;
                     // Wake the Future once the process has exited.
                     event.0.udata = Box::into_raw(Box::new(ctx.waker().clone())).cast();
