@@ -58,6 +58,8 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: rust-src
     - name: Check build
       run: cargo check --target ${{ matrix.target }} -Zbuild-std --all-targets
   Clippy:
