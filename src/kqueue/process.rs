@@ -22,7 +22,7 @@ impl crate::op::Op for WaitIdOp {
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
         match state {
-            EventedState::NotStarted { args, .. } => {
+            EventedState::NotStarted { args, .. } | EventedState::ToSubmit { args, .. } => {
                 let (wait, _) = args;
                 let pid = match *wait {
                     WaitOn::Process(pid) => pid,
@@ -37,7 +37,8 @@ impl crate::op::Op for WaitIdOp {
                 });
 
                 // Set ourselves to waiting for an event from the kernel.
-                if let EventedState::NotStarted { resources, args } =
+                if let EventedState::NotStarted { resources, args }
+                | EventedState::ToSubmit { resources, args } =
                     replace(state, EventedState::Complete)
                 {
                     *state = EventedState::Waiting { resources, args };

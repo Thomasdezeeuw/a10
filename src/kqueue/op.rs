@@ -214,6 +214,9 @@ pub(super) use impl_fd_op;
 pub(crate) enum EventedState<R, A> {
     /// Operation has not started yet.
     NotStarted { resources: R, args: A },
+    /// Ran the setup, not yet submitted an event, or need to submit an event
+    /// again.
+    ToSubmit { resources: R, args: A },
     /// Event was submitted, waiting for a result.
     Waiting { resources: R, args: A },
     /// Last state where the operation was fully cleaned up.
@@ -344,6 +347,14 @@ fn poll<T: FdOp, Out>(
                 // Perform any setup required before waiting for an event.
                 T::setup(fd, resources, args)?;
 
+                if let EventedState::NotStarted { resources, args } =
+                    replace(state, EventedState::Complete)
+                {
+                    *state = EventedState::ToSubmit { resources, args };
+                    // Continue in the next loop iteration.
+                }
+            }
+            EventedState::ToSubmit { .. } => {
                 let fd_state = fd.state();
                 // Add ourselves to the waiters for the operation.
                 let needs_register = {
@@ -367,7 +378,7 @@ fn poll<T: FdOp, Out>(
                 }
 
                 // Set ourselves to waiting for an event from the kernel.
-                if let EventedState::NotStarted { resources, args } =
+                if let EventedState::ToSubmit { resources, args } =
                     replace(state, EventedState::Complete)
                 {
                     *state = EventedState::Waiting { resources, args };
@@ -389,7 +400,7 @@ fn poll<T: FdOp, Out>(
                         if let EventedState::Waiting { resources, args } =
                             replace(state, EventedState::Complete)
                         {
-                            *state = EventedState::NotStarted { resources, args };
+                            *state = EventedState::ToSubmit { resources, args };
                             // Try again in the next loop iteration.
                         }
                     }
