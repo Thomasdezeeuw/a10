@@ -361,3 +361,11 @@ fn lock<'a, T>(mutex: &'a std::sync::Mutex<T>) -> std::sync::MutexGuard<'a, T> {
         }
     }
 }
+
+/// Get mutable access to the lock's data.
+fn get_mut<'a, T>(mutex: &'a mut std::sync::Mutex<T>) -> &'a mut T {
+    match mutex.get_mut() {
+        Ok(guard) => guard,
+        Err(err) => err.into_inner(),
+    }
+}

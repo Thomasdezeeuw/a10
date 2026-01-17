@@ -680,6 +680,10 @@ impl IoSlice {
         self.0.set_len(new_len);
     }
 
+    pub(crate) unsafe fn skip(&mut self, n: usize) {
+        self.0.skip(n);
+    }
+
     pub(crate) unsafe fn ptr(&self) -> *const u8 {
         self.0.ptr()
     }

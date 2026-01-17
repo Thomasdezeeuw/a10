@@ -11,7 +11,7 @@ use crate::io_uring::cq::{Completion, MULTISHOT_TAG, SINGLESHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue, lock};
+use crate::{AsyncFd, SubmissionQueue, get_mut, lock};
 
 // # Usage
 //
@@ -209,10 +209,7 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
         // SAFETY: if we're called we're dropping the value, thus we should have
         // unique acess.
         let data = unsafe { &mut *ptr };
-        let shared = match data.shared.get_mut() {
-            Ok(shared) => shared,
-            Err(err) => err.into_inner(),
-        };
+        let shared = get_mut(&mut data.shared);
         if !matches!(shared.status, Status::Complete) {
             asan::unpoison(data.tail.resources.get());
             // SAFETY: Resources must always be initialise if the status is not

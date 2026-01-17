@@ -22,7 +22,7 @@ impl crate::op::Op for WaitIdOp {
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
         match state {
-            EventedState::NotStarted { args, .. } => {
+            EventedState::NotStarted { args, .. } | EventedState::ToSubmit { args, .. } => {
                 let (wait, _) = args;
                 let pid = match *wait {
                     WaitOn::Process(pid) => pid,
@@ -30,14 +30,15 @@ impl crate::op::Op for WaitIdOp {
                 sq.submissions().add(|event| {
                     event.0.filter = libc::EVFILT_PROC;
                     event.0.ident = pid as _;
-                    event.0.flags |= libc::EV_RECEIPT | libc::EV_ONESHOT | libc::EV_ADD;
+                    event.0.flags = libc::EV_RECEIPT | libc::EV_ONESHOT | libc::EV_ADD;
                     event.0.fflags = libc::NOTE_EXIT;
                     // Wake the Future once the process has exited.
                     event.0.udata = Box::into_raw(Box::new(ctx.waker().clone())).cast();
                 });
 
                 // Set ourselves to waiting for an event from the kernel.
-                if let EventedState::NotStarted { resources, args } =
+                if let EventedState::NotStarted { resources, args }
+                | EventedState::ToSubmit { resources, args } =
                     replace(state, EventedState::Complete)
                 {
                     *state = EventedState::Waiting { resources, args };

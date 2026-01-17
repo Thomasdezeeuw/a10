@@ -81,6 +81,12 @@ impl IoSlice {
         debug_assert!(self.0.iov_len >= new_len);
         self.0.iov_len = new_len;
     }
+
+    pub(crate) fn skip(&mut self, n: usize) {
+        debug_assert!(self.0.iov_len >= n);
+        self.0.iov_base = unsafe { self.0.iov_base.offset(n.cast_signed()) };
+        self.0.iov_len -= n;
+    }
 }
 
 // SAFETY: `libc::iovec` is `!Sync`, but it's just a pointer to some bytes, so

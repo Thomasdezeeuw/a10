@@ -6,13 +6,13 @@
 //! * <https://www.dragonflybsd.org/cgi/web-man/?command=kqueue>
 //! * <https://man.netbsd.org/kqueue.2>
 
-use std::fmt;
 use std::mem::{drop as unlock, swap};
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
+use std::{fmt, ptr, task};
 
-use crate::{debug_detail, lock};
+use crate::{debug_detail, lock, syscall};
 
 pub(crate) mod config;
 mod cq;
@@ -30,6 +30,8 @@ pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
 
+use cq::WAKE_USER_DATA;
+
 #[derive(Debug)]
 pub(crate) struct Shared {
     /// Maximum size of the change list before it's submitted to the kernel,
@@ -44,21 +46,111 @@ pub(crate) struct Shared {
 }
 
 impl Shared {
-    /// Merge the change list.
+    /// Reuse the allocation of a change list.
     ///
     /// Reusing allocations (if it makes sense).
-    fn merge_change_list(&self, mut changes: Vec<Event>) {
-        if changes.capacity() == 0 {
+    fn reuse_change_list(&self, mut changes: Vec<Event>) {
+        if changes.is_empty() && changes.capacity() == 0 {
             return;
         }
 
         let mut change_list = lock(&self.change_list);
-        if change_list.len() < changes.capacity() {
-            // Existing is smaller than `changes` alloc, reuse it.
-            swap(&mut *change_list, &mut changes);
+        if changes.capacity() >= change_list.capacity() {
+            swap(&mut *change_list, &mut changes); // Reuse allocation.
         }
         change_list.append(&mut changes);
         unlock(change_list); // Unlock before any deallocations.
+    }
+
+    fn kevent(
+        &self,
+        changes: &mut Vec<Event>,
+        mut events: Option<&mut Vec<Event>>,
+        timeout: Option<&libc::timespec>,
+    ) {
+        // SAFETY: casting `Event` to `libc::kevent` is safe due to
+        // `repr(transparent)` on `Event`.
+        let (events_ptr, events_len) = match events {
+            Some(ref mut events) => {
+                debug_assert!(events.is_empty());
+                (events.as_mut_ptr().cast(), events.capacity() as _)
+            }
+            None => (changes.as_mut_ptr().cast(), changes.capacity() as _),
+        };
+        let result = syscall!(kevent(
+            self.kq.as_raw_fd(),
+            changes.as_ptr().cast(),
+            changes.len() as _,
+            events_ptr,
+            events_len,
+            timeout.map(ptr::from_ref).unwrap_or(ptr::null_mut()),
+        ));
+        let events = match result {
+            // SAFETY: `kevent` ensures that `n` events are written.
+            Ok(n) => {
+                let events = match events {
+                    Some(events) => {
+                        changes.clear();
+                        events
+                    }
+                    None => changes,
+                };
+                unsafe { events.set_len(n as usize) }
+                events
+            }
+            Err(err) => {
+                // According to the manual page of FreeBSD: "When kevent() call
+                // fails with EINTR error, all changes in the changelist have
+                // been applied", so we can safely ignore it. We'll have zero
+                // completions though.
+                if err.raw_os_error() != Some(libc::EINTR) && !changes.is_empty() {
+                    log::warn!(changes:?; "failed to submit change list: {err}, dropping changes");
+                }
+                events.map(Vec::clear);
+                changes.clear();
+                return;
+            }
+        };
+
+        for event in events.iter() {
+            log::trace!(event:?; "got event");
+
+            if let Some(err) = event.error() {
+                log::warn!(event:?; "submitted change has an error: {err}, dropping it");
+                continue;
+            }
+
+            match event.0.filter {
+                libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => continue,
+                libc::EVFILT_USER => {
+                    let ptr = event.0.udata.cast::<fd::SharedState>();
+                    debug_assert!(!ptr.is_null());
+                    // SAFETY: see fd::State::drop.
+                    unsafe { ptr::drop_in_place(ptr) };
+                }
+                libc::EVFILT_READ | libc::EVFILT_WRITE => {
+                    let ptr = event.0.udata.cast::<fd::SharedState>();
+                    debug_assert!(!ptr.is_null());
+                    // SAFETY: in kqueue::op we ensure that the pointer is
+                    // always valid (the kernel should copy it over for us).
+                    lock(unsafe { &*ptr }).wake(&event);
+                }
+                libc::EVFILT_PROC => {
+                    // In some cases a second EVFILT_PROC is returned, at least
+                    // on macOS, that would case a use after free if we tried to
+                    // use the same user_data to wake the Waker again.
+                    if event.0.flags & libc::EV_EOF == 0 {
+                        continue;
+                    }
+
+                    // Wake the future that was waiting for the result.
+                    // SAFETY: WaitIdOp set this pointer for us.
+                    unsafe { Box::<task::Waker>::from_raw(event.0.udata.cast()).wake() };
+                }
+                _ => log::debug!(event:?; "unexpected event, ignoring it"),
+            }
+        }
+        events.clear();
     }
 }
 

@@ -5,7 +5,7 @@
 use std::os::fd::{BorrowedFd, IntoRawFd, OwnedFd, RawFd};
 use std::{fmt, io};
 
-use crate::{SubmissionQueue, syscall};
+use crate::SubmissionQueue;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 pub use crate::sys::fd::{ToDirect, ToFd};
@@ -47,7 +47,7 @@ pub struct AsyncFd {
         target_os = "visionos",
         target_os = "watchos",
     ))]
-    state: crate::sys::fd::State,
+    pub(crate) state: crate::sys::fd::State,
     // NOTE: public because it's used by the crate::io::Std{in,out,error}.
     pub(crate) sq: SubmissionQueue,
 }
@@ -209,46 +209,6 @@ impl fmt::Debug for AsyncFd {
         ))]
         f.field("state", &self.state);
         f.finish()
-    }
-}
-
-impl Drop for AsyncFd {
-    fn drop(&mut self) {
-        // Try to asynchronously close the desctiptor (if the OS supports it).
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        {
-            let result = self.sq.submissions().add(|submission| {
-                crate::sys::io::close_file_fd(self.fd(), self.kind(), submission);
-            });
-            if let Ok(()) = result {
-                return;
-            }
-        }
-
-        // Fall back to synchronously closing the descriptor.
-        let result = match self.kind() {
-            #[cfg(any(target_os = "android", target_os = "linux"))]
-            Kind::Direct => crate::sys::io::close_direct_fd(self.fd(), &self.sq),
-            Kind::File => syscall!(close(self.fd())).map(|_| ()),
-        };
-        if let Err(err) = result {
-            log::warn!("error closing a10::AsyncFd: {err}");
-        }
-        #[cfg(any(
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "netbsd",
-            target_os = "openbsd",
-            target_os = "tvos",
-            target_os = "visionos",
-            target_os = "watchos",
-        ))]
-        // SAFETY: we're in the drop implementation.
-        unsafe {
-            self.state.drop(&self.sq);
-        }
     }
 }
 

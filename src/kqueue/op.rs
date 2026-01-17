@@ -46,10 +46,19 @@ use crate::{AsyncFd, SubmissionQueue};
 // Since neither the DirectState or EventedState shares any resources with the
 // OS we can safely drop both of them without any special handling.
 //
-// TODO: document dropping of state.
 // This is not true for fd::State (part of AsyncFd). Because there could be
 // outstanding readiness polls that use the fd::State as user_data we delay the
-// allocation. We do this by
+// allocation. We do this by checking if the state has been initialised and if
+// there are any pending ops. If there are no pending ops we can safely drop the
+// state. If there are pending ops we need to delay the deallcation since a
+// readiness poll could be returned at any time in the completion queue, which
+// would access the state.
+//
+// We delay the deallcation by sending a user-space event (EVFILT_USER) to the
+// polling thread with the pointer as identifier, which returns as user_data in
+// the completion event where we can safely deallocate it. Since we close the
+// file descriptor *before* we send this event we're ensured that any previous
+// events that may hold a pointer to the fd::State will have been processed.
 
 /// State of an operation that is done synchronously, e.g. opening a socket.
 #[derive(Debug)]
@@ -205,6 +214,9 @@ pub(super) use impl_fd_op;
 pub(crate) enum EventedState<R, A> {
     /// Operation has not started yet.
     NotStarted { resources: R, args: A },
+    /// Ran the setup, not yet submitted an event, or need to submit an event
+    /// again.
+    ToSubmit { resources: R, args: A },
     /// Event was submitted, waiting for a result.
     Waiting { resources: R, args: A },
     /// Last state where the operation was fully cleaned up.
@@ -284,7 +296,6 @@ pub(crate) trait FdOp {
     ) -> Self::Output;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: FdOp> crate::op::FdOp for T {
     type Output = io::Result<T::Output>;
     type Resources = T::Resources;
@@ -296,72 +307,7 @@ impl<T: FdOp> crate::op::FdOp for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
-        loop {
-            match state {
-                EventedState::NotStarted { resources, args } => {
-                    // Perform any setup required before waiting for an event.
-                    T::setup(fd, resources, args)?;
-
-                    let fd_state = fd.state();
-                    // Add ourselves to the waiters for the operation.
-                    let needs_register = {
-                        let mut fd_state = fd_state.lock();
-                        let needs_register = !fd_state.has_waiting_op(T::OP_KIND);
-                        fd_state.add(T::OP_KIND, ctx.waker().clone());
-                        needs_register
-                    }; // Unlock fd state.
-
-                    // If we're to first we need to register an event with the
-                    // kernel.
-                    if needs_register {
-                        fd.sq.submissions().add(|event| {
-                            event.0.filter = match T::OP_KIND {
-                                OpKind::Read => libc::EVFILT_READ,
-                                OpKind::Write => libc::EVFILT_WRITE,
-                            };
-                            event.0.ident = fd.fd().cast_unsigned() as _;
-                            event.0.udata = fd_state.as_udata();
-                        });
-                    }
-
-                    // Set ourselves to waiting for an event from the kernel.
-                    if let EventedState::NotStarted { resources, args } =
-                        replace(state, EventedState::Complete)
-                    {
-                        *state = EventedState::Waiting { resources, args };
-                    }
-                    // We've added our waker above to the list, we'll be woken up
-                    // once we can make progress.
-                    return Poll::Pending;
-                }
-                EventedState::Waiting { resources, args } => {
-                    match T::try_run(fd, resources, args) {
-                        Ok(res) => {
-                            if let EventedState::Waiting { resources, .. } =
-                                replace(state, EventedState::Complete)
-                            {
-                                return Poll::Ready(Ok(T::map_ok(fd, resources, res)));
-                            }
-                        }
-                        Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                            if let EventedState::Waiting { resources, args } =
-                                replace(state, EventedState::Complete)
-                            {
-                                *state = EventedState::NotStarted { resources, args };
-                                // Try again in the next loop iteration.
-                            }
-                        }
-                        Err(err) => {
-                            *state = EventedState::Complete;
-                            return Poll::Ready(Err(err));
-                        }
-                    }
-                }
-                // Shouldn't be reachable, but if the Future is used incorrectly it
-                // can be.
-                EventedState::Complete => panic!("polled Future after completion"),
-            }
-        }
+        poll::<T, _>(state, ctx, fd, T::map_ok)
     }
 }
 
@@ -377,7 +323,6 @@ pub(crate) trait FdOpExtract: FdOp {
     ) -> Self::ExtractOutput;
 }
 
-// TODO: DRY this with the Op like impls.
 impl<T: FdOpExtract> crate::op::FdOpExtract for T {
     type ExtractOutput = io::Result<T::ExtractOutput>;
 
@@ -386,68 +331,88 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::ExtractOutput> {
-        loop {
-            match state {
-                EventedState::NotStarted { .. } => {
-                    let fd_state = fd.state();
-                    // Add ourselves to the waiters for the operation.
-                    let needs_register = {
-                        let mut fd_state = fd_state.lock();
-                        let needs_register = !fd_state.has_waiting_op(T::OP_KIND);
-                        fd_state.add(T::OP_KIND, ctx.waker().clone());
-                        needs_register
-                    }; // Unlock fd state.
+        poll::<T, _>(state, ctx, fd, T::map_ok_extract)
+    }
+}
 
-                    // If we're to first we need to register an event with the
-                    // kernel.
-                    if needs_register {
-                        fd.sq.submissions().add(|event| {
-                            event.0.filter = match T::OP_KIND {
-                                OpKind::Read => libc::EVFILT_READ,
-                                OpKind::Write => libc::EVFILT_WRITE,
-                            };
-                            event.0.ident = fd.fd().cast_unsigned() as _;
-                            event.0.udata = fd_state.as_udata();
-                        });
-                    }
+fn poll<T: FdOp, Out>(
+    state: &mut EventedState<T::Resources, T::Args>,
+    ctx: &mut task::Context<'_>,
+    fd: &AsyncFd,
+    map_ok: impl FnOnce(&AsyncFd, T::Resources, T::OperationOutput) -> Out,
+) -> Poll<io::Result<Out>> {
+    loop {
+        match state {
+            EventedState::NotStarted { resources, args } => {
+                // Perform any setup required before waiting for an event.
+                T::setup(fd, resources, args)?;
 
-                    // Set ourselves to waiting for an event from the kernel.
-                    if let EventedState::NotStarted { resources, args } =
-                        replace(state, EventedState::Complete)
-                    {
-                        *state = EventedState::Waiting { resources, args };
-                    }
-                    // We've added our waker above to the list, we'll be woken up
-                    // once we can make progress.
-                    return Poll::Pending;
+                if let EventedState::NotStarted { resources, args } =
+                    replace(state, EventedState::Complete)
+                {
+                    *state = EventedState::ToSubmit { resources, args };
+                    // Continue in the next loop iteration.
                 }
-                EventedState::Waiting { resources, args } => {
-                    match T::try_run(fd, resources, args) {
-                        Ok(res) => {
-                            if let EventedState::Waiting { resources, .. } =
-                                replace(state, EventedState::Complete)
-                            {
-                                return Poll::Ready(Ok(T::map_ok_extract(fd, resources, res)));
-                            }
-                        }
-                        Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
-                            if let EventedState::Waiting { resources, args } =
-                                replace(state, EventedState::Complete)
-                            {
-                                *state = EventedState::NotStarted { resources, args };
-                                // Try again in the next loop iteration.
-                            }
-                        }
-                        Err(err) => {
-                            *state = EventedState::Complete;
-                            return Poll::Ready(Err(err));
-                        }
-                    }
-                }
-                // Shouldn't be reachable, but if the Future is used incorrectly it
-                // can be.
-                EventedState::Complete => panic!("polled Future after completion"),
             }
+            EventedState::ToSubmit { .. } => {
+                let fd_state = fd.state();
+                // Add ourselves to the waiters for the operation.
+                let needs_register = {
+                    let mut fd_state = fd_state.lock();
+                    let needs_register = !fd_state.has_waiting_op(T::OP_KIND);
+                    fd_state.add(T::OP_KIND, ctx.waker().clone());
+                    needs_register
+                }; // Unlock fd state.
+
+                // If we're to first we need to register an event with the
+                // kernel.
+                if needs_register {
+                    fd.sq.submissions().add(|event| {
+                        event.0.filter = match T::OP_KIND {
+                            OpKind::Read => libc::EVFILT_READ,
+                            OpKind::Write => libc::EVFILT_WRITE,
+                        };
+                        event.0.ident = fd.fd().cast_unsigned() as _;
+                        event.0.udata = fd_state.as_udata();
+                    });
+                }
+
+                // Set ourselves to waiting for an event from the kernel.
+                if let EventedState::ToSubmit { resources, args } =
+                    replace(state, EventedState::Complete)
+                {
+                    *state = EventedState::Waiting { resources, args };
+                }
+                // We've added our waker above to the list, we'll be woken up
+                // once we can make progress.
+                return Poll::Pending;
+            }
+            EventedState::Waiting { resources, args } => {
+                match T::try_run(fd, resources, args) {
+                    Ok(res) => {
+                        if let EventedState::Waiting { resources, .. } =
+                            replace(state, EventedState::Complete)
+                        {
+                            return Poll::Ready(Ok(map_ok(fd, resources, res)));
+                        }
+                    }
+                    Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
+                        if let EventedState::Waiting { resources, args } =
+                            replace(state, EventedState::Complete)
+                        {
+                            *state = EventedState::ToSubmit { resources, args };
+                            // Try again in the next loop iteration.
+                        }
+                    }
+                    Err(err) => {
+                        *state = EventedState::Complete;
+                        return Poll::Ready(Err(err));
+                    }
+                }
+            }
+            // Shouldn't be reachable, but if the Future is used incorrectly it
+            // can be.
+            EventedState::Complete => panic!("polled Future after completion"),
         }
     }
 }
