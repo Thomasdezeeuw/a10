@@ -511,14 +511,31 @@ unsafe impl Buf for BadBuf {
         let ptr = BadBuf::DATA.as_slice().as_ptr();
         // NOTE: we don't increase the pointer offset as the `SkipBuf` internal
         // to the WriteAll future already does that for us.
-        match calls {
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        return match calls {
             // Per system/io_uring call we call `Buf::parts` for:
             // 1. passing to the kernel & to poison the memory,
             // 2. to unpoison the memory (once the call is clomplete).
             0..2 => (ptr, 10),
             2..4 => (ptr, 20),
             _ => (ptr, 30),
-        }
+        };
+        #[cfg(any(
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "ios",
+            target_os = "macos",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "tvos",
+            target_os = "visionos",
+            target_os = "watchos",
+        ))]
+        return match calls {
+            0..1 => (ptr, 10),
+            1..2 => (ptr, 20),
+            _ => (ptr, 30),
+        };
     }
 }
 
