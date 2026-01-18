@@ -62,6 +62,10 @@ impl Shared {
         unlock(change_list); // Unlock before any deallocations.
     }
 
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
+    // False positive, see
+    // <https://github.com/rust-lang/rust-clippy/issues/4737>
+    #[allow(clippy::debug_assert_with_mut_call)]
     fn kevent(
         &self,
         changes: &mut Vec<Event>,
@@ -83,7 +87,7 @@ impl Shared {
             changes.len() as _,
             events_ptr,
             events_len,
-            timeout.map(ptr::from_ref).unwrap_or(ptr::null_mut()),
+            timeout.map_or(ptr::null_mut(), ptr::from_ref),
         ));
         let events = match result {
             // SAFETY: `kevent` ensures that `n` events are written.
@@ -121,7 +125,7 @@ impl Shared {
             }
 
             match event.0.filter {
-                libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => continue,
+                libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => {}
                 libc::EVFILT_USER => {
                     let ptr = event.0.udata.cast::<fd::SharedState>();
                     debug_assert!(!ptr.is_null());
@@ -133,7 +137,7 @@ impl Shared {
                     debug_assert!(!ptr.is_null());
                     // SAFETY: in kqueue::op we ensure that the pointer is
                     // always valid (the kernel should copy it over for us).
-                    lock(unsafe { &*ptr }).wake(&event);
+                    lock(unsafe { &*ptr }).wake(event);
                 }
                 libc::EVFILT_PROC => {
                     // In some cases a second EVFILT_PROC is returned, at least

@@ -575,6 +575,7 @@ impl fmt::Debug for Metadata {
 #[derive(Copy, Clone)]
 pub struct FileType(pub(crate) u16);
 
+#[allow(clippy::unnecessary_cast)] // Some OS define S_IFMT as u16, but not all.
 impl FileType {
     /// Returns `true` if this represents a directory.
     #[doc(alias = "S_IFDIR")]
@@ -666,6 +667,7 @@ impl fmt::Debug for FileType {
 #[derive(Copy, Clone)]
 pub struct Permissions(pub(crate) u16);
 
+#[allow(clippy::unnecessary_cast)] // Some OS define S_IRUSR as u16, but not all.
 impl Permissions {
     /// Return `true` if the owner has read permission.
     #[doc(alias = "S_IRUSR")]

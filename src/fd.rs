@@ -228,7 +228,7 @@ pub enum Kind {
 }
 
 impl Kind {
-    #[allow(clippy::semicolon_if_nothing_returned)]
+    #[allow(clippy::semicolon_if_nothing_returned, clippy::unused_self)]
     pub(crate) fn cloexec_flag(self) -> libc::c_int {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {

@@ -71,7 +71,14 @@ impl<'r> crate::Config<'r> {
             // SAFETY: all zeros is valid for `libc::kevent`.
             ..unsafe { mem::zeroed() }
         };
-        syscall!(kevent(kq_fd, &kevent, 1, &mut kevent, 1, ptr::null()))?;
+        syscall!(kevent(
+            kq_fd,
+            &raw const kevent,
+            1,
+            &raw mut kevent,
+            1,
+            ptr::null()
+        ))?;
         if (kevent.flags & libc::EV_ERROR) != 0 && kevent.data != 0 {
             return Err(io::Error::from_raw_os_error(kevent.data as i32));
         }

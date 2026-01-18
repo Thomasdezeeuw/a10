@@ -335,6 +335,7 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
     }
 }
 
+#[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
 fn poll<T: FdOp, Out>(
     state: &mut EventedState<T::Resources, T::Args>,
     ctx: &mut task::Context<'_>,

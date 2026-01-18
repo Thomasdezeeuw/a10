@@ -112,7 +112,7 @@ impl MsgHeader {
     /// # Safety
     ///
     /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
-    #[allow(trivial_numeric_casts)]
+    #[allow(trivial_numeric_casts, clippy::cast_possible_wrap)]
     pub(crate) unsafe fn init_recv<A: SocketAddress>(
         &mut self,
         address: &mut MaybeUninit<A::Storage>,
@@ -130,7 +130,7 @@ impl MsgHeader {
     /// # Safety
     ///
     /// Caller must ensure that `address` and `iovecs` outlives `MsgHeader`.
-    #[allow(trivial_numeric_casts)]
+    #[allow(trivial_numeric_casts, clippy::cast_possible_wrap)]
     pub(crate) unsafe fn init_send<A: SocketAddress>(
         &mut self,
         address: &mut A::Storage,

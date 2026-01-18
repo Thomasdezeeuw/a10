@@ -46,10 +46,10 @@ impl ReadBufPool {
         // valid value for both.
         let mut available: Box<[AtomicUsize]> =
             unsafe { Box::new_zeroed_slice(available_size as usize).assume_init() };
-        if available_size % usize::BITS as u16 != 0 {
+        if !available_size.is_multiple_of(usize::BITS as u16) {
             // Mark the addition bits as unavailable.
             *available[available_size as usize - 1].get_mut() =
-                ((1 << (available_size * usize::BITS as u16) - pool_size) - 1)
+                ((1 << ((available_size * usize::BITS as u16) - pool_size)) - 1)
                     << (pool_size % usize::BITS as u16);
         }
 
@@ -129,9 +129,7 @@ pub(crate) struct PoolBufParts {
 impl BufMutParts {
     pub(crate) fn pool_ptr(self) -> io::Result<(*mut u8, u32, bool)> {
         match self {
-            BufMutParts::Buf { ptr, len } if len == 0 => {
-                Err(io::Error::from_raw_os_error(libc::ENOBUFS))
-            }
+            BufMutParts::Buf { len: 0, .. } => Err(io::Error::from_raw_os_error(libc::ENOBUFS)),
             BufMutParts::Buf { ptr, len } => Ok((ptr, len, false)),
             BufMutParts::Pool(PoolBufParts { ptr, len }) => Ok((ptr, len, true)),
         }
@@ -188,6 +186,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
 
     const OP_KIND: OpKind = OpKind::Read;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_run(
         fd: &AsyncFd,
         buf: &mut Self::Resources,
@@ -207,6 +206,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         res
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe { buf.set_init(n as _) };
@@ -224,6 +224,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
 
     const OP_KIND: OpKind = OpKind::Read;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_run(
         fd: &AsyncFd,
         (_, iovecs): &mut Self::Resources,
@@ -232,17 +233,18 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         // io_uring uses `NO_OFFSET` to issue a `readv` system call, otherwise
         // it uses `preadv`. We emulate the same thing.
         if *offset == NO_OFFSET {
-            syscall!(readv(fd.fd(), iovecs.as_ptr() as _, iovecs.len() as _))
+            syscall!(readv(fd.fd(), iovecs.as_ptr().cast(), iovecs.len() as _))
         } else {
             syscall!(preadv(
                 fd.fd(),
-                iovecs.as_ptr() as _,
+                iovecs.as_ptr().cast(),
                 iovecs.len() as _,
                 *offset as _
             ))
         }
     }
 
+    #[allow(clippy::cast_sign_loss)]
     fn map_ok(
         _: &AsyncFd,
         (mut bufs, _): Self::Resources,
@@ -264,6 +266,7 @@ impl<B: Buf> FdOp for WriteOp<B> {
 
     const OP_KIND: OpKind = OpKind::Write;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_run(
         fd: &AsyncFd,
         buf: &mut Self::Resources,
@@ -306,6 +309,7 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
 
     const OP_KIND: OpKind = OpKind::Write;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_run(
         fd: &AsyncFd,
         (_, iovecs): &mut Self::Resources,
@@ -314,11 +318,11 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
         // io_uring uses `NO_OFFSET` to issue a `writev` system call, otherwise
         // it uses `pwritev`. We emulate the same thing.
         if *offset == NO_OFFSET {
-            syscall!(writev(fd.fd(), iovecs.as_ptr() as _, iovecs.len() as _))
+            syscall!(writev(fd.fd(), iovecs.as_ptr().cast(), iovecs.len() as _))
         } else {
             syscall!(pwritev(
                 fd.fd(),
-                iovecs.as_ptr() as _,
+                iovecs.as_ptr().cast(),
                 iovecs.len() as _,
                 *offset as _
             ))

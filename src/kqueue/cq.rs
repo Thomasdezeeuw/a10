@@ -20,16 +20,17 @@ impl Completions {
         Completions { events }
     }
 
+    #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn poll(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
         self.events.clear();
 
         let ts = timeout.map(|to| libc::timespec {
-            tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64) as libc::time_t,
+            tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64).cast_signed(),
             // `Duration::subsec_nanos` is guaranteed to be less than one
             // billion (the number of nanoseconds in a second), making the
             // cast to i32 safe. The cast itself is needed for platforms
             // where C's long is only 32 bits.
-            tv_nsec: libc::c_long::from(to.subsec_nanos() as i32),
+            tv_nsec: libc::c_long::from(to.subsec_nanos().cast_signed()),
         });
 
         // Submit any submissions (changes) to the kernel.
