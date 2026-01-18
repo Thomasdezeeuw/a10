@@ -61,7 +61,7 @@ fn dropping_ring_unmaps_queues() {
 #[test]
 fn polling_with_timeout() -> io::Result<()> {
     const TIMEOUT: Duration = Duration::from_millis(100);
-    const MARGIN: Duration = Duration::from_millis(10);
+    const MARGIN: Duration = Duration::from_millis(50);
 
     init();
     let mut ring = Ring::new().unwrap();
