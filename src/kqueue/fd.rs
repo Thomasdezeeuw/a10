@@ -1,10 +1,9 @@
-use std::mem::replace;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Mutex, MutexGuard};
 use std::{ptr, task};
 
 use crate::fd::{self, AsyncFd};
-use crate::{get_mut, kqueue, lock, syscall};
+use crate::{kqueue, lock, syscall};
 
 /// State of a file descriptor.
 #[derive(Debug)]
@@ -118,15 +117,13 @@ impl Drop for AsyncFd {
             log::warn!("error closing a10::AsyncFd: {err}");
         }
 
-        let ptr = replace(self.state.shared.get_mut(), ptr::null_mut());
+        let ptr = *self.state.shared.get_mut();
         if ptr.is_null() {
             // Never started any operations, so we don't have to clean anything up.
-            return;
-        }
-
-        if get_mut(unsafe { &mut *ptr }).ops.is_empty() {
-            // No pending operations, we can safely drop the state.
-            unsafe { ptr::drop_in_place(ptr) };
+            //
+            // NOTE: we can not apply this optimisation when the fd state is
+            // initialised as we can still get a readiness event even if the
+            // waker list is empty.
             return;
         }
 
