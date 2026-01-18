@@ -28,6 +28,7 @@ impl DirectOp for OpenOp {
 impl DirectOpExtract for OpenOp {
     type ExtractOutput = (AsyncFd, PathBuf);
 
+    #[allow(clippy::cast_lossless)]
     fn run_extract(
         sq: &SubmissionQueue,
         (path, kind): Self::Resources,
@@ -197,7 +198,7 @@ impl DirectFdOp for StatOp {
     type Args = MetadataInterest;
 
     fn run(fd: &AsyncFd, mut metadata: Self::Resources, _: Self::Args) -> io::Result<Self::Output> {
-        syscall!(fstat(fd.fd(), &mut metadata.0))?;
+        syscall!(fstat(fd.fd(), &raw mut metadata.0))?;
         Ok(metadata)
     }
 }
@@ -279,11 +280,11 @@ pub(crate) const fn file_type(stat: &Stat) -> FileType {
 }
 
 pub(crate) const fn len(stat: &Stat) -> u64 {
-    stat.st_size as _
+    stat.st_size.cast_unsigned()
 }
 
 pub(crate) const fn block_size(stat: &Stat) -> u32 {
-    stat.st_blksize as _
+    stat.st_blksize.cast_unsigned()
 }
 
 pub(crate) const fn permissions(stat: &Stat) -> Permissions {

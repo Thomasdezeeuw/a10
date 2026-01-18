@@ -24,9 +24,7 @@ impl crate::op::Op for WaitIdOp {
         match state {
             EventedState::NotStarted { args, .. } | EventedState::ToSubmit { args, .. } => {
                 let (wait, _) = args;
-                let pid = match *wait {
-                    WaitOn::Process(pid) => pid,
-                };
+                let WaitOn::Process(pid) = *wait;
                 sq.submissions().add(|event| {
                     event.0.filter = libc::EVFILT_PROC;
                     event.0.ident = pid as _;
@@ -54,8 +52,8 @@ impl crate::op::Op for WaitIdOp {
                     WaitOn::Process(pid) => (libc::P_PID, pid),
                 };
 
-                let options = options.0 as libc::c_int | libc::WNOHANG; // Don't block.
-                syscall!(waitid(id_type, pid, &mut info.0, options))?;
+                let options = options.0.cast_signed() | libc::WNOHANG; // Don't block.
+                syscall!(waitid(id_type, pid, &raw mut info.0, options))?;
 
                 if info.0.si_pid == 0 {
                     // Got polled without the process stopping, will have to
@@ -94,6 +92,7 @@ impl Drop for Signals {
     }
 }
 
+#[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
     let mut changes: [MaybeUninit<libc::kevent>; _] = [MaybeUninit::uninit(); Signal::ALL.len()];
 
@@ -135,7 +134,7 @@ fn sigaction(signals: &SignalSet, action: libc::sighandler_t) -> io::Result<()> 
             continue;
         }
 
-        syscall!(sigaction(signal.0, &action, ptr::null_mut()))?;
+        syscall!(sigaction(signal.0, &raw const action, ptr::null_mut()))?;
     }
     Ok(())
 }
@@ -150,6 +149,7 @@ impl FdOp for ReceiveSignalOp {
 
     const OP_KIND: OpKind = OpKind::Read;
 
+    #[allow(clippy::cast_possible_wrap)]
     fn try_run(
         kfd: &AsyncFd,
         info: &mut Self::Resources,
@@ -167,7 +167,7 @@ impl FdOp for ReceiveSignalOp {
             0,
             event.as_mut_ptr(),
             1,
-            &timeout
+            &raw const timeout
         ))?;
         if n == 0 {
             // Wait for another readiness event.

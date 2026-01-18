@@ -104,7 +104,7 @@ impl OpState {
                 OpKind::Read => event.0.filter == libc::EVFILT_READ,
                 OpKind::Write => event.0.filter == libc::EVFILT_WRITE,
             })
-            .for_each(|(_, waker)| waker.wake())
+            .for_each(|(_, waker)| waker.wake());
     }
 }
 

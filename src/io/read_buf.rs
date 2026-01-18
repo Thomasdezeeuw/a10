@@ -363,7 +363,7 @@ unsafe impl BufMut for ReadBuf {
         target_os = "watchos",
     ))]
     fn release(&mut self) {
-        self.release()
+        self.release();
     }
 }
 
