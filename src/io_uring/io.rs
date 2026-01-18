@@ -218,7 +218,7 @@ impl ReadBufPool {
 }
 
 impl ReadBuf {
-    pub(crate) fn parts_sys(&mut self) -> BufMutParts {
+    pub(crate) fn parts_sys(&self) -> BufMutParts {
         BufMutParts::Pool(PoolBufParts(self.shared.group_id()))
     }
 }
