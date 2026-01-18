@@ -12,7 +12,7 @@ keywords      = ["io_uring", "io", "async", "non-blocking"]
 categories    = ["asynchronous"]
 include       = ["/Cargo.toml", "/src/**/*.rs", "/tests/**/*.rs", "/README.md", "/LICENSE"]
 edition       = "2024"
-rust-version  = "1.91"
+rust-version  = "1.92"
 
 [features]
 default = []

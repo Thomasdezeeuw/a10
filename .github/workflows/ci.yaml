@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-24.04, macos-26, macos-15]
     steps:
     - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@1.91
+    - uses: dtolnay/rust-toolchain@1.92
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)
