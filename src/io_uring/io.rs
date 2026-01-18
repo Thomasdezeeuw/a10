@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicU16, Ordering};
 use std::{io, slice};
 
 use crate::io::{
-    Buf, BufGroupId, BufId, BufMut, BufMutSlice, BufSlice, SpliceDirection, SpliceFlag,
+    Buf, BufId, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, SpliceDirection, SpliceFlag,
 };
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{self, libc, sq};
@@ -20,7 +20,7 @@ pub(crate) use std::io::*; // So we don't have to worry about importing `std::io
 #[derive(Debug)]
 pub(crate) struct ReadBufPool {
     /// Identifier used by the kernel (aka `bgid`, `buf_group`).
-    id: BufGroupId,
+    id: u16,
     /// Submission queue used to unregister the pool on drop.
     sq: SubmissionQueue,
     /// Number of buffers.
@@ -49,9 +49,6 @@ impl ReadBufPool {
         pool_size: u16,
         buf_size: u32,
     ) -> io::Result<ReadBufPool> {
-        debug_assert!(pool_size <= 1 << 15);
-        debug_assert!(pool_size.is_power_of_two());
-
         let ring_fd = sq.submissions().ring_fd();
         let id = ID.fetch_add(1, Ordering::AcqRel);
 
@@ -92,7 +89,7 @@ impl ReadBufPool {
 
         // Create a `ReadBufPool` type early to manage the allocations and registration.
         let pool = ReadBufPool {
-            id: BufGroupId(id),
+            id,
             sq,
             pool_size,
             buf_size,
@@ -143,14 +140,13 @@ impl ReadBufPool {
         self.buf_size as usize
     }
 
-    /// Returns the group id for this pool.
-    pub(crate) const fn group_id(&self) -> BufGroupId {
+    pub(crate) const fn group_id(&self) -> u16 {
         self.id
     }
 
     pub(crate) unsafe fn init_buffer(&self, id: BufId, n: u32) -> NonNull<[u8]> {
         let addr = unsafe { self.bufs_addr.add(id.0 as usize * self.buf_size()) };
-        log::trace!(buffer_group = self.id.0, buffer = id.0, addr:? = addr, len = n; "initialised buffer");
+        log::trace!(buffer_group = self.id, buffer = id.0, addr:? = addr, len = n; "initialised buffer");
         // SAFETY: `bufs_addr` is not NULL.
         let addr = unsafe { NonNull::new_unchecked(addr) };
         // NOTE: unpoising the entire buffer, not just the written part.
@@ -188,7 +184,7 @@ impl ReadBufPool {
                 .add(ring_idx as usize))
         };
         asan::unpoison(ring_buf);
-        log::trace!(buffer_group = self.id.0, buffer = buf_id, addr:? = ptr; "reregistering buffer");
+        log::trace!(buffer_group = self.id, buffer = buf_id, addr:? = ptr; "reregistering buffer");
         ring_buf.write(libc::io_uring_buf {
             addr: ptr.cast::<u8>().as_ptr().addr() as u64,
             len: self.buf_size,
@@ -221,6 +217,14 @@ impl ReadBufPool {
     }
 }
 
+impl ReadBuf {
+    pub(crate) fn parts_sys(&mut self) -> BufMutParts {
+        BufMutParts::Pool(PoolBufParts(self.shared.group_id()))
+    }
+}
+
+pub(crate) struct PoolBufParts(pub(super) u16); // group id.
+
 unsafe impl Sync for ReadBufPool {}
 unsafe impl Send for ReadBufPool {}
 
@@ -230,7 +234,7 @@ impl Drop for ReadBufPool {
 
         // Unregister the buffer pool with the ring.
         let buf_register = libc::io_uring_buf_reg {
-            bgid: self.id.0,
+            bgid: self.id,
             // Unused in this call.
             ring_addr: 0,
             ring_entries: 0,
@@ -261,8 +265,8 @@ impl Drop for ReadBufPool {
         // And finally deallocate the buffers themselves.
         if !self.bufs_addr.is_null() {
             unsafe {
-                // SAFETY: created this layout in `new` and didn't fail, so it's
-                // still valid here.
+                // SAFETY: created this layout in ReadBufPool::new and didn't fail,
+                // so it's still valid here.
                 let layout =
                     alloc_layout_buffers(self.pool_size, self.buf_size, page_size).unwrap();
                 asan::unpoison_region(self.bufs_addr.cast(), layout.size());
@@ -318,18 +322,21 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         offset: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, len) = unsafe { buf.parts_mut() };
         submission.0.opcode = libc::IORING_OP_READ as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: *offset };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr.addr() as u64,
-        };
-        asan::poison_region(ptr.cast(), len as usize);
-        submission.0.len = len;
-        if let Some(buf_group) = buf.buffer_group() {
-            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
-            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        match buf.parts() {
+            BufMutParts::Buf { ptr, len } => {
+                submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+                    addr: ptr.addr() as u64,
+                };
+                submission.0.len = len;
+                asan::poison_region(ptr.cast(), len as usize);
+            }
+            BufMutParts::Pool(PoolBufParts(buf_group)) => {
+                submission.0.__bindgen_anon_4.buf_group = buf_group;
+                submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+            }
         }
     }
 
@@ -361,7 +368,7 @@ impl FdIter for MultishotReadOp {
         submission.0.opcode = libc::IORING_OP_READ_MULTISHOT as u8;
         submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         submission.0.fd = fd.fd();
-        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.shared.group_id();
     }
 
     fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {

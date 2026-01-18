@@ -3,7 +3,8 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::io::{Buf, BufId, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufId, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::io_uring::io::PoolBufParts;
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::net::{
@@ -195,16 +196,19 @@ impl<B: BufMut> FdOp for RecvOp<B> {
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
         submission.0.fd = fd.fd();
-        let (ptr, len) = unsafe { buf.parts_mut() };
-        submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr.addr() as u64,
-        };
-        asan::poison_region(ptr.cast(), len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
-        submission.0.len = len;
-        if let Some(buf_group) = buf.buffer_group() {
-            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
-            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        match buf.parts() {
+            BufMutParts::Buf { ptr, len } => {
+                submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+                    addr: ptr.addr() as u64,
+                };
+                submission.0.len = len;
+                asan::poison_region(ptr.cast(), len as usize);
+            }
+            BufMutParts::Pool(PoolBufParts(buf_group)) => {
+                submission.0.__bindgen_anon_4.buf_group = buf_group;
+                submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+            }
         }
     }
 
@@ -239,7 +243,7 @@ impl FdIter for MultishotRecvOp {
         submission.0.ioprio = libc::IORING_RECV_MULTISHOT as u16;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
-        submission.0.__bindgen_anon_4.buf_group = buf_pool.group_id().0;
+        submission.0.__bindgen_anon_4.buf_group = buf_pool.shared.group_id();
     }
 
     fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
@@ -297,9 +301,12 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
     ) {
         let iovecs = slice::from_mut(&mut *iovec);
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
-        if let Some(buf_group) = buf.buffer_group() {
-            submission.0.__bindgen_anon_4.buf_group = buf_group.0;
-            submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+        match buf.parts() {
+            BufMutParts::Buf { .. } => { /* Using iovec. */ }
+            BufMutParts::Pool(PoolBufParts(buf_group)) => {
+                submission.0.__bindgen_anon_4.buf_group = buf_group;
+                submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
+            }
         }
     }
 

@@ -221,8 +221,12 @@ impl<B: BufMut> FdOp for RecvOp<B> {
         buf: &mut Self::Resources,
         flags: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
-        let (ptr, len) = unsafe { buf.parts_mut() };
-        syscall!(recv(fd.fd(), ptr.cast(), len as _, flags.0.cast_signed()))
+        let (ptr, len, is_pool) = buf.parts().pool_ptr()?;
+        let res = syscall!(recv(fd.fd(), ptr.cast(), len as _, flags.0.cast_signed()));
+        if res.is_err() && is_pool {
+            buf.release();
+        }
+        res
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, n: Self::OperationOutput) -> Self::Output {
