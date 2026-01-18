@@ -9,26 +9,39 @@ use std::ptr::{self, NonNull};
 use std::sync::Arc;
 use std::{fmt, io, slice};
 
-use crate::io::{Buf, BufGroupId, BufId, BufMut};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::io::BufId;
+use crate::io::{Buf, BufMut, BufMutParts};
 use crate::{SubmissionQueue, sys};
 
 /// A read buffer pool.
 ///
-/// This is a special buffer pool that shares its buffers with the kernel. The
-/// buffer pool is used by the kernel in `read(2)` and `recv(2)` like calls.
-/// Instead of user space having to select a buffer before issueing the read
-/// call, the kernel will select a buffer from the pool when it's ready for
-/// reading. This avoids the need to have as many buffers as concurrent read
-/// calls.
+/// This uses a specialised implementation, see notes below, for I/O. Because of
+/// this the returned buffer, [`ReadBuf`], is somewhat limited. For example it
+/// can't grow beyond the pool's buffer capacity. However it can be used in
+/// write calls like any other buffer.
 ///
-/// As a result of this the returned buffer, [`ReadBuf`], is somewhat limited.
-/// For example it can't grow beyond the pool's buffer size. However it can be
-/// used in write calls like any other buffer.
+/// If all the buffers in the pool are used read calls will return `ENOBUFS`.
+///
+/// # Implementation Notes
+///
+/// The pool is designed for use in `read(2)`-like calls, e.g. [`AsyncFd::read`]
+/// or [`AsyncFd::multishot_read`].
+///
+/// [`AsyncFd::read`]: crate::AsyncFd::read
+/// [`AsyncFd::multishot_read`]: crate::AsyncFd::multishot_read
+///
+/// ## io_uring
+///
+/// The buffer pool shares its buffers with the kernel. The buffer pool is used
+/// by the kernel in `read(2)` and `recv(2)` like calls. Instead of user space
+/// having to select a buffer before issueing the read call, the kernel will
+/// select a buffer from the pool when it's ready for reading.
 #[derive(Clone, Debug)]
 #[allow(clippy::module_name_repetitions)] // Public in io module, so N/A.
 pub struct ReadBufPool {
     /// Shared between one or more [`ReadBufPool`]s and one or more [`ReadBuf`]s.
-    shared: Arc<sys::io::ReadBufPool>,
+    pub(crate) shared: Arc<sys::io::ReadBufPool>,
 }
 
 impl ReadBufPool {
@@ -39,6 +52,9 @@ impl ReadBufPool {
     /// grow beyond this capacity.
     #[doc(alias = "IORING_REGISTER_PBUF_RING")]
     pub fn new(sq: SubmissionQueue, pool_size: u16, buf_size: u32) -> io::Result<ReadBufPool> {
+        // Needed for the io_uring implementation, so want to enforce it for all.
+        debug_assert!(pool_size <= 1 << 15);
+        debug_assert!(pool_size.is_power_of_two());
         let shared = sys::io::ReadBufPool::new(sq, pool_size, buf_size)?;
         Ok(ReadBufPool {
             shared: Arc::new(shared),
@@ -61,17 +77,13 @@ impl ReadBufPool {
         }
     }
 
-    /// Returns the group id for this pool.
-    pub(crate) fn group_id(&self) -> BufGroupId {
-        self.shared.group_id()
-    }
-
     /// Initialise a new buffer with `index` with `len` size.
     ///
     /// # Safety
     ///
     /// The provided index must come from the kernel, reusing the same index
     /// will cause data races.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) unsafe fn new_buffer(&self, id: BufId, n: u32) -> ReadBuf {
         let owned = if n == 0 && id.0 == 0 {
             // If we read 0 bytes it means the kernel didn't actually allocate a
@@ -99,9 +111,9 @@ impl ReadBufPool {
 /// A10 crate.
 pub struct ReadBuf {
     /// Buffer pool info.
-    shared: Arc<sys::io::ReadBufPool>,
+    pub(crate) shared: Arc<sys::io::ReadBufPool>,
     /// This is `Some` if the buffer was assigned.
-    owned: Option<NonNull<[u8]>>,
+    pub(crate) owned: Option<NonNull<[u8]>>,
 }
 
 impl ReadBuf {
@@ -315,15 +327,19 @@ unsafe impl BufMut for ReadBuf {
         }
     }
 
-    fn buffer_group(&self) -> Option<BufGroupId> {
-        if self.owned.is_none() {
-            Some(self.shared.group_id())
+    #[allow(private_interfaces)]
+    fn parts(&mut self) -> BufMutParts {
+        if let Some(ptr) = self.owned {
+            // Already allocated a buffer, use it again.
+            let len = (self.capacity() - ptr.len()) as u32;
+            let ptr = unsafe { ptr.cast::<u8>().add(ptr.len()).as_ptr() };
+            BufMutParts::Buf { ptr, len }
         } else {
-            // Already have an allocated buffer, don't need another one.
-            None
+            self.parts_sys()
         }
     }
 
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         if let Some(ptr) = self.owned {
             // We shouldn't be assigned another buffer, we should be resizing
@@ -333,6 +349,21 @@ unsafe impl BufMut for ReadBuf {
         } else {
             self.owned = Some(unsafe { self.shared.init_buffer(id, n) });
         }
+    }
+
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    fn release(&mut self) {
+        self.release()
     }
 }
 

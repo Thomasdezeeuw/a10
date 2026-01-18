@@ -61,16 +61,16 @@ use crate::op::fd_iter_operation;
 use crate::op::{OpState, fd_operation, operation};
 use crate::{AsyncFd, man_link, sys};
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 mod read_buf;
 mod traits;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-pub use read_buf::{ReadBuf, ReadBufPool};
-#[allow(unused_imports)] // Not used by all OS.
-pub(crate) use traits::{BufGroupId, BufId};
+pub(crate) use traits::BufId;
+pub(crate) use traits::BufMutParts;
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
 pub(crate) use std::io::*;
+
+pub use read_buf::{ReadBuf, ReadBufPool};
 
 #[doc(inline)]
 pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
@@ -701,10 +701,7 @@ unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
         unsafe { self.buf.set_init(n) };
     }
 
-    fn buffer_group(&self) -> Option<BufGroupId> {
-        self.buf.buffer_group()
-    }
-
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         self.last_read = n as usize;
         unsafe { self.buf.buffer_init(id, n) };

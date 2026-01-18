@@ -67,20 +67,20 @@ pub unsafe trait BufMut: 'static {
     /// by [`BufMut::parts_mut`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 
-    /// Buffer group id, or `None` if it's not part of a buffer pool.
-    ///
-    /// Don't implement this.
+    /// **Not part of the public API**.
+    /// Do **not** implement this.
     #[doc(hidden)]
     #[allow(private_interfaces)]
-    fn buffer_group(&self) -> Option<BufGroupId> {
-        None
+    fn parts(&mut self) -> BufMutParts {
+        let (ptr, len) = unsafe { self.parts_mut() };
+        BufMutParts::Buf { ptr, len }
     }
 
-    /// Mark `n` bytes as initialised in buffer with `idx`.
-    ///
-    /// Don't implement this.
+    /// **Not part of the public API**.
+    /// Do **not** implement this.
     #[doc(hidden)]
     #[allow(private_interfaces)]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         debug_assert!(id.0 == 0);
         unsafe { self.set_init(n as usize) };
@@ -121,6 +121,24 @@ pub unsafe trait BufMut: 'static {
         unsafe { self.set_init(written) };
         written
     }
+
+    /// **Not part of the public API**.
+    /// Do **not** implement this.
+    #[doc(hidden)]
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    fn release(&mut self) {
+        // Only implemented for ReadBuf.
+    }
 }
 
 /// Copies bytes from `src` to `dst`, copies up to `min(dst_len, src.len())`,
@@ -140,17 +158,20 @@ unsafe fn copy_bytes(dst: *mut u8, dst_len: usize, src: &[u8]) -> usize {
     len
 }
 
-/// Id for a [`ReadBufPool`].
-///
-/// [`ReadBufPool`]: crate::io::ReadBufPool
-#[derive(Copy, Clone, Debug)]
-pub struct BufGroupId(#[allow(dead_code)] pub(crate) u16);
+/// Buffer part, see [`BufMut::parts_mut`].
+pub(crate) enum BufMutParts {
+    /// Allocated buffer.
+    Buf { ptr: *mut u8, len: u32 },
+    /// Using a [`ReadBufPool`].
+    Pool(crate::sys::io::PoolBufParts),
+}
 
 /// Index for a [`ReadBufPool`].
 ///
 /// [`ReadBufPool`]: crate::io::ReadBufPool
 #[derive(Copy, Clone, Debug)]
-pub struct BufId(#[allow(dead_code)] pub(crate) u16);
+#[cfg(any(target_os = "android", target_os = "linux"))]
+pub struct BufId(pub(crate) u16);
 
 /// The implementation for `Vec<u8>` only uses the uninitialised capacity of the
 /// vector. In other words the bytes currently in the vector remain untouched.
@@ -319,10 +340,6 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
     unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
         let mut iovecs = [const { MaybeUninit::uninit() }; N];
         for (buf, iovec) in self.iter_mut().zip(iovecs.iter_mut()) {
-            debug_assert!(
-                buf.buffer_group().is_none(),
-                "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O",
-            );
             iovec.write(unsafe { IoMutSlice::new(buf) });
         }
         // SAFETY: `MaybeUninit<IoMutSlice>` and `IoMutSlice` have the same
@@ -726,13 +743,7 @@ macro_rules! buf_slice_for_tuple {
         unsafe impl<$( $generic: BufMut ),+> BufMutSlice<$N> for ($( $generic ),+) {
             unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; $N] {
                 [
-                    $({
-                        debug_assert!(
-                            self.$index.buffer_group().is_none(),
-                            "can't use a10::ReadBuf as a10::BufMutSlice in vectored I/O"
-                        );
-                        unsafe { IoMutSlice::new(&mut self.$index) }
-                    }),+
+                    $({ unsafe { IoMutSlice::new(&mut self.$index) } }),+
                 ]
             }
 
