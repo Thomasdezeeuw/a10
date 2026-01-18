@@ -27,6 +27,7 @@ use crate::{SubmissionQueue, man_link, new_flag, sys};
 /// let [receiver, sender] = pipe(sq.clone()).await?;
 ///
 /// // Using direct descriptors.
+/// #[cfg(any(target_os = "android", target_os = "linux"))]
 /// let [receiver, sender] = pipe(sq.clone()).kind(fd::Kind::Direct).await?;
 /// # Ok(())
 /// # }
