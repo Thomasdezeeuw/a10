@@ -1418,9 +1418,14 @@ pub(crate) fn conn_test<Fut: Future<Output = ()>>(
     f: impl FnOnce() + std::marker::Send + 'static,
     a: impl FnOnce(SubmissionQueue) -> Fut,
 ) {
-    let handle = thread::spawn(f);
+    let handle = thread::Builder::new()
+        .name("conn_test sync".into())
+        .spawn(f)
+        .expect("failed to spawn thread");
     Waker::new().block_on(a(test_queue()));
-    handle.join().unwrap()
+    if let Err(err) = handle.join() {
+        std::panic::resume_unwind(err);
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
