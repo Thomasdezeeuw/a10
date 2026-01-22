@@ -1,30 +1,42 @@
-//! The [A10] io_uring library.
+//! The A10 I/O library. [^1]
 //!
-//! This library is meant as a low-level library safely exposing the io_uring
-//! API. For simplicity this only has two main types and a number of helper
+//! This library is meant as a low-level library safely exposing different OS's
+//! abilities to perform non-blocking I/O.
+//!
+//! For simplicity this only has the following main types and a number of helper
 //! types:
-//!  * [`Ring`] is a wrapper around io_uring used to poll for completion events.
 //!  * [`AsyncFd`] is a wrapper around a file descriptor that provides a safe
-//!    API to schedule operations.
+//!    API to perform I/O operations such as `read(2)` using [`Future`]s.
+//!  * [`SubmissionQueue`] is needed to start operations, such as opening a file
+//!    or new socket, but on its own can't do much.
+//!  * [`Ring`] needs be [polled] so that the I/O operations can make progress.
 //!
-//! Some modules provide ways to create `AsyncFd`, e.g. [`OpenOptions`], others
-//! are simply a place to expose the [`Future`]s supporting the scheduled
-//! operations. The modules try to follow the same structure as that of the
-//! standard library.
+//! Some modules provide ways to create `AsyncFd`, e.g. [`socket`] or
+//! [`OpenOptions`], others are simply a place to expose the [`Future`]s
+//! supporting the I/O operations. The modules try to roughly follow the same
+//! structure as that of the standard library.
 //!
-//! Additional documentation can be found in the [`io_uring(7)`] manual.
-//!
-//! [A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
+//! [polled]: Ring::poll
+//! [`socket`]: net::socket
 //! [`OpenOptions`]: fs::OpenOptions
 //! [`Future`]: std::future::Future
+//!
+//! # Implementation Notes
+//!
+//! On Linux this uses io_uring, which is a completion based API. For the BSD
+//! family of OS (FreeBSD, OpenBSD, NetBSD, etc.) and for the Apple family
+//! (macOS, iOS, etc.) this uses kqueue, which is a poll based API.
+//!
+//! To support both the completion and poll based API most I/O operations need
+//! ownership of the data, e.g. a buffer, so it can delay deallocation if
+//! needed. [^2] The input data can be retrieved again by using the [`Extract`]
+//! trait.
+//!
+//! Additional documentation can be found in the [`io_uring(7)`] and
+//! [`kqueue(2)`] manuals.
+//!
 //! [`io_uring(7)`]: https://man7.org/linux/man-pages/man7/io_uring.7.html
-//!
-//! # Notes
-//!
-//! Most I/O operations need ownership of the data, e.g. a buffer, so it can
-//! delay deallocation if needed. For example when a `Future` is dropped before
-//! being polled to completion. This data can be retrieved again by using the
-//! [`Extract`] trait.
+//! [`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue
 //!
 //! # Examples
 //!
@@ -32,6 +44,15 @@
 //! [available online on GitHub].
 //!
 //! [available online on GitHub]: https://github.com/Thomasdezeeuw/a10/tree/main/examples
+//!
+//! [^1]: The name A10 comes from the [A10 ring road around Amsterdam], which
+//!       relates to the ring buffers that io_uring uses in its design.
+//! [^2]: Delaying of the deallocation needs to happen for completion based APIs
+//!       where an I/O operation `Future` is dropped before it's complete -- the
+//!       OS will continue to use the resources, which would result in a
+//!       use-after-free bug.
+//!
+//! [A10 ring road around Amsterdam]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
 
 #![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
@@ -93,20 +114,12 @@ pub use extract::Extract;
 #[doc(no_inline)]
 pub use fd::AsyncFd;
 
-/// This type represents the user space side of an io_uring.
+/// Ring.
 ///
-/// An io_uring is split into two queues: the submissions and completions queue.
-/// The [`SubmissionQueue`] is public, but doesn't provide many methods. The
-/// `SubmissionQueue` is used by I/O types in the crate to schedule asynchronous
-/// operations.
-///
-/// The completions queue is not exposed by the crate and only used internally.
-/// Instead it will wake the [`Future`]s exposed by the various I/O types, such
-/// as [`AsyncFd::write`]'s [`Write`] `Future`.
-///
-/// [`Future`]: std::future::Future
-/// [`AsyncFd::write`]: AsyncFd::write
-/// [`Write`]: io::Write
+/// The API on this type is quite minimal. It provides access to the
+/// [`SubmissionQueue`], which is used to perform I/O operations. And it exposes
+/// [`Ring::poll`] needs to be called to make progress on the operations and
+/// mark the [`Future`]s are ready to poll.
 #[derive(Debug)]
 pub struct Ring {
     cq: sys::Completions,
@@ -152,7 +165,7 @@ impl Ring {
 
 /// Queue to submit asynchronous operations to.
 ///
-/// This type doesn't have many public methods, but is used by all I/O types, to
+/// This type doesn't have many public methods, but is used by all I/O types to
 /// queue asynchronous operations. The queue can be acquired by using
 /// [`Ring::sq`].
 ///
