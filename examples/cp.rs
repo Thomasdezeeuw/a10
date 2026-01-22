@@ -18,27 +18,21 @@ fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new()?;
     // Get an owned reference to the submission queue.
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     // Collect the files we want to concatenate.
     let mut args = args().skip(1);
-    let source = match args.next() {
-        Some(source) => source,
-        None => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "missing source",
-            ));
-        }
+    let Some(source) = args.next() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "missing source",
+        ));
     };
-    let destination = match args.next() {
-        Some(destination) => destination,
-        None => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "missing destination",
-            ));
-        }
+    let Some(destination) = args.next() else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "missing destination",
+        ));
     };
 
     // Run our copy program.
@@ -54,7 +48,7 @@ async fn cp(sq: SubmissionQueue, source: String, destination: String) -> io::Res
         .await?;
 
     // Read and write 8 pages at a time.
-    let buf_pool = ReadBufPool::new(sq.clone(), 1, 8 * 4096)?;
+    let buf_pool = ReadBufPool::new(sq, 1, 8 * 4096)?;
     let mut buf = buf_pool.get();
     let mut n;
     loop {
@@ -70,10 +64,9 @@ async fn cp(sq: SubmissionQueue, source: String, destination: String) -> io::Res
             if n == buf.len() {
                 // Written all the bytes, try reading again.
                 break;
-            } else {
-                // Remove the bytes we've already written and try again.
-                buf.remove(..n);
             }
+            // Remove the bytes we've already written and try again.
+            buf.remove(..n);
         }
     }
 }
