@@ -241,7 +241,7 @@ impl FdIter for MultishotRecvOp {
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
-        submission.0.flags = libc::IOSQE_BUFFER_SELECT;
+        submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         submission.0.ioprio = libc::IORING_RECV_MULTISHOT as u16;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
@@ -255,7 +255,8 @@ impl FdIter for MultishotRecvOp {
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf_pool.new_buffer(buf_id, n) }
         } else {
-            unreachable!();
+            debug_assert!(n == 0);
+            buf_pool.empty_buffer()
         }
     }
 }

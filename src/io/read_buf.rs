@@ -85,16 +85,18 @@ impl ReadBufPool {
     /// will cause data races.
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) unsafe fn new_buffer(&self, id: BufId, n: u32) -> ReadBuf {
-        let owned = if n == 0 && id.0 == 0 {
-            // If we read 0 bytes it means the kernel didn't actually allocate a
-            // buffer.
-            None
-        } else {
-            Some(unsafe { self.shared.init_buffer(id, n) })
-        };
         ReadBuf {
             shared: self.shared.clone(),
-            owned,
+            owned: Some(unsafe { self.shared.init_buffer(id, n) }),
+        }
+    }
+
+    /// Create an empty buffer.
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub(crate) fn empty_buffer(&self) -> ReadBuf {
+        ReadBuf {
+            shared: self.shared.clone(),
+            owned: None,
         }
     }
 }

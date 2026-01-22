@@ -380,7 +380,8 @@ impl FdIter for MultishotReadOp {
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf_pool.new_buffer(buf_id, n) }
         } else {
-            unreachable!();
+            debug_assert!(n == 0);
+            buf_pool.empty_buffer()
         }
     }
 }
