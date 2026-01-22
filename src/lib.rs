@@ -56,7 +56,6 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
-use std::ptr;
 use std::time::Duration;
 
 // This must come before the other modules for the documentation.
@@ -146,8 +145,8 @@ impl Ring {
     /// Returns the `SubmissionQueue` used by this ring.
     ///
     /// The submission queue can be used to queue asynchronous I/O operations.
-    pub fn sq(&self) -> &SubmissionQueue {
-        SubmissionQueue::from_ref(&self.sq)
+    pub fn sq(&self) -> SubmissionQueue {
+        SubmissionQueue(self.sq.clone())
     }
 
     /// Poll the ring for completions.
@@ -175,12 +174,6 @@ impl Ring {
 pub struct SubmissionQueue(sys::Submissions);
 
 impl SubmissionQueue {
-    pub(crate) fn from_ref(submissions: &sys::Submissions) -> &SubmissionQueue {
-        // SAFETY: this is safe because `SubmissionQueue` and `sys::Submissions`
-        // have the same layout due to `repr(transparent)`.
-        unsafe { &*ptr::from_ref(submissions).cast() }
-    }
-
     /// Wake the connected [`Ring`].
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
