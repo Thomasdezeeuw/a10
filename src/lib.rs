@@ -257,7 +257,7 @@ macro_rules! new_flag {
             ];
         }
 
-        $crate::debug_detail!(impl for $type_name($type_repr) match $( $(#[$value_meta])* $libc::$value_type ),*);
+        $crate::debug_detail!(impl match for $type_name($type_repr) match $( $(#[$value_meta])* $libc::$value_type ),*);
 
         $(
         impl std::ops::BitOr for $type_name {
@@ -286,7 +286,7 @@ macro_rules! new_flag {
 macro_rules! debug_detail {
     (
         // Match a value exactly.
-        impl for $type: ident ($type_repr: ty) match
+        impl match for $type: ident ($type_repr: ty) match
         $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),* $(,)?
     ) => {
         impl ::std::fmt::Debug for $type {
@@ -316,7 +316,7 @@ macro_rules! debug_detail {
     ) => {
         struct $type($event_type);
 
-        $crate::debug_detail!(impl for $type($event_type) match $( $(#[$meta])* $libc::$flag ),*);
+        $crate::debug_detail!(impl match for $type($event_type) match $( $(#[$meta])* $libc::$flag ),*);
     };
     (
         // Integer bitset.
@@ -325,6 +325,13 @@ macro_rules! debug_detail {
     ) => {
         struct $type($event_type);
 
+        $crate::debug_detail!(impl bitset for $type($event_type), $( $(#[$meta])* $libc::$flag ),*);
+    };
+    (
+        // Integer bitset.
+        impl bitset for $type: ident ($event_type: ty),
+        $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
+    ) => {
         impl ::std::fmt::Debug for $type {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
                 let mut written_one = false;
