@@ -249,24 +249,6 @@ impl Completion {
         }
     }
 
-    /// Returns the operation flags that need to be passed to
-    /// [`QueuedOperation`].
-    ///
-    /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
-    ///
-    /// [`QueuedOperation`]: crate::QueuedOperation
-    pub(super) const fn operation_flags(&self) -> u16 {
-        if self.0.flags & libc::IORING_CQE_F_BUFFER != 0 {
-            // The flags we process separately we can safely ignore.
-            const IGNORE_FLAGS: u16 = (libc::IORING_CQE_F_BUFFER | libc::IORING_CQE_F_MORE) as u16;
-            debug_assert!((self.0.flags as u16) & !IGNORE_FLAGS == 0);
-            (self.0.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16
-        } else {
-            // Lower 16 bits contain the flags.
-            self.0.flags as u16
-        }
-    }
-
     /// Returns true if the operation is complete.
     pub(super) const fn complete(&self) -> bool {
         self.0.flags & libc::IORING_CQE_F_MORE == 0
@@ -285,12 +267,14 @@ impl fmt::Debug for Completion {
         );
 
         f.debug_struct("io_uring::Completion")
-            .field("user_data", &(self.0.user_data as *const ()))
+            .field(
+                "user_data",
+                &ptr::with_exposed_provenance::<()>(self.0.user_data as usize),
+            )
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.0.res)
             .field("flags", &CompletionFlags(self.0.flags))
-            .field("operation_flags", &self.operation_flags())
             .finish()
     }
 }

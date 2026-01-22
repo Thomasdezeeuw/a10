@@ -231,7 +231,7 @@ impl<T: OpResult> Shared<T> {
             Status::Running { result } | Status::Done { result } => {
                 let completion_result = CompletionResult {
                     result: completion.0.res,
-                    flags: completion.operation_flags(),
+                    flags: completion.0.flags,
                 };
                 let completion_flags = completion.0.flags;
                 result.update(completion_result, completion_flags);
@@ -313,9 +313,8 @@ trait OpResult {
 /// Completed result of an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct CompletionResult {
-    /// The 16 upper bits of `io_uring_cqe.flags`, e.g. the index of a buffer in
-    /// a buffer pool.
-    flags: u16,
+    /// The `io_uring_cqe.flags`.
+    flags: u32,
     /// The result of an operation; negative is a (negative) errno, positive a
     /// successful result. The meaning is depended on the operation itself.
     result: i32,
@@ -325,10 +324,28 @@ impl CompletionResult {
     /// Returns itself as operation return value.
     pub(crate) fn as_op_return(self) -> io::Result<OpReturn> {
         if let Ok(result) = u32::try_from(self.result) {
-            Ok((self.flags, result))
+            Ok((self.operation_flags(), result))
         } else {
             // If the result is negative then we return an error.
             Err(io::Error::from_raw_os_error(-self.result))
+        }
+    }
+
+    /// Returns the operation flags that need to be passed to
+    /// [`QueuedOperation`].
+    ///
+    /// [`QueuedOperation`]: crate::QueuedOperation
+    pub(super) const fn operation_flags(&self) -> u16 {
+        // Lower 16 bits contain the flags.
+        self.flags as u16
+    }
+
+    /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
+    pub(super) const fn buf_id(&self) -> Option<u16> {
+        if self.flags & libc::IORING_CQE_F_BUFFER != 0 {
+            Some((self.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16)
+        } else {
+            None
         }
     }
 }
