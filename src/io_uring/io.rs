@@ -340,14 +340,16 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         }
     }
 
-    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
         let (ptr, len) = unsafe { buf.parts_mut() };
         asan::unpoison_region(ptr.cast(), len as usize);
         msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
-        unsafe {
-            buf.buffer_init(BufId(buf_id), n);
-        };
+        if let Some(buf_id) = flags.buf_id() {
+            unsafe { buf.buffer_init(buf_id, n) };
+        } else {
+            unsafe { buf.set_init(n as usize) };
+        }
         buf
     }
 }
@@ -371,11 +373,15 @@ impl FdIter for MultishotReadOp {
         submission.0.__bindgen_anon_4.buf_group = buf_pool.shared.group_id();
     }
 
-    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (flags, n): OpReturn) -> Self::Output {
         // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
-        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
+        if let Some(buf_id) = flags.buf_id() {
+            unsafe { buf_pool.new_buffer(buf_id, n) }
+        } else {
+            unreachable!();
+        }
     }
 }
 

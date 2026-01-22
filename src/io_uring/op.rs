@@ -7,11 +7,12 @@ use std::sync::Mutex;
 use std::task::{self, Poll};
 
 use crate::asan;
+use crate::io::BufId;
 use crate::io_uring::cq::{Completion, MULTISHOT_TAG, SINGLESHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue, get_mut, lock};
+use crate::{AsyncFd, SubmissionQueue, debug_detail, get_mut, lock};
 
 // # Usage
 //
@@ -231,7 +232,7 @@ impl<T: OpResult> Shared<T> {
             Status::Running { result } | Status::Done { result } => {
                 let completion_result = CompletionResult {
                     result: completion.0.res,
-                    flags: completion.0.flags,
+                    flags: CompletionFlags(completion.0.flags),
                 };
                 let completion_flags = completion.0.flags;
                 result.update(completion_result, completion_flags);
@@ -313,47 +314,60 @@ trait OpResult {
 /// Completed result of an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct CompletionResult {
-    /// The `io_uring_cqe.flags`.
-    flags: u32,
+    flags: CompletionFlags,
     /// The result of an operation; negative is a (negative) errno, positive a
     /// successful result. The meaning is depended on the operation itself.
     result: i32,
 }
 
 impl CompletionResult {
-    /// Returns itself as operation return value.
-    pub(crate) fn as_op_return(self) -> io::Result<OpReturn> {
+    /// Returns itself as checked result.
+    pub(crate) fn check_result(self) -> io::Result<u32> {
         if let Ok(result) = u32::try_from(self.result) {
-            Ok((self.operation_flags(), result))
+            Ok(result)
         } else {
             // If the result is negative then we return an error.
             Err(io::Error::from_raw_os_error(-self.result))
         }
     }
+}
 
-    /// Returns the operation flags that need to be passed to
-    /// [`QueuedOperation`].
-    ///
-    /// [`QueuedOperation`]: crate::QueuedOperation
+/// The `io_uring_cqe.flags`.
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub(crate) struct CompletionFlags(u32);
+
+impl CompletionFlags {
+    /* Currently not used.
+    /// Returns the flags.
     pub(super) const fn operation_flags(&self) -> u16 {
         // Lower 16 bits contain the flags.
-        self.flags as u16
+        self.0 as u16
     }
+    */
 
     /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
-    pub(super) const fn buf_id(&self) -> Option<u16> {
-        if self.flags & libc::IORING_CQE_F_BUFFER != 0 {
-            Some((self.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16)
+    pub(super) const fn buf_id(&self) -> Option<BufId> {
+        if self.0 & libc::IORING_CQE_F_BUFFER != 0 {
+            Some(BufId((self.0 >> libc::IORING_CQE_BUFFER_SHIFT) as u16))
         } else {
             None
         }
     }
 }
 
+debug_detail!(
+    impl bitset for CompletionFlags(u32),
+    libc::IORING_CQE_F_BUFFER,
+    libc::IORING_CQE_F_MORE,
+    libc::IORING_CQE_F_SOCK_NONEMPTY,
+    libc::IORING_CQE_F_NOTIF,
+    libc::IORING_CQE_F_BUF_MORE,
+);
+
 /// Return value of a system call.
 ///
 /// The flags and positive result of a system call.
-pub(super) type OpReturn = (u16, u32);
+pub(super) type OpReturn = (CompletionFlags, u32);
 
 /// Single shot operation.
 #[derive(Debug)]
@@ -362,7 +376,7 @@ pub(crate) struct Singleshot(CompletionResult);
 impl OpResult for Singleshot {
     fn empty() -> Singleshot {
         Singleshot(CompletionResult {
-            flags: 0,
+            flags: CompletionFlags(0),
             result: 0,
         })
     }
@@ -671,13 +685,14 @@ where
                     return Poll::Pending;
                 };
                 unlock(shared);
-                let op_return = match result.as_op_return() {
-                    Ok(ret) => ret,
+                let res = match result.check_result() {
+                    Ok(res) => res,
                     Err(err) => return Poll::Ready(Res::from_err(err)),
                 };
                 // SAFETY: we share the resources with the kernel, so we can
                 // only read them.
                 let resources = get_resources(data.tail.resources.get().cast::<R>());
+                let op_return = (result.flags, res);
                 Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
             } else {
                 // For a singleshot operation we wait until the operation is
@@ -722,10 +737,11 @@ where
             // below as we've set the status to Complete. Otherwise we would
             // leak the resources.
             let resources = get_resources(data.tail.resources.get().cast::<R>());
-            let op_return = match result.as_op_return() {
-                Ok(ret) => ret,
+            let res = match result.check_result() {
+                Ok(res) => res,
                 Err(err) => return Poll::Ready(Res::from_err(err)),
             };
+            let op_return = (result.flags, res);
             Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
         }
         // Only the Future sets the Dropped status, which is also the only one
