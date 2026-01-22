@@ -339,14 +339,14 @@ pub(crate) struct CompletionFlags(u32);
 impl CompletionFlags {
     /* Currently not used.
     /// Returns the flags.
-    pub(super) const fn operation_flags(&self) -> u16 {
+    pub(super) const fn operation_flags(self) -> u16 {
         // Lower 16 bits contain the flags.
         self.0 as u16
     }
     */
 
     /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
-    pub(super) const fn buf_id(&self) -> Option<BufId> {
+    pub(super) const fn buf_id(self) -> Option<BufId> {
         if self.0 & libc::IORING_CQE_F_BUFFER != 0 {
             Some(BufId((self.0 >> libc::IORING_CQE_BUFFER_SHIFT) as u16))
         } else {
