@@ -252,10 +252,17 @@ impl Completion {
     /// Returns the operation flags that need to be passed to
     /// [`QueuedOperation`].
     ///
+    /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
+    ///
     /// [`QueuedOperation`]: crate::QueuedOperation
     pub(super) const fn operation_flags(&self) -> u16 {
-        // Lower 16 bits contain the flags.
-        self.0.flags as u16
+        if self.0.flags & libc::IORING_CQE_F_BUFFER != 0 {
+            debug_assert!((self.0.flags as u16) & !(libc::IORING_CQE_F_BUFFER as u16) == 0);
+            (self.0.flags >> libc::IORING_CQE_BUFFER_SHIFT) as u16
+        } else {
+            // Lower 16 bits contain the flags.
+            self.0.flags as u16
+        }
     }
 
     /// Returns true if the operation is complete.

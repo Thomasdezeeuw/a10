@@ -744,9 +744,10 @@ fn recv_from_read_buf_pool() {
     waker.block_on(bind_ipv4(&socket));
     let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
 
-    listener
+    let n = listener
         .send_to(DATA1, socket_addr)
         .expect("failed to send data");
+    assert_eq!(n, DATA1.len());
 
     // Receive some data.
     let (buf, address, flags): (_, SocketAddr, _) = waker
