@@ -130,7 +130,7 @@ impl TestHarness {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         let config = config.with_direct_descriptors(2);
         let ring = config.build().unwrap();
-        let sq = ring.sq().clone();
+        let sq = ring.sq();
         TestHarness {
             ring,
             signals: Some(Signals::from_signals(sq, SIGNALS.iter().copied()).unwrap()),
@@ -151,7 +151,7 @@ impl TestHarness {
         F: FnMut(&mut Ring, &Signals, Signal),
     {
         let signals = self.signals.as_ref().unwrap();
-        for (signal, name) in SIGNALS.into_iter().copied().zip(SIGNAL_NAMES) {
+        for (signal, name) in SIGNALS.iter().copied().zip(SIGNAL_NAMES) {
             print_test_start(
                 self.quiet,
                 format_args!("{test_name} ({:?}, {name})", self.fd_kind),
@@ -244,6 +244,7 @@ fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
     }
 }
 
+#[allow(clippy::cast_possible_wrap)]
 fn send_signal(pid: u32, signal: Signal) -> std::io::Result<()> {
     let signal = signal_to_os(signal);
     syscall!(kill(pid as libc::pid_t, signal))?;
@@ -273,6 +274,7 @@ fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
     }
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn print_test_result(
     result: thread::Result<()>,
     quiet: bool,
@@ -281,11 +283,11 @@ fn print_test_result(
 ) {
     if result.is_ok() {
         print!("{}", if quiet { "." } else { "ok\n" });
-        *passed += 1
+        *passed += 1;
     } else {
         print!("{}", if quiet { "F" } else { "FAILED\n" });
-        *failed += 1
-    };
+        *failed += 1;
+    }
 }
 
 #[cfg(feature = "nightly")]

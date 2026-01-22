@@ -88,7 +88,7 @@ fn submission_queue_full_is_handled_internally() {
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
 
-    let mut future: Open = OpenOptions::new().open(sq.clone(), path.into());
+    let mut future: Open = OpenOptions::new().open(sq, path.into());
     let file = loop {
         match poll_nop(Pin::new(&mut future)) {
             Poll::Ready(result) => break result.unwrap(),
@@ -111,7 +111,6 @@ fn submission_queue_full_is_handled_internally() {
     }
 
     let mut futures = (0..N)
-        .into_iter()
         .map(|i| {
             let fut = file
                 .read(Vec::with_capacity(BUF_SIZE))
@@ -128,7 +127,7 @@ fn submission_queue_full_is_handled_internally() {
     // submission slot.
     for (i, fut) in futures.iter_mut().enumerate() {
         if let Some((future, waker)) = fut {
-            let mut ctx = task::Context::from_waker(&waker);
+            let mut ctx = task::Context::from_waker(waker);
             match Pin::new(future).poll(&mut ctx) {
                 Poll::Ready(result) => {
                     *fut = None;
@@ -144,7 +143,7 @@ fn submission_queue_full_is_handled_internally() {
         // Poll all futures that got a wake up.
         for i in take(&mut *indices.lock().unwrap()).into_iter() {
             if let Some((future, waker)) = &mut futures[i] {
-                let mut ctx = task::Context::from_waker(&waker);
+                let mut ctx = task::Context::from_waker(waker);
                 match Pin::new(future).poll(&mut ctx) {
                     Poll::Ready(result) => {
                         futures[i] = None;
@@ -173,7 +172,7 @@ fn wake_ring_with_kernel_thread() {
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     let handle = thread::spawn(move || {
         thread::sleep(Duration::from_millis(10));
@@ -194,7 +193,7 @@ fn wake_ring_no_kernel_thread() {
         .with_idle_timeout(Duration::from_millis(1))
         .build()
         .unwrap();
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     let handle = thread::spawn(move || {
         thread::sleep(Duration::from_millis(10));
@@ -210,7 +209,7 @@ fn wake_ring_no_kernel_thread() {
 fn wake_ring_after_ring_dropped() {
     init();
     let ring = Ring::new().unwrap();
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     drop(ring);
     sq.wake();
