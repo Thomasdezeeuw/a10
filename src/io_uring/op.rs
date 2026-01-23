@@ -657,6 +657,18 @@ where
 
 /// A (too large) function that polls a `State` to implement any kind of
 /// operation.
+///
+/// Arguments:
+///  * `target` either AsyncFd or SubmissionQueue, need access for the filling
+///    of the submissions and submitting it.
+///  * `state` state of the operation.
+///  * `ctx` needed to get the task::Waker if we can't make progress.
+///  * `fill_submission` fill a io_uring submission.
+///  * `get_resources` get access to the resources, for Future this will be
+///    reading them, for AsyncIter this is a read-only reference.
+///  * `map_ok` map a successfull result.
+///  * `fallback` function called when the operation errored, to attempt a
+///    fallback operation (e.g. a synchronous function call).
 #[allow(clippy::needless_pass_by_ref_mut)] // For ctx.
 fn poll_inner<T, O, R, R2, A, Ok, Res>(
     target: &T,
