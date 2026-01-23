@@ -458,6 +458,7 @@ impl<T: Op> crate::op::Op for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok,
+            |_, _, err| Err(fallback(err)),
         )
     }
 }
@@ -487,6 +488,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok_extract,
+            |_, _, err| Err(fallback(err)),
         )
     }
 }
@@ -519,7 +521,14 @@ impl<T: FdOp> crate::op::FdOp for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
-        poll(fd, state, ctx, T::fill_submission, T::map_ok)
+        poll(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_ok,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -542,7 +551,14 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::ExtractOutput> {
-        poll(fd, state, ctx, T::fill_submission, T::map_ok_extract)
+        poll(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_ok_extract,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -576,7 +592,14 @@ impl<T: FdIter> crate::op::FdIter for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
-        poll_next(fd, state, ctx, T::fill_submission, T::map_next)
+        poll_next(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_next,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -584,8 +607,9 @@ fn poll<T, O, R, A, Out>(
     target: &T,
     state: &mut State<O, R, A>,
     ctx: &mut task::Context<'_>,
-    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
-    map_ok: impl Fn(&T, R, OpReturn) -> Out,
+    fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
+    map_ok: impl FnOnce(&T, R, OpReturn) -> Out,
+    fallback: impl FnOnce(&T, R, io::Error) -> io::Result<Out>,
 ) -> Poll<io::Result<Out>>
 where
     T: OpTarget,
@@ -594,15 +618,24 @@ where
     // SAFETY: this is only safe because we set the status to Complete before we
     // read the resources here.
     let read_resources = |resources_ptr: *mut R| unsafe { resources_ptr.read() };
-    poll_inner(target, state, ctx, fill_submission, read_resources, map_ok)
+    poll_inner(
+        target,
+        state,
+        ctx,
+        fill_submission,
+        read_resources,
+        map_ok,
+        fallback,
+    )
 }
 
 fn poll_next<T, O, R, A, Out>(
     target: &T,
     state: &mut State<O, R, A>,
     ctx: &mut task::Context<'_>,
-    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
-    map_next: impl Fn(&T, &R, OpReturn) -> Out,
+    fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
+    map_next: impl FnOnce(&T, &R, OpReturn) -> Out,
+    fallback: impl FnOnce(&T, &R, io::Error) -> io::Result<Out>,
 ) -> Poll<Option<io::Result<Out>>>
 where
     T: OpTarget,
@@ -611,7 +644,15 @@ where
     // SAFETY: this is only safe because we set the status to Complete before we
     // read the resources here.
     let get_resources = |resources_ptr: *mut R| unsafe { &*resources_ptr };
-    poll_inner(target, state, ctx, fill_submission, get_resources, map_next)
+    poll_inner(
+        target,
+        state,
+        ctx,
+        fill_submission,
+        get_resources,
+        map_next,
+        fallback,
+    )
 }
 
 /// A (too large) function that polls a `State` to implement any kind of
@@ -624,6 +665,7 @@ fn poll_inner<T, O, R, R2, A, Ok, Res>(
     fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
     get_resources: impl FnOnce(*mut R) -> R2,
     map_ok: impl FnOnce(&T, R2, OpReturn) -> Ok,
+    fallback: impl FnOnce(&T, R2, io::Error) -> io::Result<Ok>,
 ) -> Poll<Res>
 where
     T: OpTarget,
@@ -740,7 +782,7 @@ where
             let resources = get_resources(data.tail.resources.get().cast::<R>());
             let res = match result.check_result() {
                 Ok(res) => res,
-                Err(err) => return Poll::Ready(Res::from_err(err)),
+                Err(err) => return Poll::Ready(Res::from_res(fallback(target, resources, err))),
             };
             let op_return = (result.flags, res);
             Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
@@ -801,6 +843,7 @@ impl OpTarget for SubmissionQueue {
 trait OpPollResult<T> {
     fn from_ok(ok: T) -> Self;
     fn from_err(err: io::Error) -> Self;
+    fn from_res(res: io::Result<T>) -> Self;
     fn done() -> Self;
 }
 
@@ -811,6 +854,10 @@ impl<T> OpPollResult<T> for io::Result<T> {
 
     fn from_err(err: io::Error) -> Self {
         Err(err)
+    }
+
+    fn from_res(res: io::Result<T>) -> Self {
+        res
     }
 
     fn done() -> Self {
@@ -827,7 +874,15 @@ impl<T> OpPollResult<T> for Option<io::Result<T>> {
         Some(Err(err))
     }
 
+    fn from_res(res: io::Result<T>) -> Self {
+        Some(res)
+    }
+
     fn done() -> Self {
         None
     }
+}
+
+fn fallback(err: io::Error) -> io::Error {
+    err
 }
