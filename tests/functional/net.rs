@@ -6,7 +6,9 @@ use std::net::{
     UdpSocket,
 };
 use std::os::fd::{AsRawFd, BorrowedFd};
-use std::sync::{Arc, Barrier, OnceLock};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::sync::Barrier;
+use std::sync::{Arc, OnceLock};
 use std::{ptr, thread};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
