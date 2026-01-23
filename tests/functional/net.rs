@@ -6,7 +6,7 @@ use std::net::{
     UdpSocket,
 };
 use std::os::fd::{AsRawFd, BorrowedFd};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Barrier, OnceLock};
 use std::{ptr, thread};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -517,6 +517,8 @@ fn multishot_recv_all_buffers_used() {
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
     let local_addr = listener.local_addr().unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let b = barrier.clone();
 
     conn_test(
         move || {
@@ -526,6 +528,7 @@ fn multishot_recv_all_buffers_used() {
                 client.write_all(DATA).expect("failed to write");
             }
             client.shutdown(Shutdown::Write).unwrap();
+            b.wait(); // Wait before dropping the connection.
         },
         |sq| async move {
             let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
@@ -553,6 +556,7 @@ fn multishot_recv_all_buffers_used() {
                     }
                 }
             }
+            barrier.wait(); // Drop the connection.
         },
     );
 }
