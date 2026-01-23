@@ -129,7 +129,7 @@ fn direct_to_direct_descriptor() {
         .kind(fd::Kind::Direct)
         .open(sq, LOREM_IPSUM_5.path.into());
     let direct_fd = waker.block_on(open_file).unwrap();
-    debug_assert_eq!(direct_fd.kind(), fd::Kind::Direct);
+    assert_eq!(direct_fd.kind(), fd::Kind::Direct);
     // This should panic.
     let res = waker.block_on(direct_fd.to_direct_descriptor());
     expect_io_errno(res, libc::EINVAL);
@@ -147,6 +147,7 @@ fn file_to_file_descriptor() {
 
     let open_file = OpenOptions::new().open(sq, LOREM_IPSUM_5.path.into());
     let regular_fd = waker.block_on(open_file).unwrap();
+    assert_eq!(regular_fd.kind(), fd::Kind::File);
     // This should panic.
     let res = waker.block_on(regular_fd.to_file_descriptor());
     expect_io_errno(res, libc::EBADF);

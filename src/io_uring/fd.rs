@@ -28,7 +28,7 @@ impl AsyncFd {
     #[doc(alias = "IORING_FILE_INDEX_ALLOC")]
     pub fn to_direct_descriptor<'fd>(&'fd self) -> ToDirect<'fd> {
         debug_assert!(
-            matches!(self.kind(), fd::Kind::File),
+            self.kind() != fd::Kind::Direct,
             "can't covert a direct descriptor to a different direct descriptor"
         );
         ToDirect::new(self, ((), self.fd()), ())
@@ -46,7 +46,7 @@ impl AsyncFd {
     #[doc(alias = "IORING_OP_FIXED_FD_INSTALL")]
     pub fn to_file_descriptor<'fd>(&'fd self) -> ToFd<'fd> {
         debug_assert!(
-            matches!(self.kind(), fd::Kind::Direct),
+            self.kind() != fd::Kind::File,
             "can't covert a file descriptor to a different file descriptor"
         );
         ToFd::new(self, (), ())
