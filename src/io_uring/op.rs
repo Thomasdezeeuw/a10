@@ -7,11 +7,12 @@ use std::sync::Mutex;
 use std::task::{self, Poll};
 
 use crate::asan;
+use crate::io::BufId;
 use crate::io_uring::cq::{Completion, MULTISHOT_TAG, SINGLESHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue, get_mut, lock};
+use crate::{AsyncFd, SubmissionQueue, debug_detail, get_mut, lock};
 
 // # Usage
 //
@@ -231,7 +232,7 @@ impl<T: OpResult> Shared<T> {
             Status::Running { result } | Status::Done { result } => {
                 let completion_result = CompletionResult {
                     result: completion.0.res,
-                    flags: completion.operation_flags(),
+                    flags: CompletionFlags(completion.0.flags),
                 };
                 let completion_flags = completion.0.flags;
                 result.update(completion_result, completion_flags);
@@ -283,14 +284,15 @@ pub(super) enum StatusUpdate {
     Drop { drop: unsafe fn(*mut ()) },
 }
 
+// SAFETY: If Data is Send/Sync we can safely mark State as Send/Sync as well.
+unsafe impl<T, R, A> Send for State<T, R, A> where Data<T, R, A>: Send {}
+unsafe impl<T, R, A> Sync for State<T, R, A> where Data<T, R, A>: Sync {}
+
 // SAFETY: UnsafeCell is !Sync, but as long as R is Sync/Send so UnsafeCell<R>.
-unsafe impl<T: Send, R: Send, A: Send> Send for State<T, R, A> {}
-unsafe impl<T: Sync, R: Sync, A: Sync> Sync for State<T, R, A> {}
+//unsafe impl<T: Send, R: Send, A: Send> Send for State<T, R, A> {}
+unsafe impl<R: Sync, A: Sync> Sync for Tail<R, A> {}
 
-// SAFETY: everything is heap allocate and is not moved between the initial
-// allocation and deallocation.
-impl<T, R, A> Unpin for State<T, R, A> {}
-
+// SAFETY: Same as the Sync implementation, see above.
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
 
 /// Container for the [`CompletionResult`]. Either [`Singleshot`] or
@@ -313,19 +315,17 @@ trait OpResult {
 /// Completed result of an operation.
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub(crate) struct CompletionResult {
-    /// The 16 upper bits of `io_uring_cqe.flags`, e.g. the index of a buffer in
-    /// a buffer pool.
-    flags: u16,
+    flags: CompletionFlags,
     /// The result of an operation; negative is a (negative) errno, positive a
     /// successful result. The meaning is depended on the operation itself.
     result: i32,
 }
 
 impl CompletionResult {
-    /// Returns itself as operation return value.
-    pub(crate) fn as_op_return(self) -> io::Result<OpReturn> {
+    /// Returns itself as checked result.
+    pub(crate) fn check_result(self) -> io::Result<u32> {
         if let Ok(result) = u32::try_from(self.result) {
-            Ok((self.flags, result))
+            Ok(result)
         } else {
             // If the result is negative then we return an error.
             Err(io::Error::from_raw_os_error(-self.result))
@@ -333,10 +333,46 @@ impl CompletionResult {
     }
 }
 
+/// The `io_uring_cqe.flags`.
+#[derive(Copy, Clone, Eq, PartialEq)]
+pub(crate) struct CompletionFlags(u32);
+
+impl CompletionFlags {
+    pub(super) const fn empty() -> CompletionFlags {
+        CompletionFlags(0)
+    }
+
+    /* Currently not used.
+    /// Returns the flags.
+    pub(super) const fn operation_flags(self) -> u16 {
+        // Lower 16 bits contain the flags.
+        self.0 as u16
+    }
+    */
+
+    /// If `IORING_CQE_F_BUFFER` is set this will return the buffer id.
+    pub(super) const fn buf_id(self) -> Option<BufId> {
+        if self.0 & libc::IORING_CQE_F_BUFFER != 0 {
+            Some(BufId((self.0 >> libc::IORING_CQE_BUFFER_SHIFT) as u16))
+        } else {
+            None
+        }
+    }
+}
+
+debug_detail!(
+    impl bitset for CompletionFlags(u32),
+    libc::IORING_CQE_F_BUFFER,
+    libc::IORING_CQE_F_MORE,
+    libc::IORING_CQE_F_SOCK_NONEMPTY,
+    libc::IORING_CQE_F_NOTIF,
+    libc::IORING_CQE_F_BUF_MORE,
+);
+
 /// Return value of a system call.
 ///
 /// The flags and positive result of a system call.
-pub(super) type OpReturn = (u16, u32);
+pub(super) type OpReturn = (CompletionFlags, u32);
 
 /// Single shot operation.
 #[derive(Debug)]
@@ -345,7 +381,7 @@ pub(crate) struct Singleshot(CompletionResult);
 impl OpResult for Singleshot {
     fn empty() -> Singleshot {
         Singleshot(CompletionResult {
-            flags: 0,
+            flags: CompletionFlags::empty(),
             result: 0,
         })
     }
@@ -407,6 +443,17 @@ pub(crate) trait Op {
         resources: Self::Resources,
         op_return: OpReturn,
     ) -> Self::Output;
+
+    fn fallback(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        _ = sq;
+        _ = resources;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: Op> crate::op::Op for T {
@@ -426,6 +473,7 @@ impl<T: Op> crate::op::Op for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok,
+            T::fallback,
         )
     }
 }
@@ -455,6 +503,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok_extract,
+            |_, _, err| Err(fallback(err)),
         )
     }
 }
@@ -487,7 +536,14 @@ impl<T: FdOp> crate::op::FdOp for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
-        poll(fd, state, ctx, T::fill_submission, T::map_ok)
+        poll(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_ok,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -510,7 +566,14 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::ExtractOutput> {
-        poll(fd, state, ctx, T::fill_submission, T::map_ok_extract)
+        poll(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_ok_extract,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -544,7 +607,14 @@ impl<T: FdIter> crate::op::FdIter for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
-        poll_next(fd, state, ctx, T::fill_submission, T::map_next)
+        poll_next(
+            fd,
+            state,
+            ctx,
+            T::fill_submission,
+            T::map_next,
+            |_, _, err| Err(fallback(err)),
+        )
     }
 }
 
@@ -552,8 +622,9 @@ fn poll<T, O, R, A, Out>(
     target: &T,
     state: &mut State<O, R, A>,
     ctx: &mut task::Context<'_>,
-    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
-    map_ok: impl Fn(&T, R, OpReturn) -> Out,
+    fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
+    map_ok: impl FnOnce(&T, R, OpReturn) -> Out,
+    fallback: impl FnOnce(&T, R, io::Error) -> io::Result<Out>,
 ) -> Poll<io::Result<Out>>
 where
     T: OpTarget,
@@ -562,15 +633,24 @@ where
     // SAFETY: this is only safe because we set the status to Complete before we
     // read the resources here.
     let read_resources = |resources_ptr: *mut R| unsafe { resources_ptr.read() };
-    poll_inner(target, state, ctx, fill_submission, read_resources, map_ok)
+    poll_inner(
+        target,
+        state,
+        ctx,
+        fill_submission,
+        read_resources,
+        map_ok,
+        fallback,
+    )
 }
 
 fn poll_next<T, O, R, A, Out>(
     target: &T,
     state: &mut State<O, R, A>,
     ctx: &mut task::Context<'_>,
-    fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
-    map_next: impl Fn(&T, &R, OpReturn) -> Out,
+    fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
+    map_next: impl FnOnce(&T, &R, OpReturn) -> Out,
+    fallback: impl FnOnce(&T, &R, io::Error) -> io::Result<Out>,
 ) -> Poll<Option<io::Result<Out>>>
 where
     T: OpTarget,
@@ -579,11 +659,31 @@ where
     // SAFETY: this is only safe because we set the status to Complete before we
     // read the resources here.
     let get_resources = |resources_ptr: *mut R| unsafe { &*resources_ptr };
-    poll_inner(target, state, ctx, fill_submission, get_resources, map_next)
+    poll_inner(
+        target,
+        state,
+        ctx,
+        fill_submission,
+        get_resources,
+        map_next,
+        fallback,
+    )
 }
 
 /// A (too large) function that polls a `State` to implement any kind of
 /// operation.
+///
+/// Arguments:
+///  * `target` either AsyncFd or SubmissionQueue, need access for the filling
+///    of the submissions and submitting it.
+///  * `state` state of the operation.
+///  * `ctx` needed to get the task::Waker if we can't make progress.
+///  * `fill_submission` fill a io_uring submission.
+///  * `get_resources` get access to the resources, for Future this will be
+///    reading them, for AsyncIter this is a read-only reference.
+///  * `map_ok` map a successfull result.
+///  * `fallback` function called when the operation errored, to attempt a
+///    fallback operation (e.g. a synchronous function call).
 #[allow(clippy::needless_pass_by_ref_mut)] // For ctx.
 fn poll_inner<T, O, R, R2, A, Ok, Res>(
     target: &T,
@@ -592,6 +692,7 @@ fn poll_inner<T, O, R, R2, A, Ok, Res>(
     fill_submission: impl FnOnce(&T, &mut R, &mut A, &mut Submission),
     get_resources: impl FnOnce(*mut R) -> R2,
     map_ok: impl FnOnce(&T, R2, OpReturn) -> Ok,
+    fallback: impl FnOnce(&T, R2, io::Error) -> io::Result<Ok>,
 ) -> Poll<Res>
 where
     T: OpTarget,
@@ -654,13 +755,14 @@ where
                     return Poll::Pending;
                 };
                 unlock(shared);
-                let op_return = match result.as_op_return() {
-                    Ok(ret) => ret,
+                let res = match result.check_result() {
+                    Ok(res) => res,
                     Err(err) => return Poll::Ready(Res::from_err(err)),
                 };
                 // SAFETY: we share the resources with the kernel, so we can
                 // only read them.
                 let resources = get_resources(data.tail.resources.get().cast::<R>());
+                let op_return = (result.flags, res);
                 Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
             } else {
                 // For a singleshot operation we wait until the operation is
@@ -705,10 +807,11 @@ where
             // below as we've set the status to Complete. Otherwise we would
             // leak the resources.
             let resources = get_resources(data.tail.resources.get().cast::<R>());
-            let op_return = match result.as_op_return() {
-                Ok(ret) => ret,
-                Err(err) => return Poll::Ready(Res::from_err(err)),
+            let res = match result.check_result() {
+                Ok(res) => res,
+                Err(err) => return Poll::Ready(Res::from_res(fallback(target, resources, err))),
             };
+            let op_return = (result.flags, res);
             Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)))
         }
         // Only the Future sets the Dropped status, which is also the only one
@@ -767,6 +870,7 @@ impl OpTarget for SubmissionQueue {
 trait OpPollResult<T> {
     fn from_ok(ok: T) -> Self;
     fn from_err(err: io::Error) -> Self;
+    fn from_res(res: io::Result<T>) -> Self;
     fn done() -> Self;
 }
 
@@ -777,6 +881,10 @@ impl<T> OpPollResult<T> for io::Result<T> {
 
     fn from_err(err: io::Error) -> Self {
         Err(err)
+    }
+
+    fn from_res(res: io::Result<T>) -> Self {
+        res
     }
 
     fn done() -> Self {
@@ -793,7 +901,21 @@ impl<T> OpPollResult<T> for Option<io::Result<T>> {
         Some(Err(err))
     }
 
+    fn from_res(res: io::Result<T>) -> Self {
+        Some(res)
+    }
+
     fn done() -> Self {
         None
+    }
+}
+
+fn fallback(err: io::Error) -> io::Error {
+    match err.raw_os_error() {
+        Some(libc::EINVAL) => io::Error::new(
+            io::ErrorKind::Unsupported,
+            "operation not supported, please update your Linux kernel version",
+        ),
+        _ => err,
     }
 }

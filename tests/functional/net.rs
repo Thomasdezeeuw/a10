@@ -6,6 +6,8 @@ use std::net::{
     UdpSocket,
 };
 use std::os::fd::{AsRawFd, BorrowedFd};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::sync::Barrier;
 use std::sync::{Arc, OnceLock};
 use std::{ptr, thread};
 
@@ -18,8 +20,6 @@ use a10::net::{
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::net::{Domain, MultishotAccept, MultishotRecv, Type, socket};
 use a10::{Extract, SubmissionQueue};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::{Ring, fd};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
@@ -27,7 +27,7 @@ use crate::util::{
     test_queue, udp_ipv4_socket,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{block_on, expect_io_errno, init, next};
+use crate::util::{expect_io_errno, next};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -519,6 +519,8 @@ fn multishot_recv_all_buffers_used() {
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
     let local_addr = listener.local_addr().unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let b = barrier.clone();
 
     conn_test(
         move || {
@@ -528,6 +530,7 @@ fn multishot_recv_all_buffers_used() {
                 client.write_all(DATA).expect("failed to write");
             }
             client.shutdown(Shutdown::Write).unwrap();
+            b.wait(); // Wait before dropping the connection.
         },
         |sq| async move {
             let buf_pool = ReadBufPool::new(sq.clone(), BUFS as u16, BUF_SIZE as u32).unwrap();
@@ -555,6 +558,7 @@ fn multishot_recv_all_buffers_used() {
                     }
                 }
             }
+            barrier.wait(); // Drop the connection.
         },
     );
 }
@@ -733,27 +737,28 @@ fn recv_from() {
 fn recv_from_read_buf_pool() {
     const BUF_SIZE: usize = 4096;
 
-    init();
+    let sq = test_queue();
+    let waker = Waker::new();
 
-    let mut ring = Ring::new().expect("failed to create test ring");
-    let sq = ring.sq().clone();
     let buf_pool = ReadBufPool::new(sq.clone(), 2, BUF_SIZE as u32).unwrap();
 
     // Bind a socket.
     let listener = UdpSocket::bind("127.0.0.1:0").expect("failed to bind socket");
     let local_addr = listener.local_addr().unwrap();
 
-    let socket = block_on(&mut ring, udp_ipv4_socket(sq));
-    block_on(&mut ring, bind_ipv4(&socket));
+    let socket = waker.block_on(udp_ipv4_socket(sq));
+    waker.block_on(bind_ipv4(&socket));
     let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
 
-    listener
+    let n = listener
         .send_to(DATA1, socket_addr)
         .expect("failed to send data");
+    assert_eq!(n, DATA1.len());
 
     // Receive some data.
-    let (buf, address, flags): (_, SocketAddr, _) =
-        block_on(&mut ring, socket.recv_from(buf_pool.get())).expect("failed to receive");
+    let (buf, address, flags): (_, SocketAddr, _) = waker
+        .block_on(socket.recv_from(buf_pool.get()))
+        .expect("failed to receive");
     assert_eq!(&*buf, DATA1);
     assert_eq!(address, local_addr);
     assert_eq!(flags, 0);
@@ -1389,7 +1394,7 @@ fn direct_fd() {
         |sq| async move {
             // Create a socket and connect the listener.
             let stream = socket(sq, Domain::IPV4, Type::STREAM, None)
-                .kind(fd::Kind::Direct)
+                .kind(a10::fd::Kind::Direct)
                 .await
                 .expect("failed to create socket");
             stream.connect(local_addr).await.expect("failed to connect");
@@ -1419,9 +1424,14 @@ pub(crate) fn conn_test<Fut: Future<Output = ()>>(
     f: impl FnOnce() + std::marker::Send + 'static,
     a: impl FnOnce(SubmissionQueue) -> Fut,
 ) {
-    let handle = thread::spawn(f);
+    let handle = thread::Builder::new()
+        .name("conn_test sync".into())
+        .spawn(f)
+        .expect("failed to spawn thread");
     Waker::new().block_on(a(test_queue()));
-    handle.join().unwrap()
+    if let Err(err) = handle.join() {
+        std::panic::resume_unwind(err);
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]

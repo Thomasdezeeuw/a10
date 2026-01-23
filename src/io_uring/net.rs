@@ -3,7 +3,7 @@ use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
 use std::{ptr, slice};
 
-use crate::io::{Buf, BufId, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
+use crate::io::{Buf, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::io_uring::io::PoolBufParts;
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{libc, sq};
@@ -212,14 +212,16 @@ impl<B: BufMut> FdOp for RecvOp<B> {
         }
     }
 
-    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+    fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
         let (ptr, len) = unsafe { buf.parts_mut() };
         asan::unpoison_region(ptr.cast(), len as usize);
         msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
-        unsafe {
-            buf.buffer_init(BufId(buf_id), n);
-        };
+        if let Some(buf_id) = flags.buf_id() {
+            unsafe { buf.buffer_init(buf_id, n) };
+        } else {
+            unsafe { buf.set_init(n as usize) };
+        }
         buf
     }
 }
@@ -239,18 +241,23 @@ impl FdIter for MultishotRecvOp {
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_RECV as u8;
-        submission.0.flags = libc::IOSQE_BUFFER_SELECT;
+        submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
         submission.0.ioprio = libc::IORING_RECV_MULTISHOT as u16;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_4.buf_group = buf_pool.shared.group_id();
     }
 
-    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (buf_id, n): OpReturn) -> Self::Output {
+    fn map_next(_: &AsyncFd, buf_pool: &Self::Resources, (flags, n): OpReturn) -> Self::Output {
         // NOTE: the asan/msan unpoisoning is done in `ReadBufPool::init_buffer`.
         // SAFETY: the kernel initialised the buffers for us as part of the read
         // call.
-        unsafe { buf_pool.new_buffer(BufId(buf_id), n) }
+        if let Some(buf_id) = flags.buf_id() {
+            unsafe { buf_pool.new_buffer(buf_id, n) }
+        } else {
+            debug_assert!(n == 0);
+            buf_pool.empty_buffer()
+        }
     }
 }
 
@@ -313,14 +320,18 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
     fn map_ok(
         _: &AsyncFd,
         (mut buf, msg, iovec, address): Self::Resources,
-        (buf_id, n): OpReturn,
+        (flags, n): OpReturn,
     ) -> Self::Output {
         asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
         msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
-        unsafe { buf.buffer_init(BufId(buf_id), n) };
+        if let Some(buf_id) = flags.buf_id() {
+            unsafe { buf.buffer_init(buf_id, n) };
+        } else {
+            unsafe { buf.set_init(n as usize) };
+        }
         // SAFETY: kernel initialised the address for us.
         let address = unsafe { A::init(address, msg.address_len()) };
         (buf, address, msg.flags())

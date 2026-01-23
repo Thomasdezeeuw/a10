@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new()?;
     // Get an owned reference to the submission queue.
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     // Collect the files we want to concatenate.
     let mut filenames: Vec<String> = args().skip(1).collect();
@@ -59,10 +59,9 @@ async fn cat(sq: SubmissionQueue, filenames: Vec<String>) -> io::Result<()> {
                 if n == buf.len() {
                     // Written all the bytes, try reading again.
                     break;
-                } else {
-                    // Remove the bytes we've already written and try again.
-                    buf.remove(..n);
                 }
+                // Remove the bytes we've already written and try again.
+                buf.remove(..n);
             }
         }
     }

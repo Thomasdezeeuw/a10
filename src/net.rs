@@ -1724,9 +1724,7 @@ impl<A> fmt::Debug for AddressStorage<A> {
     }
 }
 
-/// Implement [`fmt::Debug`] for [`SockOpt::Storage`].
-///
-/// [`SockOpt::Storage`]: private::SockOpt::Storage
+/// Wrapper around net option storage to implement [`fmt::Debug`].
 pub(crate) struct OptionStorage<T>(pub(crate) T);
 
 impl<T> fmt::Debug for OptionStorage<T> {

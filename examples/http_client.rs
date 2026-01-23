@@ -25,15 +25,15 @@ fn main() -> io::Result<()> {
         let insert_idx = host.find('/').unwrap_or(host.len());
         host.insert_str(insert_idx, ":80");
     }
-    let addr_host = host.split_once('/').map(|(h, _)| h).unwrap_or(&host);
+    let addr_host = host.split_once('/').map_or(host.as_str(), |(h, _)| h);
 
     // Get an IPv4 address for the domain (using blocking I/O).
     let address = std::net::ToSocketAddrs::to_socket_addrs(&addr_host)?
         .next()
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "failed to lookup ip"))?;
+        .ok_or_else(|| io::Error::other("failed to lookup ip"))?;
 
     // Create our future that makes the request.
-    let request_future = request(ring.sq().clone(), &host, address);
+    let request_future = request(ring.sq(), &host, address);
 
     // Use our fake runtime to poll the future.
     let response = runtime::block_on(&mut ring, request_future)?;
@@ -59,7 +59,7 @@ async fn request(sq: SubmissionQueue, host: &str, address: SocketAddr) -> io::Re
     socket.connect(address).await?;
 
     // Send a HTTP GET / request to the socket.
-    let host = host.split_once(':').map(|(h, _)| h).unwrap_or(host);
+    let host = host.split_once(':').map_or(host, |(h, _)| h);
     let version = env!("CARGO_PKG_VERSION");
     let request = format!(
         "GET / HTTP/1.1\r\nHost: {host}\r\nUser-Agent: A10-example/{version}\r\nAccept: */*\r\n\r\n"

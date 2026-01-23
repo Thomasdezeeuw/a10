@@ -15,7 +15,7 @@ use std::pin::{Pin, pin};
 use std::sync::{Arc, Once, OnceLock};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
-use std::{fmt, io, mem, panic, str};
+use std::{fmt, io, mem, panic, ptr, str};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
@@ -74,17 +74,15 @@ pub(crate) fn test_queue() -> SubmissionQueue {
                 Ok(ring) => ring,
                 Err(err) => panic!("failed to create test ring: {err}"),
             };
-            let sq = ring.sq().clone();
+            let sq = ring.sq();
             thread::Builder::new()
                 .name("test_queue".into())
                 .spawn(move || {
                     let res = panic::catch_unwind(move || {
                         loop {
                             match ring.poll(None) {
-                                Ok(()) => continue,
-                                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => {
-                                    continue;
-                                }
+                                Ok(()) => { /* Poll again. */ },
+                                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => { /* Poll again. */ }
                                 Err(err) => panic!("unexpected error polling: {err}"),
                             }
                         }
@@ -157,7 +155,7 @@ impl Waker {
                     // Wake up the thread that polls the shared ring to ensure
                     // we make progress.
                     test_queue().wake();
-                    thread::park()
+                    thread::park();
                 }
             }
         }
@@ -172,9 +170,10 @@ where
     Fut::Output: fmt::Debug,
 {
     let result = poll_nop(Pin::new(future));
-    if !result.is_pending() {
-        panic!("unexpected result: {result:?}, expected it to return Poll::Pending");
-    }
+    assert!(
+        result.is_pending(),
+        "unexpected result: {result:?}, expected it to return Poll::Pending"
+    );
 }
 
 /// Poll the `future` once with a no-op waker.
@@ -183,7 +182,7 @@ where
     Fut: Future,
 {
     let task_waker = task::Waker::noop();
-    let mut task_ctx = task::Context::from_waker(&task_waker);
+    let mut task_ctx = task::Context::from_waker(task_waker);
     Future::poll(future, &mut task_ctx)
 }
 
@@ -196,7 +195,7 @@ where
     let mut future = pin!(future.into_future());
 
     let waker = task::Waker::noop();
-    let mut task_ctx = task::Context::from_waker(&waker);
+    let mut task_ctx = task::Context::from_waker(waker);
     loop {
         match Future::poll(future.as_mut(), &mut task_ctx) {
             Poll::Ready(res) => return res,
@@ -298,7 +297,7 @@ impl<F: FnOnce()> Drop for Defer<F> {
                 eprintln!("panic while already panicking: {msg}");
             }
         } else {
-            f()
+            f();
         }
     }
 }
@@ -327,15 +326,15 @@ pub(crate) fn tmp_path() -> PathBuf {
         std::fs::create_dir_all(&tmp_dir).expect("failed to create temporary directory");
     });
     let n = getrandom::u64().expect("failed to get random data");
-    tmp_dir.push(&format!("{n}"));
+    tmp_dir.push(format!("{n}"));
     tmp_dir
 }
 
 fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {
     match err.downcast_ref::<&str>() {
-        Some(s) => *s,
+        Some(s) => s,
         None => match err.downcast_ref::<String>() {
-            Some(s) => &**s,
+            Some(s) => s,
             None => "<unknown>",
         },
     }
@@ -349,7 +348,7 @@ pub(crate) fn expect_io_error_kind<T: fmt::Debug>(
 ) {
     match result {
         Ok(value) => panic!("unexpected ok result, value: {value:?}"),
-        Err(ref err) if err.kind() == expected => return,
+        Err(ref err) if err.kind() == expected => {}
         Err(err) => panic!("unexpected error result, error: {err:?}"),
     }
 }
@@ -359,7 +358,7 @@ pub(crate) fn expect_io_error_kind<T: fmt::Debug>(
 pub(crate) fn expect_io_errno<T>(result: Result<T, io::Error>, expected: libc::c_int) {
     match result {
         Ok(_) => panic!("unexpected ok result"),
-        Err(ref err) if err.raw_os_error() == Some(expected) => return,
+        Err(ref err) if err.raw_os_error() == Some(expected) => {}
         Err(err) => panic!("unexpected error result, error: {err:?}"),
     }
 }
@@ -374,6 +373,7 @@ pub(crate) async fn udp_ipv4_socket(sq: SubmissionQueue) -> AsyncFd {
     new_socket(sq, Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).await
 }
 
+#[allow(clippy::missing_transmute_annotations)]
 pub(crate) async fn new_socket(
     sq: SubmissionQueue,
     domain: Domain,
@@ -404,7 +404,7 @@ pub(crate) async fn new_socket(
 /// on it. Returns the bound address.
 pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket).await;
-    let fd = fd(&socket).as_raw_fd();
+    let fd = fd(socket).as_raw_fd();
     let backlog = 128;
 
     match socket.listen(backlog).await {
@@ -421,7 +421,7 @@ pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
 }
 
 pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
-    let fd = fd(&socket).as_raw_fd();
+    let fd = fd(socket).as_raw_fd();
     let mut addr = libc::sockaddr_in {
         sin_family: libc::AF_INET as libc::sa_family_t,
         sin_port: 0,
@@ -437,15 +437,15 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         Err(ref err) if is_unsupported(err) => {
             // IORING_OP_BIND is only available since 6.11, fall back to a
             // blocking system call.
-            syscall!(bind(fd, &addr as *const _ as *const _, addr_len)).map(|_| ())
+            syscall!(bind(fd, ptr::from_ref(&addr).cast(), addr_len)).map(|_| ())
         }
         Err(err) => Err(err),
     }
     .expect("failed to bind socket");
     syscall!(getsockname(
         fd,
-        &mut addr as *mut _ as *mut _,
-        &mut addr_len
+        ptr::from_mut(&mut addr).cast(),
+        &raw mut addr_len
     ))
     .expect("failed to get socket address");
 
@@ -459,12 +459,18 @@ pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
     fd.as_fd().expect("not a file descriptor")
 }
 
-pub(crate) fn pipe() -> [RawFd; 2] {
+pub(crate) fn raw_pipe() -> [RawFd; 2] {
     let mut fds: [RawFd; 2] = [-1, -1];
     #[cfg(any(target_os = "android", target_os = "linux"))]
     syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC)).expect("failed to create pipe");
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    syscall!(pipe(fds.as_mut_ptr())).expect("failed to create pipe");
+    {
+        syscall!(pipe(fds.as_mut_ptr())).expect("failed to create pipe");
+        syscall!(fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC)).unwrap();
+        syscall!(fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC)).unwrap();
+    }
+    debug_assert!(fds[0] != -1);
+    debug_assert!(fds[1] != -1);
     fds
 }
 

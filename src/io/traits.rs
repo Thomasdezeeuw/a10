@@ -82,8 +82,9 @@ pub unsafe trait BufMut: 'static {
     #[allow(private_interfaces)]
     #[cfg(any(target_os = "android", target_os = "linux"))]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
-        debug_assert!(id.0 == 0);
-        unsafe { self.set_init(n as usize) };
+        _ = id;
+        _ = n;
+        unreachable!()
     }
 
     /// Extend the buffer with `bytes`, returns the number of bytes copied.
@@ -163,6 +164,8 @@ pub(crate) enum BufMutParts {
     /// Allocated buffer.
     Buf { ptr: *mut u8, len: u32 },
     /// Using a [`ReadBufPool`].
+    ///
+    /// [`ReadBufPool`]: crate::io::ReadBufPool
     Pool(crate::sys::io::PoolBufParts),
 }
 

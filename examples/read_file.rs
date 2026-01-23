@@ -20,7 +20,7 @@ fn main() -> io::Result<()> {
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing argument"))?;
 
     // Create our future that reads the file.
-    let read_file_future = read_file(ring.sq().clone(), path);
+    let read_file_future = read_file(ring.sq(), path);
 
     // Use our fake runtime to poll the future.
     let data = runtime::block_on(&mut ring, read_file_future)?;

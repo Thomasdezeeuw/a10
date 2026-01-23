@@ -15,12 +15,13 @@ pub use crate::sys::fd::{ToDirect, ToFd};
 /// All functions on `AsyncFd` are asynchronous and return a [`Future`].
 ///
 /// `AsyncFd` comes on in of two kinds:
-///  * regular file descriptor which can be used outside of io_uring.
-///  * direct descriptor which can be only be used with io_uring.
+///  * regular file descriptor which can be used outside of A10.
+///  * direct descriptor which are only available io_uring and can only be used
+///    within A10.
 ///
-/// Direct descriptors can be faster, but their usage is limited to them being
-/// limited to io_uring operations. See [`AsyncFd::kind`] and [`Kind`] for more
-/// information.
+/// Direct descriptors can be faster, but their usage is limited as they can
+/// only be used in io_uring operations and only by one, specific [`Ring`]. See
+/// [`AsyncFd::kind`] and [`Kind`] for more information.
 ///
 /// An `AsyncFd` can be created using some of the following methods:
 ///  * Sockets can be opened using [`socket`].
@@ -29,6 +30,7 @@ pub use crate::sys::fd::{ToDirect, ToFd};
 ///  * Finally they can be created from any valid file descriptor using
 ///    [`AsyncFd::new`].
 ///
+/// [`Ring`]: crate::Ring
 /// [`Future`]: std::future::Future
 /// [`socket`]: crate::net::socket
 /// [`open_file`]: crate::fs::open_file
@@ -213,7 +215,7 @@ impl fmt::Debug for AsyncFd {
 }
 
 /// Kind of descriptor.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Kind {
     /// Regular Unix file descriptor.

@@ -20,6 +20,7 @@ test_sanitizers:
 test_sanitizer:
 	RUSTDOCFLAGS=-Zsanitizer=$(sanitizer) RUSTFLAGS=-Zsanitizer=$(sanitizer) \
 	ASAN_OPTIONS=poison_history_size=1000 \
+	TSAN_OPTIONS='suppressions=tsan_suppressions.txt' \
 	cargo test -Zbuild-std --target x86_64-unknown-linux-gnu --features nightly
 
 check:
