@@ -129,6 +129,7 @@ fn direct_to_direct_descriptor() {
         .kind(fd::Kind::Direct)
         .open(sq, LOREM_IPSUM_5.path.into());
     let direct_fd = waker.block_on(open_file).unwrap();
+    debug_assert_eq!(direct_fd.kind(), fd::Kind::Direct);
     // This should panic.
     let res = waker.block_on(direct_fd.to_direct_descriptor());
     expect_io_errno(res, libc::EINVAL);

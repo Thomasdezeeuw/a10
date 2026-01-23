@@ -215,7 +215,7 @@ impl fmt::Debug for AsyncFd {
 }
 
 /// Kind of descriptor.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Kind {
     /// Regular Unix file descriptor.
