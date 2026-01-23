@@ -164,6 +164,8 @@ pub(crate) enum BufMutParts {
     /// Allocated buffer.
     Buf { ptr: *mut u8, len: u32 },
     /// Using a [`ReadBufPool`].
+    ///
+    /// [`ReadBufPool`]: crate::io::ReadBufPool
     Pool(crate::sys::io::PoolBufParts),
 }
 

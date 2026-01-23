@@ -74,6 +74,8 @@ pub(crate) struct Shared {
     /// `IORING_SETUP_SQPOLL` is enabled.
     kernel_thread: bool,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
+    ///
+    /// [`Ring::poll`]: crate::Ring::poll
     is_polling: AtomicBool,
     /// Futures that are waiting for a slot in submissions.
     blocked_futures: Mutex<Vec<task::Waker>>,

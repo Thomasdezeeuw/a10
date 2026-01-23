@@ -82,6 +82,8 @@ pub(crate) trait FdIter {
     type State: OpState<Resources = Self::Resources, Args = Self::Args>;
 
     /// See [`AsyncIterator::poll_next`].
+    ///
+    /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
     fn poll_next(
         state: &mut Self::State,
         ctx: &mut task::Context<'_>,
