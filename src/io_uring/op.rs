@@ -338,6 +338,10 @@ impl CompletionResult {
 pub(crate) struct CompletionFlags(u32);
 
 impl CompletionFlags {
+    pub(super) const fn empty() -> CompletionFlags {
+        CompletionFlags(0)
+    }
+
     /* Currently not used.
     /// Returns the flags.
     pub(super) const fn operation_flags(self) -> u16 {
@@ -377,7 +381,7 @@ pub(crate) struct Singleshot(CompletionResult);
 impl OpResult for Singleshot {
     fn empty() -> Singleshot {
         Singleshot(CompletionResult {
-            flags: CompletionFlags(0),
+            flags: CompletionFlags::empty(),
             result: 0,
         })
     }
