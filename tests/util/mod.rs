@@ -70,7 +70,7 @@ pub(crate) fn test_queue() -> SubmissionQueue {
             let config = Ring::config();
             #[cfg(any(target_os = "android", target_os = "linux"))]
             let config = config.with_direct_descriptors(1024);
-            let mut ring = match config.clone().build() {
+            let mut ring = match config.build() {
                 Ok(ring) => ring,
                 Err(err) => panic!("failed to create test ring: {err}"),
             };
@@ -78,18 +78,11 @@ pub(crate) fn test_queue() -> SubmissionQueue {
             thread::Builder::new()
                 .name("test_queue".into())
                 .spawn(move || {
-                    let res = panic::catch_unwind(move || {
-                        loop {
-                            match ring.poll(None) {
-                                Ok(()) => { /* Poll again. */ },
-                                Err(ref err) if err.kind() == io::ErrorKind::Interrupted => { /* Poll again. */ }
-                                Err(err) => panic!("unexpected error polling: {err}"),
-                            }
+                    loop {
+                        if let Err(err) = ring.poll(None) {
+                            panic!("unexpected error polling: {err}");
                         }
-                    });
-                    let Err(err) = res;
-                    let msg = panic_message(&*err);
-                    panic!("Polling thread panicked: {msg}\n");
+                    }
                 })
                 .expect("failed to spawn test_queue thread");
             sq
