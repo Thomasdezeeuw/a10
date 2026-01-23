@@ -284,14 +284,15 @@ pub(super) enum StatusUpdate {
     Drop { drop: unsafe fn(*mut ()) },
 }
 
+// SAFETY: If Data is Send/Sync we can safely mark State as Send/Sync as well.
+unsafe impl<T, R, A> Send for State<T, R, A> where Data<T, R, A>: Send {}
+unsafe impl<T, R, A> Sync for State<T, R, A> where Data<T, R, A>: Sync {}
+
 // SAFETY: UnsafeCell is !Sync, but as long as R is Sync/Send so UnsafeCell<R>.
-unsafe impl<T: Send, R: Send, A: Send> Send for State<T, R, A> {}
-unsafe impl<T: Sync, R: Sync, A: Sync> Sync for State<T, R, A> {}
+//unsafe impl<T: Send, R: Send, A: Send> Send for State<T, R, A> {}
+unsafe impl<R: Sync, A: Sync> Sync for Tail<R, A> {}
 
-// SAFETY: everything is heap allocate and is not moved between the initial
-// allocation and deallocation.
-impl<T, R, A> Unpin for State<T, R, A> {}
-
+// SAFETY: Same as the Sync implementation, see above.
 impl<R: RefUnwindSafe, A: RefUnwindSafe> RefUnwindSafe for Tail<R, A> {}
 
 /// Container for the [`CompletionResult`]. Either [`Singleshot`] or
