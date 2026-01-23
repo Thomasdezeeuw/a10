@@ -459,12 +459,18 @@ pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
     fd.as_fd().expect("not a file descriptor")
 }
 
-pub(crate) fn pipe() -> [RawFd; 2] {
+pub(crate) fn raw_pipe() -> [RawFd; 2] {
     let mut fds: [RawFd; 2] = [-1, -1];
     #[cfg(any(target_os = "android", target_os = "linux"))]
     syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC)).expect("failed to create pipe");
     #[cfg(not(any(target_os = "android", target_os = "linux")))]
-    syscall!(pipe(fds.as_mut_ptr())).expect("failed to create pipe");
+    {
+        syscall!(pipe(fds.as_mut_ptr())).expect("failed to create pipe");
+        syscall!(fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC)).unwrap();
+        syscall!(fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC)).unwrap();
+    }
+    debug_assert!(fds[0] != -1);
+    debug_assert!(fds[1] != -1);
     fds
 }
 

@@ -1,7 +1,6 @@
 use std::cell::Cell;
 use std::future::Future;
-use std::io;
-use std::os::fd::{FromRawFd, RawFd};
+use std::os::fd::FromRawFd;
 
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -9,12 +8,13 @@ use a10::io::ReadBufPool;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::Splice;
 use a10::io::{BufMut, Close, Stderr, Stdout, stderr, stdout};
+use a10::pipe::pipe;
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
-    LOREM_IPSUM_50, Waker, defer, is_send, is_sync, pipe, remove_test_file, tcp_ipv4_socket,
-    test_queue, tmp_path,
+    LOREM_IPSUM_50, Waker, defer, is_send, is_sync, raw_pipe, remove_test_file, syscall,
+    tcp_ipv4_socket, test_queue, tmp_path,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::util::{fd, next};
@@ -24,7 +24,7 @@ fn try_clone() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
     let w2 = w.try_clone().expect("failed to clone fd");
 
     const DATA: &[u8] = b"hello world";
@@ -43,7 +43,7 @@ fn write_all() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     waker.block_on(w.write_all(BadBuf::new())).unwrap();
 
@@ -85,7 +85,7 @@ fn write_all_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     let buf = BadBufSlice {
         calls: Cell::new(0),
@@ -136,7 +136,7 @@ fn multishot_read() {
 
     let buf_pool = ReadBufPool::new(sq.clone(), 2, 128).expect("failed to create buf pool");
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     let mut reads = r.multishot_read(buf_pool.clone());
 
@@ -165,7 +165,7 @@ fn read_n() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     const DATA: &[u8] = b"hello world";
     waker.block_on(w.write(DATA)).unwrap();
@@ -202,7 +202,7 @@ fn read_n_vectored() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     const DATA: &[u8] = b"Hello marsBooo!! Hi. How are you?";
     waker.block_on(w.write(DATA)).unwrap();
@@ -251,7 +251,7 @@ fn splice_to() {
     is_send::<Splice>();
     is_sync::<Splice>();
 
-    let (r, w) = pipe2(sq.clone()).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq.clone())).unwrap();
 
     let path = LOREM_IPSUM_50.path;
     let expected = LOREM_IPSUM_50.content;
@@ -287,7 +287,7 @@ fn splice_from() {
         .open(sq.clone(), path.clone());
     let file = waker.block_on(open_file).unwrap();
 
-    let (r, w) = pipe2(sq).expect("failed to create pipe");
+    let [r, w] = waker.block_on(pipe(sq)).unwrap();
 
     waker
         .block_on(w.write_all(expected))
@@ -385,18 +385,6 @@ fn stderr_write() {
     waker.block_on(stderr.write("Hello, stderr!\n")).unwrap();
 }
 
-fn pipe2(sq: SubmissionQueue) -> io::Result<(AsyncFd, AsyncFd)> {
-    let mut fds: [RawFd; 2] = [-1, -1];
-    if unsafe { libc::pipe(fds.as_mut_ptr()) } == -1 {
-        return Err(io::Error::last_os_error());
-    }
-
-    // SAFETY: we just initialised the `fds` above.
-    let r = unsafe { AsyncFd::from_raw_fd(fds[0], sq.clone()) };
-    let w = unsafe { AsyncFd::from_raw_fd(fds[1], sq) };
-    Ok((r, w))
-}
-
 #[test]
 fn read_small_file() {
     all_bufs!(for new_buf in bufs {
@@ -467,16 +455,18 @@ async fn open_file(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
 }
 
 async fn open_read_pipe(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd {
-    let [r, w] = pipe();
-    // SAFETY: we just initialised the `fds` above.
-    let r = unsafe { AsyncFd::from_raw_fd(r, sq) };
+    let [r, w] = raw_pipe();
+    // SAFETY: we just initialised the fds above.
+    let fd = unsafe { AsyncFd::from_raw_fd(r, sq) };
     let mut w = unsafe { std::fs::File::from_raw_fd(w) };
+
+    syscall!(fcntl(r, libc::F_SETFL, libc::O_NONBLOCK)).unwrap();
 
     std::thread::spawn(move || {
         std::io::Write::write_all(&mut w, expected).expect("failed to write all data to pipe");
     });
 
-    r
+    fd
 }
 
 /// Macro to run a code block with all buffer kinds.
