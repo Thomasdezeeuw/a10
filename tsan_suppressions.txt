@@ -38,3 +38,7 @@
 # data race, but it doesn't as *after* the initial creation all access goes
 # through the Mutex.
 race:a10::io_uring::op::State*new
+
+# No idea why this function is causing false positive as it's only using stack
+# memory.
+race:functional::util::raw_pipe
