@@ -188,8 +188,8 @@ impl Drop for AsyncFd {
 
         // Fall back to synchronously closing the descriptor.
         let result = match self.kind() {
-            Kind::Direct => io_uring::io::close_direct_fd(self.fd(), &self.sq),
             Kind::File => syscall!(close(self.fd())).map(|_| ()),
+            Kind::Direct => io_uring::io::close_direct_fd(self.fd(), self.sq()),
         };
         if let Err(err) = result {
             log::warn!("error closing a10::AsyncFd: {err}");
