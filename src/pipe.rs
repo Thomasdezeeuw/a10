@@ -32,6 +32,14 @@ use crate::{SubmissionQueue, man_link, new_flag, sys};
 /// # Ok(())
 /// # }
 /// ```
+///
+/// # Implementation Notes
+///
+/// On Linux kernels older than 6.16 io_uring doesn't support the creation of a
+/// pipe. If the creation fails because of this, we fallback to a synchronous system call.
+/// This does mean that the returned fds are regulator file descriptors
+/// ([`fd::Kind::File`]), even if [`Pipe::kind`] was used to request direct
+/// descriptors.
 #[doc = man_link!(pipe(2))]
 pub fn pipe(sq: SubmissionQueue) -> Pipe {
     let resources = ([-1, -1], fd::Kind::File);

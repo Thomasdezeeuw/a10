@@ -1,9 +1,10 @@
+use std::io;
 use std::os::fd::RawFd;
 
-use crate::io_uring::op::{Op, OpReturn};
+use crate::io_uring::op::{CompletionFlags, Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::pipe::PipeFlag;
-use crate::{AsyncFd, SubmissionQueue, fd};
+use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 pub(crate) struct PipeOp;
 
@@ -41,6 +42,20 @@ impl Op for PipeOp {
                 AsyncFd::from_raw(fds[0], fd_kind, sq.clone()),
                 AsyncFd::from_raw(fds[1], fd_kind, sq.clone()),
             ]
+        }
+    }
+
+    fn fallback(
+        sq: &SubmissionQueue,
+        (mut fds, _): Self::Resources,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if let Some(libc::EINVAL) = err.raw_os_error() {
+            let res = syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC))?;
+            let flags = CompletionFlags::empty();
+            Ok(Self::map_ok(sq, (fds, fd::Kind::File), (flags, res as u32)))
+        } else {
+            Err(err)
         }
     }
 }
