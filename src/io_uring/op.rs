@@ -443,6 +443,17 @@ pub(crate) trait Op {
         resources: Self::Resources,
         op_return: OpReturn,
     ) -> Self::Output;
+
+    fn fallback(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        _ = sq;
+        _ = resources;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: Op> crate::op::Op for T {
@@ -462,7 +473,7 @@ impl<T: Op> crate::op::Op for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok,
-            |_, _, err| Err(fallback(err)),
+            T::fallback,
         )
     }
 }
