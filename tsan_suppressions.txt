@@ -1,0 +1,40 @@
+# Surpress the following false positive, this is an example output from calling
+# a10::net::socket.
+#
+# WARNING: ThreadSanitizer: data race (pid=156699)
+#   Atomic write of size 4 at 0x721000002000 by thread T2:
+#     #0 core::sync::atomic::atomic_compare_exchange::<u32> /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/sync/atomic.rs:4112:17 (functional-3c5033087816e7ce+0x8adee9) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #1 <core::sync::atomic::AtomicU32>::compare_exchange /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/core/src/sync/atomic.rs:3135:26 (functional-3c5033087816e7ce+0x64fbc6) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #2 <std::sys::sync::mutex::futex::Mutex>::lock /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/sync/mutex/futex.rs:32:23 (functional-3c5033087816e7ce+0x678391) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #3 <std::sync::poison::mutex::Mutex<a10::io_uring::op::Shared<a10::io_uring::op::Singleshot>>>::lock /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sync/poison/mutex.rs:492:24 (functional-3c5033087816e7ce+0x677ccb) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #4 a10::lock::<a10::io_uring::op::Shared<a10::io_uring::op::Singleshot>> /home/thomas/src/a10/src/lib.rs:366:17 (functional-3c5033087816e7ce+0x65740e) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #5 <a10::io_uring::cq::Completion>::process /home/thomas/src/a10/src/io_uring/cq.rs:230:13 (functional-3c5033087816e7ce+0x654065) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #6 <a10::io_uring::cq::Completions>::poll /home/thomas/src/a10/src/io_uring/cq.rs:80:33 (functional-3c5033087816e7ce+0x652f81) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #7 <a10::Ring>::poll /home/thomas/src/a10/src/lib.rs:161:17 (functional-3c5033087816e7ce+0x64643f) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#
+#   Previous write of size 8 at 0x721000002000 by thread T1:
+#     #0 __tsan_memcpy /rustc/llvm/src/llvm-project/compiler-rt/lib/tsan/rtl/tsan_interceptors_memintrinsics.cpp:27:3 (functional-3c5033087816e7ce+0x263a8e) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #1 <alloc::boxed::Box<a10::io_uring::op::Data<a10::io_uring::op::Singleshot, a10::fd::Kind, (a10::net::Domain, a10::net::Type, a10::net::Protocol)>>>::new /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:265:24 (functional-3c5033087816e7ce+0x6b229a) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #2 <a10::io_uring::op::State<a10::io_uring::op::Singleshot, a10::fd::Kind, (a10::net::Domain, a10::net::Type, a10::net::Protocol)> as a10::op::OpState>::new /home/thomas/src/a10/src/io_uring/op.rs:132:20 (functional-3c5033087816e7ce+0x6b229a)
+#     #3 <a10::net::Socket>::new /home/thomas/src/a10/src/op.rs:234:28 (functional-3c5033087816e7ce+0x646e47) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #4 a10::net::socket /home/thomas/src/a10/src/net.rs:40:5 (functional-3c5033087816e7ce+0x647109) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#
+#   Location is heap block of size 64 at 0x721000002000 allocated by thread T1:
+#     #0 malloc /rustc/llvm/src/llvm-project/compiler-rt/lib/tsan/rtl/tsan_interceptors_posix.cpp:682:5 (functional-3c5033087816e7ce+0x2662e0) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #1 <std::alloc::System as core::alloc::global::GlobalAlloc>::alloc /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/sys/alloc/unix.rs:14:22 (functional-3c5033087816e7ce+0x6ffe19) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #2 __rustc::__rdl_alloc /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/std/src/alloc.rs:455:20 (functional-3c5033087816e7ce+0x7e6607) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #3 alloc::alloc::alloc /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:95:9 (functional-3c5033087816e7ce+0x6dad5f) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #4 <alloc::alloc::Global>::alloc_impl_runtime /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:190:73 (functional-3c5033087816e7ce+0x6da8ca) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #5 <alloc::alloc::Global>::alloc_impl /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:312:9 (functional-3c5033087816e7ce+0x6da67c) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #6 <alloc::alloc::Global as core::alloc::Allocator>::allocate /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:429:14 (functional-3c5033087816e7ce+0x6daf01) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #7 alloc::alloc::exchange_malloc /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/alloc.rs:489:18 (functional-3c5033087816e7ce+0x6dac3a) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #8 <alloc::boxed::Box<a10::io_uring::op::Data<a10::io_uring::op::Singleshot, a10::fd::Kind, (a10::net::Domain, a10::net::Type, a10::net::Protocol)>>>::new /home/thomas/.rustup/toolchains/nightly-x86_64-unknown-linux-gnu/lib/rustlib/src/rust/library/alloc/src/boxed.rs:265:16 (functional-3c5033087816e7ce+0x6b2226) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #9 <a10::io_uring::op::State<a10::io_uring::op::Singleshot, a10::fd::Kind, (a10::net::Domain, a10::net::Type, a10::net::Protocol)> as a10::op::OpState>::new /home/thomas/src/a10/src/io_uring/op.rs:132:20 (functional-3c5033087816e7ce+0x6b2226)
+#     #10 <a10::net::Socket>::new /home/thomas/src/a10/src/op.rs:234:28 (functional-3c5033087816e7ce+0x646e47) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#     #11 a10::net::socket /home/thomas/src/a10/src/net.rs:40:5 (functional-3c5033087816e7ce+0x647109) (BuildId: f0cd9a931837895831714e177ce9c19709e396ed)
+#
+# Here io_uring::op::State::new initialises the allocation and later
+# Data::shared is locked on another thread. ThreadSanitizer thinks this causes a
+# data race, but it doesn't as *after* the initial creation all access goes
+# through the Mutex.
+race:a10::io_uring::op::State*new
