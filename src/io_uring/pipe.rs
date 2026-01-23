@@ -52,8 +52,9 @@ impl Op for PipeOp {
     ) -> io::Result<Self::Output> {
         if let Some(libc::EINVAL) = err.raw_os_error() {
             let res = syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC))?;
-            let flags = CompletionFlags::empty();
-            Ok(Self::map_ok(sq, (fds, fd::Kind::File), (flags, res as u32)))
+            let resources = (fds, fd::Kind::File);
+            let op_return = (CompletionFlags::empty(), res.cast_unsigned());
+            Ok(Self::map_ok(sq, resources, op_return))
         } else {
             Err(err)
         }
