@@ -96,6 +96,10 @@ impl<R, A> OpState for DirectState<R, A> {
     unsafe fn drop(&mut self, _: &SubmissionQueue) {
         // Nothing special to do.
     }
+
+    fn reset(&mut self, resources: Self::Resources, args: Self::Args) {
+        *self = Self::new(resources, args);
+    }
 }
 
 /// Operation that is done using a synchronous function.
@@ -249,6 +253,10 @@ impl<R, A> OpState for EventedState<R, A> {
 
     unsafe fn drop(&mut self, _: &SubmissionQueue) {
         // Nothing special to do.
+    }
+
+    fn reset(&mut self, resources: Self::Resources, args: Self::Args) {
+        *self = Self::new(resources, args);
     }
 }
 

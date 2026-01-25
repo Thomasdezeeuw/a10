@@ -196,6 +196,16 @@ impl<T, R, A> OpState for State<T, R, A> {
         // Operation is not running, so we can safely drop it.
         unsafe { drop_state::<T, R, A>(self.data.as_ptr().cast()) };
     }
+
+    fn reset(&mut self, resources: Self::Resources, args: Self::Args) {
+        let data = unsafe { &mut *self.data.as_ptr() };
+        let mut shared = lock(&data.shared);
+        assert!(matches!(shared.status, Status::Complete));
+        shared.status = Status::NotStarted;
+        data.tail.resources = UnsafeCell::new(MaybeUninit::new(resources));
+        data.tail.args = args;
+        drop(shared);
+    }
 }
 
 /// Drop `Data` pointed to be `ptr`.

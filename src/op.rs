@@ -113,6 +113,9 @@ pub(crate) trait OpState {
     ///
     /// May only be called once in the Drop implementation.
     unsafe fn drop(&mut self, sq: &SubmissionQueue);
+
+    /// Reset the operation state.
+    fn reset(&mut self, resources: Self::Resources, args: Self::Args);
 }
 
 /// Create a [`Future`] based on [`Op`].
