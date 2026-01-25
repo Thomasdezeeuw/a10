@@ -3,7 +3,7 @@
 use std::mem::MaybeUninit;
 use std::pin::Pin;
 use std::sync::{Arc, Barrier};
-use std::task::Poll;
+use std::task::{self, Poll};
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, thread};
 
@@ -144,6 +144,7 @@ impl TestHarness {
     fn run_tests(&mut self) {
         self.test_single_threaded();
         self.test_multi_threaded();
+        self.test_receive_signals();
     }
 
     fn run_test<F>(&mut self, test_name: &str, mut test: F)
@@ -207,6 +208,40 @@ impl TestHarness {
         });
 
         handle.join().unwrap();
+    }
+
+    fn test_receive_signals(&mut self) {
+        let pid = process::id();
+        let mut receive_signal = self.signals.take().unwrap().receive_signals();
+        let task_waker = task::Waker::noop();
+        let mut task_ctx = task::Context::from_waker(&task_waker);
+        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
+            print_test_start(
+                self.quiet,
+                format_args!("receive_signals ({:?}, {name})", self.fd_kind),
+            );
+            // thread sanitizer can't deal with `SIGSYS` signal being send.
+            #[cfg(feature = "nightly")]
+            if signal_to_os(*signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                print_test_ignored(self.quiet);
+                continue;
+            }
+            let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+                send_signal(pid, *signal).unwrap();
+
+                // Check if the signals can be received.
+                let signal_info = loop {
+                    match Pin::new(&mut receive_signal).poll_next(&mut task_ctx) {
+                        Poll::Ready(result) => break result.unwrap().unwrap(),
+                        Poll::Pending => self.ring.poll(None).unwrap(),
+                    }
+                };
+                assert_eq!(signal_info.signal(), *signal);
+            }));
+            print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
+        }
+
+        self.signals = Some(receive_signal.into_inner());
     }
 
     fn test_cleanup(&mut self) {

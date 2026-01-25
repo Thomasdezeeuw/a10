@@ -3,12 +3,14 @@
 //! [`wait`] and [`wait_on`] can be used to wait on started processes.
 //! [`Signals`] can be used for process signal handling.
 
-use std::mem::{self, MaybeUninit};
+use std::mem::{self, ManuallyDrop, MaybeUninit};
 use std::os::unix::process::ExitStatusExt;
+use std::pin::Pin;
 use std::process::{Child, ExitStatus};
-use std::{fmt, io};
+use std::task::{self, Poll};
+use std::{fmt, io, ptr};
 
-use crate::op::{OpState, fd_operation, operation};
+use crate::op::{FdOp, OpState, fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, man_link, new_flag, sys, syscall};
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -257,6 +259,18 @@ impl Signals {
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
         ReceiveSignal::new(&self.fd, MaybeUninit::uninit(), ())
     }
+
+    /// Receive multiple signals.
+    ///
+    /// This is an combined, owned version of `Signals` and [`ReceiveSignal`]
+    /// (the future behind `Signals::receive`). This is useful if you don't want
+    /// to deal with the `'fd` lifetime.
+    pub fn receive_signals(self) -> ReceiveSignals {
+        ReceiveSignals {
+            signals: self,
+            state: <sys::process::ReceiveSignalOp as FdOp>::State::new(MaybeUninit::uninit(), ()),
+        }
+    }
 }
 
 impl fmt::Debug for Signals {
@@ -272,6 +286,69 @@ fd_operation!(
     /// [`Future`] behind [`Signals::receive`].
     pub struct ReceiveSignal(sys::process::ReceiveSignalOp) -> io::Result<SignalInfo>;
 );
+
+/// [`AsyncIterator`] behind [`Signals::receive_signals`].
+///
+/// [`AsyncIterator`]: std::async_iter::AsyncIterator
+#[must_use = "`AsyncIterator`s do nothing unless polled"]
+#[derive(Debug)]
+pub struct ReceiveSignals {
+    signals: Signals,
+    state: <sys::process::ReceiveSignalOp as FdOp>::State,
+}
+
+impl ReceiveSignals {
+    /// This is the same as the [`AsyncIterator::poll_next`] function, but
+    /// then available on stable Rust.
+    ///
+    /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
+    pub fn poll_next(
+        self: Pin<&mut Self>,
+        ctx: &mut task::Context<'_>,
+    ) -> Poll<Option<io::Result<SignalInfo>>> {
+        // SAFETY: not moving data out of self/this.
+        let this = unsafe { Pin::get_unchecked_mut(self) };
+        let result = sys::process::ReceiveSignalOp::poll(&mut this.state, ctx, &this.signals.fd);
+        match result {
+            Poll::Ready(Ok(info)) => {
+                this.state.reset(MaybeUninit::uninit(), ());
+                Poll::Ready(Some(Ok(info)))
+            }
+            Poll::Ready(Err(err)) => Poll::Ready(Some(Err(err))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    /// Returns the underlying [`Signals`].
+    pub fn into_inner(self) -> Signals {
+        let mut this = ManuallyDrop::new(self);
+        let ReceiveSignals { signals, state } = &mut *this;
+        // SAFETY: not using state any more.
+        unsafe {
+            state.drop(signals.fd.sq());
+            ptr::drop_in_place(state);
+        }
+        // SAFETY: we're not dropping self (due to the ManuallyDrop, so signals
+        // is safe to return.
+        unsafe { ptr::read(signals) }
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl std::async_iter::AsyncIterator for ReceiveSignals {
+    type Item = io::Result<SignalInfo>;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_next(ctx)
+    }
+}
+
+impl Drop for ReceiveSignals {
+    fn drop(&mut self) {
+        // SAFETY: we're in the `Drop` implementation.
+        unsafe { self.state.drop(self.signals.fd.sq()) }
+    }
+}
 
 /// Process signal information.
 ///
