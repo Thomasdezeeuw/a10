@@ -1,3 +1,4 @@
+use std::mem::MaybeUninit;
 use std::os::fd::RawFd;
 use std::{io, ptr};
 
@@ -102,7 +103,7 @@ pub(crate) struct ReceiveSignalOp;
 
 impl FdOp for ReceiveSignalOp {
     type Output = crate::process::SignalInfo;
-    type Resources = crate::process::SignalInfo;
+    type Resources = MaybeUninit<crate::process::SignalInfo>;
     type Args = ();
 
     fn fill_submission(
@@ -115,7 +116,7 @@ impl FdOp for ReceiveSignalOp {
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 { off: NO_OFFSET };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-            addr: ptr::from_mut(info).addr() as u64,
+            addr: info.as_mut_ptr().addr() as u64,
         };
         submission.0.len = size_of::<libc::signalfd_siginfo>() as u32;
         submission.set_async();
@@ -123,7 +124,8 @@ impl FdOp for ReceiveSignalOp {
 
     fn map_ok(_: &AsyncFd, info: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        info
+        // SAFETY: initialised the info above.
+        unsafe { info.assume_init() }
     }
 }
 

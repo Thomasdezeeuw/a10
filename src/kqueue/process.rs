@@ -143,7 +143,7 @@ pub(crate) struct ReceiveSignalOp;
 
 impl FdOp for ReceiveSignalOp {
     type Output = crate::process::SignalInfo;
-    type Resources = crate::process::SignalInfo;
+    type Resources = MaybeUninit<crate::process::SignalInfo>;
     type Args = ();
     type OperationOutput = ();
 
@@ -177,13 +177,14 @@ impl FdOp for ReceiveSignalOp {
             // SAFETY: kevent just initialised the event for us.
             let event = unsafe { event.assume_init() };
             debug_assert_eq!(event.filter, libc::EVFILT_SIGNAL);
-            info.0 = Signal(event.ident as _);
+            info.write(crate::process::SignalInfo(Signal(event.ident as _)));
             Ok(())
         }
     }
 
     fn map_ok(_: &AsyncFd, info: Self::Resources, (): Self::OperationOutput) -> Self::Output {
-        info
+        // SAFETY: initialised the info above.
+        unsafe { info.assume_init() }
     }
 }
 

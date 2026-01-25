@@ -255,10 +255,7 @@ impl Signals {
 
     /// Receive a signal.
     pub fn receive<'fd>(&'fd self) -> ReceiveSignal<'fd> {
-        // SAFETY: fully zeroed libc::signalfd_siginfo and Signal are valid
-        // values.
-        let info = unsafe { mem::zeroed() };
-        ReceiveSignal::new(&self.fd, info, ())
+        ReceiveSignal::new(&self.fd, MaybeUninit::uninit(), ())
     }
 }
 
