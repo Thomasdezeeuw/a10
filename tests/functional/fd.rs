@@ -1,6 +1,6 @@
+use a10::fd::{self, AsyncFd};
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::fd::{self, ToDirect, ToFd};
-use a10::fd::{AsyncFd, Kind};
+use a10::fd::{ToDirect, ToFd};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::fs::OpenOptions;
 
@@ -36,8 +36,8 @@ fn async_fd_is_send_and_sync() {
 
 #[test]
 fn kind_is_send_and_sync() {
-    is_send::<Kind>();
-    is_sync::<Kind>();
+    is_send::<fd::Kind>();
+    is_sync::<fd::Kind>();
 }
 
 #[test]
