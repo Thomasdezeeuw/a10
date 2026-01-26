@@ -20,9 +20,7 @@ use crate::extract::{Extract, Extractor};
 use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadNBuf, SkipBuf};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::io::{ReadBuf, ReadBufPool};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::op::fd_iter_operation;
-use crate::op::{OpState, fd_operation, operation};
+use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
@@ -356,7 +354,6 @@ impl AsyncFd {
     /// This is not the same as calling [`AsyncFd::accept`] in a loop as this
     /// uses a multishot operation, which means only a single operation is
     /// created kernel side, making this more efficient.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_accept<'fd>(&'fd self) -> MultishotAccept<'fd> {
         MultishotAccept::new(self, (), AcceptFlag(0))
     }
@@ -1081,7 +1078,9 @@ impl<'fd, A: SocketAddress> Accept<'fd, A> {
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
+}
 
+fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`].
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
 }
@@ -1097,7 +1096,6 @@ impl<'fd> MultishotRecv<'fd> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> MultishotAccept<'fd> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: AcceptFlag) -> Self {

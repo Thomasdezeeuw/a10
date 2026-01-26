@@ -14,20 +14,20 @@ use std::{ptr, thread};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::ReadBufPool;
 use a10::net::{
-    Accept, Bind, Connect, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll, SendAllVectored,
-    SendTo, Socket, SocketName,
+    Accept, Bind, Connect, MultishotAccept, NoAddress, Recv, RecvN, RecvNVectored, Send, SendAll,
+    SendAllVectored, SendTo, Socket, SocketName,
 };
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::net::{Domain, MultishotAccept, MultishotRecv, Type, socket};
+use a10::net::{Domain, MultishotRecv, Type, socket};
 use a10::{Extract, SubmissionQueue};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::expect_io_errno;
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, syscall, tcp_ipv4_socket,
+    expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, next, syscall, tcp_ipv4_socket,
     test_queue, udp_ipv4_socket,
 };
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{expect_io_errno, next};
 
 const DATA1: &[u8] = b"Hello, World!";
 const DATA2: &[u8] = b"Hello, Mars!";
@@ -128,7 +128,6 @@ fn accept_no_address() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept() {
     test_multishot_accept(0);
     test_multishot_accept(1);
@@ -205,7 +204,6 @@ fn multishot_accept() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_accept_incorrect_usage() {
     let sq = test_queue();
     let waker = Waker::new();
@@ -1434,7 +1432,6 @@ pub(crate) fn conn_test<Fut: Future<Output = ()>>(
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
     let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
     let mut len = size_of::<libc::sockaddr_storage>() as u32;

@@ -4,7 +4,7 @@ use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufMut, BufMutSlice, BufSlice};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{DirectFdOp, DirectOp, FdOp, FdOpExtract, impl_fd_op};
+use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
@@ -535,6 +535,30 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
         // SAFETY: the kernel has written the address for us.
         let address = unsafe { A::init((resources.0).0, (resources.0).1) };
         (fd, address)
+    }
+}
+
+pub(crate) struct MultishotAcceptOp;
+
+impl FdIter for MultishotAcceptOp {
+    type Output = AsyncFd;
+    type Resources = ();
+    type Args = AcceptFlag;
+    type OperationOutput = AsyncFd;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (): &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let mut address = AddressStorage((MaybeUninit::uninit(), 0));
+        AcceptOp::<NoAddress>::try_run(fd, &mut address, flags)
+    }
+
+    fn map_next(_: &AsyncFd, (): &Self::Resources, fd: Self::OperationOutput) -> Self::Output {
+        fd
     }
 }
 
