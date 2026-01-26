@@ -7,8 +7,8 @@ use a10::fs;
 use a10::fs::notify::{Event, Interest, Recursive};
 
 use crate::util::{
-    Waker, defer, is_send, is_sync, next, poll_nop, remove_test_dir, require_kernel, test_queue,
-    tmp_file_path, tmp_path,
+    Waker, defer, is_send, is_sync, next, poll_nop, remove_test_dir, test_queue, tmp_file_path,
+    tmp_path,
 };
 
 const FILE_NAME: &str = "test.txt";
@@ -913,7 +913,6 @@ fn test_fs_watcher<T, U>(
     trigger: impl Fn(PathBuf, T) -> io::Result<(PathBuf, U)>,
     expected: impl Fn(PathBuf, &U) -> Vec<ExpectEvent>,
 ) {
-    require_kernel!(6, 7); // Needed for ReadBufPool.
     let sq = test_queue();
     let waker = Waker::new();
 

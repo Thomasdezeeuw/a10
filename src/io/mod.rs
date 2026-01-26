@@ -385,7 +385,7 @@ fd_operation!(
 
 impl<'fd, B: BufMut> Read<'fd, B> {
     pub(crate) fn fd(&self) -> &'fd AsyncFd {
-        self.0.fd()
+        self.fd
     }
 }
 

@@ -17,9 +17,9 @@ mod runtime;
 
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
-    let mut ring = a10::Ring::new(1)?;
+    let mut ring = a10::Ring::new()?;
     // Get an owned reference to the submission queue.
-    let sq = ring.sq().clone();
+    let sq = ring.sq();
 
     // Create a new file system watcher.
     let mut watcher = fs::notify::Watcher::new(sq)?;
