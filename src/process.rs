@@ -432,7 +432,8 @@ impl fmt::Debug for SignalSet {
 }
 
 new_flag!(
-    /// See [`SignalSet`].
+    /// Process signal.
+    #[doc = man_link!(signal(7))]
     pub struct Signal(i32) {
         /// Hangup.
         HUP = libc::SIGHUP,
