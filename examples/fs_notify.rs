@@ -1,3 +1,5 @@
+#![cfg(any(target_os = "android", target_os = "linux"))]
+
 //! fs_notify - watch for file system changes.
 //!
 //! Run with:

@@ -263,6 +263,7 @@ op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
 
 #[cfg(not(feature = "nightly"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'w> AsyncIterator for a10::fs::notify::Events<'w> {
     type Item = io::Result<&'w a10::fs::notify::Event>;
 
