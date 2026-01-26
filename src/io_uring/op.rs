@@ -12,7 +12,7 @@ use crate::io_uring::cq::{Completion, MULTISHOT_TAG, SINGLESHOT_TAG};
 use crate::io_uring::libc;
 use crate::io_uring::sq::{QueueFull, Submission};
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue, debug_detail, get_mut, lock};
+use crate::{AsyncFd, OpPollResult, SubmissionQueue, debug_detail, get_mut, lock};
 
 // # Usage
 //
@@ -871,52 +871,6 @@ impl OpTarget for SubmissionQueue {
 
     fn set_flags(&self, _: &mut Submission) {
         // No flags to set.
-    }
-}
-
-/// Trait to make [`poll`] work with `io::Result` (singleshot) and
-/// `Option<io::Result>` (multishot).
-// Replace this with std::ops::FromResidual once stable.
-trait OpPollResult<T> {
-    fn from_ok(ok: T) -> Self;
-    fn from_err(err: io::Error) -> Self;
-    fn from_res(res: io::Result<T>) -> Self;
-    fn done() -> Self;
-}
-
-impl<T> OpPollResult<T> for io::Result<T> {
-    fn from_ok(ok: T) -> Self {
-        Ok(ok)
-    }
-
-    fn from_err(err: io::Error) -> Self {
-        Err(err)
-    }
-
-    fn from_res(res: io::Result<T>) -> Self {
-        res
-    }
-
-    fn done() -> Self {
-        unreachable!()
-    }
-}
-
-impl<T> OpPollResult<T> for Option<io::Result<T>> {
-    fn from_ok(ok: T) -> Self {
-        Some(Ok(ok))
-    }
-
-    fn from_err(err: io::Error) -> Self {
-        Some(Err(err))
-    }
-
-    fn from_res(res: io::Result<T>) -> Self {
-        Some(res)
-    }
-
-    fn done() -> Self {
-        None
     }
 }
 

@@ -56,9 +56,7 @@ use std::{io, ptr};
 use crate::extract::{Extract, Extractor};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use crate::new_flag;
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::op::fd_iter_operation;
-use crate::op::{OpState, fd_operation, operation};
+use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::{AsyncFd, man_link, sys};
 
 mod read_buf;
@@ -151,7 +149,6 @@ impl AsyncFd {
     ///
     /// This will return `ENOBUFS` if no buffer is available in the `pool` to
     /// read into.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_read<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRead<'fd> {
         MultishotRead::new(self, pool, ())
     }
@@ -421,7 +418,6 @@ impl<'fd> Splice<'fd> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_read`].
     pub struct MultishotRead(sys::io::MultishotReadOp) -> io::Result<ReadBuf>;

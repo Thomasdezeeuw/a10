@@ -380,3 +380,50 @@ fn get_mut<'a, T>(mutex: &'a mut std::sync::Mutex<T>) -> &'a mut T {
         Err(err) => err.into_inner(),
     }
 }
+
+/// Trait to work with results for singleshot (`io::Result`) and multishot
+/// (`Option<io::Result>`) operations.
+// Replace this with std::ops::FromResidual once stable.
+#[allow(unused)]
+trait OpPollResult<T> {
+    fn from_ok(ok: T) -> Self;
+    fn from_err(err: io::Error) -> Self;
+    fn from_res(res: io::Result<T>) -> Self;
+    fn done() -> Self;
+}
+
+impl<T> OpPollResult<T> for io::Result<T> {
+    fn from_ok(ok: T) -> Self {
+        Ok(ok)
+    }
+
+    fn from_err(err: io::Error) -> Self {
+        Err(err)
+    }
+
+    fn from_res(res: io::Result<T>) -> Self {
+        res
+    }
+
+    fn done() -> Self {
+        unreachable!()
+    }
+}
+
+impl<T> OpPollResult<T> for Option<io::Result<T>> {
+    fn from_ok(ok: T) -> Self {
+        Some(Ok(ok))
+    }
+
+    fn from_err(err: io::Error) -> Self {
+        Some(Err(err))
+    }
+
+    fn from_res(res: io::Result<T>) -> Self {
+        Some(res)
+    }
+
+    fn done() -> Self {
+        None
+    }
+}

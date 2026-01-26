@@ -1,10 +1,11 @@
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::{io, ptr, slice};
+use std::ptr::{self, NonNull};
+use std::{io, slice};
 
-use crate::io::{Buf, BufMut, BufMutSlice, BufSlice};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{DirectFdOp, DirectOp, FdOp, FdOpExtract, impl_fd_op};
+use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
@@ -237,6 +238,51 @@ impl<B: BufMut> FdOp for RecvOp<B> {
     }
 }
 
+pub(crate) struct MultishotRecvOp;
+
+impl FdIter for MultishotRecvOp {
+    type Output = ReadBuf;
+    type Resources = ReadBufPool;
+    type Args = RecvFlag;
+    type OperationOutput = (NonNull<u8>, libc::ssize_t);
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    #[allow(clippy::similar_names)]
+    fn try_run(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let Some((ptr, len)) = buf_pool.shared.get_buf() else {
+            return Err(io::Error::from_raw_os_error(libc::ENOBUFS));
+        };
+        let pptr = ptr.as_ptr().cast();
+        match syscall!(recv(fd.fd(), pptr, len as _, flags.0.cast_signed())) {
+            Ok(n) => Ok((ptr, n)),
+            Err(err) => {
+                let ptr = NonNull::slice_from_raw_parts(ptr, 0);
+                unsafe { buf_pool.shared.release(ptr) }
+                Err(err)
+            }
+        }
+    }
+
+    fn is_complete((_, n): &Self::OperationOutput) -> bool {
+        *n == 0
+    }
+
+    fn map_next(
+        _: &AsyncFd,
+        buf_pool: &Self::Resources,
+        (ptr, n): Self::OperationOutput,
+    ) -> Self::Output {
+        // SAFETY: we got the pointer from the buffer pool in try_run and the
+        // kernel initialised n bytes for us.
+        unsafe { buf_pool.new_buffer(ptr, n.cast_unsigned()) }
+    }
+}
+
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
@@ -281,11 +327,19 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
 
     fn try_run(
         fd: &AsyncFd,
-        (_, msg, iovec, address): &mut Self::Resources,
+        (buf, msg, iovec, address): &mut Self::Resources,
         flags: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
+        let (_, _, is_pool) = buf.parts().pool_ptr()?;
+        if is_pool {
+            *iovec = unsafe { crate::io::IoMutSlice::new(buf) };
+        }
         let ptr = unsafe { msg.init_recv::<A>(address, slice::from_mut(iovec)) };
-        syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()))
+        let res = syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()));
+        if res.is_err() && is_pool {
+            buf.release();
+        }
+        res
     }
 
     fn map_ok(
@@ -535,6 +589,30 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
         // SAFETY: the kernel has written the address for us.
         let address = unsafe { A::init((resources.0).0, (resources.0).1) };
         (fd, address)
+    }
+}
+
+pub(crate) struct MultishotAcceptOp;
+
+impl FdIter for MultishotAcceptOp {
+    type Output = AsyncFd;
+    type Resources = ();
+    type Args = AcceptFlag;
+    type OperationOutput = AsyncFd;
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        (): &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let mut address = AddressStorage((MaybeUninit::uninit(), 0));
+        AcceptOp::<NoAddress>::try_run(fd, &mut address, flags)
+    }
+
+    fn map_next(_: &AsyncFd, (): &Self::Resources, fd: Self::OperationOutput) -> Self::Output {
+        fd
     }
 }
 

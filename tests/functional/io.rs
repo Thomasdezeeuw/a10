@@ -4,20 +4,18 @@ use std::os::fd::FromRawFd;
 
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::io::ReadBufPool;
-#[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::Splice;
-use a10::io::{BufMut, Close, Stderr, Stdout, stderr, stdout};
+use a10::io::{BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
 use a10::pipe::pipe;
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use crate::util::fd;
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
-    LOREM_IPSUM_50, Waker, defer, is_send, is_sync, raw_pipe, remove_test_file, syscall,
+    LOREM_IPSUM_50, Waker, defer, is_send, is_sync, next, raw_pipe, remove_test_file, syscall,
     tcp_ipv4_socket, test_queue, tmp_path,
 };
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{fd, next};
 
 #[test]
 fn try_clone() {
@@ -129,7 +127,6 @@ fn write_all_vectored_at_extract() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn multishot_read() {
     let sq = test_queue();
     let waker = Waker::new();

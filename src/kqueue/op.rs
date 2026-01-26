@@ -4,7 +4,7 @@ use std::task::{self, Poll};
 
 use crate::kqueue::fd::OpKind;
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, OpPollResult, SubmissionQueue};
 
 // # Usage
 //
@@ -343,18 +343,141 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
     }
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
+pub(crate) trait FdIter {
+    type Output;
+    type Resources;
+    type Args;
+    type OperationOutput;
+
+    /// See [`FdOp::setup`].
+    fn setup(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> io::Result<()> {
+        _ = (fd, resources, args);
+        Ok(())
+    }
+
+    /// See [`FdOp::OP_KIND`].
+    const OP_KIND: OpKind;
+
+    /// See [`FdOp::try_run`].
+    fn try_run(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput>;
+
+    /// Returns true if the operation is finished based on `output`.
+    ///
+    /// Default implementation returns false, meaning it will never stop unless
+    /// an error is hit.
+    fn is_complete(output: &Self::OperationOutput) -> bool {
+        _ = output;
+        false
+    }
+
+    /// Similar to [`FdOp::map_ok`], but this processes one of the results.
+    /// Meaning it only have a reference to the resources and doesn't take
+    /// ownership of it.
+    fn map_next(
+        fd: &AsyncFd,
+        resources: &Self::Resources,
+        output: Self::OperationOutput,
+    ) -> Self::Output;
+}
+
+impl<T: FdIter> crate::op::FdIter for T {
+    type Output = io::Result<T::Output>;
+    type Resources = T::Resources;
+    type Args = T::Args;
+    type State = EventedState<T::Resources, T::Args>;
+
+    fn poll_next(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Option<Self::Output>> {
+        let mut r = None;
+        poll_inner(
+            state,
+            ctx,
+            fd,
+            T::setup,
+            T::OP_KIND,
+            T::try_run,
+            |state, output| {
+                if let EventedState::Waiting { resources, args } =
+                    replace(state, EventedState::Complete)
+                {
+                    if T::is_complete(output) {
+                        return r.insert(resources);
+                    }
+                    *state = EventedState::ToSubmit { resources, args };
+                    if let EventedState::ToSubmit { resources, .. } = &*state {
+                        return resources;
+                    }
+                }
+                unreachable!()
+            },
+            T::map_next,
+            || None,
+        )
+    }
+}
+
 fn poll<T: FdOp, Out>(
     state: &mut EventedState<T::Resources, T::Args>,
     ctx: &mut task::Context<'_>,
     fd: &AsyncFd,
     map_ok: impl FnOnce(&AsyncFd, T::Resources, T::OperationOutput) -> Out,
 ) -> Poll<io::Result<Out>> {
+    poll_inner(
+        state,
+        ctx,
+        fd,
+        T::setup,
+        T::OP_KIND,
+        T::try_run,
+        |state, _| {
+            if let EventedState::Waiting { resources, .. } = replace(state, EventedState::Complete)
+            {
+                return resources;
+            }
+            unreachable!()
+        },
+        map_ok,
+        // Shouldn't poll Futures after completion, so we panic as it's
+        // incorrect usage.
+        || panic!("polled Future after completion"),
+    )
+}
+
+#[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
+#[allow(clippy::too_many_arguments)]
+fn poll_inner<'s, R, A, OpOut, R2, Ok, Res>(
+    state: &'s mut EventedState<R, A>,
+    ctx: &mut task::Context<'_>,
+    fd: &AsyncFd,
+    setup: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<()>,
+    op_kind: OpKind,
+    try_run: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<OpOut>,
+    after_try_run: impl FnOnce(&'s mut EventedState<R, A>, &OpOut) -> R2,
+    map_ok: impl FnOnce(&AsyncFd, R2, OpOut) -> Ok,
+    poll_complete: impl FnOnce() -> Res,
+) -> Poll<Res>
+where
+    Res: OpPollResult<Ok>,
+    R2: 's,
+{
     loop {
         match state {
             EventedState::NotStarted { resources, args } => {
                 // Perform any setup required before waiting for an event.
-                T::setup(fd, resources, args)?;
+                if let Err(err) = setup(fd, resources, args) {
+                    return Poll::Ready(Res::from_err(err));
+                }
 
                 if let EventedState::NotStarted { resources, args } =
                     replace(state, EventedState::Complete)
@@ -368,8 +491,8 @@ fn poll<T: FdOp, Out>(
                 // Add ourselves to the waiters for the operation.
                 let needs_register = {
                     let mut fd_state = fd_state.lock();
-                    let needs_register = !fd_state.has_waiting_op(T::OP_KIND);
-                    fd_state.add(T::OP_KIND, ctx.waker().clone());
+                    let needs_register = !fd_state.has_waiting_op(op_kind);
+                    fd_state.add(op_kind, ctx.waker().clone());
                     needs_register
                 }; // Unlock fd state.
 
@@ -377,7 +500,7 @@ fn poll<T: FdOp, Out>(
                 // kernel.
                 if needs_register {
                     fd.sq.submissions().add(|event| {
-                        event.0.filter = match T::OP_KIND {
+                        event.0.filter = match op_kind {
                             OpKind::Read => libc::EVFILT_READ,
                             OpKind::Write => libc::EVFILT_WRITE,
                         };
@@ -397,13 +520,10 @@ fn poll<T: FdOp, Out>(
                 return Poll::Pending;
             }
             EventedState::Waiting { resources, args } => {
-                match T::try_run(fd, resources, args) {
-                    Ok(res) => {
-                        if let EventedState::Waiting { resources, .. } =
-                            replace(state, EventedState::Complete)
-                        {
-                            return Poll::Ready(Ok(map_ok(fd, resources, res)));
-                        }
+                match try_run(fd, resources, args) {
+                    Ok(output) => {
+                        let resources = after_try_run(state, &output);
+                        return Poll::Ready(Res::from_ok(map_ok(fd, resources, output)));
                     }
                     Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
                         if let EventedState::Waiting { resources, args } =
@@ -415,13 +535,11 @@ fn poll<T: FdOp, Out>(
                     }
                     Err(err) => {
                         *state = EventedState::Complete;
-                        return Poll::Ready(Err(err));
+                        return Poll::Ready(Res::from_err(err));
                     }
                 }
             }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            EventedState::Complete => panic!("polled Future after completion"),
+            EventedState::Complete => return Poll::Ready(poll_complete()),
         }
     }
 }
