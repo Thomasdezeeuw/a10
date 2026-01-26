@@ -56,7 +56,7 @@ pub enum WaitOn {
 new_flag!(
     /// Wait option.
     ///
-    /// See [`wait`] and [`wait_on`].
+    /// See [`WaitId::flags`].
     pub struct WaitOption(u32) {
         /// Return if a child has stopped (but not traced via `ptrace(2)`).
         UNTRACED = libc::WUNTRACED,
