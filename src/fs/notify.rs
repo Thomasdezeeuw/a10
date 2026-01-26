@@ -237,6 +237,7 @@ new_flag!(
 
 /// How to recursively watch a directory.
 #[derive(Copy, Clone, Debug)]
+#[non_exhaustive]
 pub enum Recursive {
     /// Don't watch recursively.
     ///
