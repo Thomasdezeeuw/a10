@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::io::{Buf, BufMut, BufMutParts, BufMutSlice, BufSlice, NO_OFFSET, ReadBuf};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{DirectOp, FdOp, FdOpExtract};
+use crate::kqueue::op::{DirectOp, FdIter, FdOp, FdOpExtract};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -65,7 +65,7 @@ impl ReadBufPool {
         self.buf_size as usize
     }
 
-    pub(crate) fn get_buf(&self) -> Option<(*mut u8, u32)> {
+    pub(crate) fn get_buf(&self) -> Option<(NonNull<u8>, u32)> {
         for (idx, available) in self.available.iter().enumerate() {
             // SAFETY: Relaxed ordering is acceptable here because when we
             // actually attempt to set the bit below (the `fetch_or`) we use the
@@ -82,7 +82,7 @@ impl ReadBufPool {
                     let buf_id = (idx * usize::BITS as usize) + i as usize;
                     let len = self.buf_size();
                     let ptr = unsafe { self.bufs_addr.byte_offset((len * buf_id).cast_signed()) };
-                    return Some((ptr.as_ptr(), len as u32));
+                    return Some((ptr, len as u32));
                 }
                 i += (value >> i).trailing_ones();
             }
@@ -109,11 +109,8 @@ impl ReadBufPool {
 impl ReadBuf {
     pub(crate) fn parts_sys(&mut self) -> BufMutParts {
         let (ptr, len) = if let Some((ptr, len)) = self.shared.get_buf() {
-            self.owned = unsafe {
-                let ptr = NonNull::new_unchecked(ptr);
-                Some(NonNull::slice_from_raw_parts(ptr, 0))
-            };
-            (ptr, len)
+            self.owned = Some(NonNull::slice_from_raw_parts(ptr, 0));
+            (ptr.as_ptr(), len)
         } else {
             (ptr::null_mut(), 0)
         };
@@ -211,6 +208,45 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         // SAFETY: kernel just initialised the bytes for us.
         unsafe { buf.set_init(n as _) };
         buf
+    }
+}
+
+pub(crate) struct MultishotReadOp;
+
+impl FdIter for MultishotReadOp {
+    type Output = crate::io::ReadBuf;
+    type Resources = crate::io::ReadBufPool;
+    type Args = ();
+    type OperationOutput = (NonNull<u8>, libc::ssize_t);
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        (): &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let Some((ptr, len)) = buf_pool.shared.get_buf() else {
+            return Err(io::Error::from_raw_os_error(libc::ENOBUFS));
+        };
+        match syscall!(read(fd.fd(), ptr.as_ptr().cast(), len as _)) {
+            Ok(n) => Ok((ptr, n)),
+            Err(err) => {
+                let ptr = NonNull::slice_from_raw_parts(ptr, 0);
+                unsafe { buf_pool.shared.release(ptr) }
+                Err(err)
+            }
+        }
+    }
+
+    fn map_next(
+        _: &AsyncFd,
+        buf_pool: &Self::Resources,
+        (ptr, n): Self::OperationOutput,
+    ) -> Self::Output {
+        // SAFETY: we got the pointer from the buffer pool in try_run and the
+        // kernel initialised n bytes for us.
+        unsafe { buf_pool.new_buffer(ptr, n.cast_unsigned()) }
     }
 }
 

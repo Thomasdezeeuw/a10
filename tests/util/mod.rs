@@ -238,7 +238,6 @@ where
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 macro_rules! op_async_iter {
     ($name: ty => $item: ty) => {
         #[cfg(not(feature = "nightly"))]
@@ -255,7 +254,6 @@ macro_rules! op_async_iter {
     };
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
 #[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
