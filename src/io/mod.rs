@@ -701,6 +701,14 @@ unsafe impl<B: BufMut> BufMut for ReadNBuf<B> {
         unsafe { self.buf.set_init(n) };
     }
 
+    fn spare_capacity(&self) -> u32 {
+        self.buf.spare_capacity()
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.buf.has_spare_capacity()
+    }
+
     #[cfg(any(target_os = "android", target_os = "linux"))]
     unsafe fn buffer_init(&mut self, id: BufId, n: u32) {
         self.last_read = n as usize;

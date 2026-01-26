@@ -329,6 +329,22 @@ unsafe impl BufMut for ReadBuf {
         }
     }
 
+    fn spare_capacity(&self) -> u32 {
+        if let Some(ptr) = self.owned {
+            (self.capacity() - ptr.len()) as u32
+        } else {
+            0
+        }
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        if let Some(ptr) = self.owned {
+            self.capacity() > ptr.len()
+        } else {
+            false
+        }
+    }
+
     #[allow(private_interfaces)]
     fn parts(&mut self) -> BufMutParts {
         if let Some(ptr) = self.owned {

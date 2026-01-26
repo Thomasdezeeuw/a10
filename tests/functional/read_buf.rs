@@ -3,7 +3,7 @@ use std::panic::{self, AssertUnwindSafe};
 
 use a10::Ring;
 use a10::fs::OpenOptions;
-use a10::io::{ReadBuf, ReadBufPool};
+use a10::io::{BufMut, ReadBuf, ReadBufPool};
 
 use crate::util::{LOREM_IPSUM_50, block_on, init, is_send, is_sync, start_op};
 
@@ -73,6 +73,8 @@ fn read_buf() {
         &*buf == &test_file.content[..buf.len()],
         "read content is different"
     );
+    assert_eq!(buf.spare_capacity(), 0);
+    assert!(!buf.has_spare_capacity());
 
     buf.truncate(1024);
     assert_eq!(buf.len(), 1024);
@@ -81,6 +83,8 @@ fn read_buf() {
         &*buf == &test_file.content[..buf.len()],
         "read content is different"
     );
+    assert_eq!(buf.spare_capacity(), BUF_SIZE as u32 - 1024);
+    assert!(buf.has_spare_capacity());
 
     unsafe { buf.set_len(512) };
     assert_eq!(buf.len(), 512);
@@ -89,6 +93,8 @@ fn read_buf() {
         &*buf == &test_file.content[..buf.len()],
         "read content is different"
     );
+    assert_eq!(buf.spare_capacity(), BUF_SIZE as u32 - 512);
+    assert!(buf.has_spare_capacity());
     unsafe { buf.set_len(1024) };
     assert_eq!(buf.len(), 1024);
     assert!(!buf.is_empty());
@@ -96,10 +102,14 @@ fn read_buf() {
         &*buf == &test_file.content[..buf.len()],
         "read content is different"
     );
+    assert_eq!(buf.spare_capacity(), BUF_SIZE as u32 - 1024);
+    assert!(buf.has_spare_capacity());
 
     buf.clear();
     assert_eq!(buf.len(), 0);
     assert!(buf.is_empty());
+    assert_eq!(buf.spare_capacity(), BUF_SIZE as u32);
+    assert!(buf.has_spare_capacity());
 
     const DATA1: &[u8] = b"hello world";
     buf.extend_from_slice(DATA1).unwrap();

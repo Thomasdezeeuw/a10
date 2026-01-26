@@ -561,6 +561,10 @@ unsafe impl BufMut for BadReadBuf {
     unsafe fn set_init(&mut self, n: usize) {
         unsafe { self.data.set_init(n) };
     }
+
+    fn spare_capacity(&self) -> u32 {
+        unreachable!("not implemented");
+    }
 }
 
 // NOTE: this implementation is BROKEN! It's only used to test the write_all

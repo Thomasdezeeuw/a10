@@ -67,6 +67,18 @@ pub unsafe trait BufMut: 'static {
     /// by [`BufMut::parts_mut`], are initialised.
     unsafe fn set_init(&mut self, n: usize);
 
+    /// Returns the amount of unused bytes in the buffer.
+    ///
+    /// This must be the same length as returned by [`parts_mut`].
+    ///
+    /// [`parts_mut`]: BufMut::parts_mut
+    fn spare_capacity(&self) -> u32;
+
+    /// Returns `true` if the buffer has spare capacity.
+    fn has_spare_capacity(&self) -> bool {
+        self.spare_capacity() != 0
+    }
+
     /// **Not part of the public API**.
     /// Do **not** implement this.
     #[doc(hidden)]
@@ -218,6 +230,14 @@ unsafe impl BufMut for Vec<u8> {
 
     unsafe fn set_init(&mut self, n: usize) {
         unsafe { self.set_len(self.len() + n) };
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        (self.capacity() - self.len()) as u32
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.capacity() > self.len()
     }
 }
 
