@@ -343,6 +343,76 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
     }
 }
 
+pub(crate) trait FdIter {
+    type Output;
+    type Resources;
+    type Args;
+    type OperationOutput;
+
+    /// See [`FdOp::setup`].
+    fn setup(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> io::Result<()> {
+        _ = (fd, resources, args);
+        Ok(())
+    }
+
+    /// See [`FdOp::OP_KIND`].
+    const OP_KIND: OpKind;
+
+    /// See [`FdOp::try_run`].
+    fn try_run(
+        fd: &AsyncFd,
+        resources: &mut Self::Resources,
+        args: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput>;
+
+    /// Similar to [`FdOp::map_ok`], but this processes one of the results.
+    /// Meaning it only have a reference to the resources and doesn't take
+    /// ownership of it.
+    fn map_next(
+        fd: &AsyncFd,
+        resources: &Self::Resources,
+        output: Self::OperationOutput,
+    ) -> Self::Output;
+}
+
+impl<T: FdIter> crate::op::FdIter for T {
+    type Output = io::Result<T::Output>;
+    type Resources = T::Resources;
+    type Args = T::Args;
+    type State = EventedState<T::Resources, T::Args>;
+
+    fn poll_next(
+        state: &mut Self::State,
+        ctx: &mut task::Context<'_>,
+        fd: &AsyncFd,
+    ) -> Poll<Option<Self::Output>> {
+        poll_inner(
+            state,
+            ctx,
+            fd,
+            T::setup,
+            T::OP_KIND,
+            T::try_run,
+            |state| {
+                if let EventedState::Waiting { resources, args } =
+                    replace(state, EventedState::Complete)
+                {
+                    *state = EventedState::ToSubmit { resources, args };
+                    if let EventedState::ToSubmit { resources, .. } = &*state {
+                        return resources;
+                    }
+                }
+                unreachable!()
+            },
+            T::map_next,
+        )
+    }
+}
+
 fn poll<T: FdOp, Out>(
     state: &mut EventedState<T::Resources, T::Args>,
     ctx: &mut task::Context<'_>,
