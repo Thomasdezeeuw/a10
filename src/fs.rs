@@ -13,7 +13,9 @@ use crate::op::OpState;
 use crate::op::{fd_operation, operation};
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub mod notify;
+#[cfg(any(target_os = "android", target_os = "linux"))]
 pub use notify::Watcher;
 
 /// Options used to configure how a file ([`AsyncFd`]) is opened.

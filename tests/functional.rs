@@ -9,6 +9,7 @@ mod fd;
 #[path = "functional/fs.rs"]
 mod fs;
 #[path = "functional/fs_notify.rs"]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 mod fs_notify;
 #[path = "functional/io.rs"]
 mod io;
