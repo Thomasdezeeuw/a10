@@ -426,7 +426,9 @@ impl SignalSet {
 
 impl fmt::Debug for SignalSet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let signals = Signal::ALL.iter().filter(|signal| self.contains(**signal));
+        let signals = Signal::ALL_VALUES
+            .iter()
+            .filter(|signal| self.contains(**signal));
         f.debug_set().entries(signals).finish()
     }
 }

@@ -6,7 +6,7 @@ use std::any::Any;
 #[cfg(feature = "nightly")]
 use std::async_iter::AsyncIterator;
 use std::cell::Cell;
-use std::fs::{remove_dir, remove_file};
+use std::fs::{remove_dir_all, remove_file};
 use std::future::{Future, IntoFuture};
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
@@ -262,6 +262,16 @@ op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 #[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
 
+#[cfg(not(feature = "nightly"))]
+#[cfg(any(target_os = "android", target_os = "linux"))]
+impl<'w> AsyncIterator for a10::fs::notify::Events<'w> {
+    type Item = io::Result<&'w a10::fs::notify::Event>;
+
+    fn poll_next(self: Pin<&mut Self>, ctx: &mut task::Context<'_>) -> Poll<Option<Self::Item>> {
+        self.poll_next(ctx)
+    }
+}
+
 /// Return a [`Future`] that return the next item in the `iter` or `None`.
 pub(crate) fn next<I: AsyncIterator>(iter: I) -> Next<I> {
     Next { iter }
@@ -311,7 +321,7 @@ pub(crate) fn remove_test_file(path: &Path) {
 }
 
 pub(crate) fn remove_test_dir(path: &Path) {
-    match remove_dir(path) {
+    match remove_dir_all(path) {
         Ok(()) => {}
         Err(ref err) if err.kind() == io::ErrorKind::NotFound => {}
         Err(err) => panic!("unexpected error removing test directory: {err}"),
@@ -328,6 +338,12 @@ pub(crate) fn tmp_path() -> PathBuf {
     let n = getrandom::u64().expect("failed to get random data");
     tmp_dir.push(format!("{n}"));
     tmp_dir
+}
+
+pub(crate) fn tmp_file_path(extension: &str) -> PathBuf {
+    let mut path = tmp_path();
+    path.set_extension(extension);
+    path
 }
 
 fn panic_message<'a>(err: &'a (dyn Any + Send + 'static)) -> &'a str {

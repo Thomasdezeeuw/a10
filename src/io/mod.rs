@@ -383,6 +383,13 @@ fd_operation!(
     pub struct Splice(sys::io::SpliceOp) -> io::Result<usize>;
 );
 
+impl<'fd, B: BufMut> Read<'fd, B> {
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub(crate) fn fd(&self) -> &'fd AsyncFd {
+        self.fd
+    }
+}
+
 #[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> Splice<'fd> {
     /// Start reading from input at `offset`.
