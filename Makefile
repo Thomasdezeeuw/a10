@@ -33,7 +33,7 @@ TARGETS ?= \
 
 check_all_targets: $(TARGETS)
 $(TARGETS):
-	cargo check --target $@ -Zbuild-std
+	cargo check --target $@ -Zbuild-std --all-targets
 
 # Disabled lints:
 # * `doc-markdown`: has some annoying false positives.
