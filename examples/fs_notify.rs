@@ -40,7 +40,7 @@ fn main() -> io::Result<()> {
 
 async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
     let mut events = pin!(watcher.events());
-    // Poll for file system events (the ergonomics for this  should be improved
+    // Poll for file system events (the ergonomics for this should be improved
     // once the `AsyncIterator` trait is stabilised).
     while let Some(result) = poll_fn(|ctx| events.as_mut().poll_next(ctx)).await {
         let event = result?;

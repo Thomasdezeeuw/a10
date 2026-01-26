@@ -1,5 +1,7 @@
 //! Filesystem notifications.
 //!
+//! See [`Watcher`].
+//!
 //! # Implementation Notes
 //!
 //! This implementation is based on [`inotify(7)`], which has a number of
