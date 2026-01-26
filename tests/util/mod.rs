@@ -256,7 +256,6 @@ macro_rules! op_async_iter {
 
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
-#[cfg(any(target_os = "android", target_os = "linux"))]
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
 
 #[cfg(not(feature = "nightly"))]

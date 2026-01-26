@@ -1,8 +1,9 @@
 use std::marker::PhantomData;
 use std::mem::MaybeUninit;
-use std::{io, ptr, slice};
+use std::ptr::{self, NonNull};
+use std::{io, slice};
 
-use crate::io::{Buf, BufMut, BufMutSlice, BufSlice};
+use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, impl_fd_op};
 use crate::net::{
@@ -234,6 +235,47 @@ impl<B: BufMut> FdOp for RecvOp<B> {
         // recv call.
         unsafe { buf.set_init(n.cast_unsigned()) };
         buf
+    }
+}
+
+pub(crate) struct MultishotRecvOp;
+
+impl FdIter for MultishotRecvOp {
+    type Output = ReadBuf;
+    type Resources = ReadBufPool;
+    type Args = RecvFlag;
+    type OperationOutput = (NonNull<u8>, libc::ssize_t);
+
+    const OP_KIND: OpKind = OpKind::Read;
+
+    fn try_run(
+        fd: &AsyncFd,
+        buf_pool: &mut Self::Resources,
+        flags: &mut Self::Args,
+    ) -> io::Result<Self::OperationOutput> {
+        let Some((ptr, len)) = buf_pool.shared.get_buf() else {
+            return Err(io::Error::from_raw_os_error(libc::ENOBUFS));
+        };
+        let pptr = ptr.as_ptr().cast();
+        match syscall!(recv(fd.fd(), pptr, len as _, flags.0.cast_signed())) {
+            Ok(n) => Ok((ptr, n)),
+            Err(err) => {
+                let ptr = NonNull::slice_from_raw_parts(ptr, 0);
+                unsafe { buf_pool.shared.release(ptr) }
+                Err(err)
+            }
+        }
+    }
+
+    fn map_next(
+        _: &AsyncFd,
+
+        buf_pool: &Self::Resources,
+        (ptr, n): Self::OperationOutput,
+    ) -> Self::Output {
+        // SAFETY: we got the pointer from the buffer pool in try_run and the
+        // kernel initialised n bytes for us.
+        unsafe { buf_pool.new_buffer(ptr, n.cast_unsigned()) }
     }
 }
 

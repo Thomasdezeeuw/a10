@@ -17,9 +17,9 @@ use std::task::{self, Poll};
 use std::{fmt, io, ptr, slice};
 
 use crate::extract::{Extract, Extractor};
-use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadNBuf, SkipBuf};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::io::{ReadBuf, ReadBufPool};
+use crate::io::{
+    Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, ReadBuf, ReadBufPool, ReadNBuf, SkipBuf,
+};
 use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
 use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
@@ -195,7 +195,6 @@ impl AsyncFd {
     ///
     /// Be careful when using this as a peer sending a lot data might take up
     /// all your buffers from your pool!
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn multishot_recv<'fd>(&'fd self, pool: ReadBufPool) -> MultishotRecv<'fd> {
         MultishotRecv::new(self, pool, RecvFlag(0))
     }
@@ -1074,18 +1073,14 @@ impl<'fd, A: SocketAddress> Accept<'fd, A> {
     }
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_recv`].
     pub struct MultishotRecv(sys::net::MultishotRecvOp) -> io::Result<ReadBuf>;
-}
 
-fd_iter_operation! {
     /// [`AsyncIterator`] behind [`AsyncFd::multishot_accept`].
     pub struct MultishotAccept(sys::net::MultishotAcceptOp) -> io::Result<AsyncFd>;
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> MultishotRecv<'fd> {
     /// Set the `flags`.
     pub fn flags(mut self, flags: RecvFlag) -> Self {
