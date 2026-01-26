@@ -74,8 +74,7 @@ type PathBufWithNull = CString;
 /// Watch descriptor for the `Watcher` instance.
 type WatchFd = std::os::fd::RawFd;
 
-const NAME_MAX: usize = 255; // TODO: move to libc (https://github.com/rust-lang/libc/pull/4888).
-const BUF_SIZE: usize = size_of::<libc::inotify_event>() + NAME_MAX + 1 /* NULL. */;
+const BUF_SIZE: usize = size_of::<libc::inotify_event>() + libc::NAME_MAX as usize + 1 /* NULL. */;
 
 impl Watcher {
     /// Create a new file system watcher.
