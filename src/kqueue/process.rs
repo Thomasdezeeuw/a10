@@ -94,10 +94,11 @@ impl Drop for Signals {
 
 #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
 fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
-    let mut changes: [MaybeUninit<libc::kevent>; _] = [MaybeUninit::uninit(); Signal::ALL.len()];
+    let mut changes: [MaybeUninit<libc::kevent>; _] =
+        [MaybeUninit::uninit(); Signal::ALL_VALUES.len()];
 
     let mut n_changes = 0;
-    for signal in Signal::ALL {
+    for signal in Signal::ALL_VALUES {
         if !signals.contains(*signal) {
             continue;
         }
@@ -129,7 +130,7 @@ fn sigaction(signals: &SignalSet, action: libc::sighandler_t) -> io::Result<()> 
         sa_mask: 0,
         sa_flags: 0,
     };
-    for signal in Signal::ALL {
+    for signal in Signal::ALL_VALUES {
         if !signals.contains(*signal) {
             continue;
         }
