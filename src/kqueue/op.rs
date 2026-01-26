@@ -4,7 +4,7 @@ use std::task::{self, Poll};
 
 use crate::kqueue::fd::OpKind;
 use crate::op::OpState;
-use crate::{AsyncFd, SubmissionQueue};
+use crate::{AsyncFd, OpPollResult, SubmissionQueue};
 
 // # Usage
 //
@@ -343,18 +343,52 @@ impl<T: FdOpExtract> crate::op::FdOpExtract for T {
     }
 }
 
-#[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
 fn poll<T: FdOp, Out>(
     state: &mut EventedState<T::Resources, T::Args>,
     ctx: &mut task::Context<'_>,
     fd: &AsyncFd,
     map_ok: impl FnOnce(&AsyncFd, T::Resources, T::OperationOutput) -> Out,
 ) -> Poll<io::Result<Out>> {
+    poll_inner(
+        state,
+        ctx,
+        fd,
+        T::setup,
+        T::OP_KIND,
+        T::try_run,
+        |state| {
+            if let EventedState::Waiting { resources, .. } = replace(state, EventedState::Complete)
+            {
+                return resources;
+            }
+            unreachable!()
+        },
+        map_ok,
+    )
+}
+
+#[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
+fn poll_inner<'s, R, A, OpOut, R2, Ok, Res>(
+    state: &'s mut EventedState<R, A>,
+    ctx: &mut task::Context<'_>,
+    fd: &AsyncFd,
+    setup: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<()>,
+    op_kind: OpKind,
+    try_run: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<OpOut>,
+    after_try_run: impl FnOnce(&'s mut EventedState<R, A>) -> R2,
+    map_ok: impl FnOnce(&AsyncFd, R2, OpOut) -> Ok,
+) -> Poll<Res>
+where
+    Res: OpPollResult<Ok>,
+    R2: 's,
+{
     loop {
         match state {
             EventedState::NotStarted { resources, args } => {
                 // Perform any setup required before waiting for an event.
-                T::setup(fd, resources, args)?;
+                if let Err(err) = setup(fd, resources, args) {
+                    return Poll::Ready(Res::from_err(err));
+                }
 
                 if let EventedState::NotStarted { resources, args } =
                     replace(state, EventedState::Complete)
@@ -368,8 +402,8 @@ fn poll<T: FdOp, Out>(
                 // Add ourselves to the waiters for the operation.
                 let needs_register = {
                     let mut fd_state = fd_state.lock();
-                    let needs_register = !fd_state.has_waiting_op(T::OP_KIND);
-                    fd_state.add(T::OP_KIND, ctx.waker().clone());
+                    let needs_register = !fd_state.has_waiting_op(op_kind);
+                    fd_state.add(op_kind, ctx.waker().clone());
                     needs_register
                 }; // Unlock fd state.
 
@@ -377,7 +411,7 @@ fn poll<T: FdOp, Out>(
                 // kernel.
                 if needs_register {
                     fd.sq.submissions().add(|event| {
-                        event.0.filter = match T::OP_KIND {
+                        event.0.filter = match op_kind {
                             OpKind::Read => libc::EVFILT_READ,
                             OpKind::Write => libc::EVFILT_WRITE,
                         };
@@ -397,13 +431,10 @@ fn poll<T: FdOp, Out>(
                 return Poll::Pending;
             }
             EventedState::Waiting { resources, args } => {
-                match T::try_run(fd, resources, args) {
+                match try_run(fd, resources, args) {
                     Ok(res) => {
-                        if let EventedState::Waiting { resources, .. } =
-                            replace(state, EventedState::Complete)
-                        {
-                            return Poll::Ready(Ok(map_ok(fd, resources, res)));
-                        }
+                        let resources = after_try_run(state);
+                        return Poll::Ready(Res::from_ok(map_ok(fd, resources, res)));
                     }
                     Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
                         if let EventedState::Waiting { resources, args } =
@@ -415,7 +446,7 @@ fn poll<T: FdOp, Out>(
                     }
                     Err(err) => {
                         *state = EventedState::Complete;
-                        return Poll::Ready(Err(err));
+                        return Poll::Ready(Res::from_err(err));
                     }
                 }
             }
