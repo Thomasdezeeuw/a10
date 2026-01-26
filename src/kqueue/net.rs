@@ -269,7 +269,6 @@ impl FdIter for MultishotRecvOp {
 
     fn map_next(
         _: &AsyncFd,
-
         buf_pool: &Self::Resources,
         (ptr, n): Self::OperationOutput,
     ) -> Self::Output {
@@ -323,11 +322,19 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
 
     fn try_run(
         fd: &AsyncFd,
-        (_, msg, iovec, address): &mut Self::Resources,
+        (buf, msg, iovec, address): &mut Self::Resources,
         flags: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
+        let (_, _, is_pool) = buf.parts().pool_ptr()?;
+        if is_pool {
+            *iovec = unsafe { crate::io::IoMutSlice::new(buf) };
+        }
         let ptr = unsafe { msg.init_recv::<A>(address, slice::from_mut(iovec)) };
-        syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()))
+        let res = syscall!(recvmsg(fd.fd(), ptr, flags.0.cast_signed()));
+        if res.is_err() && is_pool {
+            buf.release();
+        }
+        res
     }
 
     fn map_ok(
