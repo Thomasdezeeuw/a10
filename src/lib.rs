@@ -384,6 +384,7 @@ fn get_mut<'a, T>(mutex: &'a mut std::sync::Mutex<T>) -> &'a mut T {
 /// Trait to work with results for singleshot (`io::Result`) and multishot
 /// (`Option<io::Result>`) operations.
 // Replace this with std::ops::FromResidual once stable.
+#[allow(unused)]
 trait OpPollResult<T> {
     fn from_ok(ok: T) -> Self;
     fn from_err(err: io::Error) -> Self;

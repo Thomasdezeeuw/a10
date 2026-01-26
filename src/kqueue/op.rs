@@ -442,6 +442,7 @@ fn poll<T: FdOp, Out>(
 }
 
 #[allow(clippy::needless_pass_by_ref_mut)] // for ctx, matches Future::poll.
+#[allow(clippy::too_many_arguments)]
 fn poll_inner<'s, R, A, OpOut, R2, Ok, Res>(
     state: &'s mut EventedState<R, A>,
     ctx: &mut task::Context<'_>,

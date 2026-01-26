@@ -248,6 +248,7 @@ impl FdIter for MultishotRecvOp {
 
     const OP_KIND: OpKind = OpKind::Read;
 
+    #[allow(clippy::similar_names)]
     fn try_run(
         fd: &AsyncFd,
         buf_pool: &mut Self::Resources,
