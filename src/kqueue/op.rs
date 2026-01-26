@@ -409,6 +409,7 @@ impl<T: FdIter> crate::op::FdIter for T {
                 unreachable!()
             },
             T::map_next,
+            || None,
         )
     }
 }
@@ -434,6 +435,9 @@ fn poll<T: FdOp, Out>(
             unreachable!()
         },
         map_ok,
+        // Shouldn't poll Futures after completion, so we panic as it's
+        // incorrect usage.
+        || panic!("polled Future after completion"),
     )
 }
 
@@ -447,6 +451,7 @@ fn poll_inner<'s, R, A, OpOut, R2, Ok, Res>(
     try_run: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<OpOut>,
     after_try_run: impl FnOnce(&'s mut EventedState<R, A>) -> R2,
     map_ok: impl FnOnce(&AsyncFd, R2, OpOut) -> Ok,
+    poll_complete: impl FnOnce() -> Res,
 ) -> Poll<Res>
 where
     Res: OpPollResult<Ok>,
@@ -520,9 +525,7 @@ where
                     }
                 }
             }
-            // Shouldn't be reachable, but if the Future is used incorrectly it
-            // can be.
-            EventedState::Complete => panic!("polled Future after completion"),
+            EventedState::Complete => return Poll::Ready(poll_complete()),
         }
     }
 }
