@@ -1,6 +1,8 @@
 //! A bad [`Future`] runtime implementation. This is just here for the examples,
 //! don't actually use this. Replace this with your favorite [`Future`] runtime.
 
+#![allow(dead_code)]
+
 use std::future::{Future, IntoFuture};
 use std::pin::Pin;
 use std::ptr;

@@ -1,23 +1,22 @@
-#![cfg(any(target_os = "android", target_os = "linux"))]
-
 //! fs_notify - watch for file system changes.
 //!
 //! Run with:
 //! $ cargo run --example fs_notify -- -r examples/ src/
 //! $ touch src/lib.rs examples/fs_notify.rs
 
-use std::env::args;
-use std::future::poll_fn;
-use std::io;
-use std::path::PathBuf;
-use std::pin::pin;
-
-use a10::fs;
-use a10::fs::notify::{Interest, Recursive};
-
 mod runtime;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn main() -> io::Result<()> {
+    use std::env::args;
+    use std::future::poll_fn;
+    use std::io;
+    use std::path::PathBuf;
+    use std::pin::pin;
+
+    use a10::fs;
+    use a10::fs::notify::{Interest, Recursive};
+
     // Create a new I/O uring.
     let mut ring = a10::Ring::new()?;
     // Get an owned reference to the submission queue.
@@ -40,6 +39,7 @@ fn main() -> io::Result<()> {
     runtime::block_on(&mut ring, watch(watcher))
 }
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
     let mut events = pin!(watcher.events());
     // Poll for file system events (the ergonomics for this should be improved
@@ -53,4 +53,9 @@ async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn main() {
+    eprintln!("Only support on Linux at the moment");
 }
