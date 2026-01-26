@@ -369,6 +369,15 @@ pub(crate) trait FdIter {
         args: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput>;
 
+    /// Returns true if the operation is finished based on `output`.
+    ///
+    /// Default implementation returns false, meaning it will never stop unless
+    /// an error is hit.
+    fn is_complete(output: &Self::OperationOutput) -> bool {
+        _ = output;
+        false
+    }
+
     /// Similar to [`FdOp::map_ok`], but this processes one of the results.
     /// Meaning it only have a reference to the resources and doesn't take
     /// ownership of it.
@@ -390,6 +399,7 @@ impl<T: FdIter> crate::op::FdIter for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
+        let mut r = None;
         poll_inner(
             state,
             ctx,
@@ -397,10 +407,13 @@ impl<T: FdIter> crate::op::FdIter for T {
             T::setup,
             T::OP_KIND,
             T::try_run,
-            |state| {
+            |state, output| {
                 if let EventedState::Waiting { resources, args } =
                     replace(state, EventedState::Complete)
                 {
+                    if T::is_complete(output) {
+                        return r.insert(resources);
+                    }
                     *state = EventedState::ToSubmit { resources, args };
                     if let EventedState::ToSubmit { resources, .. } = &*state {
                         return resources;
@@ -427,7 +440,7 @@ fn poll<T: FdOp, Out>(
         T::setup,
         T::OP_KIND,
         T::try_run,
-        |state| {
+        |state, _| {
             if let EventedState::Waiting { resources, .. } = replace(state, EventedState::Complete)
             {
                 return resources;
@@ -450,7 +463,7 @@ fn poll_inner<'s, R, A, OpOut, R2, Ok, Res>(
     setup: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<()>,
     op_kind: OpKind,
     try_run: impl Fn(&AsyncFd, &mut R, &mut A) -> io::Result<OpOut>,
-    after_try_run: impl FnOnce(&'s mut EventedState<R, A>) -> R2,
+    after_try_run: impl FnOnce(&'s mut EventedState<R, A>, &OpOut) -> R2,
     map_ok: impl FnOnce(&AsyncFd, R2, OpOut) -> Ok,
     poll_complete: impl FnOnce() -> Res,
 ) -> Poll<Res>
@@ -508,9 +521,9 @@ where
             }
             EventedState::Waiting { resources, args } => {
                 match try_run(fd, resources, args) {
-                    Ok(res) => {
-                        let resources = after_try_run(state);
-                        return Poll::Ready(Res::from_ok(map_ok(fd, resources, res)));
+                    Ok(output) => {
+                        let resources = after_try_run(state, &output);
+                        return Poll::Ready(Res::from_ok(map_ok(fd, resources, output)));
                     }
                     Err(ref err) if err.kind() == io::ErrorKind::WouldBlock => {
                         if let EventedState::Waiting { resources, args } =

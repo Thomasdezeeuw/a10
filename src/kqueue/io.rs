@@ -239,6 +239,10 @@ impl FdIter for MultishotReadOp {
         }
     }
 
+    fn is_complete((_, n): &Self::OperationOutput) -> bool {
+        *n == 0
+    }
+
     fn map_next(
         _: &AsyncFd,
         buf_pool: &Self::Resources,
