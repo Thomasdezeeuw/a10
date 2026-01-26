@@ -348,11 +348,9 @@ impl IoMutSlice {
     }
 }
 
-impl std::fmt::Debug for IoMutSlice {
+impl fmt::Debug for IoMutSlice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("IoMutSlice")
-            .field("len", &self.0.len())
-            .finish()
+        self.0.fmt(f)
     }
 }
 
@@ -729,9 +727,9 @@ impl IoSlice {
     }
 }
 
-impl std::fmt::Debug for IoSlice {
+impl fmt::Debug for IoSlice {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.as_bytes().fmt(f)
+        self.0.fmt(f)
     }
 }
 
