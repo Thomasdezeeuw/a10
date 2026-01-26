@@ -70,7 +70,6 @@ pub(crate) trait FdOpExtract: FdOp {
 /// [`AsyncIterator`] implementation of a [`FdOp`].
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
-#[cfg(any(target_os = "android", target_os = "linux"))]
 pub(crate) trait FdIter {
     /// Output of the operation.
     type Output;
@@ -171,7 +170,6 @@ macro_rules! fd_operation {
 /// Create an [`AsyncIterator`] based on multishot [`FdIter`]s.
 ///
 /// [`AsyncIterator`]: std::async_iter::AsyncIterator
-#[cfg(any(target_os = "android", target_os = "linux"))]
 macro_rules! fd_iter_operation {
     (
         $(
@@ -341,6 +339,4 @@ macro_rules! new_operation {
     };
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-pub(crate) use fd_iter_operation;
-pub(crate) use {fd_operation, new_operation, operation};
+pub(crate) use {fd_iter_operation, fd_operation, new_operation, operation};
