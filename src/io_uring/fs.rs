@@ -5,7 +5,7 @@ use std::ptr;
 use std::time::{Duration, SystemTime};
 
 use crate::fs::{
-    AdviseFlag, AllocateFlag, FileType, Metadata, MetadataInterest, Permissions, RemoveFlag,
+    AdviseFlag, AllocateMode, FileType, Metadata, MetadataInterest, Permissions, RemoveFlag,
     SyncDataFlag, path_from_cstring,
 };
 use crate::io_uring::op::{FdOp, Op, OpExtract, OpReturn};
@@ -302,7 +302,7 @@ pub(crate) struct AllocateOp;
 impl FdOp for AllocateOp {
     type Output = ();
     type Resources = ();
-    type Args = (u64, u32, AllocateFlag); // offset, length, mode
+    type Args = (u64, u32, AllocateMode); // offset, length, mode
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(

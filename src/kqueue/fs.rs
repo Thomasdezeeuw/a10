@@ -239,7 +239,7 @@ pub(crate) struct AllocateOp;
 impl DirectFdOp for AllocateOp {
     type Output = ();
     type Resources = ();
-    type Args = (u64, u32, crate::fs::AllocateFlag); // offset, length, mode
+    type Args = (u64, u32, crate::fs::AllocateMode); // offset, length, mode
 
     fn run(
         fd: &AsyncFd,

@@ -344,7 +344,7 @@ impl AsyncFd {
         target_os = "netbsd",
     ))]
     pub fn allocate<'fd>(&'fd self, offset: u64, length: u32) -> Allocate<'fd> {
-        Allocate::new(self, (), (offset, length, AllocateFlag(0)))
+        Allocate::new(self, (), (offset, length, AllocateMode(0)))
     }
 
     /// Truncate the file to `length`.
@@ -418,8 +418,10 @@ new_flag!(
         DONT_NEED = libc::POSIX_FADV_DONTNEED,
     }
 
-    /// Mode for call to [`AsyncFd::allocate`].
-    pub struct AllocateFlag(u32) impl BitOr {
+    /// Mode for [`AsyncFd::allocate`].
+    ///
+    /// Set using [`Allocate::mode`].
+    pub struct AllocateMode(u32) impl BitOr {
         /// Keep the same file size.
         #[cfg(any(target_os = "android", target_os = "linux"))]
         KEEP_SIZE = libc::FALLOC_FL_KEEP_SIZE,
@@ -487,7 +489,7 @@ impl<'fd> Allocate<'fd> {
     /// space for it.
     ///
     /// Defaults to allocating the space.
-    pub fn mode(mut self, mode: AllocateFlag) -> Self {
+    pub fn mode(mut self, mode: AllocateMode) -> Self {
         if let Some((_, _, m)) = self.state.args_mut() {
             *m = mode;
         }
