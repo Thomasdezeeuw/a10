@@ -1,0 +1,19 @@
+freebsd_instance:
+  image: freebsd-15-0-release-amd64-zfs
+
+env:
+  RUST_BACKTRACE: full
+
+task:
+  name: FreeBSD
+  setup_script:
+    - fetch https://sh.rustup.rs -o rustup.sh
+    - sh rustup.sh -y --profile minimal
+  cargo_cache:
+    folder: $HOME/.cargo/registry
+  test_script:
+    - . $HOME/.cargo/env
+    - cargo test
+    - cargo test --release
+  before_cache_script:
+    - rm -rf $HOME/.cargo/registry/index
