@@ -56,6 +56,21 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
+#[cfg(not(any(
+    target_os = "android",
+    target_os = "dragonfly",
+    target_os = "freebsd",
+    target_os = "ios",
+    target_os = "linux",
+    target_os = "macos",
+    target_os = "netbsd",
+    target_os = "openbsd",
+    target_os = "tvos",
+    target_os = "visionos",
+    target_os = "watchos",
+)))]
+compile_error!("OS not supported");
+
 use std::time::Duration;
 
 // This must come before the other modules for the documentation.
