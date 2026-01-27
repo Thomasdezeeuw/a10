@@ -470,11 +470,11 @@ fd_operation!(
     pub struct Allocate(sys::fs::AllocateOp) -> io::Result<()>;
 );
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
 impl<'fd> Stat<'fd> {
     /// Set which field(s) of the metadata the kernel should fill.
     ///
     /// Defaults to filling some basic fields.
-    #[cfg(any(target_os = "android", target_os = "linux"))]
     pub fn only(mut self, mask: MetadataInterest) -> Self {
         if let Some(args) = self.state.args_mut() {
             *args = mask;

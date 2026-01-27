@@ -92,12 +92,12 @@ new_flag!(
         /// User Datagram Protocol.
         UDP = libc::IPPROTO_UDP,
         /// Datagram Congestion Control Protocol.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         DCCP = libc::IPPROTO_DCCP,
         /// Stream Control Transport Protocol.
         SCTP = libc::IPPROTO_SCTP,
         /// UDP-Lite.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         UDPLITE = libc::IPPROTO_UDPLITE,
         /// Raw IP packets.
         RAW = libc::IPPROTO_RAW,
@@ -411,7 +411,7 @@ new_flag!(
     pub struct RecvFlag(u32) impl BitOr {
         /// Set the close-on-exec flag for the file descriptor received via a
         /// UNIX domain file descriptor using the `SCM_RIGHTS` operation.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         CMSG_CLOEXEC = libc::MSG_CMSG_CLOEXEC,
         /// This flag specifies that queued errors should be received from the
         /// socket error queue.
@@ -539,7 +539,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         DETACH_BPF = libc::SO_DETACH_BPF,
         /// Domain.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         DOMAIN = libc::SO_DOMAIN,
         /// Get and clear the pending socket error.
         ERROR = libc::SO_ERROR,
@@ -578,7 +578,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PRIORITY = libc::SO_PRIORITY,
         /// Retrieves the socket protocol.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         PROTOCOL = libc::SO_PROTOCOL,
         /// Maximum receive buffer in bytes.
         RECV_BUF = libc::SO_RCVBUF,
@@ -689,7 +689,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         RECV_OPTS = libc::IP_RECVOPTS,
         /// Enables the `IP_ORIGDSTADDR` ancillary message in `recvmsg(2)`.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         RECV_ORIG_DST_ADDR = libc::IP_RECVORIGDSTADDR,
         /// Enable passing of `IP_TOS` in ancillary message with incoming
         /// packets.
@@ -785,7 +785,7 @@ new_flag!(
     #[doc = man_link!(tcp(7))]
     pub struct TcpOpt(u32) {
         /// Set the TCP congestion control algorithm to be used.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         CONGESTION = libc::TCP_CONGESTION,
         /// Don't send out partial frames.
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -795,14 +795,14 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         DEFER_ACCEPT = libc::TCP_DEFER_ACCEPT,
         /// Collect information about this socket.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         INFO = libc::TCP_INFO,
         /// The maximum number of keepalive probes TCP should send before
         /// dropping the connection.
         KEEP_CNT = libc::TCP_KEEPCNT,
         /// The time (in seconds) the connection needs to remain idle before TCP
         /// starts sending keepalive probes.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         KEEP_IDLE = libc::TCP_KEEPIDLE,
         /// The time (in seconds) between individual keepalive probes.
         KEEP_INTVL = libc::TCP_KEEPINTVL,
@@ -1599,7 +1599,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
     fn into_storage(self) -> Self::Storage {
         let mut storage = libc::sockaddr_un {
             // A number of OS have `sin6_len`, but we don't use it.
-            #[cfg(not(any(target_os = "android", target_os = "linux")))]
+            #[cfg(not(any(target_os = "android", target_os = "freebsd", target_os = "linux")))]
             sun_len: 0,
             sun_family: libc::AF_UNIX as libc::sa_family_t,
             // SAFETY: all zero is valid for `sockaddr_un`.
