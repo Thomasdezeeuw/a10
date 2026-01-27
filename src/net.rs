@@ -51,7 +51,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PACKET = libc::AF_PACKET,
         /// Domain for low-level VSOCK interface.
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(any(target_os = "freebsd", target_os = "openbsd")))]
         VSOCK = libc::AF_VSOCK,
     }
 
@@ -95,6 +95,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         DCCP = libc::IPPROTO_DCCP,
         /// Stream Control Transport Protocol.
+        #[cfg(not(target_os = "openbsd"))]
         SCTP = libc::IPPROTO_SCTP,
         /// UDP-Lite.
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
@@ -628,6 +629,7 @@ new_flag!(
         ADD_MEMBERSHIP = libc::IP_ADD_MEMBERSHIP,
         /// Join a multicast group and allow receiving data only from a
         /// specified source.
+        #[cfg(not(target_os = "openbsd"))]
         ADD_SOURCE_MEMBERSHIP = libc::IP_ADD_SOURCE_MEMBERSHIP,
         /// Do not reserve an ephemeral port when using `bind(2)` with a port
         /// number of 0.
@@ -635,10 +637,12 @@ new_flag!(
         BIND_ADDRESS_NO_PORT = libc::IP_BIND_ADDRESS_NO_PORT,
         /// Stop receiving multicast data from a specific source in a given
         /// group.
+        #[cfg(not(target_os = "openbsd"))]
         BLOCK_SOURCE = libc::IP_BLOCK_SOURCE,
         /// Leave a multicast group.
         DROP_MEMBERSHIP = libc::IP_DROP_MEMBERSHIP,
         /// Leave a source-specific group.
+        #[cfg(not(target_os = "openbsd"))]
         DROP_SOURCE_MEMBERSHIP = libc::IP_DROP_SOURCE_MEMBERSHIP,
         /// Allow binding to an IP address that is nonlocal or does not (yet)
         /// exist.
@@ -679,7 +683,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PASS_SEC = libc::IP_PASSSEC,
         /// Collect information about this socket.
-        #[cfg(not(target_os = "freebsd"))]
+        #[cfg(not(any(target_os = "freebsd", target_os = "openbsd")))]
         PKT_INFO = libc::IP_PKTINFO,
         /// Enable extended reliable error message passing.
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -693,9 +697,11 @@ new_flag!(
         RECV_ORIG_DST_ADDR = libc::IP_RECVORIGDSTADDR,
         /// Enable passing of `IP_TOS` in ancillary message with incoming
         /// packets.
+        #[cfg(not(target_os = "openbsd"))]
         RECV_TOS = libc::IP_RECVTOS,
         /// Enable passing of `IP_TTL` in ancillary message with incoming
         /// packets.
+        #[cfg(not(target_os = "openbsd"))]
         RECV_TTL = libc::IP_RECVTTL,
         /// Identical to [`IPv4Opt::RECV_OPTS`], but returns raw unprocessed
         /// options with timestamp and route record options not filled in for
@@ -716,6 +722,7 @@ new_flag!(
         /// this socket.
         TTL = libc::IP_TTL,
         /// Unblock previously blocked multicast source.
+        #[cfg(not(target_os = "openbsd"))]
         UNBLOCK_SOURCE = libc::IP_UNBLOCK_SOURCE,
     }
 
@@ -765,6 +772,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         FLOW_INFO = libc::IPV6_FLOWINFO,
         /// Set hop limit.
+        #[cfg(not(target_os = "openbsd"))]
         HOP_LIMIT = libc::IPV6_HOPLIMIT,
         /// Control receiving of asynchronous error options.
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -799,12 +807,14 @@ new_flag!(
         INFO = libc::TCP_INFO,
         /// The maximum number of keepalive probes TCP should send before
         /// dropping the connection.
+        #[cfg(not(target_os = "openbsd"))]
         KEEP_CNT = libc::TCP_KEEPCNT,
         /// The time (in seconds) the connection needs to remain idle before TCP
         /// starts sending keepalive probes.
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
         KEEP_IDLE = libc::TCP_KEEPIDLE,
         /// The time (in seconds) between individual keepalive probes.
+        #[cfg(not(target_os = "openbsd"))]
         KEEP_INTVL = libc::TCP_KEEPINTVL,
         /// The lifetime of orphaned FIN_WAIT2 state sockets.
         #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -829,6 +839,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         WINDOW_CLAMP = libc::TCP_WINDOW_CLAMP,
         /// This option enables Fast Open on the listener socket.
+        #[cfg(not(target_os = "openbsd"))]
         FASTOPEN = libc::TCP_FASTOPEN,
         /// This option enables an alternative way to perform Fast Open on the
         /// client side.
