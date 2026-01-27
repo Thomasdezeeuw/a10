@@ -24,7 +24,7 @@ use a10::fs::{self, CreateDir, Delete, Open, OpenOptions, Rename, Truncate};
     target_os = "linux",
     target_os = "netbsd",
 ))]
-use a10::fs::{Advise, AdviseFlag, Allocate, AllocateFlag};
+use a10::fs::{Advise, AdviseFlag, Allocate};
 use a10::io::{Read, ReadVectored, Write, WriteVectored};
 use a10::{Extract, SubmissionQueue};
 
@@ -660,7 +660,7 @@ fn fallocate() {
     let file = waker.block_on(open_file).unwrap();
 
     waker
-        .block_on(file.allocate(0, 4096, Some(AllocateFlag::KEEP_SIZE)))
+        .block_on(file.allocate(0, 4096, None))
         .expect("failed fallocate");
 
     let write = file.write(b"Hello world".to_vec()).extract();

@@ -51,6 +51,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PACKET = libc::AF_PACKET,
         /// Domain for low-level VSOCK interface.
+        #[cfg(not(target_os = "freebsd"))]
         VSOCK = libc::AF_VSOCK,
     }
 
@@ -678,6 +679,7 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PASS_SEC = libc::IP_PASSSEC,
         /// Collect information about this socket.
+        #[cfg(not(target_os = "freebsd"))]
         PKT_INFO = libc::IP_PKTINFO,
         /// Enable extended reliable error message passing.
         #[cfg(any(target_os = "android", target_os = "linux"))]
