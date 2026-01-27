@@ -660,7 +660,7 @@ fn fallocate() {
     let file = waker.block_on(open_file).unwrap();
 
     waker
-        .block_on(file.allocate(0, 4096, None))
+        .block_on(file.allocate(0, 4096))
         .expect("failed fallocate");
 
     let write = file.write(b"Hello world".to_vec()).extract();

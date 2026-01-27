@@ -327,9 +327,13 @@ impl AsyncFd {
 
     /// Manipulate file space.
     ///
-    /// Manipulate the allocated disk space for the file referred for the byte
+    /// Ensures that disk space is allocated for the file for the bytes in the
     /// range starting at `offset` and continuing for `length` bytes.
+    ///
+    /// If the size of the file is less than `offset` + `size`, then the file is
+    /// increased to this size; otherwise the file size is left unchanged.
     #[doc = man_link!(fallocate(2))]
+    #[doc = man_link!(posix_fallocate(3))]
     #[doc(alias = "fallocate")]
     #[doc(alias = "posix_fallocate")]
     #[cfg(any(
@@ -339,17 +343,8 @@ impl AsyncFd {
         target_os = "linux",
         target_os = "netbsd",
     ))]
-    pub fn allocate<'fd>(
-        &'fd self,
-        offset: u64,
-        length: u32,
-        mode: Option<AllocateFlag>,
-    ) -> Allocate<'fd> {
-        let mode = match mode {
-            Some(mode) => mode,
-            None => AllocateFlag(0),
-        };
-        Allocate::new(self, (), (offset, length, mode))
+    pub fn allocate<'fd>(&'fd self, offset: u64, length: u32) -> Allocate<'fd> {
+        Allocate::new(self, (), (offset, length, AllocateFlag(0)))
     }
 
     /// Truncate the file to `length`.
@@ -481,6 +476,20 @@ impl<'fd> Stat<'fd> {
     pub fn only(mut self, mask: MetadataInterest) -> Self {
         if let Some(args) = self.state.args_mut() {
             *args = mask;
+        }
+        self
+    }
+}
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+impl<'fd> Allocate<'fd> {
+    /// Manipulate the allocated disk space for the file other than allocating
+    /// space for it.
+    ///
+    /// Defaults to allocating the space.
+    pub fn mode(mut self, mode: AllocateFlag) -> Self {
+        if let Some((_, _, m)) = self.state.args_mut() {
+            *m = mode;
         }
         self
     }
