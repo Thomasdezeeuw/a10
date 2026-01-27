@@ -189,6 +189,32 @@ new_option! {
     target_os = "netbsd"
 ))]
 new_option! {
+    /// Domain.
+    #[doc(alias = "SO_DOMAIN")]
+    pub Domain {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::DOMAIN;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Domain {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Domain(storage.assume_init()) }
+        }
+    }
+
+    /// Retrieves the socket protocol.
+    #[doc(alias = "SO_PROTOCOL")]
+    pub Protocol {
+        type Storage = u32;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::PROTOCOL;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Protocol {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { net::Protocol(storage.assume_init()) }
+        }
+    }
+
     /// Returns a value indicating whether or not this socket has been
     /// marked to accept connections with `listen(2)`.
     #[doc(alias = "SO_ACCEPTCONN")]
@@ -206,19 +232,6 @@ new_option! {
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 new_option! {
-    /// Domain.
-    #[doc(alias = "SO_DOMAIN")]
-    pub Domain {
-        type Storage = libc::c_int;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::DOMAIN;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Domain {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { net::Domain(storage.assume_init()) }
-        }
-    }
-
     /// CPU affinity.
     #[doc(alias = "SO_INCOMING_CPU")]
     pub IncomingCpu {
@@ -234,19 +247,6 @@ new_option! {
 
         fn as_storage(value: u32) -> Self::Storage {
             value.cast_signed()
-        }
-    }
-
-    /// Retrieves the socket protocol.
-    #[doc(alias = "SO_PROTOCOL")]
-    pub Protocol {
-        type Storage = u32;
-        const LEVEL = Level::SOCKET;
-        const OPT = SocketOpt::PROTOCOL;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> net::Protocol {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { net::Protocol(storage.assume_init()) }
         }
     }
 }

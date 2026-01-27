@@ -108,6 +108,26 @@ new_flag!(
         #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
         ZERO = libc::MADV_ZERO,
         */
+        /// Don't flush the data associated with this map to physical backing
+        /// store unless it needs to.
+        #[cfg(target_os = "freebsd")]
+        NO_SYNC = libc::MADV_NOSYNC,
+        /// Undoes the effects of [`AdviseFlag::NO_SYNC`] for any future pages
+        /// dirtied within the address range.
+        #[cfg(target_os = "freebsd")]
+        AUTO_SYNC = libc::MADV_AUTOSYNC,
+        /// Region is not included in a core file.
+        #[cfg(target_os = "freebsd")]
+        NO_CORE = libc::MADV_NOCORE,
+        /// Include region in a core file.
+        #[cfg(target_os = "freebsd")]
+        CORE = libc::MADV_CORE,
+        /// Informs the VM system this process should not be killed when the
+        /// swap space is exhausted. The process must have superuser privileges.
+        /// This should be used judiciously in processes that must remain
+        /// running for the system to properly function.
+        #[cfg(target_os = "freebsd")]
+        PROTECT = libc::MADV_PROTECT,
     }
 );
 

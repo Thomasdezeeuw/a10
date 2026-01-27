@@ -35,7 +35,7 @@ impl DirectOp for SocketOp {
             target_os = "netbsd",
             target_os = "openbsd",
         ))]
-        let r#type = r#type.0.cast_signed() | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
+        let r#type = r#type | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
 
         let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
         // SAFETY: just created the socket above.

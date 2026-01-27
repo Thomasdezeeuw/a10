@@ -1,4 +1,4 @@
-use std::mem::{MaybeUninit, replace};
+use std::mem::{self, MaybeUninit, replace};
 use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{io, ptr};
@@ -16,6 +16,7 @@ impl crate::op::Op for WaitIdOp {
     type Args = (WaitOn, WaitOption);
     type State = EventedState<Self::Resources, Self::Args>;
 
+    #[allow(clippy::useless_conversion)]
     fn poll(
         state: &mut Self::State,
         ctx: &mut task::Context<'_>,
@@ -53,7 +54,7 @@ impl crate::op::Op for WaitIdOp {
                 };
 
                 let options = options.0.cast_signed() | libc::WNOHANG; // Don't block.
-                syscall!(waitid(id_type, pid, &raw mut info.0, options))?;
+                syscall!(waitid(id_type, pid.into(), &raw mut info.0, options))?;
 
                 if info.0.si_pid == 0 {
                     // Got polled without the process stopping, will have to
@@ -108,7 +109,7 @@ fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
             filter: libc::EVFILT_SIGNAL,
             flags: libc::EV_ADD,
             // SAFETY: all zeros is valid for `kevent`.
-            ..unsafe { std::mem::zeroed() }
+            ..unsafe { mem::zeroed() }
         });
         n_changes += 1;
     }
@@ -125,9 +126,20 @@ fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
 }
 
 fn sigaction(signals: &SignalSet, action: libc::sighandler_t) -> io::Result<()> {
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    let sa_mask = 0;
+    #[cfg(target_os = "freebsd")]
+    let sa_mask = SignalSet::empty()?.0;
+
     let action = libc::sigaction {
         sa_sigaction: action,
-        sa_mask: 0,
+        sa_mask,
         sa_flags: 0,
     };
     for signal in Signal::ALL_VALUES {

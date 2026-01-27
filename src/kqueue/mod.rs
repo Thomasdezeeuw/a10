@@ -166,6 +166,7 @@ pub(crate) struct Event(libc::kevent);
 
 impl Event {
     /// Returns an error from the event, if any.
+    #[allow(clippy::unnecessary_cast)]
     fn error(&self) -> Option<io::Error> {
         // We can't use references to packed structures (in checking the ignored
         // errors), so we need copy the data out before use.
