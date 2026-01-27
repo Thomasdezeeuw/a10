@@ -56,7 +56,11 @@ impl crate::op::Op for WaitIdOp {
                 let options = options.0.cast_signed() | libc::WNOHANG; // Don't block.
                 syscall!(waitid(id_type, pid.into(), &raw mut info.0, options))?;
 
-                if info.0.si_pid == 0 {
+                #[cfg(not(target_os = "openbsd"))]
+                let pid = info.0.si_pid;
+                #[cfg(target_os = "openbsd")]
+                let pid = unsafe { info.0.si_pid() };
+                if pid == 0 {
                     // Got polled without the process stopping, will have to
                     // wait again.
                     Poll::Pending
@@ -134,7 +138,7 @@ fn sigaction(signals: &SignalSet, action: libc::sighandler_t) -> io::Result<()> 
         target_os = "watchos",
     ))]
     let sa_mask = 0;
-    #[cfg(target_os = "freebsd")]
+    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
     let sa_mask = SignalSet::empty()?.0;
 
     let action = libc::sigaction {
