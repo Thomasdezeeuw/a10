@@ -12,9 +12,10 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
-use std::sync::{Arc, Once, OnceLock};
+use std::sync::{Arc, Once, OnceLock, RwLock, TryLockError};
 use std::task::{self, Poll};
 use std::thread::{self, Thread};
+use std::time::Duration;
 use std::{fmt, io, mem, panic, ptr, str};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
@@ -58,42 +59,50 @@ pub(crate) fn is_unsupported(err: &io::Error) -> bool {
     matches!(err.raw_os_error(), Some(libc::EOPNOTSUPP))
 }
 
-/// Start a single background thread for polling and return the submission
-/// queue.
-/// Create a [`Ring`] for testing.
-pub(crate) fn test_queue() -> SubmissionQueue {
-    static TEST_SQ: OnceLock<SubmissionQueue> = OnceLock::new();
-    TEST_SQ
-        .get_or_init(|| {
-            init();
+fn test_ring<'a>() -> &'a (RwLock<Ring>, SubmissionQueue) {
+    static TEST_RING: OnceLock<(RwLock<Ring>, SubmissionQueue)> = OnceLock::new();
+    TEST_RING.get_or_init(|| {
+        init();
+        let config = Ring::config();
+        #[cfg(any(target_os = "android", target_os = "linux"))]
+        let config = config.with_direct_descriptors(1024);
+        let ring = match config.build() {
+            Ok(ring) => ring,
+            Err(err) => panic!("failed to create test ring: {err}"),
+        };
+        let sq = ring.sq();
+        (RwLock::new(ring), sq)
+    })
+}
 
-            let config = Ring::config();
-            #[cfg(any(target_os = "android", target_os = "linux"))]
-            let config = config.with_direct_descriptors(1024);
-            let mut ring = match config.build() {
-                Ok(ring) => ring,
-                Err(err) => panic!("failed to create test ring: {err}"),
-            };
-            let sq = ring.sq();
-            thread::Builder::new()
-                .name("test_queue".into())
-                .spawn(move || {
-                    loop {
-                        if let Err(err) = ring.poll(None) {
-                            panic!("unexpected error polling: {err}");
-                        }
-                    }
-                })
-                .expect("failed to spawn test_queue thread");
-            sq
-        })
-        .clone()
+fn poll_test_ring(timeout: Option<Duration>) {
+    let (lock, sq) = test_ring();
+    let mut ring = match lock.try_write() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(err)) => {
+            lock.clear_poison();
+            err.into_inner()
+        }
+        Err(TryLockError::WouldBlock) => {
+            sq.wake();
+            return;
+        }
+    };
+
+    if let Err(err) = ring.poll(timeout) {
+        drop(ring);
+        panic!("unexpected error polling: {err}");
+    }
 }
 
 /// Wake up the thread that polls the shared ring to ensure all submissions are
 /// actuall submitted to the kernel.
 pub(crate) fn ensure_submitted() {
-    test_queue().wake();
+    poll_test_ring(Some(Duration::ZERO));
+}
+
+pub(crate) fn test_queue() -> SubmissionQueue {
+    test_ring().1.clone()
 }
 
 pub(crate) fn is_sync<T: Sync>() {}
@@ -149,11 +158,7 @@ impl Waker {
         loop {
             match Future::poll(future.as_mut(), &mut task_ctx) {
                 Poll::Ready(res) => return res,
-                Poll::Pending => {
-                    ensure_submitted();
-                    // The waking implementation will `unpark` us.
-                    thread::park();
-                }
+                Poll::Pending => poll_test_ring(None),
             }
         }
     }
