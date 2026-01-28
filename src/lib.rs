@@ -192,6 +192,11 @@ impl SubmissionQueue {
     /// Wake the connected [`Ring`].
     ///
     /// All this does is interrupt a call to [`Ring::poll`].
+    ///
+    /// # Notes
+    ///
+    /// When using [`Config::single_issuer`] (io_uring only) this will always
+    /// return `EEXIST` (when calling on a different thread).
     pub fn wake(&self) {
         if let Err(err) = self.0.wake() {
             log::warn!("failed to wake a10::Ring: {err}");
