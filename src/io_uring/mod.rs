@@ -6,6 +6,7 @@
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::time::Duration;
 use std::{ptr, task};
 
 use crate::{asan, syscall};
@@ -147,21 +148,51 @@ impl Shared {
     /// Make a `io_uring_enter2(2)` system call.
     pub(crate) fn enter(
         &self,
-        to_submit: libc::c_uint,
         min_complete: libc::c_uint,
-        flags: libc::c_uint,
-        arg: *const libc::c_void,
-        arg_size: libc::size_t,
+        mut flags: libc::c_uint,
+        timeout: Option<Duration>,
     ) -> io::Result<u32> {
-        let n = syscall!(io_uring_enter2(
+        let mut args = libc::io_uring_getevents_arg {
+            sigmask: 0,
+            sigmask_sz: 0,
+            min_wait_usec: 0,
+            ts: 0,
+        };
+        let mut timespec = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        if let Some(timeout) = timeout {
+            timespec.tv_sec = timeout.as_secs().try_into().unwrap_or(i64::MAX);
+            timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
+            args.ts = ptr::from_ref(&timespec).addr() as u64;
+        }
+
+        let submissions = if self.kernel_thread {
+            // If needed wake up the kernel thread.
+            if load_kernel_shared(self.kernel_flags) & libc::IORING_SQ_NEED_WAKEUP != 0 {
+                flags |= libc::IORING_ENTER_SQ_WAKEUP;
+            }
+            0 // Kernel thread handles the submissions.
+        } else {
+            self.unsubmitted_submissions()
+        };
+
+        log::trace!(submissions, timeout:?; "entering kernel");
+        let result = syscall!(io_uring_enter2(
             self.ring_fd(),
-            to_submit,
+            submissions,
             min_complete,
-            flags,
-            arg,
-            arg_size
-        ))?;
-        Ok(n.cast_unsigned())
+            flags | libc::IORING_ENTER_EXT_ARG, // Passing of `args`.
+            ptr::from_ref(&args).cast(),
+            size_of::<libc::io_uring_getevents_arg>(),
+        ));
+        match result {
+            Ok(n) => Ok(n.cast_unsigned()),
+            // Hit a timeout or got interrupted, we can ignore it.
+            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(0),
+            Err(err) => Err(err),
+        }
     }
 
     /// Returns the number of unsumitted submission queue entries.

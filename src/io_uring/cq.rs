@@ -62,7 +62,11 @@ impl Completions {
         if head >= tail {
             // If we have no completions we make a system call to wait for
             // completion events.
-            self.enter(shared, timeout)?;
+            log::trace!(timeout:?; "waiting for completion events");
+            shared.is_polling.store(true, Ordering::Release);
+            let result = shared.enter(1, libc::IORING_ENTER_GETEVENTS, timeout);
+            shared.is_polling.store(false, Ordering::Release);
+            result?;
             tail = load_kernel_shared(self.entries_tail);
         }
 
@@ -88,52 +92,6 @@ impl Completions {
         self.wake_blocked_futures(shared);
 
         Ok(())
-    }
-
-    /// Make the `io_uring_enter` system call.
-    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn enter(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
-        let mut args = libc::io_uring_getevents_arg {
-            sigmask: 0,
-            sigmask_sz: 0,
-            min_wait_usec: 0,
-            ts: 0,
-        };
-        let mut timespec = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
-        if let Some(timeout) = timeout {
-            timespec.tv_sec = timeout.as_secs().try_into().unwrap_or(i64::MAX);
-            timespec.tv_nsec = libc::c_longlong::from(timeout.subsec_nanos());
-            args.ts = ptr::from_ref(&timespec).addr() as u64;
-        }
-
-        let submissions = if shared.kernel_thread {
-            0 // Kernel thread handles the submissions.
-        } else {
-            shared.unsubmitted_submissions()
-        };
-
-        // If there are no completions we'll wait for at least one.
-        let flags = libc::IORING_ENTER_GETEVENTS // Wait for a completion.
-            | libc::IORING_ENTER_EXT_ARG; // Passing of `args`.
-        log::trace!(submissions, timeout:?; "waiting for completion events");
-        shared.is_polling.store(true, Ordering::Release);
-        let result = shared.enter(
-            submissions,
-            1, // Wait for at least one completion.
-            flags,
-            ptr::from_ref(&args).cast(),
-            size_of::<libc::io_uring_getevents_arg>(),
-        );
-        shared.is_polling.store(false, Ordering::Release);
-        match result {
-            Ok(_) => Ok(()),
-            // Hit timeout or got interrupted, we can ignore it.
-            Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(()),
-            Err(err) => Err(err),
-        }
     }
 
     /// Wake any futures that were blocked on a submission slot.

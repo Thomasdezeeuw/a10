@@ -671,7 +671,8 @@ fn fallocate() {
     drop(file);
 
     let got = std::fs::read(&path).unwrap();
-    assert!(got == buf, "file can't be read back");
+    assert_eq!(got.len(), 4096);
+    assert_eq!(got[..11], buf, "file can't be read back");
 }
 
 #[test]

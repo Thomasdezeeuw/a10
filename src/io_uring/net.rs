@@ -214,12 +214,12 @@ impl<B: BufMut> FdOp for RecvOp<B> {
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
         let (ptr, len) = unsafe { buf.parts_mut() };
-        asan::unpoison_region(ptr.cast(), len as usize);
-        msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            asan::unpoison_region(ptr.cast(), len as usize);
+            msan::unpoison_region(ptr.cast(), n as usize);
             unsafe { buf.set_init(n as usize) };
         }
         buf
@@ -309,7 +309,10 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
         let iovecs = slice::from_mut(&mut *iovec);
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
         match buf.parts() {
-            BufMutParts::Buf { .. } => { /* Using iovec. */ }
+            BufMutParts::Buf { ptr, len } => {
+                asan::poison_region(ptr.cast(), len as usize);
+                /* Using iovec in submission. */
+            }
             BufMutParts::Pool(PoolBufParts(buf_group)) => {
                 submission.0.__bindgen_anon_4.buf_group = buf_group;
                 submission.0.flags |= libc::IOSQE_BUFFER_SELECT;
@@ -322,14 +325,14 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
         (mut buf, msg, iovec, address): Self::Resources,
         (flags, n): OpReturn,
     ) -> Self::Output {
-        asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
-        msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
         // SAFETY: the kernel initialised the bytes for us as part of the
         // recvmsg call.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
+            msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
             unsafe { buf.set_init(n as usize) };
         }
         // SAFETY: kernel initialised the address for us.

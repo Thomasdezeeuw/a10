@@ -342,12 +342,12 @@ impl<B: BufMut> FdOp for ReadOp<B> {
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
         let (ptr, len) = unsafe { buf.parts_mut() };
-        asan::unpoison_region(ptr.cast(), len as usize);
-        msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            asan::unpoison_region(ptr.cast(), len as usize);
+            msan::unpoison_region(ptr.cast(), n as usize);
             unsafe { buf.set_init(n as usize) };
         }
         buf
@@ -555,29 +555,27 @@ impl Op for CloseOp {
     }
 }
 
-#[allow(clippy::cast_sign_loss)] // fd as u32.
 pub(crate) fn close_file_fd(fd: RawFd, kind: fd::Kind, submission: &mut io_uring::sq::Submission) {
     submission.0.opcode = libc::IORING_OP_CLOSE as u8;
-    if let fd::Kind::Direct = kind {
-        submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
-            // Zero mean a file descriptor, so indices need to be encoded +1.
-            file_index: (fd + 1) as u32,
-        };
-    } else {
-        submission.0.fd = fd;
+    match kind {
+        fd::Kind::File => submission.0.fd = fd,
+        fd::Kind::Direct => {
+            submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
+                // Zero means a file descriptor, so indices need to be encoded +1.
+                file_index: (fd + 1).cast_unsigned(),
+            }
+        }
     }
 }
 
-#[allow(clippy::cast_sign_loss)] // For fd as u32.
 pub(crate) fn close_direct_fd(fd: RawFd, sq: &SubmissionQueue) -> io::Result<()> {
-    let shared = sq.submissions().shared();
     let fd_updates = &[-1]; // -1 mean unregistered, i.e. closing, the fd.
     let update = libc::io_uring_files_update {
-        offset: fd as u32, // The fd is also the index/offset into the set.
+        offset: fd.cast_unsigned(), // The fd is also the index/offset into the set.
         resv: 0,
         fds: ptr::from_ref(fd_updates).addr() as u64,
     };
-    shared.register(
+    sq.submissions().shared().register(
         libc::IORING_REGISTER_FILES_UPDATE,
         ptr::from_ref(&update).cast(),
         1,
