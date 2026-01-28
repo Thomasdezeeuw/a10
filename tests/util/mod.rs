@@ -90,6 +90,12 @@ pub(crate) fn test_queue() -> SubmissionQueue {
         .clone()
 }
 
+/// Wake up the thread that polls the shared ring to ensure all submissions are
+/// actuall submitted to the kernel.
+pub(crate) fn ensure_submitted() {
+    test_queue().wake();
+}
+
 pub(crate) fn is_sync<T: Sync>() {}
 pub(crate) fn is_send<T: Send>() {}
 
@@ -143,11 +149,9 @@ impl Waker {
         loop {
             match Future::poll(future.as_mut(), &mut task_ctx) {
                 Poll::Ready(res) => return res,
-                // The waking implementation will `unpark` us.
                 Poll::Pending => {
-                    // Wake up the thread that polls the shared ring to ensure
-                    // we make progress.
-                    test_queue().wake();
+                    ensure_submitted();
+                    // The waking implementation will `unpark` us.
                     thread::park();
                 }
             }

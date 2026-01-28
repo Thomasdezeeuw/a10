@@ -21,8 +21,8 @@ use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    expect_io_errno, expect_io_error_kind, fd, ignore_unsupported, is_send, is_sync, next, syscall,
-    tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    ensure_submitted, expect_io_errno, expect_io_error_kind, fd, ignore_unsupported, is_send,
+    is_sync, next, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -1417,6 +1417,7 @@ pub(crate) fn conn_test<Fut: Future<Output = ()>>(
         .spawn(f)
         .expect("failed to spawn thread");
     Waker::new().block_on(a(test_queue()));
+    ensure_submitted(); // Ensure that the fds are closed (which is async).
     if let Err(err) = handle.join() {
         std::panic::resume_unwind(err);
     }
