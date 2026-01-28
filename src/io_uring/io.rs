@@ -342,12 +342,12 @@ impl<B: BufMut> FdOp for ReadOp<B> {
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
         let (ptr, len) = unsafe { buf.parts_mut() };
-        asan::unpoison_region(ptr.cast(), len as usize);
-        msan::unpoison_region(ptr.cast(), len as usize);
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            asan::unpoison_region(ptr.cast(), len as usize);
+            msan::unpoison_region(ptr.cast(), n as usize);
             unsafe { buf.set_init(n as usize) };
         }
         buf
