@@ -2,6 +2,7 @@ use std::mem::drop as unlock;
 use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::{self, Ordering};
+use std::time::Duration;
 use std::{fmt, io, ptr, task};
 
 use crate::io_uring::{Shared, cq, libc, load_kernel_shared};
@@ -86,40 +87,32 @@ impl Submissions {
     }
 
     pub(crate) fn wake(&self) -> io::Result<()> {
+        log::trace!("waking up ring");
         if !self.shared.is_polling.load(Ordering::Acquire) {
             // If we're not polling we don't need to wake up.
+            log::trace!("skipping ring message as it's not polling");
             return Ok(());
         }
 
-        _ = self.add(|submission| {
-            submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
-            submission.0.fd = self.ring_fd();
-            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-                addr: u64::from(libc::IORING_MSG_DATA),
-            };
-            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-                off: cq::WAKE_USER_DATA,
-            };
-            submission.no_success_event();
-        });
+        loop {
+            let submitted = self.add(|submission| {
+                submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
+                submission.0.fd = self.ring_fd();
+                submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+                    addr: u64::from(libc::IORING_MSG_DATA),
+                };
+                submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+                    off: cq::WAKE_USER_DATA,
+                };
+            });
 
-        let (flags, submissions) = if self.shared.kernel_thread {
-            let flags = if load_kernel_shared(self.shared.kernel_flags)
-                & libc::IORING_SQ_NEED_WAKEUP
-                != 0
-            {
-                libc::IORING_ENTER_SQ_WAKEUP
-            } else {
-                0
-            };
-            (flags, 0) // Kernel thread handles the submissions.
-        } else {
-            (0, self.shared.unsubmitted_submissions())
-        };
-        log::trace!(submissions; "entering kernel for wake up");
-        self.shared.enter(submissions, 0, flags, ptr::null(), 0)?;
+            // Submit to the kernel to ensure the Ring is woken up.
+            self.shared.enter(0, 0, Some(Duration::ZERO))?;
 
-        Ok(())
+            if let Ok(()) = submitted {
+                return Ok(());
+            }
+        }
     }
 
     /// Wait for a submission slot, waking `waker` once one is available.
