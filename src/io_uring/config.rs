@@ -92,6 +92,11 @@ impl<'r> crate::Config<'r> {
     /// [`build`]: crate::Config::build
     /// [`enabled`]: Ring::enable
     /// [`ReadBufPool`]: crate::io::ReadBufPool
+    ///
+    /// # Notes
+    ///
+    /// This also prevents [`SubmissionQueue::wake`] from working as the event
+    /// to interrupt the call to [`Ring::poll`] can't be submitted.
     #[doc(alias = "IORING_SETUP_SINGLE_ISSUER")]
     pub const fn single_issuer(mut self) -> Self {
         self.sys.single_issuer = true;
