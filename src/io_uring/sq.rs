@@ -43,6 +43,7 @@ impl Submissions {
         let head = load_kernel_shared(shared.submissions_head);
         let tail = load_kernel_shared(shared.submissions_tail);
         if (tail - head) > len {
+            unlock(submissions_guard);
             return Err(QueueFull);
         }
 
