@@ -1,5 +1,3 @@
-use std::cmp::min;
-use std::mem::{drop as unlock, swap, take};
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
@@ -89,44 +87,7 @@ impl Completions {
         // Let the kernel write more completions.
         unsafe { (&*self.entries_head.as_ptr()).store(head, Ordering::Release) };
 
-        self.wake_blocked_futures(shared);
-
         Ok(())
-    }
-
-    /// Wake any futures that were blocked on a submission slot.
-    #[allow(clippy::unused_self, clippy::needless_pass_by_ref_mut)]
-    fn wake_blocked_futures(&mut self, shared: &Shared) {
-        // Only wake up futures if a submission slot is available for them.
-        let available = (shared.submissions_len - shared.unsubmitted_submissions()) as usize;
-        if available == 0 {
-            return;
-        }
-
-        let mut blocked_futures = lock(&shared.blocked_futures);
-        if blocked_futures.is_empty() {
-            // No futures to wake up.
-            return;
-        }
-        let mut wakers = take(&mut *blocked_futures);
-        unlock(blocked_futures); // Unblock others.
-        let awoken = min(available, wakers.len());
-        for waker in wakers.drain(..awoken) {
-            log::trace!(waker:?; "waking up future for submission");
-            waker.wake();
-        }
-
-        // Reuse allocation.
-        let mut blocked_futures = lock(&shared.blocked_futures);
-        swap(&mut *blocked_futures, &mut wakers);
-        // Add back any wakers for which we don't have a slot.
-        let awoken = min(available - awoken, wakers.len());
-        blocked_futures.extend(wakers.drain(wakers.len() - awoken..));
-        unlock(blocked_futures); // Unblock others.
-        for waker in wakers {
-            log::trace!(waker:?; "waking up future for submission");
-            waker.wake();
-        }
     }
 }
 

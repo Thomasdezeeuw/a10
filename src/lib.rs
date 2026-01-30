@@ -392,6 +392,19 @@ fn lock<'a, T>(mutex: &'a std::sync::Mutex<T>) -> std::sync::MutexGuard<'a, T> {
     }
 }
 
+/// Same as [`lock`], but doesn't block if the mutex is locked.
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn try_lock<'a, T>(mutex: &'a std::sync::Mutex<T>) -> Option<std::sync::MutexGuard<'a, T>> {
+    match mutex.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(std::sync::TryLockError::Poisoned(err)) => {
+            mutex.clear_poison();
+            Some(err.into_inner())
+        }
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
+}
+
 /// Get mutable access to the lock's data.
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn get_mut<'a, T>(mutex: &'a mut std::sync::Mutex<T>) -> &'a mut T {

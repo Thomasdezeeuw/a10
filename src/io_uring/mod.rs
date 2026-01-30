@@ -3,13 +3,15 @@
 //! Manuals:
 //! * <https://man7.org/linux/man-pages/man7/io_uring.7.html>
 
+use std::cmp::min;
+use std::mem::{drop as unlock, swap, take};
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 use std::{ptr, task};
 
-use crate::{asan, syscall};
+use crate::{asan, lock, syscall, try_lock};
 
 pub(crate) mod config;
 pub(crate) mod cq;
@@ -188,10 +190,49 @@ impl Shared {
             size_of::<libc::io_uring_getevents_arg>(),
         ));
         match result {
-            Ok(n) => Ok(n.cast_unsigned()),
+            Ok(n) => {
+                self.wake_blocked_futures();
+                Ok(n.cast_unsigned())
+            }
             // Hit a timeout or got interrupted, we can ignore it.
             Err(ref err) if matches!(err.raw_os_error(), Some(libc::ETIME | libc::EINTR)) => Ok(0),
             Err(err) => Err(err),
+        }
+    }
+
+    /// Wake any futures that were blocked on a submission slot.
+    pub(crate) fn wake_blocked_futures(&self) {
+        // Only wake up futures if a submission slot is available for them.
+        let available = (self.submissions_len - self.unsubmitted_submissions()) as usize;
+        if available == 0 {
+            return;
+        }
+
+        let Some(mut blocked_futures) = try_lock(&self.blocked_futures) else {
+            return;
+        };
+        if blocked_futures.is_empty() {
+            // No futures to wake up.
+            return;
+        }
+        let mut wakers = take(&mut *blocked_futures);
+        unlock(blocked_futures); // Unblock others.
+        let awoken = min(available, wakers.len());
+        for waker in wakers.drain(..awoken) {
+            log::trace!(waker:?; "waking up future for submission");
+            waker.wake();
+        }
+
+        // Reuse allocation.
+        let mut blocked_futures = lock(&self.blocked_futures);
+        swap(&mut *blocked_futures, &mut wakers);
+        // Add back any wakers for which we don't have a slot.
+        let awoken = min(available - awoken, wakers.len());
+        blocked_futures.extend(wakers.drain(wakers.len() - awoken..));
+        unlock(blocked_futures); // Unblock others.
+        for waker in wakers {
+            log::trace!(waker:?; "waking up future for submission");
+            waker.wake();
         }
     }
 
