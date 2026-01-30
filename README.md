@@ -1,25 +1,33 @@
-# A10
+# The A10 I/O library. [^1]
 
-The [A10] io\_uring library.
+This library is meant as a low-level library safely exposing different OS's
+abilities to perform non-blocking I/O.
 
-This library is meant as a low-level library safely exposing the io\_uring API.
-A10 is expected to be integrated into a `Future` runtime, but it can work as a
-stand-alone library.
+On Linux A10 uses io\_uring, which is a completion based API. For the BSD family
+of OS (FreeBSD, OpenBSD, NetBSD, etc.) and for the Apple family (macOS, iOS,
+etc.) this uses kqueue, which is a poll based API.
 
-For simplicity this only has two main types and a number of helper types:
- * `Ring` is a wrapper around io\_uring used to poll for completion events.
- * `AsyncFd` is a wrapper around a file descriptor that provides a safe API to
-   schedule operations.
+To support both the completion and poll based API most I/O operations need
+ownership of the data, e.g. a buffer, so it can delay deallocation if needed.
+[^2] The input data can be retrieved again by using the [`Extract`] trait.
 
-[A10]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)
+Additional documentation can be found in the [`io_uring(7)`] and [`kqueue(2)`]
+manuals.
 
-## Linux Required
-
-Currently this requires a fairly new Linux kernel version, everything should
-work on Linux v6.1 and up.
+[`io_uring(7)`]: https://man7.org/linux/man-pages/man7/io_uring.7.html
+[`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue
 
 ## Examples
 
 Examples can be found in the [examples directory] of the source code.
 
 [examples directory]: ./examples
+
+[^1]: The name A10 comes from the [A10 ring road around Amsterdam], which
+      relates to the ring buffers that io\_uring uses in its design.
+[^2]: Delaying of the deallocation needs to happen for completion based APIs
+      where an I/O operation `Future` is dropped before it's complete -- the
+      OS will continue to use the resources, which would result in a
+      use-after-free bug.
+
+[A10 ring road around Amsterdam]: https://en.wikipedia.org/wiki/A10_motorway_(Netherlands)

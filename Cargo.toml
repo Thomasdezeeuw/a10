@@ -1,6 +1,6 @@
 [package]
 name          = "a10"
-description   = "A10 is an io_uring library."
+description   = "This library is meant as a low-level library safely exposing different OS's abilities to perform non-blocking I/O."
 version       = "0.4.0"
 authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
 license       = "MIT"
