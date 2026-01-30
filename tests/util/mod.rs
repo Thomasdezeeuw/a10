@@ -12,11 +12,10 @@ use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
-use std::sync::{Arc, Once, OnceLock, RwLock, TryLockError};
+use std::sync::{Once, OnceLock, RwLock, TryLockError};
 use std::task::{self, Poll};
-use std::thread::{self, Thread};
 use std::time::Duration;
-use std::{fmt, io, mem, panic, ptr, str};
+use std::{fmt, io, mem, panic, ptr, str, thread};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
@@ -124,41 +123,66 @@ pub(crate) static LOREM_IPSUM_50: TestFile = TestFile {
 };
 
 /// Waker that blocks the current thread.
-pub(crate) struct Waker {
-    handle: Thread,
-}
+#[derive(Copy, Clone)]
+pub(crate) struct Waker;
 
-impl task::Wake for Waker {
-    fn wake(self: Arc<Self>) {
-        self.handle.unpark();
+mod thread_waker {
+    use std::sync::Arc;
+    use std::task::{RawWaker, RawWakerVTable, Waker};
+    use std::thread::Thread;
+
+    static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+
+    pub(super) fn new(thread: Thread) -> Waker {
+        // TODO: use thread::{into,from}_raw once stable:
+        // <https://github.com/rust-lang/rust/issues/97523>.
+        let data = Arc::into_raw(Arc::new(thread));
+        unsafe { Waker::new(data.cast(), &VTABLE) }
     }
 
-    fn wake_by_ref(self: &Arc<Self>) {
-        self.handle.unpark();
+    unsafe fn clone(data: *const ()) -> RawWaker {
+        unsafe { Arc::increment_strong_count(data.cast::<Thread>()) };
+        RawWaker::new(data, &VTABLE)
+    }
+
+    unsafe fn wake(data: *const ()) {
+        unsafe { Arc::<Thread>::from_raw(data.cast()).unpark() };
+    }
+
+    unsafe fn wake_by_ref(data: *const ()) {
+        unsafe { (&*data.cast::<Thread>()).unpark() };
+    }
+
+    unsafe fn drop(_: *const ()) {
+        unreachable!("dropped a waker instead of waking it");
     }
 }
 
 impl Waker {
     /// Create a new `Waker`.
-    pub(crate) fn new() -> Arc<Waker> {
-        Arc::new(Waker {
-            handle: thread::current(),
-        })
+    pub(crate) fn new() -> Waker {
+        Waker
     }
 
     /// Poll the `future` until completion, blocking when it can't make
     /// progress.
-    pub(crate) fn block_on<Fut>(self: &Arc<Waker>, future: Fut) -> Fut::Output
+    pub(crate) fn block_on<Fut>(self, future: Fut) -> Fut::Output
     where
         Fut: IntoFuture,
     {
         let mut future = pin!(future.into_future());
-        let task_waker = task::Waker::from(self.clone());
+        let task_waker = thread_waker::new(thread::current());
         let mut task_ctx = task::Context::from_waker(&task_waker);
         loop {
             match Future::poll(future.as_mut(), &mut task_ctx) {
-                Poll::Ready(res) => return res,
-                Poll::Pending => poll_test_ring(None),
+                Poll::Ready(res) => {
+                    task_waker.wake(); // Don't drop it as it will panic.
+                    return res;
+                }
+                Poll::Pending => {
+                    ensure_submitted();
+                    thread::park();
+                }
             }
         }
     }
