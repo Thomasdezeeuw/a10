@@ -98,6 +98,7 @@ impl<R, A> OpState for DirectState<R, A> {
     }
 
     fn reset(&mut self, resources: Self::Resources, args: Self::Args) {
+        assert!(matches!(self, DirectState::Complete));
         *self = Self::new(resources, args);
     }
 }
@@ -256,6 +257,7 @@ impl<R, A> OpState for EventedState<R, A> {
     }
 
     fn reset(&mut self, resources: Self::Resources, args: Self::Args) {
+        assert!(matches!(self, EventedState::Complete));
         *self = Self::new(resources, args);
     }
 }

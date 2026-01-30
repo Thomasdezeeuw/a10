@@ -469,7 +469,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.set(read.fd.read(buf).from(this.offset));
+                read.state.reset(buf, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -509,7 +509,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
         let this = unsafe { Pin::into_inner_unchecked(self) };
         let mut read = unsafe { Pin::new_unchecked(&mut this.read) };
         match read.as_mut().poll(ctx) {
-            Poll::Ready(Ok(bufs)) => {
+            Poll::Ready(Ok(mut bufs)) => {
                 if bufs.last_read == 0 {
                     return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
                 }
@@ -524,7 +524,9 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
                     this.offset += bufs.last_read as u64;
                 }
 
-                read.set(read.fd.read_vectored(bufs).from(this.offset));
+                let iovecs = unsafe { bufs.as_iovecs_mut() };
+                let resources = (bufs, iovecs);
+                read.state.reset(resources, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -570,7 +572,7 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
                     return Poll::Ready(Ok(buf.buf));
                 }
 
-                write.set(write.fut.fd.write(buf).at(this.offset).extract());
+                write.fut.state.reset(buf, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -654,7 +656,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                write.set(WriteVectored::new(write.fut.fd, (bufs, iovecs), this.offset).extract());
+                write.fut.state.reset((bufs, iovecs), this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),

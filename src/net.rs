@@ -1144,7 +1144,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.set(recv.fd.recv(buf).flags(this.flags));
+                recv.state.reset(buf, this.flags);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1197,11 +1197,7 @@ impl<'fd, B: Buf> SendAll<'fd, B> {
                 }
 
                 // Send some more.
-                this.send = match this.send_op {
-                    SendCall::Normal => this.send.fut.fd.send(buf).flags(this.flags),
-                    SendCall::ZeroCopy => this.send.fut.fd.send(buf).flags(this.flags).zc(),
-                }
-                .extract();
+                this.send.fut.state.reset(buf, (this.send_op, this.flags));
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1258,7 +1254,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
         let this = unsafe { Pin::into_inner_unchecked(self) };
         let mut recv = unsafe { Pin::new_unchecked(&mut this.recv) };
         match recv.as_mut().poll(ctx) {
-            Poll::Ready(Ok((bufs, _))) => {
+            Poll::Ready(Ok((mut bufs, _))) => {
                 if bufs.last_read == 0 {
                     return Poll::Ready(Err(io::ErrorKind::UnexpectedEof.into()));
                 }
@@ -1270,7 +1266,9 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 this.left -= bufs.last_read;
 
-                recv.set(recv.fd.recv_vectored(bufs).flags(this.flags));
+                let iovecs = unsafe { bufs.as_iovecs_mut() };
+                let resources = (bufs, MsgHeader::empty(), iovecs);
+                recv.state.reset(resources, this.flags);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1342,9 +1340,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                 }
 
                 let resources = (bufs, MsgHeader::empty(), iovecs, AddressStorage(NoAddress));
-                send.set(
-                    SendMsg::new(send.fut.fd, resources, (this.send_op, SendFlag(0))).extract(),
-                );
+                send.fut.state.reset(resources, (this.send_op, SendFlag(0)));
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
