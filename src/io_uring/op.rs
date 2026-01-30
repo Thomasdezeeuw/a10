@@ -707,6 +707,7 @@ where
 ///  * `fallback` function called when the operation errored, to attempt a
 ///    fallback operation (e.g. a synchronous function call).
 #[allow(clippy::needless_pass_by_ref_mut)] // For ctx.
+#[allow(clippy::too_many_lines)] // This is true.
 fn poll_inner<T, O, R, R2, A, Ok, Res>(
     target: &T,
     state: &mut State<O, R, A>,
@@ -768,39 +769,38 @@ where
                 }
                 return Poll::Pending;
             }
-            Status::Running { results } => {
-                if O::IS_MULTISHOT {
-                    // For multishot operations we can process completions results
-                    // as they are posted by the kernel.
-                    let Some(result) = results.next() else {
-                        // No completion yet, try again later.
-                        // Make sure we wake using the correct waker.
-                        set_waker(&mut shared.waker, ctx.waker());
-                        unlock(shared);
-                        return Poll::Pending;
-                    };
-                    unlock(shared);
-                    let res = match result.check_result() {
-                        Ok(res) => res,
-                        Err(err) => return Poll::Ready(Res::from_err(err)),
-                    };
-                    // SAFETY: we share the resources with the kernel, so we can
-                    // only read them.
-                    let resources = get_resources(data.tail.resources.get().cast::<R>());
-                    let op_return = (result.flags, res);
-                    return Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)));
-                } else {
-                    // For a singleshot operation we wait until the operation is
-                    // done so that we can safely move/deallocate the resources.
-                    // This is needed for zero copy operations (e.g. sends), which
-                    // returns two completion events, setting the status to Running
-                    // and Done respectively.
-
+            Status::Running { results } if O::IS_MULTISHOT => {
+                // For multishot operations we can process completions results
+                // as they are posted by the kernel.
+                let Some(result) = results.next() else {
+                    // No completion yet, try again later.
                     // Make sure we wake using the correct waker.
                     set_waker(&mut shared.waker, ctx.waker());
                     unlock(shared);
                     return Poll::Pending;
-                }
+                };
+                unlock(shared);
+                let res = match result.check_result() {
+                    Ok(res) => res,
+                    Err(err) => return Poll::Ready(Res::from_err(err)),
+                };
+                // SAFETY: we share the resources with the kernel, so we can
+                // only read them.
+                let resources = get_resources(data.tail.resources.get().cast::<R>());
+                let op_return = (result.flags, res);
+                return Poll::Ready(Res::from_ok(map_ok(target, resources, op_return)));
+            }
+            Status::Running { .. } => {
+                // For a singleshot operation we wait until the operation is
+                // done so that we can safely move/deallocate the resources.
+                // This is needed for zero copy operations (e.g. sends), which
+                // returns two completion events, setting the status to Running
+                // and Done respectively.
+
+                // Make sure we wake using the correct waker.
+                set_waker(&mut shared.waker, ctx.waker());
+                unlock(shared);
+                return Poll::Pending;
             }
             Status::Done { results } => {
                 let Some(result) = results.next() else {
@@ -842,15 +842,16 @@ where
                         // errors.
 
                         // Sanity checks.
-                        if !O::IS_MULTISHOT {
-                            debug_assert!(matches!(shared.status, Status::Complete));
-                        } else {
-                            debug_assert!(
-                                matches!(&shared.status, Status::Done { results } if results.has_next())
+                        if O::IS_MULTISHOT {
+                            assert!(
+                                matches!(&shared.status, Status::Done { results } if !results.has_next())
                             );
+                        } else {
+                            assert!(matches!(shared.status, Status::Complete));
                         }
                         shared.status = Status::NotStarted;
-                        continue; // Trying again. NOTE: still holding the lock.
+                        // Try again in the next iteration.
+                        // NOTE: still holding the lock.
                     }
                     Err(err) => {
                         unlock(shared);
@@ -871,7 +872,7 @@ where
                 unlock(shared);
                 panic!("polled Future after completion")
             }
-        };
+        }
     }
 }
 
