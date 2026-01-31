@@ -469,7 +469,7 @@ impl<'fd, B: BufMut> Future for ReadN<'fd, B> {
                     this.offset += buf.last_read as u64;
                 }
 
-                read.state.reset(buf, this.offset);
+                this.read.state.reset(buf, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -526,7 +526,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for ReadNVectored<'fd, B, N>
 
                 let iovecs = unsafe { bufs.as_iovecs_mut() };
                 let resources = (bufs, iovecs);
-                read.state.reset(resources, this.offset);
+                this.read.state.reset(resources, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -572,7 +572,7 @@ impl<'fd, B: Buf> WriteAll<'fd, B> {
                     return Poll::Ready(Ok(buf.buf));
                 }
 
-                write.fut.state.reset(buf, this.offset);
+                this.write.fut.state.reset(buf, this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -656,7 +656,7 @@ impl<'fd, B: BufSlice<N>, const N: usize> WriteAllVectored<'fd, B, N> {
                     return Poll::Ready(Ok(bufs));
                 }
 
-                write.fut.state.reset((bufs, iovecs), this.offset);
+                this.write.fut.state.reset((bufs, iovecs), this.offset);
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),

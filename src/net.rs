@@ -1144,7 +1144,7 @@ impl<'fd, B: BufMut> Future for RecvN<'fd, B> {
 
                 this.left -= buf.last_read;
 
-                recv.state.reset(buf, this.flags);
+                this.recv.state.reset(buf, this.flags);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1268,7 +1268,7 @@ impl<'fd, B: BufMutSlice<N>, const N: usize> Future for RecvNVectored<'fd, B, N>
 
                 let iovecs = unsafe { bufs.as_iovecs_mut() };
                 let resources = (bufs, MsgHeader::empty(), iovecs);
-                recv.state.reset(resources, this.flags);
+                this.recv.state.reset(resources, this.flags);
                 unsafe { Pin::new_unchecked(this) }.poll(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
@@ -1340,7 +1340,10 @@ impl<'fd, B: BufSlice<N>, const N: usize> SendAllVectored<'fd, B, N> {
                 }
 
                 let resources = (bufs, MsgHeader::empty(), iovecs, AddressStorage(NoAddress));
-                send.fut.state.reset(resources, (this.send_op, SendFlag(0)));
+                this.send
+                    .fut
+                    .state
+                    .reset(resources, (this.send_op, SendFlag(0)));
                 unsafe { Pin::new_unchecked(this) }.poll_inner(ctx)
             }
             Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
