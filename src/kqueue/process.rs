@@ -53,6 +53,9 @@ impl crate::op::Op for WaitIdOp {
                     WaitOn::Process(pid) => (libc::P_PID, pid),
                 };
 
+                // FIXME: WNOHANG doesn't seem to work with process that already
+                // have exited (on macOS). Without it however will block waiting
+                // for a process to exit.
                 let options = options.0.cast_signed() | libc::WNOHANG; // Don't block.
                 syscall!(waitid(id_type, pid.into(), &raw mut info.0, options))?;
 
