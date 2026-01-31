@@ -337,6 +337,11 @@ impl ReceiveSignals {
         // is safe to return.
         unsafe { ptr::read(signals) }
     }
+
+    /// Returns the set of signals this is listening for.
+    pub fn set(&self) -> &SignalSet {
+        self.signals.set()
+    }
 }
 
 #[cfg(feature = "nightly")]
