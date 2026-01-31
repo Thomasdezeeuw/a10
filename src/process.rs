@@ -274,7 +274,7 @@ impl Signals {
 
     /// Returns the set of signals this is listening for.
     pub fn set(&self) -> &SignalSet {
-        self.signals
+        &self.signals
     }
 }
 
