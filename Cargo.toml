@@ -1,7 +1,7 @@
 [package]
 name          = "a10"
 description   = "This library is meant as a low-level library safely exposing different OS's abilities to perform non-blocking I/O."
-version       = "0.4.0"
+version       = "0.4.1"
 authors       = ["Thomas de Zeeuw <thomasdezeeuw@gmail.com>"]
 license       = "MIT"
 documentation = "https://docs.rs/a10"
