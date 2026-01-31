@@ -6,6 +6,7 @@ env:
 
 task:
   name: FreeBSD
+  timeout_in: 5m
   setup_script:
     - fetch https://sh.rustup.rs -o rustup.sh
     - sh rustup.sh -y --profile minimal
