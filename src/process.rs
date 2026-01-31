@@ -594,3 +594,13 @@ new_flag!(
         SYS = libc::SIGSYS,
     }
 );
+
+impl Signal {
+    /// Whether or not the signal is considered an "exiting" signal.
+    ///
+    /// Currently returns true for [`Signal::INTERRUPT`],
+    /// [`Signal::TERMINATION`] and [`Signal::QUIT`].
+    pub const fn should_exit(self) -> bool {
+        matches!(self, Signal::INTERRUPT | Signal::TERMINATION | Signal::QUIT)
+    }
+}
