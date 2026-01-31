@@ -527,6 +527,8 @@ new_flag!(
         /// previously paused by the [`Signal::STOP`] or [`Signal::TERM_STOP`]
         /// signals.
         CONTINUE = libc::SIGCONT,
+        /// Stop process.
+        STOP = libc::SIGSTOP,
         /// Stop typed at terminal.
         TERM_STOP = libc::SIGTSTP,
         /// Terminal input for background process signal.
