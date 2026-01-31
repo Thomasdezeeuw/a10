@@ -437,57 +437,142 @@ new_flag!(
     /// Process signal.
     #[doc = man_link!(signal(7))]
     pub struct Signal(i32) {
-        /// Hangup.
+        /// Hangup signal.
+        ///
+        /// This signal is sent to a process when its controlling terminal is
+        /// closed. In modern systems, this signal usually means that the
+        /// controlling pseudo or virtual terminal has been closed.
         HUP = libc::SIGHUP,
-        /// Interrupt.
+        /// Interrupt signal.
+        ///
+        /// This signal is received by the process when its controlling terminal
+        /// wishes to interrupt the process. This signal will for example be
+        /// send when Ctrl+C is pressed in most terminals.
         INTERRUPT = libc::SIGINT,
-        /// Quit.
+        /// Quit signal.
+        ///
+        /// This signal is received when the process is requested to quit and
+        /// perform a core dump.
         QUIT = libc::SIGQUIT,
         /// Illegal instruction.
+        ///
+        /// This signal is sent to a process when it attempts to execute an
+        /// illegal, malformed, unknown, or privileged instruction.
         ILLEGAL = libc::SIGILL,
         /// Trace/breakpoint trap.
+        ///
+        /// This signal is sent to a process when an exception (or trap) occurs:
+        /// a condition that a debugger has requested to be informed of.
         TRAP = libc::SIGTRAP,
-        /// Abort.
+        /// Abort signal.
+        ///
+        /// This signal is sent to a process to tell it to abort, i.e. to
+        /// terminate. This signal can also indicate that the CPU has executed
+        /// an explicit "trap" instruction (without a defined function), or an
+        /// unimplemented instruction (when emulation is unavailable).
         ABORT = libc::SIGABRT,
         /// IOT trap.
         IOT = libc::SIGIOT,
-        /// Bus error (bad memory access).
+        /// Bus error (bad memory access) signal.
+        ///
+        /// This signal is sent to a process when it causes a bus error. The
+        /// conditions that lead to the signal being sent are, for example,
+        /// incorrect memory access alignment or non-existent physical address.
         BUS = libc::SIGBUS,
-        /// Erroneous arithmetic operation.
+        /// Erroneous arithmetic operation signal.
+        ///
+        /// This signal is sent to a process when an exceptional (but not
+        /// necessarily erroneous) condition has been detected in the floating
+        /// point or integer arithmetic hardware. This may include division by
+        /// zero, floating point underflow or overflow, integer overflow, an
+        /// invalid operation or an inexact computation. Behaviour may differ
+        /// depending on hardware.
         FP_ERROR = libc::SIGFPE,
-        /// User-defined 1.
+        /// User-defined signal 1.
         USER1 = libc::SIGUSR1,
-        /// User-defined 2.
+        /// User-defined signal 2.
         USER2 = libc::SIGUSR2,
         /// Invalid memory reference.
+        ///
+        /// This signal is sent to a process when it makes an invalid virtual
+        /// memory reference, or segmentation fault.
         SEG_VAULT = libc::SIGSEGV,
-        /// Broken pipe.
+        /// Broken pipe signal.
+        ///
+        /// This signal is sent to a process when it attempts to write to a pipe
+        /// without a process connected to the other end.
         PIPE = libc::SIGPIPE,
-        /// Timer.
+        /// Alarm signal.
+        ///
+        /// This signal is sent to a process when a time limit is reached. This
+        /// alarm is based on real or clock time.
+        ///
+        /// Also see [`Signal::VIRTUAL_ALARM`] and  [`Signal::PROFILE_ALARM`].
         ALARM = libc::SIGALRM,
-        /// Termination.
+        /// Termination request signal.
+        ///
+        /// This signal received when the process is requested to terminate. This
+        /// allows the process to perform nice termination, releasing resources and
+        /// saving state if appropriate. This signal will be send when using the
+        /// `kill` command for example.
         TERMINATION = libc::SIGTERM,
-        /// Child stopped, terminated or continued.
+        /// Child signal.
+        ///
+        /// This signal is sent to a process when a child process terminates, is
+        /// stopped, or resumes after being stopped.
         CHILD = libc::SIGCHLD,
-        /// Continue if stopped.
+        /// Continue signal.
+        ///
+        /// This signal sent to a process to continue (restart) after being
+        /// previously paused by the [`Signal::STOP`] or [`Signal::TERM_STOP`]
+        /// signals.
         CONTINUE = libc::SIGCONT,
-        /// Stop typed at terminal
+        /// Stop typed at terminal.
         TERM_STOP = libc::SIGTSTP,
-        /// Terminal input for background process.
+        /// Terminal input for background process signal.
+        ///
+        /// This signal is sent to a process when it attempts to read from the
+        /// tty while in the background.
         TTY_IN = libc::SIGTTIN,
-        /// Terminal output for background process.
+        /// Terminal output for background process signal.
+        ///
+        /// This signal is sent to a process when it attempts to write to the
+        /// tty while in the background.
         TTY_OUT = libc::SIGTTOU,
-        /// Urgent condition on socket.
+        /// Urgent condition on socket signal.
+        ///
+        /// This signal is sent to a process when a socket has urgent or
+        /// out-of-band data available to read.
         URGENT = libc::SIGURG,
-        /// CPU time limit exceeded.
+        /// CPU time limit exceeded signal.
+        ///
+        /// This signal is sent to a process when it has used up the CPU for a
+        /// duration that exceeds a certain predetermined user-settable value.
         EXCEEDED_CPU = libc::SIGXCPU,
-        /// File size limit exceeded.
+        /// File size limit exceeded signal.
+        ///
+        /// This signal is sent to a process when it grows a file that exceeds
+        /// the maximum allowed size.
         EXCEEDED_FILE_SIZE = libc::SIGXFSZ,
-        /// Virtual alarm clock.
+        /// Virtual timer alarm signal.
+        ///
+        /// This signal is sent to a process when a time limit is reached. This
+        /// alarm is based on CPU time.
+        ///
+        /// Also see [`Signal::ALARM`] and [`Signal::PROFILE_ALARM`].
         VIRTUAL_ALARM = libc::SIGVTALRM,
         /// Profiling timer expired.
+        ///
+        /// This signal is sent to a process when a time limit is reached. This
+        /// alarm is based on CPU time used by the process and the system
+        /// itself.
+        ///
+        /// Also see [`Signal::ALARM`] and [`Signal::VIRTUAL_ALARM`].
         PROFILE_ALARM = libc::SIGPROF,
         /// Window resize signal.
+        ///
+        /// This signal is sent to a process when its controlling terminal
+        /// changes its size.
         WINDOW_RESIZE = libc::SIGWINCH,
         /// I/O now possible.
         IO = libc::SIGIO,
@@ -499,7 +584,11 @@ new_flag!(
         /// Power failure.
         #[cfg(any(target_os = "android", target_os = "linux"))]
         PWR = libc::SIGPWR,
-        /// Bad system call.
+        /// Bad system call signal.
+        ///
+        /// This signal is sent to a process when it passes a bad argument to a
+        /// system call. This can also be received by applications violating the
+        /// Linux Seccomp security rules configured to restrict them.
         SYS = libc::SIGSYS,
     }
 );
