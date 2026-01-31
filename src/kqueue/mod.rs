@@ -140,10 +140,13 @@ impl Shared {
                     lock(unsafe { &*ptr }).wake(event);
                 }
                 libc::EVFILT_PROC => {
-                    // In some cases a second EVFILT_PROC is returned, at least
-                    // on macOS, that would case a use after free if we tried to
-                    // use the same user_data to wake the Waker again.
-                    if event.0.flags & libc::EV_EOF == 0 {
+                    // In some cases a second EVFILT_PROC event is returned, at
+                    // least on macOS, that would case a use after free if we
+                    // tried to use the same user_data to wake the Waker again.
+                    // So we only continue here if EV_EOF or EV_ERROR is set,
+                    // which should always be the last event.
+                    if event.0.flags & (libc::EV_EOF | libc::EV_ERROR) == 0 {
+                        log::trace!(event:?; "skipping event");
                         continue;
                     }
 
