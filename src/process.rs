@@ -271,6 +271,11 @@ impl Signals {
             state: <sys::process::ReceiveSignalOp as FdOp>::State::new(MaybeUninit::uninit(), ()),
         }
     }
+
+    /// Returns the set of signals this is listening for.
+    pub fn set(&self) -> &SignalSet {
+        self.signals
+    }
 }
 
 impl fmt::Debug for Signals {
