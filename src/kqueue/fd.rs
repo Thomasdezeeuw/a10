@@ -110,6 +110,8 @@ impl OpState {
 
 impl Drop for AsyncFd {
     fn drop(&mut self) {
+        self.sq.submissions().remove_unsubmitted_events(self.fd());
+
         let result = match self.kind() {
             fd::Kind::File => syscall!(close(self.fd())).map(|_| ()),
         };

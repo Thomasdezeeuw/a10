@@ -1,5 +1,6 @@
 use std::io;
 use std::mem::{self, drop as unlock, take};
+use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -61,6 +62,17 @@ impl Submissions {
         log::trace!(changes = changes.len(); "submitting changes");
         shared.kevent(&mut changes, None, Some(&ts));
         shared.reuse_change_list(changes);
+    }
+
+    /// Remove all unsubmitted events for `fd`.
+    #[allow(clippy::cast_sign_loss)]
+    pub(crate) fn remove_unsubmitted_events(&self, fd: RawFd) {
+        let mut change_list = lock(&self.shared.change_list);
+        change_list.retain(|event| {
+            !(event.0.ident == fd as _
+                && (event.0.filter == libc::EVFILT_READ || event.0.filter == libc::EVFILT_WRITE))
+        });
+        unlock(change_list);
     }
 
     #[allow(clippy::unnecessary_wraps)]
