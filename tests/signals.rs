@@ -1,9 +1,7 @@
 #![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
 use std::mem::MaybeUninit;
-use std::pin::Pin;
 use std::sync::{Arc, Barrier};
-use std::task::{self, Poll};
 use std::time::Instant;
 use std::{env, fmt, io, panic, process, ptr, thread};
 
@@ -12,7 +10,7 @@ use a10::fd;
 use a10::process::{Signal, Signals};
 
 mod util;
-use util::{init, poll_nop, syscall};
+use util::{block_on, init, next, syscall};
 
 const SIGNALS: &[Signal] = &[
     Signal::HUP,
@@ -96,10 +94,13 @@ fn main() {
     #[cfg(any(target_os = "android", target_os = "linux"))]
     {
         // Switch to use a direct descriptor.
-        harness.signals = Some(to_direct(
-            &mut harness.ring,
-            harness.signals.take().unwrap(),
-        ));
+        harness.signals = Some(
+            block_on(
+                &mut harness.ring,
+                harness.signals.take().unwrap().to_direct_descriptor(),
+            )
+            .unwrap(),
+        );
         harness.fd_kind = fd::Kind::Direct;
         harness.run_tests();
     }
@@ -214,8 +215,6 @@ impl TestHarness {
     fn test_receive_signals(&mut self) {
         let pid = process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
-        let task_waker = task::Waker::noop();
-        let mut task_ctx = task::Context::from_waker(&task_waker);
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(
                 self.quiet,
@@ -231,12 +230,9 @@ impl TestHarness {
                 send_signal(pid, *signal).unwrap();
 
                 // Check if the signals can be received.
-                let signal_info = loop {
-                    match Pin::new(&mut receive_signal).poll_next(&mut task_ctx) {
-                        Poll::Ready(result) => break result.unwrap().unwrap(),
-                        Poll::Pending => self.ring.poll(None).unwrap(),
-                    }
-                };
+                let signal_info = block_on(&mut self.ring, next(&mut receive_signal))
+                    .unwrap()
+                    .unwrap();
                 assert_eq!(signal_info.signal(), *signal);
             }));
             print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
@@ -259,25 +255,8 @@ impl TestHarness {
 }
 
 fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
-    let mut receive = signals.receive();
-    let signal_info = loop {
-        match poll_nop(Pin::new(&mut receive)) {
-            Poll::Ready(result) => break result.unwrap(),
-            Poll::Pending => ring.poll(None).unwrap(),
-        }
-    };
+    let signal_info = block_on(ring, signals.receive()).unwrap();
     assert_eq!(signal_info.signal(), expected_signal);
-}
-
-#[cfg(any(target_os = "android", target_os = "linux"))]
-fn to_direct(ring: &mut Ring, signals: Signals) -> Signals {
-    let mut to_direct = signals.to_direct_descriptor();
-    loop {
-        match poll_nop(Pin::new(&mut to_direct)) {
-            Poll::Ready(result) => break result.unwrap(),
-            Poll::Pending => ring.poll(None).unwrap(),
-        }
-    }
 }
 
 #[allow(clippy::cast_possible_wrap)]
