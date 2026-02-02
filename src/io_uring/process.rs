@@ -75,7 +75,7 @@ impl Signals {
 impl Drop for Signals {
     fn drop(&mut self) {
         if let Err(err) = sigprocmask(libc::SIG_UNBLOCK, &self.signals.0) {
-            log::error!(signals:? = self.signals; "error unblocking signals: {err}");
+            log::warn!(signals:? = self.signals; "error unblocking signals: {err}");
         }
     }
 }
