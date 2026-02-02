@@ -133,7 +133,7 @@ impl TestHarness {
         let sq = ring.sq();
         TestHarness {
             ring,
-            signals: Some(Signals::from_signals(sq, SIGNALS.iter().copied()).unwrap()),
+            signals: Some(Signals::for_all_signals(sq).unwrap()),
             fd_kind: fd::Kind::File,
             passed: 0,
             failed: 0,

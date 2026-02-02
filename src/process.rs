@@ -251,7 +251,11 @@ impl Signals {
 
     /// Create a new signal notifier for all supported signals.
     pub fn for_all_signals(sq: SubmissionQueue) -> io::Result<Signals> {
-        let set = SignalSet::all()?;
+        let mut set = SignalSet::all()?;
+        // Remove signal which we can't handle.
+        for signal in [Signal::STOP, Signal::KILL] {
+            syscall!(sigdelset(&raw mut set.0, signal.0))?;
+        }
         Signals::from_set(sq, set)
     }
 
@@ -483,6 +487,8 @@ new_flag!(
         ABORT = libc::SIGABRT,
         /// IOT trap.
         IOT = libc::SIGIOT,
+        /// Kill signal.
+        KILL = libc::SIGKILL,
         /// Bus error (bad memory access) signal.
         ///
         /// This signal is sent to a process when it causes a bus error. The
