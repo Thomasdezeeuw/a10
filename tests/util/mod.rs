@@ -219,13 +219,11 @@ where
     Fut: IntoFuture,
 {
     let mut future = pin!(future.into_future());
-
     let waker = task::Waker::noop();
     let mut task_ctx = task::Context::from_waker(waker);
     loop {
         match Future::poll(future.as_mut(), &mut task_ctx) {
             Poll::Ready(res) => return res,
-            // The waking implementation will `unpark` us.
             Poll::Pending => ring.poll(None).expect("failed to poll ring"),
         }
     }
@@ -283,6 +281,7 @@ macro_rules! op_async_iter {
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);
+op_async_iter!(a10::process::ReceiveSignals => io::Result<a10::process::SignalInfo>);
 
 #[cfg(not(feature = "nightly"))]
 #[cfg(any(target_os = "android", target_os = "linux"))]
