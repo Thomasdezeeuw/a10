@@ -483,6 +483,8 @@ new_flag!(
         ABORT = libc::SIGABRT,
         /// IOT trap.
         IOT = libc::SIGIOT,
+        /// Kill signal.
+        KILL = libc::SIGKILL,
         /// Bus error (bad memory access) signal.
         ///
         /// This signal is sent to a process when it causes a bus error. The
