@@ -12,7 +12,7 @@ use a10::fd;
 use a10::process::{Signal, Signals};
 
 mod util;
-use util::{poll_nop, syscall};
+use util::{init, poll_nop, syscall};
 
 const SIGNALS: &[Signal] = &[
     Signal::HUP,
@@ -85,6 +85,7 @@ const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
 ];
 
 fn main() {
+    init();
     let start = Instant::now();
     println!("\nrunning {} tests", (2 * (3 * SIGNALS.len()) + 1));
 
