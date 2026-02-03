@@ -69,17 +69,32 @@ impl Shared {
     fn kevent(
         &self,
         changes: &mut Vec<Event>,
-        mut events: Option<&mut Vec<Event>>,
+        mut events: UseEvents<'_>,
         timeout: Option<&libc::timespec>,
     ) {
         // SAFETY: casting `Event` to `libc::kevent` is safe due to
         // `repr(transparent)` on `Event`.
         let (events_ptr, events_len) = match events {
-            Some(ref mut events) => {
+            UseEvents::Some(ref mut events) => {
                 debug_assert!(events.is_empty());
                 (events.as_mut_ptr().cast(), events.capacity() as _)
             }
-            None => (changes.as_mut_ptr().cast(), changes.capacity() as _),
+            UseEvents::UseChangeList => (changes.as_mut_ptr().cast(), changes.len() as _),
+            UseEvents::UseChangeListWithWakeUp => {
+                // When we submit the changes with a wakeup event we do NOT want
+                // to process the wakeup event itself, as that would mean we
+                // don't wake up the thread currently calling Ring::poll. Which
+                // would defeat the entire purpose of the wake up event.
+                //
+                // We do this by providing 1 less space in the events list than
+                // the amount of changes we submit (changes.len() - 1).
+                //
+                // Make sure the last event is a wakeup event.
+                debug_assert!(
+                    matches!(changes.last(), Some(e) if e.0.filter == libc::EVFILT_USER && e.0.udata == cq::WAKE_USER_DATA)
+                );
+                (changes.as_mut_ptr().cast(), (changes.len() - 1) as _)
+            }
         };
         let result = syscall!(kevent(
             self.kq.as_raw_fd(),
@@ -93,11 +108,11 @@ impl Shared {
             // SAFETY: `kevent` ensures that `n` events are written.
             Ok(n) => {
                 let events = match events {
-                    Some(events) => {
+                    UseEvents::Some(events) => {
                         changes.clear();
                         events
                     }
-                    None => changes,
+                    UseEvents::UseChangeList | UseEvents::UseChangeListWithWakeUp => changes,
                 };
                 unsafe { events.set_len(n as usize) }
                 events
@@ -110,7 +125,9 @@ impl Shared {
                 if err.raw_os_error() != Some(libc::EINTR) && !changes.is_empty() {
                     log::warn!(changes:?; "failed to submit change list: {err}, dropping changes");
                 }
-                events.map(Vec::clear);
+                if let UseEvents::Some(events) = events {
+                    events.clear();
+                }
                 changes.clear();
                 return;
             }
@@ -188,6 +205,12 @@ impl Shared {
         }
         events.clear();
     }
+}
+
+enum UseEvents<'a> {
+    Some(&'a mut Vec<Event>),
+    UseChangeList,
+    UseChangeListWithWakeUp,
 }
 
 /// Wrapper around `libc::kevent` to implementation traits and methods.

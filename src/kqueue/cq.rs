@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{cmp, io, ptr};
 
-use crate::kqueue::{Event, Shared};
+use crate::kqueue::{Event, Shared, UseEvents};
 use crate::lock;
 
 /// User data to wake up the polling thread.
@@ -44,7 +44,7 @@ impl Completions {
 
         log::trace!(submissions = changes.len(), timeout:?; "waiting for events");
         shared.is_polling.store(true, Ordering::Release);
-        shared.kevent(&mut changes, Some(&mut self.events), ts.as_ref());
+        shared.kevent(&mut changes, UseEvents::Some(&mut self.events), ts.as_ref());
         shared.is_polling.store(false, Ordering::Release);
         shared.reuse_change_list(changes);
         Ok(())

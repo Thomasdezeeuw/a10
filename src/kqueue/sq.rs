@@ -4,7 +4,7 @@ use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::kqueue::{Event, Shared, cq};
+use crate::kqueue::{Event, Shared, UseEvents, cq};
 use crate::lock;
 
 #[derive(Clone, Debug)]
@@ -24,10 +24,10 @@ impl Submissions {
     where
         F: FnOnce(&mut Event),
     {
-        self.submit(false, fill_event);
+        self.submit(ForceSubmit::Normal, fill_event);
     }
 
-    fn submit<F>(&self, force_kevent: bool, fill_event: F)
+    fn submit<F>(&self, force_submit: ForceSubmit, fill_event: F)
     where
         F: FnOnce(&mut Event),
     {
@@ -45,7 +45,9 @@ impl Submissions {
         change_list.push(event);
         // If we haven't collected enough events yet and we're not polling,
         // we're done quickly.
-        if !force_kevent && (change_list.len() < (shared.max_change_list_size as usize)) {
+        if let ForceSubmit::Normal = force_submit
+            && (change_list.len() < (shared.max_change_list_size as usize))
+        {
             unlock(change_list); // Unlock first.
             return;
         }
@@ -60,7 +62,11 @@ impl Submissions {
             tv_nsec: 0,
         };
         log::trace!(changes = changes.len(); "submitting changes");
-        shared.kevent(&mut changes, None, Some(&ts));
+        let events = match force_submit {
+            ForceSubmit::Normal => UseEvents::UseChangeList,
+            ForceSubmit::Wakeup => UseEvents::UseChangeListWithWakeUp,
+        };
+        shared.kevent(&mut changes, events, Some(&ts));
         shared.reuse_change_list(changes);
     }
 
@@ -82,7 +88,7 @@ impl Submissions {
             return Ok(());
         }
 
-        self.submit(true, |kevent| {
+        self.submit(ForceSubmit::Wakeup, |kevent| {
             kevent.0.filter = libc::EVFILT_USER;
             kevent.0.flags = libc::EV_ADD;
             kevent.0.fflags = libc::NOTE_TRIGGER;
@@ -94,4 +100,10 @@ impl Submissions {
     pub(crate) fn shared(&self) -> &Shared {
         &self.shared
     }
+}
+
+#[derive(Copy, Clone)]
+enum ForceSubmit {
+    Normal,
+    Wakeup,
 }
