@@ -179,10 +179,7 @@ impl Waker {
                     task_waker.wake(); // Don't drop it as it will panic.
                     return res;
                 }
-                Poll::Pending => {
-                    ensure_submitted();
-                    thread::park();
-                }
+                Poll::Pending => poll_test_ring(None),
             }
         }
     }
