@@ -107,3 +107,11 @@ enum ForceSubmit {
     Normal,
     Wakeup,
 }
+
+impl PartialEq for Submissions {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+}
+
+impl Eq for Submissions {}

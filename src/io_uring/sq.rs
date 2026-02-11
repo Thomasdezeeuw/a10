@@ -154,6 +154,14 @@ impl Submissions {
     }
 }
 
+impl PartialEq for Submissions {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.shared, &other.shared)
+    }
+}
+
+impl Eq for Submissions {}
+
 /// Submission queue is full.
 pub(crate) struct QueueFull;
 

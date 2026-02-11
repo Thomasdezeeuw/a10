@@ -184,7 +184,10 @@ impl Ring {
 /// [`Ring::sq`].
 ///
 /// The submission queue can be shared by cloning it, it's a cheap operation.
-#[derive(Clone, Debug)]
+///
+/// The submission queue can be compared equality, when it returns true it means
+/// both will submit to the same ring.
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[repr(transparent)]
 pub struct SubmissionQueue(sys::Submissions);
 
