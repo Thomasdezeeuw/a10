@@ -206,6 +206,27 @@ fn wake_ring_no_kernel_thread() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn wake_ring_with_single_issuer() {
+    init();
+
+    let mut ring = Ring::config()
+        .single_issuer()
+        .defer_task_run()
+        .build()
+        .unwrap();
+    let sq = ring.sq();
+
+    let handle = thread::spawn(move || {
+        sq.wake();
+    });
+
+    // Should be awoken by the wake call above.
+    ring.poll(None).unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
 fn wake_ring_after_ring_dropped() {
     init();
     let ring = Ring::new().unwrap();

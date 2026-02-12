@@ -76,6 +76,9 @@ pub(crate) struct Shared {
     /// True if we're using a kernel thread to do submission polling, i.e. if
     /// `IORING_SETUP_SQPOLL` is enabled.
     kernel_thread: bool,
+    /// True if only a single thread can submit submissions, i.e. if
+    /// `IORING_SETUP_SINGLE_ISSUER` is enabled.
+    single_issuer: bool,
     /// Boolean indicating a thread is [`Ring::poll`]ing.
     ///
     /// [`Ring::poll`]: crate::Ring::poll
@@ -130,6 +133,7 @@ impl Shared {
             submissions_lock: Mutex::new(()),
             submissions_len: parameters.sq_entries,
             kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
+            single_issuer: (parameters.flags & libc::IORING_SETUP_SINGLE_ISSUER) != 0,
             is_polling: AtomicBool::new(false),
             blocked_futures: Mutex::new(Vec::new()),
             rfd,
