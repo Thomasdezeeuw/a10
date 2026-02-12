@@ -28,7 +28,7 @@ impl DirectOp for OpenOp {
 impl DirectOpExtract for OpenOp {
     type ExtractOutput = (AsyncFd, PathBuf);
 
-    #[allow(clippy::cast_lossless)]
+    #[allow(clippy::cast_lossless, clippy::cast_possible_wrap)]
     fn run_extract(
         sq: &SubmissionQueue,
         (path, kind): Self::Resources,
@@ -276,7 +276,7 @@ impl_fd_op!(TruncateOp);
 pub(crate) use libc::stat as Stat;
 
 pub(crate) const fn file_type(stat: &Stat) -> FileType {
-    FileType(stat.st_mode)
+    FileType(stat.st_mode as u16)
 }
 
 pub(crate) const fn len(stat: &Stat) -> u64 {
@@ -288,7 +288,7 @@ pub(crate) const fn block_size(stat: &Stat) -> u32 {
 }
 
 pub(crate) const fn permissions(stat: &Stat) -> Permissions {
-    Permissions(stat.st_mode)
+    Permissions(stat.st_mode as u16)
 }
 
 pub(crate) fn modified(stat: &Stat) -> SystemTime {
