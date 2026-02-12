@@ -1,10 +1,10 @@
 use std::cell::UnsafeCell;
-use std::io;
 use std::mem::{self, MaybeUninit, drop as unlock, replace};
 use std::panic::RefUnwindSafe;
 use std::ptr::NonNull;
 use std::sync::Mutex;
 use std::task::{self, Poll};
+use std::{fmt, io};
 
 use crate::asan;
 use crate::io::BufId;
@@ -67,7 +67,6 @@ use crate::{AsyncFd, OpPollResult, SubmissionQueue, debug_detail, get_mut, lock}
 //  * Complete, same as Done, but this time we don't need to drop the resources.
 
 /// State of an operation.
-#[derive(Debug)]
 pub(crate) struct State<T, R, A> {
     data: NonNull<Data<T, R, A>>,
 }
@@ -205,6 +204,12 @@ impl<T, R, A> OpState for State<T, R, A> {
         data.tail.resources = UnsafeCell::new(MaybeUninit::new(resources));
         data.tail.args = args;
         drop(shared);
+    }
+}
+
+impl<T: fmt::Debug, R: fmt::Debug, A: fmt::Debug> fmt::Debug for State<T, R, A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        unsafe { self.data.as_ref() }.fmt(f)
     }
 }
 
