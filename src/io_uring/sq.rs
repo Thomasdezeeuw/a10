@@ -1,4 +1,4 @@
-use std::mem::drop as unlock;
+use std::mem::{self, drop as unlock};
 use std::os::fd::RawFd;
 use std::sync::Arc;
 use std::sync::atomic::{self, Ordering};
@@ -6,7 +6,7 @@ use std::time::Duration;
 use std::{fmt, io, ptr, task};
 
 use crate::io_uring::{Shared, cq, libc, load_kernel_shared};
-use crate::{asan, lock};
+use crate::{asan, lock, syscall};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Submissions {
@@ -95,17 +95,39 @@ impl Submissions {
             return Ok(());
         }
 
+        let fill_submission = |submission: &mut Submission| {
+            submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
+            submission.0.fd = self.ring_fd();
+            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
+                addr: u64::from(libc::IORING_MSG_DATA),
+            };
+            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+                off: cq::WAKE_USER_DATA,
+            };
+        };
+
+        if self.shared.single_issuer {
+            // If we're using the single issuer option we can't submit the wake
+            // up message the normal way as we can't submit operations from
+            // another thread. And if we're running on the thread that owns the
+            // ring than we can't be simultaneous polling and thus we would
+            // never get here. So, we have to it synchronously.
+
+            // SAFETY: zeroed sumbission is valid.
+            let mut submission = unsafe { mem::zeroed() };
+            fill_submission(&mut submission);
+            log::trace!(submission:?; "synchronously waking up ring");
+            syscall!(io_uring_register(
+                -1, // Don't use a ring.
+                libc::IORING_REGISTER_SEND_MSG_RING,
+                ptr::from_ref(&submission).cast(),
+                1
+            ))?;
+            return Ok(());
+        }
+
         loop {
-            let submitted = self.add(|submission| {
-                submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
-                submission.0.fd = self.ring_fd();
-                submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-                    addr: u64::from(libc::IORING_MSG_DATA),
-                };
-                submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-                    off: cq::WAKE_USER_DATA,
-                };
-            });
+            let submitted = self.add(fill_submission);
 
             // Submit to the kernel to ensure the Ring is woken up.
             self.shared.enter(0, 0, Some(Duration::ZERO))?;
