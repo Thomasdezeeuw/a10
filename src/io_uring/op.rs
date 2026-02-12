@@ -252,11 +252,12 @@ impl<T: OpResult> Shared<T> {
                 let completion_flags = completion.0.flags;
                 results.update(completion_result, completion_flags);
 
-                let done = if completion.complete()
-                    && let Status::Running { results } | Status::Done { results } =
+                let done = if completion.complete() {
+                    if let Status::Running { results } | Status::Done { results } =
                         replace(&mut self.status, Status::Complete)
-                {
-                    self.status = Status::Done { results };
+                    {
+                        self.status = Status::Done { results };
+                    }
                     true
                 } else {
                     false
