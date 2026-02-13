@@ -740,8 +740,8 @@ unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for ReadNBuf<B> {
         unsafe { self.buf.set_init(n) };
     }
 
-    fn spare_capacity(&self) -> u32 {
-        self.buf.spare_capacity()
+    fn total_spare_capacity(&self) -> u32 {
+        self.buf.total_spare_capacity()
     }
 
     fn has_spare_capacity(&self) -> bool {

@@ -663,7 +663,7 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
         }
     }
 
-    fn spare_capacity(&self) -> u32 {
+    fn total_spare_capacity(&self) -> u32 {
         unimplemented!()
     }
 
@@ -688,7 +688,7 @@ unsafe impl BufMutSlice<2> for GrowingBufSlice {
         self.data[1].reserve(200);
     }
 
-    fn spare_capacity(&self) -> u32 {
+    fn total_spare_capacity(&self) -> u32 {
         unimplemented!()
     }
 

@@ -494,9 +494,9 @@ fn limited_buf() {
 #[test]
 fn limited_buf_slice() {
     let mut bufs = BufMutSlice::limit([Vec::with_capacity(5), Vec::with_capacity(10)], 4);
-    assert_eq!(bufs.spare_capacity(), 4);
+    assert_eq!(bufs.total_spare_capacity(), 4);
     bufs.extend_from_slice(b"Hello!");
-    assert_eq!(bufs.spare_capacity(), 0);
+    assert_eq!(bufs.total_spare_capacity(), 0);
     assert_eq!(bufs.has_spare_capacity(), false);
     let bufs = bufs.into_inner();
     assert_eq!(bufs[0], b"Hell");
@@ -505,9 +505,9 @@ fn limited_buf_slice() {
     assert_eq!(bufs[1].capacity(), 10);
 
     let mut bufs = BufMutSlice::limit([Vec::with_capacity(1), Vec::with_capacity(10)], 5);
-    assert_eq!(bufs.spare_capacity(), 5);
+    assert_eq!(bufs.total_spare_capacity(), 5);
     bufs.extend_from_slice(b"Hello!");
-    assert_eq!(bufs.spare_capacity(), 0);
+    assert_eq!(bufs.total_spare_capacity(), 0);
     assert_eq!(bufs.has_spare_capacity(), false);
     let bufs = bufs.into_inner();
     assert_eq!(bufs[0], b"H");

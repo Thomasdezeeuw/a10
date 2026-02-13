@@ -284,11 +284,11 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
     /// [`as_iovecs_mut`].
     ///
     /// [`as_iovecs_mut`]: BufMutSlice::as_iovecs_mut
-    fn spare_capacity(&self) -> u32;
+    fn total_spare_capacity(&self) -> u32;
 
     /// Returns `true` if any of the buffers has spare capacity.
     fn has_spare_capacity(&self) -> bool {
-        self.spare_capacity() != 0
+        self.total_spare_capacity() != 0
     }
 
     /// Extend the buffer with `bytes`, returns the total number of bytes
@@ -418,7 +418,7 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
         );
     }
 
-    fn spare_capacity(&self) -> u32 {
+    fn total_spare_capacity(&self) -> u32 {
         self.iter().map(BufMut::spare_capacity).sum()
     }
 
@@ -855,7 +855,7 @@ macro_rules! buf_slice_for_tuple {
                 );
             }
 
-            fn spare_capacity(&self) -> u32 {
+            fn total_spare_capacity(&self) -> u32 {
                 0 $( + self.$index.spare_capacity())+
             }
 
@@ -1010,8 +1010,8 @@ unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for LimitedBuf<B> 
         self.limit = self.limit.saturating_sub(n);
     }
 
-    fn spare_capacity(&self) -> u32 {
-        min(self.buf.spare_capacity(), self.limit as u32)
+    fn total_spare_capacity(&self) -> u32 {
+        min(self.buf.total_spare_capacity(), self.limit as u32)
     }
 
     fn has_spare_capacity(&self) -> bool {
