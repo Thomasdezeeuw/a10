@@ -7,11 +7,11 @@ use std::cmp::min;
 use std::mem::{drop as unlock, swap, take};
 use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 use std::{ptr, task};
 
-use crate::{asan, lock, syscall, try_lock};
+use crate::{PollingState, asan, lock, syscall, try_lock};
 
 pub(crate) mod config;
 pub(crate) mod cq;
@@ -80,10 +80,7 @@ pub(crate) struct Shared {
     /// True if only a single thread can submit submissions, i.e. if
     /// `IORING_SETUP_SINGLE_ISSUER` is enabled.
     single_issuer: bool,
-    /// Boolean indicating a thread is [`Ring::poll`]ing.
-    ///
-    /// [`Ring::poll`]: crate::Ring::poll
-    is_polling: AtomicBool,
+    polling: PollingState,
     /// Futures that are waiting for a slot in submissions.
     blocked_futures: Mutex<Vec<task::Waker>>,
     /// File descriptor of the io_uring.
@@ -135,7 +132,7 @@ impl Shared {
             submissions_len: parameters.sq_entries,
             kernel_thread: (parameters.flags & libc::IORING_SETUP_SQPOLL) != 0,
             single_issuer: (parameters.flags & libc::IORING_SETUP_SINGLE_ISSUER) != 0,
-            is_polling: AtomicBool::new(false),
+            polling: PollingState::new(),
             blocked_futures: Mutex::new(Vec::new()),
             rfd,
         })

@@ -61,9 +61,14 @@ impl Completions {
             // If we have no completions we make a system call to wait for
             // completion events.
             log::trace!(timeout:?; "waiting for completion events");
-            shared.is_polling.store(true, Ordering::Release);
+            let timeout = if shared.polling.set_polling(true) {
+                // Got woken up, so polling without a timeout.
+                Some(Duration::ZERO)
+            } else {
+                timeout
+            };
             let result = shared.enter(1, libc::IORING_ENTER_GETEVENTS, timeout);
-            shared.is_polling.store(false, Ordering::Release);
+            shared.polling.set_polling(false);
             result?;
             tail = load_kernel_shared(self.entries_tail);
         }
