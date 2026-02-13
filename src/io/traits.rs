@@ -948,6 +948,10 @@ unsafe impl<B: BufMut> BufMut for LimitedBuf<B> {
     fn spare_capacity(&self) -> u32 {
         min(self.buf.spare_capacity(), self.limit as u32)
     }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.limit != 0 && self.buf.has_spare_capacity()
+    }
 }
 
 unsafe impl<B: Buf> Buf for LimitedBuf<B> {
