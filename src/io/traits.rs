@@ -954,6 +954,39 @@ unsafe impl<B: BufMut> BufMut for LimitedBuf<B> {
     }
 }
 
+unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for LimitedBuf<B> {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
+        // SAFETY: reposibilities lie with the caller.
+        let mut iovecs = unsafe { self.buf.as_iovecs_mut() };
+        let mut left = self.limit;
+        for iovec in &mut iovecs {
+            let len = iovec.len();
+            if len <= left {
+                left -= len;
+            } else {
+                // SAFETY: len >= left per the if statement above.
+                unsafe { iovec.set_len(left) };
+                left = 0;
+            }
+        }
+        iovecs
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        // SAFETY: reposibilities lie with the caller.
+        unsafe { self.buf.set_init(n) }
+        self.limit = self.limit.saturating_sub(n);
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        min(self.buf.spare_capacity(), self.limit as u32)
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.limit != 0 && self.buf.has_spare_capacity()
+    }
+}
+
 unsafe impl<B: Buf> Buf for LimitedBuf<B> {
     unsafe fn parts(&self) -> (*const u8, u32) {
         // SAFETY: reposibilities lie with the caller.
