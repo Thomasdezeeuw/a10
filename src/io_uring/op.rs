@@ -672,7 +672,8 @@ where
     )
 }
 
-fn poll_next<T, O, R, A, Out>(
+#[allow(private_bounds)]
+pub(super) fn poll_next<T, O, R, A, Out>(
     target: &T,
     state: &mut State<O, R, A>,
     ctx: &mut task::Context<'_>,
@@ -917,7 +918,7 @@ impl OpTarget for SubmissionQueue {
     }
 }
 
-fn fallback(err: io::Error) -> io::Error {
+pub(super) fn fallback(err: io::Error) -> io::Error {
     match err.raw_os_error() {
         Some(libc::EINVAL) => io::Error::new(
             io::ErrorKind::Unsupported,

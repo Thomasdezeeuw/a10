@@ -89,6 +89,7 @@ pub mod io;
 pub mod mem;
 pub mod net;
 pub mod pipe;
+pub mod poll;
 pub mod process;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -174,6 +175,48 @@ impl Ring {
     #[doc(alias = "kevent")]
     pub fn poll(&mut self, timeout: Option<Duration>) -> io::Result<()> {
         self.cq.poll(self.sq.shared(), timeout)
+    }
+
+    /// Returns an [`AsyncIterator`] that returns whenever this `Ring` is ready
+    /// be [polled].
+    ///
+    /// The submission queue `sq` MUST not be attached to this ring.
+    ///
+    /// [`AsyncIterator`]: std::async_iter::AsyncIterator
+    /// [polled]: Ring::poll
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # async fn run() -> std::io::Result<()> {
+    /// let mut main_ring = a10::Ring::new()?;
+    /// let other_ring = a10::Ring::new()?;
+    ///
+    /// // This AsyncIterator will return something once other_ring has an event to be polled.
+    /// let other_ring_pollable = other_ring.pollable(main_ring.sq());
+    ///
+    /// // This will wake other_ring_pollable once other_ring has an event.
+    /// main_ring.poll(None)?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Don't pass the the submission queue of the ring itself, it doesn't work.
+    ///
+    /// ```should_panic
+    /// # fn main() -> std::io::Result<()> {
+    /// let ring = a10::Ring::new()?;
+    /// let bad = ring.pollable(ring.sq()); // BAD: this doesn't work.
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn pollable(&self, sq: SubmissionQueue) -> poll::Pollable {
+        debug_assert!(
+            self.sq != sq.0,
+            "can't wait on pollable with sq of the same ring"
+        );
+        let state = poll::PollableState::new(self.sq());
+        poll::Pollable::new(sq, state, ())
     }
 }
 

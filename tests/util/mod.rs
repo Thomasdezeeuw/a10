@@ -183,6 +183,30 @@ impl Waker {
             }
         }
     }
+
+    /// Poll the `future` until completion, blocking when it can't make
+    /// progress. Whenever it can't make any progress it will wake `sq` and wait
+    /// until the task::Waker is awoken.
+    pub(crate) fn block_on_with<Fut>(self, future: Fut, sq: &SubmissionQueue) -> Fut::Output
+    where
+        Fut: IntoFuture,
+    {
+        let mut future = pin!(future.into_future());
+        let task_waker = thread_waker::new(thread::current());
+        let mut task_ctx = task::Context::from_waker(&task_waker);
+        loop {
+            match Future::poll(future.as_mut(), &mut task_ctx) {
+                Poll::Ready(res) => {
+                    task_waker.wake(); // Don't drop it as it will panic.
+                    return res;
+                }
+                Poll::Pending => {
+                    sq.wake();
+                    thread::park();
+                }
+            }
+        }
+    }
 }
 
 /// Start an A10 operation, assumes `future` is a A10 `Future`.
@@ -275,6 +299,7 @@ macro_rules! op_async_iter {
     };
 }
 
+op_async_iter!(a10::poll::Pollable => io::Result<()>);
 op_async_iter!(a10::io::MultishotRead<'_> => io::Result<a10::io::ReadBuf>);
 op_async_iter!(a10::net::MultishotAccept<'_> => io::Result<AsyncFd>);
 op_async_iter!(a10::net::MultishotRecv<'_> => io::Result<a10::io::ReadBuf>);

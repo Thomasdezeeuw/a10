@@ -1,6 +1,6 @@
 use std::io;
 use std::mem::{self, drop as unlock, take};
-use std::os::fd::RawFd;
+use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -99,6 +99,10 @@ impl Submissions {
 
     pub(crate) fn shared(&self) -> &Shared {
         &self.shared
+    }
+
+    pub(crate) fn fd(&self) -> RawFd {
+        self.shared.kq.as_raw_fd()
     }
 }
 

@@ -1,17 +1,19 @@
 use std::future::Future;
-use std::io;
 use std::mem::take;
+use std::os::fd::AsRawFd;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Barrier, Mutex};
 use std::task::{self, Poll, Wake};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use std::thread;
 use std::time::{Duration, Instant};
+use std::{io, ptr, thread};
 
 use a10::fs::{Open, OpenOptions};
+use a10::pipe::pipe;
 use a10::{Ring, SubmissionQueue};
 
-use crate::util::{LOREM_IPSUM_50, init, is_send, is_sync, poll_nop};
+use crate::util::{
+    LOREM_IPSUM_50, Waker, block_on, init, is_send, is_sync, next, poll_nop, start_op, syscall,
+};
 
 #[test]
 fn ring_size() {
@@ -161,6 +163,65 @@ fn submission_queue_full_is_handled_internally() {
 
         ring.poll(None).unwrap();
     }
+}
+
+#[test]
+fn pollable() {
+    const DATA: &str = "Hello, World!";
+
+    init();
+    let mut main_ring = Ring::new().unwrap();
+    let mut other_ring = Ring::new().unwrap();
+
+    let pipe = pipe(other_ring.sq());
+    let [receiver, sender] = block_on(&mut other_ring, pipe).unwrap();
+
+    let barrier = Arc::new(Barrier::new(2));
+    let other_sq = other_ring.sq();
+    let b = barrier.clone();
+    let handle = thread::spawn(move || {
+        let waker = Waker::new();
+        let mut read = receiver.read(Vec::with_capacity(DATA.len() + 1));
+        start_op(&mut read);
+        b.wait();
+
+        let buf = waker.block_on_with(read, &other_sq).unwrap();
+        assert_eq!(buf, DATA.as_bytes());
+    });
+
+    // Ensure that the read operation is submitted to the kernel for io_uring.
+    barrier.wait();
+    other_ring.poll(Some(Duration::ZERO)).unwrap();
+
+    let mut ring_pollable = other_ring.pollable(main_ring.sq());
+
+    // Trigger an event to complete the read on the other thread.
+    let n = syscall!(write(
+        sender.as_fd().unwrap().as_raw_fd(),
+        ptr::from_ref(DATA).cast(),
+        DATA.len()
+    ))
+    .unwrap();
+    assert_eq!(n.cast_unsigned(), DATA.len());
+
+    // Using the main ring wait until the other ring is pollable.
+    let () = block_on(&mut main_ring, next(&mut ring_pollable))
+        .unwrap()
+        .unwrap();
+    // Now poll the other ring.
+    other_ring.poll(None).unwrap();
+
+    handle.join().unwrap();
+}
+
+#[test]
+#[cfg_attr(
+    debug_assertions,
+    should_panic = "can't wait on pollable with sq of the same ring"
+)]
+fn pollable_self() {
+    let ring = Ring::new().unwrap();
+    let _ = ring.pollable(ring.sq());
 }
 
 #[test]
