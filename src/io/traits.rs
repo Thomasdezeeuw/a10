@@ -739,6 +739,15 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
         unsafe { self.as_iovecs().iter().map(IoSlice::len).sum() }
     }
 
+    /// Returns true if the buffer is empty.
+    ///
+    /// # Implementation
+    ///
+    /// This calls [`BufSlice::total_len`] and compares it to zero.
+    fn is_empty(&self) -> bool {
+        self.total_len() == 0
+    }
+
     /// Limit the amount of bytes read from these buffer.
     fn limit(self, limit: usize) -> LimitedBuf<Self>
     where
@@ -802,6 +811,10 @@ unsafe impl<B: Buf, const N: usize> BufSlice<N> for [B; N] {
     fn total_len(&self) -> usize {
         self.iter().map(Buf::len).sum()
     }
+
+    fn is_empty(&self) -> bool {
+        self.iter().all(Buf::is_empty)
+    }
 }
 
 macro_rules! buf_slice_for_tuple {
@@ -864,8 +877,11 @@ macro_rules! buf_slice_for_tuple {
             }
 
             fn total_len(&self) -> usize {
-                0
-                $( + self.$index.len() )+
+                0 $( + self.$index.len() )+
+            }
+
+            fn is_empty(&self) -> bool {
+                true $( && self.$index.is_empty() )+
             }
         }
     };
@@ -1015,7 +1031,7 @@ unsafe impl<B: Buf> Buf for LimitedBuf<B> {
     }
 
     fn is_empty(&self) -> bool {
-        self.buf.is_empty() || self.limit == 0
+        self.limit == 0 || self.buf.is_empty()
     }
 }
 
@@ -1039,5 +1055,9 @@ unsafe impl<B: BufSlice<N>, const N: usize> BufSlice<N> for LimitedBuf<B> {
 
     fn total_len(&self) -> usize {
         min(self.buf.total_len(), self.limit)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.limit == 0 || self.buf.is_empty()
     }
 }

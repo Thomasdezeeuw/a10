@@ -515,6 +515,11 @@ fn limited_buf_slice() {
 
     let bufs = BufSlice::limit(["Hello", " world"], 5);
     assert_eq!(bufs.total_len(), 5);
+    assert_eq!(bufs.is_empty(), false);
+
+    let bufs = BufSlice::limit(["Hello", " world"], 0);
+    assert_eq!(bufs.total_len(), 0);
+    assert_eq!(bufs.is_empty(), true);
 }
 
 /// Macro to run a code block with all buffer kinds.
