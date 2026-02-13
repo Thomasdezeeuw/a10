@@ -71,6 +71,8 @@
 )))]
 compile_error!("OS not supported");
 
+use std::fmt;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
 
 // This must come before the other modules for the documentation.
@@ -504,5 +506,51 @@ impl<T> OpPollResult<T> for Option<io::Result<T>> {
 
     fn done() -> Self {
         None
+    }
+}
+
+/// Polling state of a [`Ring`].
+pub(crate) struct PollingState(AtomicU8);
+
+const IS_POLLING: u8 = 0b01;
+#[allow(unused)] // Used in an assert below, but rustc doesn't seem to care.
+const NOT_POLLING: u8 = 0b00;
+const IS_AWOKEN: u8 = 0b10;
+const NOT_AWOKEN: u8 = 0b00;
+
+impl PollingState {
+    pub(crate) const fn new() -> PollingState {
+        PollingState(AtomicU8::new(0))
+    }
+
+    /// Set the state to currently (not) polling.
+    ///
+    /// Returns a boolean indicating if the poll call should continue like
+    /// normal, or should be cut short (e.g. with a zero timeout).
+    #[allow(clippy::cast_lossless)]
+    pub(crate) fn set_polling(&self, is_polling: bool) -> bool {
+        const _BOOL_CAST_CHECK_TRUE: () = assert!(true as u8 == IS_POLLING);
+        const _BOOL_CAST_CHECK_FALSE: () = assert!(false as u8 == NOT_POLLING);
+        let state = self.0.swap(is_polling as u8 | NOT_AWOKEN, Ordering::AcqRel);
+        (state & IS_AWOKEN) != 0
+    }
+
+    /// Set the state to wake the polling thread.
+    ///
+    /// Returns a boolean indicating if the caller should submit an event to
+    /// wake up the polling thread.
+    pub(crate) fn wake(&self) -> bool {
+        let state = self.0.fetch_or(IS_AWOKEN, Ordering::AcqRel);
+        state == (IS_POLLING | NOT_AWOKEN)
+    }
+}
+
+impl fmt::Debug for PollingState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let state = self.0.load(Ordering::Relaxed);
+        f.debug_struct("PollingState")
+            .field("polling", &((state & IS_POLLING) != 0))
+            .field("awoken", &((state & IS_AWOKEN) != 0))
+            .finish()
     }
 }

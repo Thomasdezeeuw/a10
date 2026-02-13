@@ -1,5 +1,4 @@
 use std::mem::{drop as unlock, take};
-use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{cmp, io, ptr};
 
@@ -24,6 +23,13 @@ impl Completions {
     pub(crate) fn poll(&mut self, shared: &Shared, timeout: Option<Duration>) -> io::Result<()> {
         self.events.clear();
 
+        let timeout = if shared.polling.set_polling(true) {
+            // Got woken up, so polling without a timeout.
+            Some(Duration::ZERO)
+        } else {
+            timeout
+        };
+
         let ts = timeout.map(|to| libc::timespec {
             tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64).cast_signed(),
             // `Duration::subsec_nanos` is guaranteed to be less than one
@@ -43,9 +49,8 @@ impl Completions {
         unlock(change_list); // Unlock, to not block others.
 
         log::trace!(submissions = changes.len(), timeout:?; "waiting for events");
-        shared.is_polling.store(true, Ordering::Release);
         shared.kevent(&mut changes, UseEvents::Some(&mut self.events), ts.as_ref());
-        shared.is_polling.store(false, Ordering::Release);
+        shared.polling.set_polling(false);
         shared.reuse_change_list(changes);
         Ok(())
     }

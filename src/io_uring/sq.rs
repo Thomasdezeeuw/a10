@@ -89,7 +89,7 @@ impl Submissions {
 
     pub(crate) fn wake(&self) -> io::Result<()> {
         log::trace!("waking up ring");
-        if !self.shared.is_polling.load(Ordering::Acquire) {
+        if !self.shared.polling.wake() {
             // If we're not polling we don't need to wake up.
             log::trace!("skipping ring message as it's not polling");
             return Ok(());

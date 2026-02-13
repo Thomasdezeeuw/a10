@@ -2,7 +2,6 @@ use std::io;
 use std::mem::{self, drop as unlock, take};
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use crate::kqueue::{Event, Shared, UseEvents, cq};
 use crate::lock;
@@ -83,7 +82,7 @@ impl Submissions {
 
     #[allow(clippy::unnecessary_wraps)]
     pub(crate) fn wake(&self) -> io::Result<()> {
-        if !self.shared.is_polling.load(Ordering::Acquire) {
+        if !self.shared.polling.wake() {
             // If we're not polling we don't need to wake up.
             return Ok(());
         }

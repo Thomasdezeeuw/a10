@@ -9,10 +9,9 @@
 use std::mem::{drop as unlock, swap};
 use std::os::fd::{AsRawFd, OwnedFd};
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::{fmt, ptr, task};
 
-use crate::{debug_detail, lock, syscall};
+use crate::{PollingState, debug_detail, lock, syscall};
 
 pub(crate) mod config;
 mod cq;
@@ -40,8 +39,7 @@ pub(crate) struct Shared {
     max_change_list_size: u32,
     /// Batched events to register.
     change_list: Mutex<Vec<Event>>,
-    /// Boolean indicating a thread is [`Ring::poll`]ing.
-    is_polling: AtomicBool,
+    polling: PollingState,
     /// kqueue(2) file descriptor.
     kq: OwnedFd,
 }

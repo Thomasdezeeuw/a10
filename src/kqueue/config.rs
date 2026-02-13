@@ -3,11 +3,10 @@
 use std::marker::PhantomData;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::Mutex;
-use std::sync::atomic::AtomicBool;
 use std::{io, mem, ptr};
 
 use crate::kqueue::{Completions, Shared, Submissions, cq};
-use crate::syscall;
+use crate::{PollingState, syscall};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config<'r> {
@@ -86,7 +85,7 @@ impl<'r> crate::Config<'r> {
         let shared = Shared {
             max_change_list_size: self.sys.max_change_list_size,
             change_list: Mutex::new(Vec::new()),
-            is_polling: AtomicBool::new(false),
+            polling: PollingState::new(),
             kq,
         };
         let submissions = Submissions::new(shared);
