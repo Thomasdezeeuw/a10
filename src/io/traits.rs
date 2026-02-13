@@ -135,6 +135,14 @@ pub unsafe trait BufMut: 'static {
         written
     }
 
+    /// Limit the amount of bytes written to this buffer.
+    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
+    }
+
     /// **Not part of the public API**.
     /// Do **not** implement this.
     #[doc(hidden)]
@@ -480,6 +488,14 @@ pub unsafe trait Buf: 'static {
             let (ptr, len) = self.parts();
             slice::from_raw_parts(ptr, len as usize)
         }
+    }
+
+    /// Limit the amount of bytes read from this buffer.
+    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
     }
 }
 
@@ -886,5 +902,66 @@ unsafe impl Buf for StaticBuf {
 
     fn as_slice(&self) -> &[u8] {
         Buf::as_slice(&self.0)
+    }
+}
+
+/// Limited buffer.
+///
+/// This buffer limits the amount of bytes read from or written to this buffer.
+///
+/// # Notes
+///
+/// This does not work work with a [`ReadBuf`] from ([`ReadBufPool`]).
+///
+/// [`ReadBuf`]: crate::io::ReadBuf
+/// [`ReadBufPool`]: crate::io::ReadBufPool
+pub struct LimitedBuf<B> {
+    buf: B,
+    limit: u32,
+}
+
+impl<B> LimitedBuf<B> {
+    /// Create a new limited buffer.
+    pub const fn new(buf: B, limit: u32) -> LimitedBuf<B> {
+        LimitedBuf { buf, limit }
+    }
+
+    /// Returns the internal buffer.
+    pub fn into_inner(self) -> B {
+        self.buf
+    }
+}
+
+unsafe impl<B: BufMut> BufMut for LimitedBuf<B> {
+    unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
+        // SAFETY: reposibilities lie with the caller.
+        let (ptr, len) = unsafe { self.buf.parts_mut() };
+        (ptr, min(len, self.limit))
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        // SAFETY: reposibilities lie with the caller.
+        unsafe { self.buf.set_init(n) }
+        self.limit = self.limit.saturating_sub(n as u32);
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        min(self.buf.spare_capacity(), self.limit)
+    }
+}
+
+unsafe impl<B: Buf> Buf for LimitedBuf<B> {
+    unsafe fn parts(&self) -> (*const u8, u32) {
+        // SAFETY: reposibilities lie with the caller.
+        let (ptr, len) = unsafe { self.buf.parts() };
+        (ptr, min(len, self.limit))
+    }
+
+    fn len(&self) -> usize {
+        min(self.buf.len(), self.limit as usize)
+    }
+
+    fn is_empty(&self) -> bool {
+        self.buf.is_empty() || self.limit == 0
     }
 }
