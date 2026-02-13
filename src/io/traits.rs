@@ -135,6 +135,14 @@ pub unsafe trait BufMut: 'static {
         written
     }
 
+    /// Limit the amount of bytes written to this buffer.
+    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
+    }
+
     /// **Not part of the public API**.
     /// Do **not** implement this.
     #[doc(hidden)]
@@ -480,6 +488,14 @@ pub unsafe trait Buf: 'static {
             let (ptr, len) = self.parts();
             slice::from_raw_parts(ptr, len as usize)
         }
+    }
+
+    /// Limit the amount of bytes read from this buffer.
+    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
     }
 }
 
