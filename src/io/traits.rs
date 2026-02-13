@@ -348,7 +348,7 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
 }
 
 /// Wrapper around [`libc::iovec`] to perform mutable vectored I/O operations,
-/// such as write.
+/// such as writes.
 pub struct IoMutSlice(crate::sys::io::IoMutSlice);
 
 impl IoMutSlice {
@@ -758,7 +758,7 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
 }
 
 /// Wrapper around [`libc::iovec`] to perform immutable vectored I/O operations,
-/// such as read.
+/// such as reads.
 pub struct IoSlice(crate::sys::io::IoSlice);
 
 impl IoSlice {
