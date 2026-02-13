@@ -1002,3 +1002,26 @@ unsafe impl<B: Buf> Buf for LimitedBuf<B> {
         self.buf.is_empty() || self.limit == 0
     }
 }
+
+unsafe impl<B: BufSlice<N>, const N: usize> BufSlice<N> for LimitedBuf<B> {
+    unsafe fn as_iovecs(&self) -> [IoSlice; N] {
+        // SAFETY: reposibilities lie with the caller.
+        let mut iovecs = unsafe { self.buf.as_iovecs() };
+        let mut left = self.limit;
+        for iovec in &mut iovecs {
+            let len = iovec.len();
+            if len <= left {
+                left -= len;
+            } else {
+                // SAFETY: len >= left per the if statement above.
+                unsafe { iovec.set_len(left) };
+                left = 0;
+            }
+        }
+        iovecs
+    }
+
+    fn total_len(&self) -> usize {
+        min(self.buf.total_len(), self.limit)
+    }
+}
