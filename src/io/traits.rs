@@ -136,7 +136,7 @@ pub unsafe trait BufMut: 'static {
     }
 
     /// Limit the amount of bytes written to this buffer.
-    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
     where
         Self: Sized,
     {
@@ -337,6 +337,14 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
         unsafe { self.set_init(written) };
         written
     }
+
+    /// Limit the amount of bytes written to these buffer.
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
+    }
 }
 
 /// Wrapper around [`libc::iovec`] to perform mutable vectored I/O operations,
@@ -491,7 +499,7 @@ pub unsafe trait Buf: 'static {
     }
 
     /// Limit the amount of bytes read from this buffer.
-    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
     where
         Self: Sized,
     {
@@ -730,6 +738,14 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
         // SAFETY: `as_iovecs` requires the returned iovec to be valid.
         unsafe { self.as_iovecs().iter().map(IoSlice::len).sum() }
     }
+
+    /// Limit the amount of bytes read from these buffer.
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
+    }
 }
 
 /// Wrapper around [`libc::iovec`] to perform immutable vectored I/O operations,
@@ -917,12 +933,12 @@ unsafe impl Buf for StaticBuf {
 /// [`ReadBufPool`]: crate::io::ReadBufPool
 pub struct LimitedBuf<B> {
     buf: B,
-    limit: u32,
+    limit: usize,
 }
 
 impl<B> LimitedBuf<B> {
     /// Create a new limited buffer.
-    pub const fn new(buf: B, limit: u32) -> LimitedBuf<B> {
+    pub const fn new(buf: B, limit: usize) -> LimitedBuf<B> {
         LimitedBuf { buf, limit }
     }
 
@@ -936,17 +952,54 @@ unsafe impl<B: BufMut> BufMut for LimitedBuf<B> {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         // SAFETY: reposibilities lie with the caller.
         let (ptr, len) = unsafe { self.buf.parts_mut() };
-        (ptr, min(len, self.limit))
+        (ptr, min(len, self.limit as u32))
     }
 
     unsafe fn set_init(&mut self, n: usize) {
         // SAFETY: reposibilities lie with the caller.
         unsafe { self.buf.set_init(n) }
-        self.limit = self.limit.saturating_sub(n as u32);
+        self.limit = self.limit.saturating_sub(n);
     }
 
     fn spare_capacity(&self) -> u32 {
-        min(self.buf.spare_capacity(), self.limit)
+        min(self.buf.spare_capacity(), self.limit as u32)
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.limit != 0 && self.buf.has_spare_capacity()
+    }
+}
+
+unsafe impl<B: BufMutSlice<N>, const N: usize> BufMutSlice<N> for LimitedBuf<B> {
+    unsafe fn as_iovecs_mut(&mut self) -> [IoMutSlice; N] {
+        // SAFETY: reposibilities lie with the caller.
+        let mut iovecs = unsafe { self.buf.as_iovecs_mut() };
+        let mut left = self.limit;
+        for iovec in &mut iovecs {
+            let len = iovec.len();
+            if len <= left {
+                left -= len;
+            } else {
+                // SAFETY: len >= left per the if statement above.
+                unsafe { iovec.set_len(left) };
+                left = 0;
+            }
+        }
+        iovecs
+    }
+
+    unsafe fn set_init(&mut self, n: usize) {
+        // SAFETY: reposibilities lie with the caller.
+        unsafe { self.buf.set_init(n) }
+        self.limit = self.limit.saturating_sub(n);
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        min(self.buf.spare_capacity(), self.limit as u32)
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.limit != 0 && self.buf.has_spare_capacity()
     }
 }
 
@@ -954,14 +1007,37 @@ unsafe impl<B: Buf> Buf for LimitedBuf<B> {
     unsafe fn parts(&self) -> (*const u8, u32) {
         // SAFETY: reposibilities lie with the caller.
         let (ptr, len) = unsafe { self.buf.parts() };
-        (ptr, min(len, self.limit))
+        (ptr, min(len, self.limit as u32))
     }
 
     fn len(&self) -> usize {
-        min(self.buf.len(), self.limit as usize)
+        min(self.buf.len(), self.limit)
     }
 
     fn is_empty(&self) -> bool {
         self.buf.is_empty() || self.limit == 0
+    }
+}
+
+unsafe impl<B: BufSlice<N>, const N: usize> BufSlice<N> for LimitedBuf<B> {
+    unsafe fn as_iovecs(&self) -> [IoSlice; N] {
+        // SAFETY: reposibilities lie with the caller.
+        let mut iovecs = unsafe { self.buf.as_iovecs() };
+        let mut left = self.limit;
+        for iovec in &mut iovecs {
+            let len = iovec.len();
+            if len <= left {
+                left -= len;
+            } else {
+                // SAFETY: len >= left per the if statement above.
+                unsafe { iovec.set_len(left) };
+                left = 0;
+            }
+        }
+        iovecs
+    }
+
+    fn total_len(&self) -> usize {
+        min(self.buf.total_len(), self.limit)
     }
 }
