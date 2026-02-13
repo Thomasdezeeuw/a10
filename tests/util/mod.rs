@@ -129,7 +129,7 @@ pub(crate) struct Waker;
 mod thread_waker {
     use std::sync::Arc;
     use std::task::{RawWaker, RawWakerVTable, Waker};
-    use std::thread::Thread;
+    use std::thread::{self, Thread};
 
     static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
 
@@ -153,8 +153,11 @@ mod thread_waker {
         unsafe { (&*data.cast::<Thread>()).unpark() };
     }
 
-    unsafe fn drop(_: *const ()) {
-        unreachable!("dropped a waker instead of waking it");
+    unsafe fn drop(data: *const ()) {
+        std::mem::drop(unsafe { Arc::<Thread>::from_raw(data.cast()) });
+        if !thread::panicking() {
+            unreachable!("dropped a waker instead of waking it");
+        }
     }
 }
 
