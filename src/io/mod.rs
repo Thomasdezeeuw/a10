@@ -71,7 +71,7 @@ pub(crate) use std::io::*;
 pub use read_buf::{ReadBuf, ReadBufPool};
 
 #[doc(inline)]
-pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, StaticBuf};
+pub use traits::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice, LimitedBuf, StaticBuf};
 
 /// Create a function and type to wraps standard {in,out,error}.
 macro_rules! stdio {
