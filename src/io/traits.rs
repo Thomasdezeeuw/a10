@@ -337,6 +337,14 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
         unsafe { self.set_init(written) };
         written
     }
+
+    /// Limit the amount of bytes written to these buffer.
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
+    }
 }
 
 /// Wrapper around [`libc::iovec`] to perform mutable vectored I/O operations,
@@ -729,6 +737,14 @@ pub unsafe trait BufSlice<const N: usize>: 'static {
     fn total_len(&self) -> usize {
         // SAFETY: `as_iovecs` requires the returned iovec to be valid.
         unsafe { self.as_iovecs().iter().map(IoSlice::len).sum() }
+    }
+
+    /// Limit the amount of bytes read from these buffer.
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
+    where
+        Self: Sized,
+    {
+        LimitedBuf::new(self, limit)
     }
 }
 
