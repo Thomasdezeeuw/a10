@@ -275,6 +275,7 @@ impl_fd_op!(TruncateOp);
 
 pub(crate) use libc::stat as Stat;
 
+#[allow(clippy::unnecessary_cast)]
 pub(crate) const fn file_type(stat: &Stat) -> FileType {
     FileType(stat.st_mode as u16)
 }
@@ -287,6 +288,7 @@ pub(crate) const fn block_size(stat: &Stat) -> u32 {
     stat.st_blksize.cast_unsigned()
 }
 
+#[allow(clippy::unnecessary_cast)]
 pub(crate) const fn permissions(stat: &Stat) -> Permissions {
     Permissions(stat.st_mode as u16)
 }
