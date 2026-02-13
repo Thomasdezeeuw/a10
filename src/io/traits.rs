@@ -136,7 +136,7 @@ pub unsafe trait BufMut: 'static {
     }
 
     /// Limit the amount of bytes written to this buffer.
-    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
     where
         Self: Sized,
     {
@@ -491,7 +491,7 @@ pub unsafe trait Buf: 'static {
     }
 
     /// Limit the amount of bytes read from this buffer.
-    fn limit(self, limit: u32) -> LimitedBuf<Self>
+    fn limit(self, limit: usize) -> LimitedBuf<Self>
     where
         Self: Sized,
     {
@@ -917,12 +917,12 @@ unsafe impl Buf for StaticBuf {
 /// [`ReadBufPool`]: crate::io::ReadBufPool
 pub struct LimitedBuf<B> {
     buf: B,
-    limit: u32,
+    limit: usize,
 }
 
 impl<B> LimitedBuf<B> {
     /// Create a new limited buffer.
-    pub const fn new(buf: B, limit: u32) -> LimitedBuf<B> {
+    pub const fn new(buf: B, limit: usize) -> LimitedBuf<B> {
         LimitedBuf { buf, limit }
     }
 
@@ -936,17 +936,17 @@ unsafe impl<B: BufMut> BufMut for LimitedBuf<B> {
     unsafe fn parts_mut(&mut self) -> (*mut u8, u32) {
         // SAFETY: reposibilities lie with the caller.
         let (ptr, len) = unsafe { self.buf.parts_mut() };
-        (ptr, min(len, self.limit))
+        (ptr, min(len, self.limit as u32))
     }
 
     unsafe fn set_init(&mut self, n: usize) {
         // SAFETY: reposibilities lie with the caller.
         unsafe { self.buf.set_init(n) }
-        self.limit = self.limit.saturating_sub(n as u32);
+        self.limit = self.limit.saturating_sub(n);
     }
 
     fn spare_capacity(&self) -> u32 {
-        min(self.buf.spare_capacity(), self.limit)
+        min(self.buf.spare_capacity(), self.limit as u32)
     }
 }
 
@@ -954,11 +954,11 @@ unsafe impl<B: Buf> Buf for LimitedBuf<B> {
     unsafe fn parts(&self) -> (*const u8, u32) {
         // SAFETY: reposibilities lie with the caller.
         let (ptr, len) = unsafe { self.buf.parts() };
-        (ptr, min(len, self.limit))
+        (ptr, min(len, self.limit as u32))
     }
 
     fn len(&self) -> usize {
-        min(self.buf.len(), self.limit as usize)
+        min(self.buf.len(), self.limit)
     }
 
     fn is_empty(&self) -> bool {
