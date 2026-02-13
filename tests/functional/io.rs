@@ -5,7 +5,7 @@ use std::os::fd::FromRawFd;
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::io::Splice;
-use a10::io::{BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
+use a10::io::{Buf, BufMut, Close, ReadBufPool, Stderr, Stdout, stderr, stdout};
 use a10::pipe::pipe;
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
@@ -464,6 +464,29 @@ async fn open_read_pipe(expected: &'static [u8], sq: SubmissionQueue) -> AsyncFd
     });
 
     fd
+}
+
+#[test]
+fn limited_buf_buf() {
+    let mut buf = BufMut::limit(Vec::with_capacity(32), 4);
+    assert_eq!(buf.spare_capacity(), 4);
+    buf.extend_from_slice(b"Hello!");
+    assert_eq!(buf.spare_capacity(), 0);
+    assert_eq!(buf.has_spare_capacity(), false);
+    let buf = buf.into_inner();
+    assert_eq!(buf, b"Hell");
+    assert_eq!(buf.capacity(), 32);
+
+    let buf = Buf::limit(buf, 2);
+    assert_eq!(buf.len(), 2);
+    assert_eq!(buf.is_empty(), false);
+    assert_eq!(buf.as_slice(), b"He");
+    let buf = buf.into_inner();
+
+    let buf = Buf::limit(buf, 0);
+    assert_eq!(buf.len(), 0);
+    assert_eq!(buf.is_empty(), true);
+    assert_eq!(buf.as_slice(), b"");
 }
 
 /// Macro to run a code block with all buffer kinds.
