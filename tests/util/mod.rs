@@ -662,6 +662,14 @@ unsafe impl BufMutSlice<2> for BadReadBufSlice {
             }
         }
     }
+
+    fn spare_capacity(&self) -> u32 {
+        unimplemented!()
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        unimplemented!()
+    }
 }
 
 // NOTE: this implementation is BROKEN! It's only used to test the write_all
@@ -678,6 +686,14 @@ unsafe impl BufMutSlice<2> for GrowingBufSlice {
     unsafe fn set_init(&mut self, n: usize) {
         unsafe { self.data.set_init(n) };
         self.data[1].reserve(200);
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        unimplemented!()
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        unimplemented!()
     }
 }
 

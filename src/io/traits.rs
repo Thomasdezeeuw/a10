@@ -270,6 +270,19 @@ pub unsafe trait BufMutSlice<const N: usize>: 'static {
     /// buffer with `n = 8` and the second with `n = 10 - 8 = 2`.
     unsafe fn set_init(&mut self, n: usize);
 
+    /// Returns the total amount of unused bytes in all buffers.
+    ///
+    /// This must be the same as the total length of all slices as returned by
+    /// [`as_iovecs_mut`].
+    ///
+    /// [`as_iovecs_mut`]: BufMutSlice::as_iovecs_mut
+    fn spare_capacity(&self) -> u32;
+
+    /// Returns `true` if any of the buffers has spare capacity.
+    fn has_spare_capacity(&self) -> bool {
+        self.spare_capacity() != 0
+    }
+
     /// Extend the buffer with `bytes`, returns the total number of bytes
     /// copied.
     ///
@@ -387,6 +400,14 @@ unsafe impl<B: BufMut, const N: usize> BufMutSlice<N> for [B; N] {
             "called BufMutSlice::set_init({n}), with buffers totaling in {} in size",
             n - left
         );
+    }
+
+    fn spare_capacity(&self) -> u32 {
+        self.iter().map(BufMut::spare_capacity).sum()
+    }
+
+    fn has_spare_capacity(&self) -> bool {
+        self.iter().any(BufMut::has_spare_capacity)
     }
 }
 
@@ -787,6 +808,14 @@ macro_rules! buf_slice_for_tuple {
                     "called BufMutSlice::set_init({n}), with buffers totaling in {} in size",
                     n - left
                 );
+            }
+
+            fn spare_capacity(&self) -> u32 {
+                0 $( + self.$index.spare_capacity())+
+            }
+
+            fn has_spare_capacity(&self) -> bool {
+                false $( || self.$index.has_spare_capacity())+
             }
         }
 
