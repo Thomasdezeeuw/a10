@@ -39,8 +39,8 @@
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
 
 // NOTE: currently `Watcher` always uses a regular file descriptor as
-// `inotify_add_watch` (in `Watcher::watch_path`) only works with regular file
-// descriptors, not direct ones.
+// `inotify_add_watch` (in `watch`) only works with regular file descriptors,
+// not direct ones.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -110,12 +110,12 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        self.watch_path_recursive(dir, interest, recursive, true)
+        watch_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
     }
 
     /// Watch a file.
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        self.watch_path(file, interest.0)
+        watch(&self.fd, &mut self.watching, file, interest.0)
     }
 
     /// Watch a directory or file.
@@ -124,71 +124,83 @@ impl Watcher {
     /// it's ignored.
     pub fn watch(
         &mut self,
-        dir: PathBuf,
+        path: PathBuf,
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        self.watch_path_recursive(dir, interest, recursive, false)
-    }
-
-    fn watch_path_recursive(
-        &mut self,
-        dir: PathBuf,
-        interest: Interest,
-        recursive: Recursive,
-        dir_only: bool,
-    ) -> io::Result<()> {
-        if let Recursive::All = recursive {
-            match std::fs::read_dir(&dir) {
-                Ok(read_dir) => {
-                    for result in read_dir {
-                        let entry = result?;
-                        if entry.file_type()?.is_dir() {
-                            let path = entry.path();
-                            self.watch_directory(path, interest, Recursive::All)?;
-                        }
-                    }
-                }
-                Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
-                    // Ignore the error.
-                }
-                Err(err) => return Err(err),
-            }
-        }
-
-        let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
-        self.watch_path(dir, mask)
-    }
-
-    fn watch_path(&mut self, path: PathBuf, mask: u32) -> io::Result<()> {
-        let path = unsafe {
-            PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes())
-        };
-        let mask = mask
-            // Don't follow symbolic links.
-            | libc::IN_DONT_FOLLOW
-            // When files are moved out of a watched directory don't generate
-            // events for them.
-            | libc::IN_EXCL_UNLINK
-            // Instead of replacing a watch combine the watched events.
-            | libc::IN_MASK_ADD;
-        let fd = self.fd.fd();
-        let wd = syscall!(inotify_add_watch(fd, path.as_ptr(), mask))?;
-        // NOTE: it's possible the `wd` is already watched, we'll overwrite the
-        // path, the watched interested is combined (within the kernel).
-        _ = self.watching.insert(wd, path);
-        Ok(())
+        watch_recursive(
+            &self.fd,
+            &mut self.watching,
+            path,
+            interest,
+            recursive,
+            false,
+        )
     }
 
     /// Wait for filesystem events.
     pub fn events<'w>(&'w mut self) -> Events<'w> {
         Events {
+            fd: &self.fd,
             watching: &mut self.watching,
             // NOTE: would be nice to use multishot read here, but as of Linux
             // 6.17 that doesn't work.
             state: EventsState::Reading(self.fd.read(Vec::with_capacity(BUF_SIZE))),
         }
     }
+}
+
+fn watch_recursive(
+    fd: &AsyncFd,
+    watching: &mut HashMap<WatchFd, PathBufWithNull>,
+    dir: PathBuf,
+    interest: Interest,
+    recursive: Recursive,
+    dir_only: bool,
+) -> io::Result<()> {
+    if let Recursive::All = recursive {
+        match std::fs::read_dir(&dir) {
+            Ok(read_dir) => {
+                for result in read_dir {
+                    let entry = result?;
+                    if entry.file_type()?.is_dir() {
+                        let dir = entry.path();
+                        watch_recursive(fd, watching, dir, interest, Recursive::All, true)?;
+                    }
+                }
+            }
+            Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
+                // Ignore the error.
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
+    watch(fd, watching, dir, mask)
+}
+
+fn watch(
+    fd: &AsyncFd,
+    watching: &mut HashMap<WatchFd, PathBufWithNull>,
+    path: PathBuf,
+    mask: u32,
+) -> io::Result<()> {
+    let path =
+        unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
+    let mask = mask
+        // Don't follow symbolic links.
+        | libc::IN_DONT_FOLLOW
+        // When files are moved out of a watched directory don't generate
+        // events for them.
+        | libc::IN_EXCL_UNLINK
+        // Instead of replacing a watch combine the watched events.
+        | libc::IN_MASK_ADD;
+    let wd = syscall!(inotify_add_watch(fd.fd(), path.as_ptr(), mask))?;
+    // NOTE: it's possible the `wd` is already watched, we'll overwrite the
+    // path, the watched interested is combined (within the kernel).
+    _ = watching.insert(wd, path);
+    Ok(())
 }
 
 new_flag!(
@@ -276,6 +288,9 @@ pub enum Recursive {
 #[must_use = "`AsyncIterator`s do nothing unless polled"]
 #[derive(Debug)]
 pub struct Events<'w> {
+    // NOTE: need to split the fields as we can't mutably borrow the fd in this
+    fd: &'w AsyncFd,
+    // type and in the call to read.
     /// See [`Watcher::watching`].
     watching: &'w mut HashMap<WatchFd, PathBufWithNull>,
     state: EventsState<'w>,
@@ -342,6 +357,38 @@ impl<'w> Events<'w> {
             let path = unsafe { OsStr::from_encoded_bytes_unchecked(path.as_bytes()) };
             Path::new(path)
         })
+    }
+
+    /// See [`Watcher::watch_directory`].
+    pub fn watch_directory(
+        &mut self,
+        dir: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+    ) -> io::Result<()> {
+        watch_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
+    }
+
+    /// See [`Watcher::watch_file`].
+    pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
+        watch(&self.fd, &mut self.watching, file, interest.0)
+    }
+
+    /// See [`Watcher::watch`].
+    pub fn watch(
+        &mut self,
+        path: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+    ) -> io::Result<()> {
+        watch_recursive(
+            &self.fd,
+            &mut self.watching,
+            path,
+            interest,
+            recursive,
+            false,
+        )
     }
 
     /// This is the same as the [`AsyncIterator::poll_next`] function, but then
