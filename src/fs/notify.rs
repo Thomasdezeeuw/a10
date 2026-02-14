@@ -39,8 +39,8 @@
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
 
 // NOTE: currently `Watcher` always uses a regular file descriptor as
-// `inotify_add_watch` (in `Watcher::watch_path`) only works with regular file
-// descriptors, not direct ones.
+// `inotify_add_watch` (in `watch`) only works with regular file descriptors,
+// not direct ones.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -110,12 +110,12 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_path_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
+        watch_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
     }
 
     /// Watch a file.
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        watch_path(&self.fd, &mut self.watching, file, interest.0)
+        watch(&self.fd, &mut self.watching, file, interest.0)
     }
 
     /// Watch a directory or file.
@@ -128,7 +128,7 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_path_recursive(
+        watch_recursive(
             &self.fd,
             &mut self.watching,
             path,
@@ -150,7 +150,7 @@ impl Watcher {
     }
 }
 
-fn watch_path_recursive(
+fn watch_recursive(
     fd: &AsyncFd,
     watching: &mut HashMap<WatchFd, PathBufWithNull>,
     dir: PathBuf,
@@ -165,7 +165,7 @@ fn watch_path_recursive(
                     let entry = result?;
                     if entry.file_type()?.is_dir() {
                         let dir = entry.path();
-                        watch_path_recursive(fd, watching, dir, interest, Recursive::All, true)?;
+                        watch_recursive(fd, watching, dir, interest, Recursive::All, true)?;
                     }
                 }
             }
@@ -177,10 +177,10 @@ fn watch_path_recursive(
     }
 
     let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
-    watch_path(fd, watching, dir, mask)
+    watch(fd, watching, dir, mask)
 }
 
-fn watch_path(
+fn watch(
     fd: &AsyncFd,
     watching: &mut HashMap<WatchFd, PathBufWithNull>,
     path: PathBuf,
@@ -366,12 +366,12 @@ impl<'w> Events<'w> {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_path_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
+        watch_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
     }
 
     /// See [`Watcher::watch_file`].
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        watch_path(&self.fd, &mut self.watching, file, interest.0)
+        watch(&self.fd, &mut self.watching, file, interest.0)
     }
 
     /// See [`Watcher::watch`].
@@ -381,7 +381,7 @@ impl<'w> Events<'w> {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_path_recursive(
+        watch_recursive(
             &self.fd,
             &mut self.watching,
             path,
