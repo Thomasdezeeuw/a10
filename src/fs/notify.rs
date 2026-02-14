@@ -141,6 +141,7 @@ impl Watcher {
     /// Wait for filesystem events.
     pub fn events<'w>(&'w mut self) -> Events<'w> {
         Events {
+            fd: &self.fd,
             watching: &mut self.watching,
             // NOTE: would be nice to use multishot read here, but as of Linux
             // 6.17 that doesn't work.
@@ -287,6 +288,9 @@ pub enum Recursive {
 #[must_use = "`AsyncIterator`s do nothing unless polled"]
 #[derive(Debug)]
 pub struct Events<'w> {
+    // NOTE: need to split the fields as we can't mutably borrow the fd in this
+    fd: &'w AsyncFd,
+    // type and in the call to read.
     /// See [`Watcher::watching`].
     watching: &'w mut HashMap<WatchFd, PathBufWithNull>,
     state: EventsState<'w>,
@@ -353,6 +357,38 @@ impl<'w> Events<'w> {
             let path = unsafe { OsStr::from_encoded_bytes_unchecked(path.as_bytes()) };
             Path::new(path)
         })
+    }
+
+    /// See [`Watcher::watch_directory`].
+    pub fn watch_directory(
+        &mut self,
+        dir: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+    ) -> io::Result<()> {
+        watch_path_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
+    }
+
+    /// See [`Watcher::watch_file`].
+    pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
+        watch_path(&self.fd, &mut self.watching, file, interest.0)
+    }
+
+    /// See [`Watcher::watch`].
+    pub fn watch(
+        &mut self,
+        path: PathBuf,
+        interest: Interest,
+        recursive: Recursive,
+    ) -> io::Result<()> {
+        watch_path_recursive(
+            &self.fd,
+            &mut self.watching,
+            path,
+            interest,
+            recursive,
+            false,
+        )
     }
 
     /// This is the same as the [`AsyncIterator::poll_next`] function, but then
