@@ -124,11 +124,11 @@ impl Watcher {
     /// it's ignored.
     pub fn watch(
         &mut self,
-        dir: PathBuf,
+        path: PathBuf,
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        self.watch_path_recursive(dir, interest, recursive, false)
+        self.watch_path_recursive(path, interest, recursive, false)
     }
 
     fn watch_path_recursive(
