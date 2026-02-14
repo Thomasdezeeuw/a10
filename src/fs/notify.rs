@@ -110,12 +110,12 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        self.watch_path_recursive(dir, interest, recursive, true)
+        watch_path_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
     }
 
     /// Watch a file.
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        self.watch_path(file, interest.0)
+        watch_path(&self.fd, &mut self.watching, file, interest.0)
     }
 
     /// Watch a directory or file.
@@ -128,56 +128,14 @@ impl Watcher {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        self.watch_path_recursive(path, interest, recursive, false)
-    }
-
-    fn watch_path_recursive(
-        &mut self,
-        dir: PathBuf,
-        interest: Interest,
-        recursive: Recursive,
-        dir_only: bool,
-    ) -> io::Result<()> {
-        if let Recursive::All = recursive {
-            match std::fs::read_dir(&dir) {
-                Ok(read_dir) => {
-                    for result in read_dir {
-                        let entry = result?;
-                        if entry.file_type()?.is_dir() {
-                            let path = entry.path();
-                            self.watch_directory(path, interest, Recursive::All)?;
-                        }
-                    }
-                }
-                Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
-                    // Ignore the error.
-                }
-                Err(err) => return Err(err),
-            }
-        }
-
-        let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
-        self.watch_path(dir, mask)
-    }
-
-    fn watch_path(&mut self, path: PathBuf, mask: u32) -> io::Result<()> {
-        let path = unsafe {
-            PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes())
-        };
-        let mask = mask
-            // Don't follow symbolic links.
-            | libc::IN_DONT_FOLLOW
-            // When files are moved out of a watched directory don't generate
-            // events for them.
-            | libc::IN_EXCL_UNLINK
-            // Instead of replacing a watch combine the watched events.
-            | libc::IN_MASK_ADD;
-        let fd = self.fd.fd();
-        let wd = syscall!(inotify_add_watch(fd, path.as_ptr(), mask))?;
-        // NOTE: it's possible the `wd` is already watched, we'll overwrite the
-        // path, the watched interested is combined (within the kernel).
-        _ = self.watching.insert(wd, path);
-        Ok(())
+        watch_path_recursive(
+            &self.fd,
+            &mut self.watching,
+            path,
+            interest,
+            recursive,
+            false,
+        )
     }
 
     /// Wait for filesystem events.
@@ -189,6 +147,59 @@ impl Watcher {
             state: EventsState::Reading(self.fd.read(Vec::with_capacity(BUF_SIZE))),
         }
     }
+}
+
+fn watch_path_recursive(
+    fd: &AsyncFd,
+    watching: &mut HashMap<WatchFd, PathBufWithNull>,
+    dir: PathBuf,
+    interest: Interest,
+    recursive: Recursive,
+    dir_only: bool,
+) -> io::Result<()> {
+    if let Recursive::All = recursive {
+        match std::fs::read_dir(&dir) {
+            Ok(read_dir) => {
+                for result in read_dir {
+                    let entry = result?;
+                    if entry.file_type()?.is_dir() {
+                        let dir = entry.path();
+                        watch_path_recursive(fd, watching, dir, interest, Recursive::All, true)?;
+                    }
+                }
+            }
+            Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
+                // Ignore the error.
+            }
+            Err(err) => return Err(err),
+        }
+    }
+
+    let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
+    watch_path(fd, watching, dir, mask)
+}
+
+fn watch_path(
+    fd: &AsyncFd,
+    watching: &mut HashMap<WatchFd, PathBufWithNull>,
+    path: PathBuf,
+    mask: u32,
+) -> io::Result<()> {
+    let path =
+        unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
+    let mask = mask
+        // Don't follow symbolic links.
+        | libc::IN_DONT_FOLLOW
+        // When files are moved out of a watched directory don't generate
+        // events for them.
+        | libc::IN_EXCL_UNLINK
+        // Instead of replacing a watch combine the watched events.
+        | libc::IN_MASK_ADD;
+    let wd = syscall!(inotify_add_watch(fd.fd(), path.as_ptr(), mask))?;
+    // NOTE: it's possible the `wd` is already watched, we'll overwrite the
+    // path, the watched interested is combined (within the kernel).
+    _ = watching.insert(wd, path);
+    Ok(())
 }
 
 new_flag!(
