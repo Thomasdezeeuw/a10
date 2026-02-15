@@ -3,11 +3,11 @@
 use std::mem::MaybeUninit;
 use std::sync::{Arc, Barrier};
 use std::time::Instant;
-use std::{env, fmt, io, panic, process, ptr, thread};
+use std::{env, fmt, io, panic, ptr, thread};
 
 use a10::Ring;
 use a10::fd;
-use a10::process::{Signal, Signals};
+use a10::process::{self, Signal, Signals, To};
 
 mod util;
 use util::{block_on, init, next, syscall};
@@ -173,9 +173,9 @@ impl TestHarness {
     }
 
     fn test_single_threaded(&mut self) {
-        let pid = process::id();
+        let pid = std::process::id();
         self.run_test("single_threaded", |ring, signals, signal| {
-            send_signal(pid, signal).unwrap();
+            process::send_signal(To::Process(pid), signal).unwrap();
             receive_signal(ring, signals, signal);
         });
     }
@@ -187,7 +187,7 @@ impl TestHarness {
         let barrier = Arc::new(Barrier::new(2));
         let b = barrier.clone();
         let handle = thread::spawn(move || {
-            let pid = process::id();
+            let pid = std::process::id();
             for signal in SIGNALS.iter().copied() {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
                 #[cfg(feature = "nightly")]
@@ -195,7 +195,7 @@ impl TestHarness {
                     continue;
                 }
 
-                send_signal(pid, signal).unwrap();
+                process::send_signal(To::Process(pid), signal).unwrap();
 
                 // Linux doesn't guarantee the ordering of receiving signals,
                 // but we do check for it. So, wait until the above signals is
@@ -213,7 +213,7 @@ impl TestHarness {
     }
 
     fn test_receive_signals(&mut self) {
-        let pid = process::id();
+        let pid = std::process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
         for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
             print_test_start(
@@ -227,7 +227,7 @@ impl TestHarness {
                 continue;
             }
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                send_signal(pid, *signal).unwrap();
+                process::send_signal(To::Process(pid), *signal).unwrap();
 
                 // Check if the signals can be received.
                 let signal_info = block_on(&mut self.ring, next(&mut receive_signal))
@@ -257,13 +257,6 @@ impl TestHarness {
 fn receive_signal(ring: &mut Ring, signals: &Signals, expected_signal: Signal) {
     let signal_info = block_on(ring, signals.receive()).unwrap();
     assert_eq!(signal_info.signal(), expected_signal);
-}
-
-#[allow(clippy::cast_possible_wrap)]
-fn send_signal(pid: u32, signal: Signal) -> std::io::Result<()> {
-    let signal = signal_to_os(signal);
-    syscall!(kill(pid as libc::pid_t, signal))?;
-    Ok(())
 }
 
 fn blocked_signalset() -> io::Result<libc::sigset_t> {
