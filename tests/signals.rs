@@ -161,7 +161,7 @@ impl TestHarness {
             );
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
-            if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+            if signal == Signal::SYS && cfg!(sanitize = "thread") {
                 print_test_ignored(self.quiet);
                 continue;
             }
@@ -191,7 +191,7 @@ impl TestHarness {
             for signal in SIGNALS.iter().copied() {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
                 #[cfg(feature = "nightly")]
-                if signal_to_os(signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+                if signal == Signal::SYS && cfg!(sanitize = "thread") {
                     continue;
                 }
 
@@ -222,7 +222,7 @@ impl TestHarness {
             );
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
-            if signal_to_os(*signal) == libc::SIGSYS && cfg!(sanitize = "thread") {
+            if signal == Signal::SYS && cfg!(sanitize = "thread") {
                 print_test_ignored(self.quiet);
                 continue;
             }
@@ -247,7 +247,9 @@ impl TestHarness {
             // After `Signals` is dropped all signals should be unblocked.
             let set = blocked_signalset().unwrap();
             for signal in SIGNALS.iter().copied() {
-                assert!(!in_signalset(&set, signal_to_os(signal)));
+                // SAFETY: this is not safe.
+                let signo = unsafe { std::mem::transmute(signal) };
+                assert!(!in_signalset(&set, signo));
             }
         }));
         print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
@@ -269,11 +271,6 @@ fn blocked_signalset() -> io::Result<libc::sigset_t> {
 fn in_signalset(set: &libc::sigset_t, signal: libc::c_int) -> bool {
     // SAFETY: we ensure the signal set is a valid pointer.
     unsafe { libc::sigismember(set, signal) == 1 }
-}
-
-fn signal_to_os(signal: Signal) -> libc::c_int {
-    // SAFETY: this is not safe.
-    unsafe { std::mem::transmute(signal) }
 }
 
 fn print_test_start(quiet: bool, name: fmt::Arguments<'_>) {
