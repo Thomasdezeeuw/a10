@@ -156,6 +156,11 @@ impl WaitId {
         }
         self
     }
+
+    /// Return what this future is waiting on.
+    pub fn waiting_on(&self) -> WaitOn {
+        self.state.args().0
+    }
 }
 
 /// Notification of process signals.
