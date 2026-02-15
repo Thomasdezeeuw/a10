@@ -1,10 +1,10 @@
-use std::mem::{self, MaybeUninit, replace};
+use std::mem::{self, MaybeUninit};
 use std::os::fd::RawFd;
 use std::task::{self, Poll};
 use std::{io, ptr};
 
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{EventedState, FdOp};
+use crate::kqueue::op::{Evented, FdOp, State};
 use crate::process::{Signal, SignalSet, Signals, WaitInfo, WaitOn, WaitOption};
 use crate::{AsyncFd, SubmissionQueue, syscall};
 
@@ -14,7 +14,7 @@ impl crate::op::Op for WaitIdOp {
     type Output = io::Result<WaitInfo>;
     type Resources = WaitInfo;
     type Args = (WaitOn, WaitOption);
-    type State = EventedState<Self::Resources, Self::Args>;
+    type State = State<Evented, Self::Resources, Self::Args>;
 
     #[allow(clippy::useless_conversion)]
     fn poll(
@@ -22,10 +22,9 @@ impl crate::op::Op for WaitIdOp {
         ctx: &mut task::Context<'_>,
         sq: &SubmissionQueue,
     ) -> Poll<Self::Output> {
-        match state {
-            EventedState::NotStarted { args, .. } | EventedState::ToSubmit { args, .. } => {
-                let (wait, _) = args;
-                let WaitOn::Process(pid) = *wait;
+        match &mut state.status {
+            Evented::NotStarted | Evented::ToSubmit => {
+                let (WaitOn::Process(pid), _) = state.args;
                 sq.submissions().add(|event| {
                     event.0.filter = libc::EVFILT_PROC;
                     event.0.ident = pid as _;
@@ -36,20 +35,16 @@ impl crate::op::Op for WaitIdOp {
                 });
 
                 // Set ourselves to waiting for an event from the kernel.
-                if let EventedState::NotStarted { resources, args }
-                | EventedState::ToSubmit { resources, args } =
-                    replace(state, EventedState::Complete)
-                {
-                    *state = EventedState::Waiting { resources, args };
-                }
+                state.status = Evented::Waiting;
                 // We've added our waker above to the list, we'll be woken up
                 // once we can make progress.
                 Poll::Pending
             }
-            EventedState::Waiting { resources, args } => {
-                let info = resources;
-                let (wait, options) = args;
-                let (id_type, pid) = match *wait {
+            Evented::Waiting => {
+                // SAFETY: status is not Complete so it's safe to access the resources.
+                let info = unsafe { state.resources.assume_init_mut() };
+                let (wait, options) = state.args;
+                let (id_type, pid) = match wait {
                     WaitOn::Process(pid) => (libc::P_PID, pid),
                 };
 
@@ -66,13 +61,13 @@ impl crate::op::Op for WaitIdOp {
                     Poll::Pending
                 } else {
                     let info = WaitInfo(info.0);
-                    *state = EventedState::Complete;
+                    state.status = Evented::Complete;
                     Poll::Ready(Ok(info))
                 }
             }
             // Shouldn't be reachable, but if the Future is used incorrectly it
             // can be.
-            EventedState::Complete => panic!("polled Future after completion"),
+            Evented::Complete => panic!("polled Future after completion"),
         }
     }
 }

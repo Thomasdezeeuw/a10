@@ -334,7 +334,7 @@ impl ReceiveSignals {
         let ReceiveSignals { signals, state } = &mut *this;
         // SAFETY: not using state any more.
         unsafe {
-            state.drop(signals.fd.sq());
+            OpState::drop(state, signals.fd.sq());
             ptr::drop_in_place(state);
         }
         // SAFETY: we're not dropping self (due to the ManuallyDrop, so signals
@@ -360,7 +360,7 @@ impl std::async_iter::AsyncIterator for ReceiveSignals {
 impl Drop for ReceiveSignals {
     fn drop(&mut self) {
         // SAFETY: we're in the `Drop` implementation.
-        unsafe { self.state.drop(self.signals.fd.sq()) }
+        unsafe { OpState::drop(&mut self.state, self.signals.fd.sq()) }
     }
 }
 

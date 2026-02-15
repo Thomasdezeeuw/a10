@@ -1,10 +1,9 @@
 use std::io;
-use std::mem::replace;
 use std::task::{self, Poll};
 
 use crate::SubmissionQueue;
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::EventedState;
+use crate::kqueue::op::{Evented, State};
 use crate::poll::PollableState;
 
 pub(crate) struct PollableOp;
@@ -13,7 +12,7 @@ impl crate::op::Iter for PollableOp {
     type Output = io::Result<()>;
     type Resources = PollableState;
     type Args = ();
-    type State = EventedState<Self::Resources, Self::Args>;
+    type State = State<Evented, Self::Resources, Self::Args>;
 
     fn poll_next(
         state: &mut Self::State,
@@ -22,9 +21,10 @@ impl crate::op::Iter for PollableOp {
     ) -> Poll<Option<Self::Output>> {
         const OP: OpKind = OpKind::Read;
 
-        match state {
-            EventedState::NotStarted { resources, .. }
-            | EventedState::ToSubmit { resources, .. } => {
+        match &mut state.status {
+            Evented::NotStarted | Evented::ToSubmit => {
+                // SAFETY: status is not Complete so it's safe to access the resources.
+                let resources = unsafe { state.resources.assume_init_ref() };
                 // Add ourselves to the waiters for the operation.
                 let fd_state = &resources.state;
                 let needs_register = {
@@ -45,31 +45,24 @@ impl crate::op::Iter for PollableOp {
                 }
 
                 // Set ourselves to waiting for an event from the kernel.
-                if let EventedState::NotStarted { resources, args }
-                | EventedState::ToSubmit { resources, args } =
-                    replace(state, EventedState::Complete)
-                {
-                    *state = EventedState::Waiting { resources, args };
-                }
+                state.status = Evented::Waiting;
                 // We've added our waker above to the list, we'll be woken up
                 // once we can make progress.
                 Poll::Pending
             }
-            EventedState::Waiting { resources, .. } => {
+            Evented::Waiting => {
+                // SAFETY: status is not Complete so it's safe to access the resources.
+                let resources = unsafe { state.resources.assume_init_ref() };
                 if resources.state.lock().has_waiting_op(OP) {
                     // Polled before we got an event.
                     Poll::Pending
                 } else {
                     // Return Ok and reset the state to wait for another event.
-                    if let EventedState::Waiting { resources, args } =
-                        replace(state, EventedState::Complete)
-                    {
-                        *state = EventedState::ToSubmit { resources, args };
-                    }
+                    state.status = Evented::ToSubmit;
                     Poll::Ready(Some(Ok(())))
                 }
             }
-            EventedState::Complete => Poll::Ready(None),
+            Evented::Complete => Poll::Ready(None),
         }
     }
 }
