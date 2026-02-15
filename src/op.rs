@@ -126,6 +126,9 @@ pub(crate) trait OpState {
     /// Mutable reference to the resources if the operation wasn't started yet.
     fn resources_mut(&mut self) -> Option<&mut Self::Resources>;
 
+    /// Reference to the arguments if the operation wasn't started yet.
+    fn args(&self) -> &Self::Args;
+
     /// Mutable reference to the arguments if the operation wasn't started yet.
     fn args_mut(&mut self) -> Option<&mut Self::Args>;
 

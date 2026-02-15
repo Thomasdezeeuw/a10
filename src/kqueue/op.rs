@@ -97,6 +97,10 @@ impl<T: StateStatus, R, A> OpState for State<T, R, A> {
         }
     }
 
+    fn args(&self) -> &Self::Args {
+        &self.args
+    }
+
     fn args_mut(&mut self) -> Option<&mut Self::Args> {
         if self.status.not_started() {
             Some(&mut self.args)

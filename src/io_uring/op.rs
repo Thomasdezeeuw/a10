@@ -162,6 +162,11 @@ impl<T, R, A> OpState for State<T, R, A> {
         }
     }
 
+    fn args(&self) -> &Self::Args {
+        // SAFETY: the arguments are always available as read-only.
+        unsafe { &self.data.as_ref().tail.args }
+    }
+
     fn args_mut(&mut self) -> Option<&mut Self::Args> {
         // SAFETY: when the operation hasn't started we're ensure that we have
         // unique access to all the state date.
