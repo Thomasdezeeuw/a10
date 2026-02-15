@@ -625,3 +625,49 @@ impl Signal {
         matches!(self, Signal::INTERRUPT | Signal::TERMINATION | Signal::QUIT)
     }
 }
+
+/// Who to send a signal to, see [`send_signal`].
+#[derive(Copy, Clone, Debug)]
+pub enum To {
+    /// To a single process.
+    Process(u32),
+    /// Send the signal to all processes in the same process group as the
+    /// current process.
+    AllSameGroup,
+    /// Send the signal to all processes in a specific process group.
+    AllInGroup(u32),
+    /// Send the signal to all processes to which the process has permission to
+    /// send signals to.
+    ///
+    /// # Notes
+    ///
+    /// Depending on the OS various processes are excluded from this, e.g.
+    /// process with id 1.
+    All,
+}
+
+/// Send a process signal.
+///
+/// Also see [`send_signal_check`] to do an existence and permission check.
+pub fn send_signal(to: To, signal: Signal) -> io::Result<()> {
+    kill(to, signal.0)
+}
+
+/// Check for existence of a process and permission of sending a signal to it.
+///
+/// This can be used to check for the existence of a process or process group
+/// that the caller is permitted to signal.
+pub fn send_signal_check(to: To) -> io::Result<()> {
+    kill(to, 0)
+}
+
+fn kill(to: To, signal: libc::c_int) -> io::Result<()> {
+    let pid = match to {
+        To::Process(pid) => pid.cast_signed(),
+        To::AllSameGroup => 0,
+        To::AllInGroup(id) => -(id.cast_signed()),
+        To::All => -1,
+    };
+    syscall!(kill(pid, signal))?;
+    Ok(())
+}

@@ -6,7 +6,8 @@ use std::process::Command;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::process::ToDirect;
 use a10::process::{
-    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, WaitId, WaitOption,
+    self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, To, WaitId,
+    WaitOption,
 };
 
 use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
@@ -97,4 +98,25 @@ fn process_wait_on_drop_before_complete() {
         panic!("unexpected result, expected it to return Poll::Pending");
     }
     drop(future);
+}
+
+#[test]
+fn send_signal() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let process = Command::new("sleep").arg("10000").spawn().unwrap();
+    let pid = process.id();
+
+    let mut wait_on = pin!(process::wait_on(sq, &process).flags(WaitOption::EXITED));
+    let res = poll_nop(wait_on.as_mut());
+    assert!(res.is_pending(), "unexpected poll result: {res:?}");
+
+    process::send_signal(To::Process(pid), Signal::TERMINATION).unwrap();
+
+    let info = waker.block_on(wait_on).expect("failed wait");
+
+    assert_eq!(info.signal(), Signal::CHILD);
+    assert_eq!(info.code(), ChildStatus::KILLED);
+    assert_eq!(info.pid(), pid as i32);
 }
