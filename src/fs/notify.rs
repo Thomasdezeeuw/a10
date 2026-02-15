@@ -366,12 +366,12 @@ impl<'w> Events<'w> {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_recursive(&self.fd, &mut self.watching, dir, interest, recursive, true)
+        watch_recursive(self.fd, self.watching, dir, interest, recursive, true)
     }
 
     /// See [`Watcher::watch_file`].
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        watch(&self.fd, &mut self.watching, file, interest.0)
+        watch(self.fd, self.watching, file, interest.0)
     }
 
     /// See [`Watcher::watch`].
@@ -381,14 +381,7 @@ impl<'w> Events<'w> {
         interest: Interest,
         recursive: Recursive,
     ) -> io::Result<()> {
-        watch_recursive(
-            &self.fd,
-            &mut self.watching,
-            path,
-            interest,
-            recursive,
-            false,
-        )
+        watch_recursive(self.fd, self.watching, path, interest, recursive, false)
     }
 
     /// This is the same as the [`AsyncIterator::poll_next`] function, but then
