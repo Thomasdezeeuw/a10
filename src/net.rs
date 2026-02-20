@@ -1393,6 +1393,11 @@ pub trait SocketAddress {
     /// Storage type used by the OS.
     ///
     /// For example `sockaddr_in` from libc for an IPv4 address on Unix.
+    ///
+    /// # Notes
+    ///
+    /// This is NOT part of the stable API, do NOT rely on the type exposed
+    /// in the implementations.
     type Storage;
 
     /// Returns itself as storage.
@@ -1434,6 +1439,7 @@ pub trait SocketAddress {
 }
 
 impl SocketAddress for SocketAddr {
+    #[doc(hidden)] // Not part of stable API.
     type Storage = libc::sockaddr_in6; // Fits both v4 and v6.
 
     fn into_storage(self) -> Self::Storage {
@@ -1500,6 +1506,7 @@ impl SocketAddress for SocketAddr {
 }
 
 impl SocketAddress for SocketAddrV4 {
+    #[doc(hidden)] // Not part of stable API.
     type Storage = libc::sockaddr_in;
 
     fn into_storage(self) -> Self::Storage {
@@ -1544,6 +1551,7 @@ impl SocketAddress for SocketAddrV4 {
 }
 
 impl SocketAddress for SocketAddrV6 {
+    #[doc(hidden)] // Not part of stable API.
     type Storage = libc::sockaddr_in6;
 
     fn into_storage(self) -> Self::Storage {
@@ -1589,6 +1597,7 @@ impl SocketAddress for SocketAddrV6 {
 }
 
 impl SocketAddress for unix::net::SocketAddr {
+    #[doc(hidden)] // Not part of stable API.
     type Storage = libc::sockaddr_un;
 
     fn into_storage(self) -> Self::Storage {
@@ -1671,6 +1680,7 @@ impl SocketAddress for unix::net::SocketAddr {
 pub struct NoAddress;
 
 impl SocketAddress for NoAddress {
+    #[doc(hidden)] // Not part of stable API.
     type Storage = Self;
 
     fn into_storage(self) -> Self::Storage {
