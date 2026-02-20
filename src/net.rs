@@ -1385,58 +1385,57 @@ impl<'fd, B: BufSlice<N>, const N: usize> Future for Extractor<SendAllVectored<'
 ///
 /// Unix uses different address types for different sockets, to support
 /// all of them A10 uses this trait.
-pub trait SocketAddress: private::SocketAddress + Sized {}
+///
+/// # Notes
+///
+/// This trait is not suited for usage outside of A10.
+pub trait SocketAddress {
+    /// Storage type used by the OS.
+    ///
+    /// For example `sockaddr_in` from libc for an IPv4 address on Unix.
+    type Storage;
 
-mod private {
-    use std::mem::MaybeUninit;
+    /// Returns itself as storage.
+    fn into_storage(self) -> Self::Storage;
 
-    use super::Domain;
+    /// Returns a raw pointer and length to the storage.
+    ///
+    /// # Safety
+    ///
+    /// The pointer must be valid to read up to length bytes from.
+    ///
+    /// The implementation must ensure that the pointer is valid, i.e. not null
+    /// and pointing to memory owned by the address. Furthermore it must ensure
+    /// that the returned length is, in combination with the pointer, valid. In
+    /// other words the memory the pointer and length are pointing to must be a
+    /// valid memory address and owned by the address.
+    unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t);
 
-    pub trait SocketAddress {
-        type Storage: Sized;
+    /// Returns a mutable raw pointer and length to `storage`.
+    ///
+    /// # Safety
+    ///
+    /// Only initialised bytes may be written to the pointer returned.
+    unsafe fn as_mut_ptr(
+        storage: &mut MaybeUninit<Self::Storage>,
+    ) -> (*mut libc::sockaddr, libc::socklen_t);
 
-        /// Returns itself as storage.
-        fn into_storage(self) -> Self::Storage;
+    /// Initialise the address from `storage`, to which at least `length`
+    /// bytes have been written (by the kernel).
+    ///
+    /// # Safety
+    ///
+    /// Caller must ensure that at least `length` bytes have been written to
+    /// `address`.
+    unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self;
 
-        /// Returns a raw pointer and length to the storage.
-        ///
-        /// # Safety
-        ///
-        /// The pointer must be valid to read up to length bytes from.
-        ///
-        /// The implementation must ensure that the pointer is valid, i.e. not null
-        /// and pointing to memory owned by the address. Furthermore it must ensure
-        /// that the returned length is, in combination with the pointer, valid. In
-        /// other words the memory the pointer and length are pointing to must be a
-        /// valid memory address and owned by the address.
-        unsafe fn as_ptr(storage: &Self::Storage) -> (*const libc::sockaddr, libc::socklen_t);
-
-        /// Returns a mutable raw pointer and length to `storage`.
-        ///
-        /// # Safety
-        ///
-        /// Only initialised bytes may be written to the pointer returned.
-        unsafe fn as_mut_ptr(
-            storage: &mut MaybeUninit<Self::Storage>,
-        ) -> (*mut libc::sockaddr, libc::socklen_t);
-
-        /// Initialise the address from `storage`, to which at least `length`
-        /// bytes have been written (by the kernel).
-        ///
-        /// # Safety
-        ///
-        /// Caller must ensure that at least `length` bytes have been written to
-        /// `address`.
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: libc::socklen_t) -> Self;
-
-        /// Return the correct domain for the address.
-        fn domain(&self) -> Domain;
-    }
+    /// Return the correct domain for the address.
+    ///
+    /// Used by [`Domain::for_address`].
+    fn domain(&self) -> Domain;
 }
 
-impl SocketAddress for SocketAddr {}
-
-impl private::SocketAddress for SocketAddr {
+impl SocketAddress for SocketAddr {
     type Storage = libc::sockaddr_in6; // Fits both v4 and v6.
 
     fn into_storage(self) -> Self::Storage {
@@ -1504,9 +1503,7 @@ impl private::SocketAddress for SocketAddr {
     }
 }
 
-impl SocketAddress for SocketAddrV4 {}
-
-impl private::SocketAddress for SocketAddrV4 {
+impl SocketAddress for SocketAddrV4 {
     type Storage = libc::sockaddr_in;
 
     fn into_storage(self) -> Self::Storage {
@@ -1552,9 +1549,7 @@ impl private::SocketAddress for SocketAddrV4 {
     }
 }
 
-impl SocketAddress for SocketAddrV6 {}
-
-impl private::SocketAddress for SocketAddrV6 {
+impl SocketAddress for SocketAddrV6 {
     type Storage = libc::sockaddr_in6;
 
     fn into_storage(self) -> Self::Storage {
@@ -1601,9 +1596,7 @@ impl private::SocketAddress for SocketAddrV6 {
     }
 }
 
-impl SocketAddress for unix::net::SocketAddr {}
-
-impl private::SocketAddress for unix::net::SocketAddr {
+impl SocketAddress for unix::net::SocketAddr {
     type Storage = libc::sockaddr_un;
 
     fn into_storage(self) -> Self::Storage {
@@ -1687,9 +1680,7 @@ impl private::SocketAddress for unix::net::SocketAddr {
 #[derive(Copy, Clone, Debug)]
 pub struct NoAddress;
 
-impl SocketAddress for NoAddress {}
-
-impl private::SocketAddress for NoAddress {
+impl SocketAddress for NoAddress {
     type Storage = Self;
 
     fn into_storage(self) -> Self::Storage {
