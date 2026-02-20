@@ -95,10 +95,10 @@ pub(crate) struct ListenOp;
 impl DirectFdOp for ListenOp {
     type Output = ();
     type Resources = ();
-    type Args = libc::c_int; // backlog.
+    type Args = u32; // backlog.
 
     fn run(fd: &AsyncFd, (): Self::Resources, backlog: Self::Args) -> io::Result<Self::Output> {
-        syscall!(listen(fd.fd(), backlog))?;
+        syscall!(listen(fd.fd(), backlog.cast_signed()))?;
         Ok(())
     }
 }

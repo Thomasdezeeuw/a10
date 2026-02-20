@@ -474,7 +474,7 @@ pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
         Err(ref err) if is_unsupported(err) => {
             // IORING_OP_LISTEN is only available since 6.11, fall back to a
             // blocking system call.
-            syscall!(listen(fd, backlog)).map(|_| ())
+            syscall!(listen(fd, backlog.cast_signed())).map(|_| ())
         }
         Err(err) => Err(err),
     }

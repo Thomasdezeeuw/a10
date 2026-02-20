@@ -80,7 +80,7 @@ pub(crate) struct ListenOp;
 impl FdOp for ListenOp {
     type Output = ();
     type Resources = ();
-    type Args = libc::c_int; // backlog.
+    type Args = u32; // backlog.
 
     #[allow(clippy::cast_sign_loss)]
     fn fill_submission(
@@ -91,7 +91,7 @@ impl FdOp for ListenOp {
     ) {
         submission.0.opcode = libc::IORING_OP_LISTEN as u8;
         submission.0.fd = fd.fd();
-        submission.0.len = *backlog as u32;
+        submission.0.len = *backlog;
     }
 
     fn map_ok(_: &AsyncFd, (): Self::Resources, (_, n): OpReturn) -> Self::Output {
