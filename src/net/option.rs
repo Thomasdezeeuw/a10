@@ -19,6 +19,11 @@ pub trait Get {
     /// Returned output.
     type Output: Sized;
     /// Type passed to the OS in the `getsockopt(2)` call.
+    ///
+    /// # Notes
+    ///
+    /// This is NOT part of the stable API, do NOT rely on the type exposed in
+    /// the implementations.
     type Storage: Sized;
 
     /// Level to use, see [`Level`].
@@ -60,6 +65,11 @@ pub trait Set {
     /// Value to set.
     type Value: Sized;
     /// Type passed to the OS in the `setsockopt(2)` call.
+    ///
+    /// # Notes
+    ///
+    /// This is NOT part of the stable API, do NOT rely on the type exposed in
+    /// the implementations.
     type Storage: Sized;
 
     /// Level to use, see [`Level`].
