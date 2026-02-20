@@ -294,6 +294,7 @@ macro_rules! new_option {
         $(
         impl Get for $type_name {
             type Output = $output;
+            #[doc(hidden)] // Not part of the stable API.
             type Storage = $storage;
 
             const LEVEL: Level = $level;
@@ -314,6 +315,7 @@ macro_rules! new_option {
         $(
         impl Set for $type_name {
             type Value = $value;
+            #[doc(hidden)] // Not part of the stable API.
             type Storage = $storage;
 
             const LEVEL: Level = $level;
