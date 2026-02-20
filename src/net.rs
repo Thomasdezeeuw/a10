@@ -150,7 +150,7 @@ impl AsyncFd {
     ///
     /// [`accept`]: AsyncFd::accept
     #[doc = man_link!(listen(2))]
-    pub fn listen<'fd>(&'fd self, backlog: libc::c_int) -> Listen<'fd> {
+    pub fn listen<'fd>(&'fd self, backlog: u32) -> Listen<'fd> {
         Listen::new(self, (), backlog)
     }
 
