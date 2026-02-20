@@ -305,6 +305,7 @@ macro_rules! new_flag {
         $(
         $(#[$type_meta])*
         #[derive(Copy, Clone, Eq, PartialEq)]
+        #[repr(transparent)]
         $type_vis struct $type_name(pub(crate) $type_repr);
 
         impl $type_name {
