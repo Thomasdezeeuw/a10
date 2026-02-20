@@ -83,7 +83,7 @@ impl<A: SocketAddress> DirectFdOp for BindOp<A> {
 
     fn run(fd: &AsyncFd, address: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
         let (ptr, length) = unsafe { A::as_ptr(&address.0) };
-        syscall!(bind(fd.fd(), ptr, length))?;
+        syscall!(bind(fd.fd(), ptr.cast(), length))?;
         Ok(())
     }
 }
@@ -127,7 +127,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
 
     fn setup(fd: &AsyncFd, address: &mut Self::Resources, (): &mut Self::Args) -> io::Result<()> {
         let (ptr, len) = unsafe { A::as_ptr(&address.0) };
-        match syscall!(connect(fd.fd(), ptr, len)) {
+        match syscall!(connect(fd.fd(), ptr.cast(), len)) {
             Ok(_) => Ok(()),
             Err(ref err) if is_in_progress(err) => Ok(()),
             Err(err) => Err(err),
@@ -160,7 +160,7 @@ impl<A: SocketAddress> FdOp for ConnectOp<A> {
 
         let mut address: MaybeUninit<A::Storage> = MaybeUninit::uninit();
         let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut address) };
-        match syscall!(getpeername(fd.fd(), ptr, &raw mut length)) {
+        match syscall!(getpeername(fd.fd(), ptr.cast(), &raw mut length)) {
             Ok(_) => Ok(()),
             Err(err)
                 if err.kind() == io::ErrorKind::NotConnected
@@ -197,8 +197,8 @@ impl<A: SocketAddress> DirectFdOp for SocketNameOp<A> {
         let address_length = &mut (resources.0).1;
         *address_length = length;
         match name {
-            Name::Local => syscall!(getsockname(fd.fd(), ptr, address_length))?,
-            Name::Peer => syscall!(getpeername(fd.fd(), ptr, address_length))?,
+            Name::Local => syscall!(getsockname(fd.fd(), ptr.cast(), address_length))?,
+            Name::Peer => syscall!(getpeername(fd.fd(), ptr.cast(), address_length))?,
         };
         // SAFETY: the kernel has written the address for us.
         Ok(unsafe { A::init((resources.0).0, (resources.0).1) })
@@ -461,7 +461,7 @@ impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
             buf_ptr.cast(),
             buf_len as usize,
             flags.0.cast_signed(),
-            address_ptr,
+            address_ptr.cast(),
             address_len,
         ))
     }
@@ -552,7 +552,7 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
         ))]
         let fd = syscall!(accept4(
             lfd.fd(),
-            ptr,
+            ptr.cast(),
             address_length,
             flags.0.cast_signed() | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC,
         ))?;
@@ -564,7 +564,7 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
             target_os = "visionos",
             target_os = "watchos",
         ))]
-        let fd = syscall!(accept(lfd.fd(), ptr, address_length))?;
+        let fd = syscall!(accept(lfd.fd(), ptr.cast(), address_length))?;
 
         // SAFETY: the accept operation ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw(fd, lfd.kind(), lfd.sq().clone()) };
