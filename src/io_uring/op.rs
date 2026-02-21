@@ -477,6 +477,7 @@ pub(crate) trait Op {
         op_return: OpReturn,
     ) -> Self::Output;
 
+    /// Fallback to a manual operation in case the kernel version is too old.
     fn fallback(
         sq: &SubmissionQueue,
         resources: Self::Resources,
@@ -556,6 +557,18 @@ pub(crate) trait FdOp {
 
     /// See [`Op::map_ok`].
     fn map_ok(fd: &AsyncFd, resources: Self::Resources, op_return: OpReturn) -> Self::Output;
+
+    /// See [`Op::fallback`].
+    fn fallback(
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        _ = fd;
+        _ = resources;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: FdOp> crate::op::FdOp for T {
@@ -569,14 +582,7 @@ impl<T: FdOp> crate::op::FdOp for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Self::Output> {
-        poll(
-            fd,
-            state,
-            ctx,
-            T::fill_submission,
-            T::map_ok,
-            |_, _, err| Err(fallback(err)),
-        )
+        poll(fd, state, ctx, T::fill_submission, T::map_ok, T::fallback)
     }
 }
 
