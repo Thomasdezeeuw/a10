@@ -48,11 +48,12 @@ impl Op for PipeOp {
     fn fallback(
         sq: &SubmissionQueue,
         (mut fds, _): Self::Resources,
-        _: &mut Self::Args,
+        flags: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         if let Some(libc::EINVAL) = err.raw_os_error() {
-            let res = syscall!(pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC))?;
+            let flags = flags.0.cast_signed() | libc::O_CLOEXEC;
+            let res = syscall!(pipe2(fds.as_mut_ptr(), flags))?;
             let resources = (fds, fd::Kind::File);
             let op_return = (CompletionFlags::empty(), res.cast_unsigned());
             Ok(Self::map_ok(sq, resources, op_return))
