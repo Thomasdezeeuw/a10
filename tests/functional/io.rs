@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::future::Future;
-use std::os::fd::FromRawFd;
+use std::os::fd::{BorrowedFd, FromRawFd};
 
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -11,8 +11,6 @@ use a10::io::{
 use a10::pipe::pipe;
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::fd;
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, GrowingBufSlice, LOREM_IPSUM_5,
     LOREM_IPSUM_50, Waker, defer, is_send, is_sync, next, raw_pipe, remove_test_file, syscall,
@@ -301,6 +299,11 @@ fn splice_from() {
     //let buf = waker.block_on(file.read_n(buf, expected.len())).unwrap();
     let buf = waker.block_on(file.read(buf)).unwrap();
     assert!(&buf[10..] == expected, "read content is different");
+}
+
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
+    fd.as_fd().expect("not a file descriptor")
 }
 
 #[test]

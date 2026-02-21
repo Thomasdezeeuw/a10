@@ -9,7 +9,7 @@ use std::cell::Cell;
 use std::fs::{remove_dir_all, remove_file};
 use std::future::{Future, IntoFuture};
 use std::net::SocketAddr;
-use std::os::fd::{BorrowedFd, RawFd};
+use std::os::fd::RawFd;
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
 use std::sync::{Once, OnceLock, RwLock, TryLockError};
@@ -453,10 +453,6 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
         .local_addr()
         .await
         .expect("failed to get socket address")
-}
-
-pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
-    fd.as_fd().expect("not a file descriptor")
 }
 
 pub(crate) fn raw_pipe() -> [RawFd; 2] {
