@@ -20,8 +20,8 @@ use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    ensure_submitted, expect_io_errno, expect_io_error_kind, fd, ignore_unsupported, is_send,
-    is_sync, next, syscall, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    ensure_submitted, expect_io_errno, expect_io_error_kind, fd, is_send, is_sync, next, syscall,
+    tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -278,7 +278,7 @@ fn socket_name() {
                 .expect("failed to connect");
 
             let got_local_addr: SocketAddr =
-                ignore_unsupported!(stream.local_addr().await).expect("failed to get local addr");
+                stream.local_addr().await.expect("failed to get local addr");
             assert_eq!(got_local_addr, *expected_local_addr.wait());
 
             let got_peer_addr: SocketAddr =

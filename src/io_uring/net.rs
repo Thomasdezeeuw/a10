@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 use std::mem::{ManuallyDrop, MaybeUninit};
 use std::os::fd::RawFd;
-use std::{ptr, slice};
+use std::{io, ptr, slice};
 
 use crate::io::{Buf, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::io_uring::io::PoolBufParts;
@@ -11,7 +11,7 @@ use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
 };
-use crate::{AsyncFd, SubmissionQueue, asan, fd, msan};
+use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
 
 pub(crate) use crate::unix::MsgHeader;
 
@@ -177,6 +177,29 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
         msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
         // SAFETY: the kernel has written the address for us.
         unsafe { A::init((resources.0).0, (resources.0).1) }
+    }
+
+    fn fallback(
+        fd: &AsyncFd,
+        mut resources: Self::Resources,
+        name: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        dbg!(&err, err.raw_os_error() == Some(libc::EOPNOTSUPP));
+        match err.raw_os_error() {
+            Some(libc::EOPNOTSUPP) => {
+                let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
+                let address_length = &mut (resources.0).1;
+                *address_length = length;
+                match *name {
+                    Name::Local => syscall!(getsockname(fd.fd(), ptr.cast(), address_length))?,
+                    Name::Peer => syscall!(getpeername(fd.fd(), ptr.cast(), address_length))?,
+                };
+                // SAFETY: the kernel has written the address for us.
+                Ok(unsafe { A::init((resources.0).0, (resources.0).1) })
+            }
+            _ => Err(err),
+        }
     }
 }
 
