@@ -626,6 +626,50 @@ impl Signal {
     }
 }
 
+impl fmt::Display for Signal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match *self {
+            Signal::HUP => "hangup",
+            Signal::INTERRUPT => "interrupt",
+            Signal::QUIT => "quit",
+            Signal::ILLEGAL => "illegal",
+            Signal::TRAP => "trap",
+            Signal::ABORT => "abort",
+            #[allow(unreachable_patterns)] // Same as ABORT.
+            Signal::IOT => "iot",
+            Signal::KILL => "kill",
+            Signal::BUS => "bus",
+            Signal::FP_ERROR => "floating-point-error",
+            Signal::USER1 => "user-1",
+            Signal::USER2 => "user-2",
+            Signal::SEG_VAULT => "segfault",
+            Signal::PIPE => "pipe",
+            Signal::ALARM => "alarm",
+            Signal::TERMINATION => "termination",
+            Signal::CHILD => "child",
+            Signal::CONTINUE => "continue",
+            Signal::STOP => "stop",
+            Signal::TERM_STOP => "terminal stop",
+            Signal::TTY_IN => "terminal-input",
+            Signal::TTY_OUT => "terminal-output",
+            Signal::URGENT => "urgent",
+            Signal::EXCEEDED_CPU => "exceeded-cpu",
+            Signal::EXCEEDED_FILE_SIZE => "excess-file-size",
+            Signal::VIRTUAL_ALARM => "virtual-alarm",
+            Signal::PROFILE_ALARM => "profile-alarm",
+            Signal::WINDOW_RESIZE => "window-change",
+            Signal::IO => "I/O",
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            #[allow(unreachable_patterns)] // Same as IO.
+            Signal::POLL => "poll",
+            #[cfg(any(target_os = "android", target_os = "linux"))]
+            Signal::PWR => "power-failure",
+            Signal::SYS => "bad-syscall",
+            _ => return write!(f, "Signal({})", self.0),
+        })
+    }
+}
+
 /// Who to send a signal to, see [`send_signal`].
 #[derive(Copy, Clone, Debug)]
 pub enum To {

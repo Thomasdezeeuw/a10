@@ -47,41 +47,6 @@ const SIGNALS: &[Signal] = &[
     Signal::SYS,
 ];
 
-const SIGNAL_NAMES: [&str; SIGNALS.len()] = [
-    "SIGHUP",
-    "SIGINT",
-    "SIGQUIT",
-    "SIGILL",
-    "SIGTRAP",
-    "SIGABRT",
-    "SIGIOT",
-    "SIGBUS",
-    "SIGFPE",
-    "SIGUSR1",
-    "SIGUSR2",
-    "SIGSEGV",
-    "SIGPIPE",
-    "SIGALRM",
-    "SIGTERM",
-    "SIGCHLD",
-    "SIGCONT",
-    "SIGTSTP",
-    "SIGTTIN",
-    "SIGTTOU",
-    "SIGURG",
-    "SIGXCPU",
-    "SIGXFSZ",
-    "SIGVTALRM",
-    "SIGPROF",
-    "SIGWINCH",
-    "SIGIO",
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    "SIGPOLL",
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    "SIGPWR",
-    "SIGSYS",
-];
-
 fn main() {
     init();
     let start = Instant::now();
@@ -154,10 +119,10 @@ impl TestHarness {
         F: FnMut(&mut Ring, &Signals, Signal),
     {
         let signals = self.signals.as_ref().unwrap();
-        for (signal, name) in SIGNALS.iter().copied().zip(SIGNAL_NAMES) {
+        for signal in SIGNALS.into_iter().copied() {
             print_test_start(
                 self.quiet,
-                format_args!("{test_name} ({:?}, {name})", self.fd_kind),
+                format_args!("{test_name} ({:?}, {signal}, {signal:?})", self.fd_kind),
             );
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
@@ -215,10 +180,10 @@ impl TestHarness {
     fn test_receive_signals(&mut self) {
         let pid = std::process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
-        for (signal, name) in SIGNALS.into_iter().zip(SIGNAL_NAMES) {
+        for signal in SIGNALS.into_iter() {
             print_test_start(
                 self.quiet,
-                format_args!("receive_signals ({:?}, {name})", self.fd_kind),
+                format_args!("receive_signals ({:?}, {signal}, {signal:?})", self.fd_kind),
             );
             // thread sanitizer can't deal with `SIGSYS` signal being send.
             #[cfg(feature = "nightly")]
