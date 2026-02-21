@@ -8,14 +8,14 @@ use std::async_iter::AsyncIterator;
 use std::cell::Cell;
 use std::fs::{remove_dir_all, remove_file};
 use std::future::{Future, IntoFuture};
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
-use std::os::fd::{AsRawFd, BorrowedFd, RawFd};
+use std::net::SocketAddr;
+use std::os::fd::{BorrowedFd, RawFd};
 use std::path::{Path, PathBuf};
 use std::pin::{Pin, pin};
 use std::sync::{Once, OnceLock, RwLock, TryLockError};
 use std::task::{self, Poll};
 use std::time::Duration;
-use std::{fmt, io, mem, panic, ptr, str, thread};
+use std::{fmt, io, panic, str, thread};
 
 use a10::io::{Buf, BufMut, BufMutSlice, BufSlice, IoMutSlice, IoSlice};
 use a10::net::{Domain, Protocol, Type, socket};
@@ -444,33 +444,15 @@ pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
 }
 
 pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
-    let fd = fd(socket).as_raw_fd();
-    let mut addr = libc::sockaddr_in {
-        sin_family: libc::AF_INET as libc::sa_family_t,
-        sin_port: 0,
-        sin_addr: libc::in_addr {
-            s_addr: u32::from_ne_bytes([127, 0, 0, 1]),
-        },
-        ..unsafe { mem::zeroed() }
-    };
-    let mut addr_len = mem::size_of::<libc::sockaddr_in>() as libc::socklen_t;
-
     match socket.bind::<SocketAddr>(([127, 0, 0, 1], 0).into()).await {
         Ok(()) => Ok(()),
         Err(err) => Err(err),
     }
     .expect("failed to bind socket");
-    syscall!(getsockname(
-        fd,
-        ptr::from_mut(&mut addr).cast(),
-        &raw mut addr_len
-    ))
-    .expect("failed to get socket address");
-
-    SocketAddr::V4(SocketAddrV4::new(
-        Ipv4Addr::from(addr.sin_addr.s_addr.to_ne_bytes()),
-        u16::from_be(addr.sin_port),
-    ))
+    socket
+        .local_addr()
+        .await
+        .expect("failed to get socket address")
 }
 
 pub(crate) fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
