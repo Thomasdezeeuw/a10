@@ -185,7 +185,6 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
         name: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        dbg!(&err, err.raw_os_error() == Some(libc::EOPNOTSUPP));
         match err.raw_os_error() {
             Some(libc::EOPNOTSUPP) => {
                 let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
