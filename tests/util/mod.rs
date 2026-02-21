@@ -38,26 +38,6 @@ pub(crate) fn page_size() -> usize {
     *PAGE_SIZE.get_or_init(|| unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize })
 }
 
-/// This `return`s from the function if the operation is unsupported (see
-/// [`is_unsupported`]).
-#[allow(unused_macros)]
-macro_rules! ignore_unsupported {
-    ($expr: expr) => {
-        match $expr {
-            Ok(ok) => Ok(ok),
-            Err(ref err) if $crate::util::is_unsupported(err) => return,
-            Err(err) => Err(err),
-        }
-    };
-}
-
-#[allow(unused_imports)]
-pub(crate) use ignore_unsupported;
-
-pub(crate) fn is_unsupported(err: &io::Error) -> bool {
-    matches!(err.raw_os_error(), Some(libc::EOPNOTSUPP))
-}
-
 fn test_ring<'a>() -> &'a (RwLock<Ring>, SubmissionQueue) {
     static TEST_RING: OnceLock<(RwLock<Ring>, SubmissionQueue)> = OnceLock::new();
     TEST_RING.get_or_init(|| {
@@ -444,19 +424,6 @@ pub(crate) async fn new_socket(
 ) -> AsyncFd {
     match socket(sq.clone(), domain, r#type, protocol).await {
         Ok(fd) => Ok(fd),
-        Err(ref err) if is_unsupported(err) => unsafe {
-            // IORING_OP_SOCKET is only available since 5.19, fall back to a
-            // blocking system call.
-            // SAFETY: these transmutes aren't safe.
-            let domain = std::mem::transmute(domain);
-            let r#type = std::mem::transmute(r#type);
-            let protocol = match protocol {
-                Some(protocol) => std::mem::transmute(protocol),
-                None => 0,
-            };
-            // SAFETY: kernel initialises the socket for us.
-            syscall!(socket(domain, r#type, protocol)).map(|fd| AsyncFd::from_raw_fd(fd, sq))
-        },
         Err(err) => Err(err),
     }
     .expect("failed to create socket")
@@ -466,16 +433,10 @@ pub(crate) async fn new_socket(
 /// on it. Returns the bound address.
 pub(crate) async fn bind_and_listen_ipv4(socket: &AsyncFd) -> SocketAddr {
     let address = bind_ipv4(socket).await;
-    let fd = fd(socket).as_raw_fd();
     let backlog = 128;
 
     match socket.listen(backlog).await {
         Ok(()) => Ok(()),
-        Err(ref err) if is_unsupported(err) => {
-            // IORING_OP_LISTEN is only available since 6.11, fall back to a
-            // blocking system call.
-            syscall!(listen(fd, backlog.cast_signed())).map(|_| ())
-        }
         Err(err) => Err(err),
     }
     .expect("failed to listen on socket");
@@ -496,11 +457,6 @@ pub(crate) async fn bind_ipv4(socket: &AsyncFd) -> SocketAddr {
 
     match socket.bind::<SocketAddr>(([127, 0, 0, 1], 0).into()).await {
         Ok(()) => Ok(()),
-        Err(ref err) if is_unsupported(err) => {
-            // IORING_OP_BIND is only available since 6.11, fall back to a
-            // blocking system call.
-            syscall!(bind(fd, ptr::from_ref(&addr).cast(), addr_len)).map(|_| ())
-        }
         Err(err) => Err(err),
     }
     .expect("failed to bind socket");
