@@ -48,6 +48,7 @@ impl Op for PipeOp {
     fn fallback(
         sq: &SubmissionQueue,
         (mut fds, _): Self::Resources,
+        _: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         if let Some(libc::EINVAL) = err.raw_os_error() {

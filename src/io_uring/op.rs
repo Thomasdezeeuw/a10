@@ -481,10 +481,12 @@ pub(crate) trait Op {
     fn fallback(
         sq: &SubmissionQueue,
         resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         _ = sq;
         _ = resources;
+        _ = args;
         _ = err;
         Err(fallback(err))
     }
@@ -537,7 +539,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok_extract,
-            |_, _, err| Err(fallback(err)),
+            |_, _, _, err| Err(fallback(err)),
         )
     }
 }
@@ -562,10 +564,12 @@ pub(crate) trait FdOp {
     fn fallback(
         fd: &AsyncFd,
         resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         _ = fd;
         _ = resources;
+        _ = args;
         _ = err;
         Err(fallback(err))
     }
@@ -611,7 +615,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
             ctx,
             T::fill_submission,
             T::map_ok_extract,
-            |_, _, err| Err(fallback(err)),
+            |_, _, _, err| Err(fallback(err)),
         )
     }
 }
@@ -652,7 +656,7 @@ impl<T: FdIter> crate::op::FdIter for T {
             ctx,
             T::fill_submission,
             T::map_next,
-            |_, _, err| Err(fallback(err)),
+            |_, _, _, err| Err(fallback(err)),
         )
     }
 }
@@ -663,7 +667,7 @@ fn poll<T, O, R, A, Out>(
     ctx: &mut task::Context<'_>,
     fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
     map_ok: impl Fn(&T, R, OpReturn) -> Out,
-    fallback: impl Fn(&T, R, io::Error) -> io::Result<Out>,
+    fallback: impl Fn(&T, R, &mut A, io::Error) -> io::Result<Out>,
 ) -> Poll<io::Result<Out>>
 where
     T: OpTarget,
@@ -690,7 +694,7 @@ pub(super) fn poll_next<T, O, R, A, Out>(
     ctx: &mut task::Context<'_>,
     fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
     map_next: impl Fn(&T, &R, OpReturn) -> Out,
-    fallback: impl Fn(&T, &R, io::Error) -> io::Result<Out>,
+    fallback: impl Fn(&T, &R, &mut A, io::Error) -> io::Result<Out>,
 ) -> Poll<Option<io::Result<Out>>>
 where
     T: OpTarget,
@@ -733,7 +737,7 @@ fn poll_inner<T, O, R, R2, A, Ok, Res>(
     fill_submission: impl Fn(&T, &mut R, &mut A, &mut Submission),
     get_resources: impl Fn(*mut R) -> R2,
     map_ok: impl Fn(&T, R2, OpReturn) -> Ok,
-    fallback: impl Fn(&T, R2, io::Error) -> io::Result<Ok>,
+    fallback: impl Fn(&T, R2, &mut A, io::Error) -> io::Result<Ok>,
 ) -> Poll<Res>
 where
     T: OpTarget,
@@ -874,7 +878,8 @@ where
                     Err(err) => {
                         unlock(shared);
                         let resources = get_resources(data.tail.resources.get().cast::<R>());
-                        return Poll::Ready(Res::from_res(fallback(target, resources, err)));
+                        let args = &mut data.tail.args;
+                        return Poll::Ready(Res::from_res(fallback(target, resources, args, err)));
                     }
                 }
             }

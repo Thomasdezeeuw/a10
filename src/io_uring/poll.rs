@@ -37,7 +37,7 @@ impl crate::op::Iter for PollableOp {
                 submission.0.len = libc::IORING_POLL_ADD_MULTI;
             },
             |_, _, _| (),
-            |_, _, err| Err(fallback(err)),
+            |_, _, (), err| Err(fallback(err)),
         )
     }
 }
