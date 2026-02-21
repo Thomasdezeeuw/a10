@@ -1,13 +1,8 @@
 use std::cell::Cell;
 use std::io::{self, Read, Write};
-use std::mem::{self, size_of};
-use std::net::{
-    Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpListener, TcpStream,
-    UdpSocket,
-};
-use std::os::fd::{AsRawFd, BorrowedFd};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::sync::{Arc, OnceLock};
-use std::{ptr, thread};
+use std::thread;
 
 use a10::io::ReadBufPool;
 use a10::net::{
@@ -20,7 +15,7 @@ use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    ensure_submitted, expect_io_errno, expect_io_error_kind, fd, is_send, is_sync, next, syscall,
+    ensure_submitted, expect_io_errno, expect_io_error_kind, is_send, is_sync, next,
     tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
@@ -155,7 +150,9 @@ fn multishot_accept() {
                     .block_on(next(&mut accept_stream))
                     .expect("missing a connection")
                     .expect("failed to accept connection");
-                let addr = peer_addr(fd(&client)).expect("failed to get address");
+                let addr: SocketAddr = waker
+                    .block_on(client.peer_addr())
+                    .expect("failed to get address");
                 (client, addr)
             })
             .collect::<Vec<_>>();
@@ -643,7 +640,9 @@ fn recv_vectored_truncated() {
         .block_on(socket.connect(local_addr))
         .expect("failed to connect");
 
-    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
+    let socket_addr: SocketAddr = waker
+        .block_on(socket.local_addr())
+        .expect("failed to get local address");
     listener
         .send_to(DATA1, socket_addr)
         .expect("failed to send data");
@@ -707,8 +706,7 @@ fn recv_from() {
     let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
-    waker.block_on(bind_ipv4(&socket));
-    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
+    let socket_addr = waker.block_on(bind_ipv4(&socket));
 
     listener
         .send_to(DATA1, socket_addr)
@@ -737,8 +735,7 @@ fn recv_from_read_buf_pool() {
     let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
-    waker.block_on(bind_ipv4(&socket));
-    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
+    let socket_addr = waker.block_on(bind_ipv4(&socket));
 
     let n = listener
         .send_to(DATA1, socket_addr)
@@ -764,8 +761,7 @@ fn recv_from_vectored() {
     let local_addr = listener.local_addr().unwrap();
 
     let socket = waker.block_on(udp_ipv4_socket(sq));
-    waker.block_on(bind_ipv4(&socket));
-    let socket_addr = sock_addr(fd(&socket)).expect("failed to get local address");
+    let socket_addr = waker.block_on(bind_ipv4(&socket));
 
     listener
         .send_to(DATA1, socket_addr)
@@ -1422,47 +1418,5 @@ pub(crate) fn conn_test<Fut: Future<Output = ()>>(
     ensure_submitted(); // Ensure that the fds are closed (which is async).
     if let Err(err) = handle.join() {
         std::panic::resume_unwind(err);
-    }
-}
-
-fn peer_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
-    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
-    let mut len = size_of::<libc::sockaddr_storage>() as u32;
-    syscall!(getpeername(
-        fd.as_raw_fd(),
-        ptr::addr_of_mut!(storage).cast::<libc::sockaddr>(),
-        &mut len
-    ))?;
-    Ok(convert_address(storage, len))
-}
-
-fn sock_addr(fd: BorrowedFd) -> io::Result<SocketAddr> {
-    let mut storage: libc::sockaddr_storage = unsafe { mem::zeroed() };
-    let mut len = size_of::<libc::sockaddr_storage>() as u32;
-    syscall!(getsockname(
-        fd.as_raw_fd(),
-        ptr::addr_of_mut!(storage).cast::<libc::sockaddr>(),
-        &mut len
-    ))?;
-    Ok(convert_address(storage, len))
-}
-
-fn convert_address(storage: libc::sockaddr_storage, len: libc::socklen_t) -> SocketAddr {
-    if storage.ss_family == libc::AF_INET as libc::sa_family_t {
-        assert!(len == size_of::<libc::sockaddr_in>() as libc::socklen_t);
-        let storage = unsafe { &*ptr::addr_of!(storage).cast::<libc::sockaddr_in>() };
-        let addr = Ipv4Addr::from(storage.sin_addr.s_addr.to_ne_bytes());
-        let port = storage.sin_port.to_be();
-        SocketAddr::V4(SocketAddrV4::new(addr, port))
-    } else if storage.ss_family == libc::AF_INET6 as libc::sa_family_t {
-        assert!(len == size_of::<libc::sockaddr_in6>() as libc::socklen_t);
-        let storage = unsafe { &*ptr::addr_of!(storage).cast::<libc::sockaddr_in6>() };
-        let addr = Ipv6Addr::from(storage.sin6_addr.s6_addr);
-        let port = storage.sin6_port.to_be();
-        let flowinfo = storage.sin6_flowinfo;
-        let scope_id = storage.sin6_scope_id;
-        SocketAddr::V6(SocketAddrV6::new(addr, port, flowinfo, scope_id))
-    } else {
-        panic!("invalid socket storage type: {}", storage.ss_family)
     }
 }
