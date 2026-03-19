@@ -177,7 +177,7 @@ impl TestHarness {
 
     fn test_receive_signals(&mut self) {
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
-        for signal in SIGNALS.into_iter() {
+        for signal in SIGNALS.iter().copied() {
             print_test_start(
                 self.quiet,
                 format_args!("receive_signals ({:?}, {signal}, {signal:?})", self.fd_kind),
@@ -189,13 +189,13 @@ impl TestHarness {
                 continue;
             }
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                process::send_signal(To::this_process(), *signal).unwrap();
+                process::send_signal(To::this_process(), signal).unwrap();
 
                 // Check if the signals can be received.
                 let signal_info = block_on(&mut self.ring, next(&mut receive_signal))
                     .unwrap()
                     .unwrap();
-                assert_eq!(signal_info.signal(), *signal);
+                assert_eq!(signal_info.signal(), signal);
             }));
             print_test_result(result, self.quiet, &mut self.passed, &mut self.failed);
         }
