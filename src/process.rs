@@ -695,6 +695,11 @@ impl To {
     pub fn this_process() -> To {
         To::Process(std::process::id())
     }
+
+    /// Send a signal to a child process.
+    pub fn child(child: &std::process::Child) -> To {
+        To::Process(child.id())
+    }
 }
 
 /// Send a process signal.
