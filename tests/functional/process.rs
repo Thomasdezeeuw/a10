@@ -112,7 +112,7 @@ fn send_signal() {
     let res = poll_nop(wait_on.as_mut());
     assert!(res.is_pending(), "unexpected poll result: {res:?}");
 
-    process::send_signal(To::Process(pid), Signal::TERMINATION).unwrap();
+    process::send_signal(To::child(&process), Signal::TERMINATION).unwrap();
 
     let info = waker.block_on(wait_on).expect("failed wait");
 

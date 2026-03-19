@@ -690,6 +690,18 @@ pub enum To {
     All,
 }
 
+impl To {
+    /// Send a signal to this process itself.
+    pub fn this_process() -> To {
+        To::Process(std::process::id())
+    }
+
+    /// Send a signal to a child process.
+    pub fn child(child: &std::process::Child) -> To {
+        To::Process(child.id())
+    }
+}
+
 /// Send a process signal.
 ///
 /// Also see [`send_signal_check`] to do an existence and permission check.
