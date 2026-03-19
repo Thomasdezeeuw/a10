@@ -138,9 +138,8 @@ impl TestHarness {
     }
 
     fn test_single_threaded(&mut self) {
-        let pid = std::process::id();
         self.run_test("single_threaded", |ring, signals, signal| {
-            process::send_signal(To::Process(pid), signal).unwrap();
+            process::send_signal(To::this_process(), signal).unwrap();
             receive_signal(ring, signals, signal);
         });
     }
@@ -152,7 +151,6 @@ impl TestHarness {
         let barrier = Arc::new(Barrier::new(2));
         let b = barrier.clone();
         let handle = thread::spawn(move || {
-            let pid = std::process::id();
             for signal in SIGNALS.iter().copied() {
                 // thread sanitizer can't deal with `SIGSYS` signal being send.
                 #[cfg(feature = "nightly")]
@@ -160,7 +158,7 @@ impl TestHarness {
                     continue;
                 }
 
-                process::send_signal(To::Process(pid), signal).unwrap();
+                process::send_signal(To::this_process(), signal).unwrap();
 
                 // Linux doesn't guarantee the ordering of receiving signals,
                 // but we do check for it. So, wait until the above signals is
@@ -178,7 +176,6 @@ impl TestHarness {
     }
 
     fn test_receive_signals(&mut self) {
-        let pid = std::process::id();
         let mut receive_signal = self.signals.take().unwrap().receive_signals();
         for signal in SIGNALS.into_iter() {
             print_test_start(
@@ -192,7 +189,7 @@ impl TestHarness {
                 continue;
             }
             let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-                process::send_signal(To::Process(pid), *signal).unwrap();
+                process::send_signal(To::this_process(), *signal).unwrap();
 
                 // Check if the signals can be received.
                 let signal_info = block_on(&mut self.ring, next(&mut receive_signal))

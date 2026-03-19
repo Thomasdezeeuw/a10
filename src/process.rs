@@ -690,6 +690,13 @@ pub enum To {
     All,
 }
 
+impl To {
+    /// Send a signal to this process itself.
+    pub fn this_process() -> To {
+        To::Process(std::process::id())
+    }
+}
+
 /// Send a process signal.
 ///
 /// Also see [`send_signal_check`] to do an existence and permission check.
