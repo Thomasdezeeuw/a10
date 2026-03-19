@@ -157,8 +157,8 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
             optlen: match name {
-                Name::Local => 1,
-                Name::Peer => 0,
+                Name::Local => 0,
+                Name::Peer => 1,
             },
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
