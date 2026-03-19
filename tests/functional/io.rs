@@ -1,6 +1,6 @@
 use std::cell::Cell;
 use std::future::Future;
-use std::os::fd::{BorrowedFd, FromRawFd};
+use std::os::fd::FromRawFd;
 
 use a10::fs::{self, OpenOptions};
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -302,7 +302,7 @@ fn splice_from() {
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-fn fd<'fd>(fd: &'fd AsyncFd) -> BorrowedFd<'fd> {
+fn fd<'fd>(fd: &'fd AsyncFd) -> std::os::fd::BorrowedFd<'fd> {
     fd.as_fd().expect("not a file descriptor")
 }
 
