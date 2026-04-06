@@ -17,6 +17,7 @@ pub(crate) mod config;
 mod cq;
 pub(crate) mod fd;
 pub(crate) mod fs;
+pub(crate) mod fs_notify;
 pub(crate) mod io;
 pub(crate) mod mem;
 pub(crate) mod net;
