@@ -38,21 +38,14 @@
 //!
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
 
-// NOTE: currently `Watcher` always uses a regular file descriptor as
-// `inotify_add_watch` (in `watch`) only works with regular file descriptors,
-// not direct ones.
-
 use std::borrow::Cow;
-use std::collections::HashMap;
-use std::ffi::{CString, OsStr, OsString};
-use std::mem::replace;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::task::{self, Poll};
-use std::{fmt, io, ptr, slice};
+use std::{fmt, io};
 
-use crate::io::Read;
-use crate::{AsyncFd, SubmissionQueue, new_flag, syscall};
+use crate::sys::fs_notify::{self as sys, EventsState, Watching, watch, watch_recursive};
+use crate::{AsyncFd, SubmissionQueue, new_flag};
 
 /// Filesystem watcher.
 ///
@@ -64,30 +57,15 @@ use crate::{AsyncFd, SubmissionQueue, new_flag, syscall};
 #[derive(Debug)]
 pub struct Watcher {
     /// `inotify(7)` file descriptor.
-    fd: AsyncFd,
-    /// The watch descriptors (wds) and the path to the file or directory they
-    /// are watching.
-    watching: HashMap<WatchFd, PathBufWithNull>,
+    pub(crate) fd: AsyncFd,
+    /// Implementation specific state of the files/directories we're watching.
+    pub(crate) watching: Watching,
 }
-
-/// A valid [`PathBuf`] null terminated string, encoding is OS specific.
-type PathBufWithNull = CString;
-
-/// Watch descriptor for the `Watcher` instance.
-type WatchFd = std::os::fd::RawFd;
-
-const BUF_SIZE: usize = size_of::<libc::inotify_event>() + libc::NAME_MAX as usize + 1 /* NULL. */;
 
 impl Watcher {
     /// Create a new file system watcher.
     pub fn new(sq: SubmissionQueue) -> io::Result<Watcher> {
-        let ifd = syscall!(inotify_init1(libc::IN_CLOEXEC))?;
-        // SAFETY: we've just created the `ifd` above, so it's valid.
-        let fd = unsafe { AsyncFd::from_raw_fd(ifd, sq) };
-        Ok(Watcher {
-            fd,
-            watching: HashMap::new(),
-        })
+        Watcher::new_sys(sq)
     }
 
     /// Watch a directory.
@@ -143,64 +121,11 @@ impl Watcher {
         Events {
             fd: &self.fd,
             watching: &mut self.watching,
-            // NOTE: would be nice to use multishot read here, but as of Linux
-            // 6.17 that doesn't work.
-            state: EventsState::Reading(self.fd.read(Vec::with_capacity(BUF_SIZE))),
+            // NOTE: for inotify & io_uring would be nice to use multishot read
+            // here, but as of Linux 6.17 that doesn't work.
+            state: EventsState::new(&self.fd),
         }
     }
-}
-
-fn watch_recursive(
-    fd: &AsyncFd,
-    watching: &mut HashMap<WatchFd, PathBufWithNull>,
-    dir: PathBuf,
-    interest: Interest,
-    recursive: Recursive,
-    dir_only: bool,
-) -> io::Result<()> {
-    if let Recursive::All = recursive {
-        match std::fs::read_dir(&dir) {
-            Ok(read_dir) => {
-                for result in read_dir {
-                    let entry = result?;
-                    if entry.file_type()?.is_dir() {
-                        let dir = entry.path();
-                        watch_recursive(fd, watching, dir, interest, Recursive::All, true)?;
-                    }
-                }
-            }
-            Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
-                // Ignore the error.
-            }
-            Err(err) => return Err(err),
-        }
-    }
-
-    let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
-    watch(fd, watching, dir, mask)
-}
-
-fn watch(
-    fd: &AsyncFd,
-    watching: &mut HashMap<WatchFd, PathBufWithNull>,
-    path: PathBuf,
-    mask: u32,
-) -> io::Result<()> {
-    let path =
-        unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
-    let mask = mask
-        // Don't follow symbolic links.
-        | libc::IN_DONT_FOLLOW
-        // When files are moved out of a watched directory don't generate
-        // events for them.
-        | libc::IN_EXCL_UNLINK
-        // Instead of replacing a watch combine the watched events.
-        | libc::IN_MASK_ADD;
-    let wd = syscall!(inotify_add_watch(fd.fd(), path.as_ptr(), mask))?;
-    // NOTE: it's possible the `wd` is already watched, we'll overwrite the
-    // path, the watched interested is combined (within the kernel).
-    _ = watching.insert(wd, path);
-    Ok(())
 }
 
 new_flag!(
@@ -209,33 +134,33 @@ new_flag!(
     /// See [`Watcher::watch_directory`] and [`Watcher::watch_file`].
     pub struct Interest(u32) impl BitOr {
         /// Watch everything.
-        ALL = libc::IN_ALL_EVENTS,
+        ALL = sys::INTEREST_ALL,
         /// File was accessed, e.g. read.
-        ACCESS = libc::IN_ACCESS,
+        ACCESS = sys::INTEREST_ACCESS,
         /// File was modified, e.g. written.
-        MODIFY = libc::IN_MODIFY,
+        MODIFY = sys::INTEREST_MODIFY,
         /// Metadata or attribute changed, e.g. permissions where changed.
-        METADATA = libc::IN_ATTRIB,
+        METADATA = sys::INTEREST_METADATA,
         /// File opened for writing was closed.
-        CLOSE_WRITE = libc::IN_CLOSE_WRITE,
+        CLOSE_WRITE = sys::INTEREST_CLOSE_WRITE,
         /// File or directory not opened for writing was closed.
-        CLOSE_NOWRITE = libc::IN_CLOSE_NOWRITE,
+        CLOSE_NOWRITE = sys::INTEREST_CLOSE_NOWRITE,
         /// Combination of [`Interest::CLOSE_WRITE`] and
         /// [`Interest::CLOSE_NOWRITE`] to get all closing events.
-        CLOSE = libc::IN_CLOSE,
+        CLOSE = sys::INTEREST_CLOSE,
         /// File or directory was opened.
-        OPEN = libc::IN_OPEN,
+        OPEN = sys::INTEREST_OPEN,
         /// A file was moved out of the watched directory was renamed.
-        MOVE_FROM = libc::IN_MOVED_FROM,
+        MOVE_FROM = sys::INTEREST_MOVE_FROM,
         /// A file was moved into the watched directory.
-        MOVE_INTO = libc::IN_MOVED_TO,
+        MOVE_INTO = sys::INTEREST_MOVE_INTO,
         /// Combination of [`Interest::MOVE_FROM`] and [`Interest::MOVE_INTO`]
         /// to get all moving events.
-        MOVE = libc::IN_MOVE,
+        MOVE = sys::INTEREST_MOVE,
         /// File or directory was created in a watched directory.
-        CREATE = libc::IN_CREATE,
+        CREATE = sys::INTEREST_CREATE,
         /// File or directory was deleted from a watched directory.
-        DELETE = libc::IN_DELETE,
+        DELETE = sys::INTEREST_DELETE,
         /// File or directory itself was deleted.
         ///
         /// # Notes
@@ -243,9 +168,9 @@ new_flag!(
         /// This event also occurs if an object is moved to another filesystem,
         /// since a move in effect copies the file to the other filesystem and
         /// then deletes it from the original filesystem.
-        DELETE_SELF = libc::IN_DELETE_SELF,
+        DELETE_SELF = sys::INTEREST_DELETE_SELF,
         /// File or directory itself was moved.
-        MOVE_SELF = libc::IN_MOVE_SELF,
+        MOVE_SELF = sys::INTEREST_MOVE_SELF,
     }
 );
 
@@ -289,26 +214,11 @@ pub enum Recursive {
 #[derive(Debug)]
 pub struct Events<'w> {
     // NOTE: need to split the fields as we can't mutably borrow the fd in this
-    fd: &'w AsyncFd,
+    pub(crate) fd: &'w AsyncFd,
     // type and in the call to read.
     /// See [`Watcher::watching`].
-    watching: &'w mut HashMap<WatchFd, PathBufWithNull>,
-    state: EventsState<'w>,
-}
-
-/// State of [`Events`].
-#[derive(Debug)]
-enum EventsState<'w> {
-    /// Currently reading.
-    Reading(Read<'w, Vec<u8>>),
-    /// Processing read events.
-    Processing {
-        buf: Vec<u8>,
-        processed: usize,
-        fd: &'w AsyncFd,
-    },
-    /// No more events.
-    Done,
+    pub(crate) watching: &'w mut Watching,
+    pub(crate) state: EventsState<'w>,
 }
 
 impl<'w> Events<'w> {
@@ -341,22 +251,7 @@ impl<'w> Events<'w> {
     /// always get the full path call this method **before** calling
     /// [`Events::poll_next`] when processing events.
     pub fn path_for<'a>(&'a self, event: &'a Event) -> Cow<'a, Path> {
-        let file_path = event.file_path();
-        match self.watched_path(&event.event.wd) {
-            Some(path) if file_path.as_os_str().is_empty() => Cow::Borrowed(path),
-            Some(path) => Cow::Owned(path.join(file_path)),
-            None => Cow::Borrowed(file_path),
-        }
-    }
-
-    #[allow(clippy::trivially_copy_pass_by_ref)]
-    fn watched_path<'a>(&'a self, wd: &WatchFd) -> Option<&'a Path> {
-        self.watching.get(wd).map(move |path| {
-            // SAFETY: the path was passed to us as a valid `PathBuf`, so it
-            // must be a valid `Path`.
-            let path = unsafe { OsStr::from_encoded_bytes_unchecked(path.as_bytes()) };
-            Path::new(path)
-        })
+        self.path_for_sys(&event.0)
     }
 
     /// See [`Watcher::watch_directory`].
@@ -389,109 +284,10 @@ impl<'w> Events<'w> {
     ///
     /// [`AsyncIterator::poll_next`]: std::async_iter::AsyncIterator::poll_next
     pub fn poll_next(
-        mut self: Pin<&mut Self>,
+        self: Pin<&mut Self>,
         ctx: &mut task::Context<'_>,
     ) -> Poll<Option<io::Result<&'w Event>>> {
-        let this = &mut *self;
-        loop {
-            match &mut this.state {
-                EventsState::Processing { buf, processed, .. } => {
-                    if buf.len() > *processed {
-                        // SAFETY: the kernel writes zero or more `inotify_event` to
-                        // `buf` so we should always be get an inotify_event we reach
-                        // this code.
-                        debug_assert!(buf.len() >= *processed + size_of::<libc::inotify_event>());
-                        #[allow(clippy::cast_ptr_alignment)]
-                        let event_ptr = unsafe {
-                            buf.as_ptr()
-                                .byte_add(*processed)
-                                .cast::<libc::inotify_event>()
-                        };
-
-                        // Length of the events' path is dynamic.
-                        let len = unsafe { (&*event_ptr).len as usize };
-                        *processed += size_of::<libc::inotify_event>() + len;
-                        debug_assert!(buf.len() >= *processed);
-
-                        // `IN_IGNORED` means the file is no longer watched. An
-                        // event before this should contain the information why
-                        // (e.g. the file was deleted).
-                        let mask = unsafe { (&*event_ptr).mask };
-                        if mask & libc::IN_IGNORED != 0 {
-                            let wd = unsafe { (&*event_ptr).wd };
-                            _ = this.watching.remove(&wd);
-                            continue; // Continue to the next event.
-                        }
-
-                        if mask & libc::IN_Q_OVERFLOW != 0 {
-                            log::warn!("inotify event queue overflowed");
-                            continue;
-                        }
-
-                        // The path can contain null bytes as padding for alignment,
-                        // remove those.
-                        let path = unsafe {
-                            slice::from_raw_parts(
-                                event_ptr
-                                    .byte_add(size_of::<libc::inotify_event>())
-                                    .cast::<u8>(),
-                                len,
-                            )
-                        };
-                        let path_len = path.iter().rposition(|b| *b != 0).map_or(len, |n| n + 1);
-
-                        // SAFETY: this is not really safe. This should use
-                        // `ptr::from_raw_parts`, but that's unstable (has been
-                        // since 2021)
-                        // <https://github.com/rust-lang/rust/issues/81513>.
-                        #[allow(clippy::cast_ptr_alignment)]
-                        let event: &'w Event = unsafe {
-                            &*(ptr::slice_from_raw_parts(event_ptr.cast::<u8>(), path_len)
-                                as *const Event)
-                        };
-                        return Poll::Ready(Some(Ok(event)));
-                    }
-
-                    // Processed all events in the buffer, switch to reading
-                    // again.
-                    let (mut buf, fd) = match replace(&mut this.state, EventsState::Done) {
-                        EventsState::Processing {
-                            buf,
-                            processed: _,
-                            fd,
-                        } => (buf, fd),
-                        EventsState::Reading(_) | EventsState::Done => unreachable!(),
-                    };
-                    buf.clear();
-                    this.state = EventsState::Reading(fd.read(buf));
-                    // Going to start the read in the next loop iteration.
-                }
-                EventsState::Reading(read) => {
-                    match Pin::new(&mut *read).poll(ctx) {
-                        Poll::Ready(Ok(buf)) => {
-                            if buf.is_empty() {
-                                this.state = EventsState::Done;
-                                return Poll::Ready(None);
-                            }
-
-                            this.state = EventsState::Processing {
-                                buf,
-                                processed: 0,
-                                fd: read.fd(),
-                            };
-                            // Processing the events in the next loop iteration.
-                        }
-                        Poll::Ready(Err(err)) => {
-                            // Ensure that we don't poll the read future again.
-                            this.state = EventsState::Done;
-                            return Poll::Ready(Some(Err(err)));
-                        }
-                        Poll::Pending => return Poll::Pending,
-                    }
-                }
-                EventsState::Done => return Poll::Ready(None),
-            }
-        }
+        self.poll_sys(ctx)
     }
 }
 
@@ -505,10 +301,8 @@ impl<'w> std::async_iter::AsyncIterator for Events<'w> {
 }
 
 /// Event that represent a file system change.
-pub struct Event {
-    event: libc::inotify_event,
-    path: [u8],
-}
+#[repr(transparent)]
+pub struct Event(sys::Event);
 
 impl Event {
     /// Path to the file within the watched directory.
@@ -518,28 +312,26 @@ impl Event {
     /// directories themselves. See [`Events::path_for`] to the get the full
     /// path for watched files and directories.
     pub fn file_path(&self) -> &Path {
-        // SAFETY: the path comes from the OS, so it should be a valid OS
-        // string.
-        Path::new(unsafe { OsStr::from_encoded_bytes_unchecked(&self.path) })
+        self.0.file_path()
     }
 
     // Getters for the events.
     bit_checks!(
         /// Return true if the subject of this event is a directory.
-        is_dir, IN_ISDIR;
+        is_dir, sys::EVENT_IS_DIR;
         /// Returns true if:
         ///  * the watched file was accessed, or
         ///  * a file within a watched directory was accessed.
-        accessed, IN_ACCESS;
+        accessed, sys::EVENT_ACCESSED;
         /// Returns true if:
         ///  * the watched file was modified, or
         ///  * a file within a watched directory was modified.
-        modified, IN_MODIFY;
+        modified, sys::EVENT_MODIFIED;
         /// Returns true if:
         ///  * the watched file had its metadata (attributes) changed,
         ///  * a file within a watched directory had its metadata changed, or
         ///  * the watched directory had its metadata changed.
-        metadata_changed, IN_ATTRIB;
+        metadata_changed, sys::EVENT_METADATA_CHANGED;
         /// Returns true if:
         ///  * the watched file, opened for writing, was closed, or
         ///  * a file, opened for writing, within a watched directory was closed.
@@ -550,7 +342,7 @@ impl Event {
         ///  was opened for writing or not.
         ///
         ///  [`closed`]: Self::closed
-        closed_write, IN_CLOSE_WRITE;
+        closed_write, sys::EVENT_CLOSED_WRITE;
         /// Returns true if:
         ///  * the watched file, not opened for writing, was closed, or
         ///  * a file, not opened for writing, within a watched directory was closed.
@@ -562,21 +354,21 @@ impl Event {
         ///  was opened for writing or not.
         ///
         ///  [`closed`]: Self::closed
-        closed_no_write, IN_CLOSE_NOWRITE;
+        closed_no_write, sys::EVENT_CLOSED_NO_WRITE;
         /// Returns true if:
         ///  * the watched file was closed, or
         ///  * a file within a watched directory was closed.
         ///  * the watched directory was closed.
-        closed, IN_CLOSE;
+        closed, sys::EVENT_CLOSED;
         /// Returns true if:
         ///  * the watched file was opened.
         ///  * a file within a watched directory was opened, or
         ///  * the watched directory was opened.
-        opened, IN_OPEN;
+        opened, sys::EVENT_OPENED;
         /// Returns true if:
         ///  * the watched file was deleted.
         ///  * the watched directory was deleted.
-        deleted, IN_DELETE_SELF;
+        deleted, sys::EVENT_DELETED;
         /// Returns true if:
         ///  * the watched file was moved.
         ///  * the watched directory was moved.
@@ -587,43 +379,43 @@ impl Event {
         /// this, but instead trigger [`deleted`].
         ///
         /// [`deleted`]: Self::deleted
-        moved, IN_MOVE_SELF;
+        moved, sys::EVENT_MOVED;
         /// Returns true if the filesystem containing the watched file or
         /// directory was unmounted.
-        unmounted, IN_UNMOUNT;
+        unmounted, sys::EVENT_UNMOUNTED;
 
         // Directory only.
 
         /// Returns true if:
         ///  * a file within a watched directory was moved out of the watched directory.
-        file_moved_from, IN_MOVED_FROM;
+        file_moved_from, sys::EVENT_FILE_MOVED_FROM;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
-        file_moved_into, IN_MOVED_TO;
+        file_moved_into, sys::EVENT_FILE_MOVED_INTO;
         /// Returns true if:
         ///  * a file within a watched directory was moved (into or of out of the watched directory).
-        file_moved, IN_MOVE;
+        file_moved, sys::EVENT_FILE_MOVED;
         /// Returns true if:
         ///  * a file within a watched directory was created.
-        file_created, IN_CREATE;
+        file_created, sys::EVENT_FILE_CREATED;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
-        file_deleted, IN_DELETE;
+        file_deleted, sys::EVENT_FILE_DELETED;
     );
 
     const fn mask(&self) -> u32 {
-        self.event.mask
+        self.0.mask()
     }
 }
 
 /// Macro to create functions to check bits set and include them in the
 /// fmt::Debug impl.
 macro_rules! bit_checks {
-    ( $( $(#[$meta: meta])* $fn_name: ident, $bit: ident ; )* ) => {
+    ( $( $(#[$meta: meta])* $fn_name: ident, $libc: ident :: $bit: ident ; )* ) => {
         $(
         $( #[$meta] )*
         pub fn $fn_name(&self) -> bool {
-            self.mask() & libc::$bit != 0
+            self.mask() & $libc::$bit != 0
         }
         )*
 
@@ -653,9 +445,8 @@ use bit_checks;
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("Event");
-        f.field("wd", &self.event.wd)
-            .field("mask", &self.event.mask)
-            .field("cookie", &self.event.cookie)
+        self.0
+            .fmt(&mut f)
             .field("file_path", &self.file_path())
             .field("events", &self.events())
             .finish()
