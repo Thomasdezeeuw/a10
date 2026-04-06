@@ -96,9 +96,6 @@ pub mod process;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
 mod io_uring;
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use io_uring as sys;
-
 #[cfg(any(
     target_os = "dragonfly",
     target_os = "freebsd",
@@ -111,18 +108,23 @@ use io_uring as sys;
     target_os = "watchos",
 ))]
 mod kqueue;
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "ios",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "tvos",
-    target_os = "visionos",
-    target_os = "watchos",
-))]
-use kqueue as sys;
+
+mod sys {
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub(crate) use crate::io_uring::*;
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    pub(crate) use crate::kqueue::*;
+}
 
 #[doc(inline)]
 pub use config::Config;
