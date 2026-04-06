@@ -619,13 +619,13 @@ impl Event {
 /// Macro to create functions to check bits set and include them in the
 /// fmt::Debug impl.
 macro_rules! bit_checks {
-    ( $( $(#[$meta: meta])* $fn_name: ident, $bit: ident ; )+ ) => {
+    ( $( $(#[$meta: meta])* $fn_name: ident, $bit: ident ; )* ) => {
         $(
         $( #[$meta] )*
         pub fn $fn_name(&self) -> bool {
             self.mask() & libc::$bit != 0
         }
-        )+
+        )*
 
         fn events(&self) -> impl fmt::Debug {
             struct Events<'a>(&'a Event);
@@ -637,7 +637,7 @@ macro_rules! bit_checks {
                     if self.0.$fn_name() {
                         _ = f.entry(&stringify!($fn_name));
                     }
-                    )+
+                    )*
                     f.finish()
                 }
             }
