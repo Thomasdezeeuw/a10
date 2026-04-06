@@ -378,17 +378,15 @@ macro_rules! debug_detail {
         impl ::std::fmt::Debug for $type {
             #[allow(trivial_numeric_casts, unreachable_patterns, unreachable_code, unused_doc_comments, clippy::bad_bit_mask)]
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-                mod consts {
-                    $(
-                    $(#[$meta])*
-                    pub(super) const $flag: $type_repr = $libc :: $flag as $type_repr;
-                    )*
-                }
+                $(
+                $(#[$meta])*
+                pub(super) const $flag: $type_repr = $libc :: $flag as $type_repr;
+                )*
 
                 f.write_str(match self.0 {
                     $(
                     $(#[$meta])*
-                    consts::$flag => stringify!($flag),
+                    $flag => stringify!($flag),
                     )*
                     value => return value.fmt(f),
                 })
