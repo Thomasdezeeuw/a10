@@ -92,7 +92,7 @@ impl Drop for Signals {
 }
 
 #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
+fn register_signals(kq: RawFd, signals: &SignalSet) -> io::Result<()> {
     let mut changes: [MaybeUninit<libc::kevent>; _] =
         [MaybeUninit::uninit(); Signal::ALL_VALUES.len()];
 
@@ -113,7 +113,7 @@ fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
     }
 
     syscall!(kevent(
-        kfd,
+        kq,
         changes[0].as_ptr(),
         n_changes as _,
         ptr::null_mut(),
@@ -162,7 +162,7 @@ impl FdOp for ReceiveSignalOp {
 
     #[allow(clippy::cast_possible_wrap)]
     fn try_run(
-        kfd: &AsyncFd,
+        kq: &AsyncFd,
         info: &mut Self::Resources,
         (): &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
@@ -173,7 +173,7 @@ impl FdOp for ReceiveSignalOp {
             tv_nsec: 0,
         };
         let n = syscall!(kevent(
-            kfd.fd(),
+            kq.fd(),
             ptr::null(),
             0,
             event.as_mut_ptr(),
