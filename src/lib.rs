@@ -109,6 +109,9 @@ mod io_uring;
 ))]
 mod kqueue;
 
+#[cfg(any(target_os = "android", target_os = "linux"))]
+mod inotify;
+
 mod sys {
     #[cfg(any(target_os = "android", target_os = "linux"))]
     pub(crate) use crate::io_uring::*;
@@ -124,6 +127,9 @@ mod sys {
         target_os = "watchos",
     ))]
     pub(crate) use crate::kqueue::*;
+
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    pub(crate) use crate::inotify as fs_notify;
 }
 
 #[doc(inline)]
