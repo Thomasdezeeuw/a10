@@ -7,7 +7,7 @@
 //! * <https://man.netbsd.org/kqueue.2>
 
 use std::mem::{drop as unlock, swap};
-use std::os::fd::{AsRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::Mutex;
 use std::{fmt, ptr, task};
 
@@ -31,6 +31,13 @@ pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
 
 use cq::WAKE_USER_DATA;
+
+fn kqueue() -> io::Result<OwnedFd> {
+    // SAFETY: `kqueue(2)` ensures the fd is valid.
+    let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
+    syscall!(fcntl(kq.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+    Ok(kq)
+}
 
 #[derive(Debug)]
 pub(crate) struct Shared {
