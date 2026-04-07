@@ -140,17 +140,21 @@ fn watch_path(
     let path =
         unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
     let fd = WatchedFd::open(&path)?;
-    let change = libc::kevent {
+    let change = Event(libc::kevent {
         ident: fd.0.as_raw_fd().cast_unsigned() as _,
         filter: libc::EVFILT_VNODE,
-        flags: libc::EV_ADD,
+        flags: libc::EV_ADD | libc::EV_CLEAR,
         fflags: interest.0,
         // SAFETY: all zeros is valid for `kevent`.
         ..unsafe { mem::zeroed() }
-    };
+    });
+    // SAFETY: created this from a PathBuf above, so it's a valid Path.
+    let lpath =
+        unsafe { Path::new(OsStr::from_encoded_bytes_unchecked(path.as_bytes())).display() };
+    log::trace!(change:?, fd:?, path:% = lpath; "watching path");
     syscall!(kevent(
         kq.fd(),
-        &raw const change,
+        &raw const change.0,
         1,
         ptr::null_mut(),
         0,

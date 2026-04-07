@@ -89,6 +89,10 @@ pub(crate) fn watch(
         | libc::IN_EXCL_UNLINK
         // Instead of replacing a watch combine the watched events.
         | libc::IN_MASK_ADD;
+    // SAFETY: created this from a PathBuf above, so it's a valid Path.
+    let lpath =
+        unsafe { Path::new(OsStr::from_encoded_bytes_unchecked(path.as_bytes())).display() };
+    log::trace!(path:% = lpath, mask:?; "watching path");
     let wd = syscall!(inotify_add_watch(fd.fd(), path.as_ptr(), mask))?;
     // NOTE: it's possible the `wd` is already watched, we'll overwrite the
     // path, the watched interested is combined (within the kernel).
