@@ -366,7 +366,16 @@ macro_rules! debug_detail {
         match $type: ident ($event_type: ty),
         $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
     ) => {
+        #[repr(transparent)]
         struct $type($event_type);
+
+        impl $type {
+            #[allow(dead_code)]
+            fn from_ref(value: &$event_type) -> &$type {
+                // SAFETY: layout is the same due to repr(transparent).
+                unsafe { &*::std::ptr::from_ref(value).cast::<$type>() }
+            }
+        }
 
         $crate::debug_detail!(impl match for $type($event_type), $( $(#[$meta])* $libc::$flag ),*);
     };
@@ -398,7 +407,16 @@ macro_rules! debug_detail {
         bitset $type: ident ($event_type: ty),
         $( $( #[$meta: meta] )* $libc: ident :: $flag: ident ),+ $(,)?
     ) => {
+        #[repr(transparent)]
         struct $type($event_type);
+
+        impl $type {
+            #[allow(dead_code)]
+            fn from_ref(value: &$event_type) -> &$type {
+                // SAFETY: layout is the same due to repr(transparent).
+                unsafe { &*::std::ptr::from_ref(value).cast::<$type>() }
+            }
+        }
 
         $crate::debug_detail!(impl bitset for $type($event_type), $( $(#[$meta])* $libc::$flag ),*);
     };
@@ -409,6 +427,7 @@ macro_rules! debug_detail {
     ) => {
         impl ::std::fmt::Debug for $type {
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+                #[allow(unused_mut)]
                 let mut written_one = false;
                 $(
                     $(#[$meta])*
