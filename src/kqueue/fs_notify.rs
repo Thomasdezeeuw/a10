@@ -60,7 +60,7 @@ impl PartialEq for WatchedFd {
 // NOTE: needed for HashMap in Watching.
 impl Hash for WatchedFd {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.as_raw_fd().hash(state)
+        self.0.as_raw_fd().hash(state);
     }
 }
 
@@ -166,8 +166,7 @@ fn watch_path(
     Ok(())
 }
 
-pub(crate) const INTEREST_ALL: u32 = 0
-    | INTEREST_ACCESS
+pub(crate) const INTEREST_ALL: u32 = INTEREST_ACCESS
     | INTEREST_MODIFY
     | INTEREST_METADATA
     | INTEREST_CLOSE
@@ -219,6 +218,7 @@ impl<'w> EventsState<'w> {
 
 impl<'w> Events<'w> {
     pub(crate) fn path_for_sys<'a>(&'a self, event: &'a Event) -> Cow<'a, Path> {
+        #[allow(clippy::cast_possible_wrap)]
         let fd = event.0.ident as RawFd;
         if let Some(path) = self.watching.get(&fd) {
             // SAFETY: the path was passed to us as a valid `PathBuf`, so it
@@ -293,6 +293,7 @@ impl<'a> FdIter for NotifyOp<'a> {
 pub(crate) use crate::kqueue::Event;
 
 impl Event {
+    #[allow(clippy::unused_self)]
     pub(crate) fn file_path(&self) -> &Path {
         panic!(
             "a10::fs::notify::Event::file_path doesn't work with kqueue, use Events::path_for instead",
