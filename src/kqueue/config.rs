@@ -1,11 +1,11 @@
 //! kqueue configuration.
 
 use std::marker::PhantomData;
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::os::fd::AsRawFd;
 use std::sync::Mutex;
 use std::{io, mem, ptr};
 
-use crate::kqueue::{Completions, Shared, Submissions, cq};
+use crate::kqueue::{Completions, Shared, Submissions, cq, kqueue};
 use crate::{PollingState, syscall};
 
 #[derive(Debug, Clone)]
@@ -55,11 +55,7 @@ impl<'r> crate::Config<'r> {
             self.sys.max_events >= self.sys.max_change_list_size,
             "a10::kqueue::Config: max_change_list_size larger than max_events"
         );
-
-        // SAFETY: `kqueue(2)` ensures the fd is valid.
-        let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
-        let kq_fd = kq.as_raw_fd();
-        syscall!(fcntl(kq_fd, libc::F_SETFD, libc::FD_CLOEXEC))?;
+        let kq = kqueue()?;
 
         // Set up waking.
         let mut kevent = libc::kevent {
@@ -71,7 +67,7 @@ impl<'r> crate::Config<'r> {
             ..unsafe { mem::zeroed() }
         };
         syscall!(kevent(
-            kq_fd,
+            kq.as_raw_fd(),
             &raw const kevent,
             1,
             &raw mut kevent,

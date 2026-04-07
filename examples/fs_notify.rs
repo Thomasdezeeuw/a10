@@ -4,11 +4,6 @@
 //! $ cargo run --example fs_notify -- -r examples/ src/
 //! $ touch src/lib.rs examples/fs_notify.rs
 
-#![cfg_attr(
-    not(any(target_os = "android", target_os = "linux")),
-    allow(unused_imports)
-)]
-
 use std::env::args;
 use std::future::poll_fn;
 use std::io;
@@ -19,7 +14,6 @@ use a10::fs;
 
 mod runtime;
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn main() -> io::Result<()> {
     // Create a new I/O uring.
     let mut ring = a10::Ring::new()?;
@@ -43,7 +37,6 @@ fn main() -> io::Result<()> {
     runtime::block_on(&mut ring, watch(watcher))
 }
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
 async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
     let mut events = pin!(watcher.events());
     // Poll for file system events (the ergonomics for this should be improved
@@ -57,9 +50,4 @@ async fn watch(mut watcher: fs::notify::Watcher) -> io::Result<()> {
         );
     }
     Ok(())
-}
-
-#[cfg(not(any(target_os = "android", target_os = "linux")))]
-fn main() {
-    eprintln!("Only support on Linux at the moment");
 }

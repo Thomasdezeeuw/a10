@@ -4,6 +4,7 @@ use std::task::{self, Poll};
 use std::{io, ptr};
 
 use crate::kqueue::fd::OpKind;
+use crate::kqueue::kqueue;
 use crate::kqueue::op::{Evented, FdOp, State};
 use crate::process::{Signal, SignalSet, Signals, WaitInfo, WaitOn, WaitOption};
 use crate::{AsyncFd, SubmissionQueue, syscall};
@@ -74,13 +75,11 @@ impl crate::op::Op for WaitIdOp {
 
 impl Signals {
     pub(crate) fn new(sq: SubmissionQueue, signals: SignalSet) -> io::Result<Signals> {
-        // SAFETY: `kqueue(2)` ensures the fd is valid.
-        let kfd = unsafe { AsyncFd::from_raw_fd(syscall!(kqueue())?, sq) };
-        syscall!(fcntl(kfd.fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
-        register_signals(kfd.fd(), &signals)?;
+        let kq = AsyncFd::new(kqueue()?, sq);
+        register_signals(kq.fd(), &signals)?;
         // Ignore all signals as we want them to be deleted to the kqueue.
         sigaction(&signals, libc::SIG_IGN)?;
-        Ok(Signals { fd: kfd, signals })
+        Ok(Signals { fd: kq, signals })
     }
 }
 
@@ -93,7 +92,7 @@ impl Drop for Signals {
 }
 
 #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
-fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
+fn register_signals(kq: RawFd, signals: &SignalSet) -> io::Result<()> {
     let mut changes: [MaybeUninit<libc::kevent>; _] =
         [MaybeUninit::uninit(); Signal::ALL_VALUES.len()];
 
@@ -114,7 +113,7 @@ fn register_signals(kfd: RawFd, signals: &SignalSet) -> io::Result<()> {
     }
 
     syscall!(kevent(
-        kfd,
+        kq,
         changes[0].as_ptr(),
         n_changes as _,
         ptr::null_mut(),
@@ -163,7 +162,7 @@ impl FdOp for ReceiveSignalOp {
 
     #[allow(clippy::cast_possible_wrap)]
     fn try_run(
-        kfd: &AsyncFd,
+        kq: &AsyncFd,
         info: &mut Self::Resources,
         (): &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
@@ -174,7 +173,7 @@ impl FdOp for ReceiveSignalOp {
             tv_nsec: 0,
         };
         let n = syscall!(kevent(
-            kfd.fd(),
+            kq.fd(),
             ptr::null(),
             0,
             event.as_mut_ptr(),
