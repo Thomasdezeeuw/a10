@@ -93,7 +93,7 @@ impl Watcher {
 
     /// Watch a file.
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        watch(&self.fd, &mut self.watching, file, interest.0)
+        watch(&self.fd, &mut self.watching, file, interest)
     }
 
     /// Watch a directory or file.
@@ -266,7 +266,7 @@ impl<'w> Events<'w> {
 
     /// See [`Watcher::watch_file`].
     pub fn watch_file(&mut self, file: PathBuf, interest: Interest) -> io::Result<()> {
-        watch(self.fd, self.watching, file, interest.0)
+        watch(self.fd, self.watching, file, interest)
     }
 
     /// See [`Watcher::watch`].

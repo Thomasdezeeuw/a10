@@ -69,19 +69,19 @@ pub(crate) fn watch_recursive(
         }
     }
 
-    let mask = interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 };
-    watch(fd, watching, dir, mask)
+    let interest = Interest(interest.0 | if dir_only { libc::IN_ONLYDIR } else { 0 });
+    watch(fd, watching, dir, interest)
 }
 
 pub(crate) fn watch(
     fd: &AsyncFd,
     watching: &mut Watching,
     path: PathBuf,
-    mask: u32,
+    interest: Interest,
 ) -> io::Result<()> {
     let path =
         unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
-    let mask = mask
+    let mask = interest.0
         // Don't follow symbolic links.
         | libc::IN_DONT_FOLLOW
         // When files are moved out of a watched directory don't generate
