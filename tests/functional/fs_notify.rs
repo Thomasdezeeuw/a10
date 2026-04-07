@@ -1102,6 +1102,7 @@ struct ExpectEvent {
 
 impl PartialEq<ExpectEvent> for Event {
     #[rustfmt::skip]
+    #[allow(deprecated)] // For Event::file_path.
     fn eq(&self, event: &ExpectEvent) -> bool {
         // Don't want to print the entire event as it's quite big, just print
         // the field that differs.
