@@ -1,5 +1,5 @@
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::Poll;
 
@@ -34,6 +34,7 @@ fn event_is_send_and_sync() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -57,6 +58,7 @@ fn watched_directory_file_created() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -81,6 +83,12 @@ fn watched_directory_dir_created() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_file_opened() {
     test_fs_watcher(
         |watcher, dir| {
@@ -105,6 +113,12 @@ fn watched_directory_file_opened() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_dir_opened() {
     test_fs_watcher(
         |watcher, dir| {
@@ -130,6 +144,12 @@ fn watched_directory_dir_opened() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_file_accessed() {
     test_fs_watcher(
         |watcher, dir| {
@@ -159,6 +179,12 @@ fn watched_directory_file_accessed() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_dir_accessed() {
     test_fs_watcher(
         |watcher, dir| {
@@ -278,6 +304,7 @@ fn watched_directory_dir_metadata_changed() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_moved_from() {
     test_fs_watcher(
         |watcher, dir| {
@@ -309,6 +336,7 @@ fn watched_directory_file_moved_from() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_moved_from() {
     test_fs_watcher(
         |watcher, dir| {
@@ -341,6 +369,7 @@ fn watched_directory_dir_moved_from() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
@@ -367,6 +396,7 @@ fn watched_directory_file_moved_to() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
@@ -419,6 +449,12 @@ fn watched_directory_moved() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_file_closed_no_write() {
     test_fs_watcher(
         |watcher, dir| {
@@ -445,6 +481,12 @@ fn watched_directory_file_closed_no_write() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_dir_closed_no_write() {
     test_fs_watcher(
         |watcher, dir| {
@@ -474,6 +516,12 @@ fn watched_directory_dir_closed_no_write() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_directory_file_closed_write() {
     test_fs_watcher(
         |watcher, dir| {
@@ -502,6 +550,7 @@ fn watched_directory_file_closed_write() {
 // NOTE: no close_write event can be generated for directories.
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_deleted() {
     test_fs_watcher(
         |watcher, dir| {
@@ -527,6 +576,7 @@ fn watched_directory_dir_deleted() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_deleted() {
     test_fs_watcher(
         |watcher, dir| {
@@ -572,6 +622,12 @@ fn watched_directory_deleted() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_opened() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -595,6 +651,12 @@ fn watched_file_opened() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_accessed() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -695,6 +757,12 @@ fn watched_file_moved() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_closed_nowrite() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -720,6 +788,12 @@ fn watched_file_closed_nowrite() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_closed_write() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -745,6 +819,12 @@ fn watched_file_closed_write() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_closed_after_read() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -770,6 +850,12 @@ fn watched_file_closed_after_read() {
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd",
+))]
 fn watched_file_closed_after_write() {
     test_fs_watcher(
         |watcher, tmp_dir| {
@@ -844,6 +930,30 @@ fn watched_file_all() {
             Ok((path, ()))
         },
         |path, ()| {
+            // kqueue merges events, while inotify (mostly) doesn't.
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            return vec![ExpectEvent {
+                full_path: path.clone(),
+                opened: true,
+                modified: true,
+                metadata_changed: true,
+                closed_write: true,
+                closed: true,
+                moved: true,
+                ..Default::default()
+            }];
+
+            #[cfg(any(target_os = "android", target_os = "linux"))]
             vec![
                 ExpectEvent {
                     full_path: path.clone(),
@@ -892,6 +1002,26 @@ fn watch_recursive_not_directory() {
             Ok((path, file))
         },
         |path, _file| {
+            // kqueue merges events, while inotify (mostly) doesn't.
+            #[cfg(any(
+                target_os = "dragonfly",
+                target_os = "freebsd",
+                target_os = "ios",
+                target_os = "macos",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "tvos",
+                target_os = "visionos",
+                target_os = "watchos"
+            ))]
+            return vec![ExpectEvent {
+                full_path: path.clone(),
+                opened: true,
+                modified: true,
+                ..Default::default()
+            }];
+
+            #[cfg(any(target_os = "android", target_os = "linux"))]
             vec![
                 ExpectEvent {
                     full_path: path.clone(),
@@ -948,6 +1078,7 @@ async fn expect_events(watcher: &mut fs::Watcher, expected: &[ExpectEvent]) {
 }
 
 #[derive(Debug, Default)]
+#[allow(dead_code)] // Not all event types are supported for all implementations.
 struct ExpectEvent {
     full_path: PathBuf,
     file_path: &'static str,
@@ -974,22 +1105,34 @@ impl PartialEq<ExpectEvent> for Event {
     fn eq(&self, event: &ExpectEvent) -> bool {
         // Don't want to print the entire event as it's quite big, just print
         // the field that differs.
-        assert_eq!(self.file_path(), Path::new(event.file_path), "file_path");
+        #[cfg(any(target_os = "android", target_os = "linux"))] // Panics for kqueue.
+        assert_eq!(self.file_path(), std::path::Path::new(event.file_path), "file_path");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.is_dir(), event.is_dir, "is_dir");
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.accessed(), event.accessed, "accessed");
         assert_eq!(self.modified(), event.modified, "modified");
         assert_eq!(self.metadata_changed(), event.metadata_changed, "metadata_changed");
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.closed_write(), event.closed_write, "closed_write");
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.closed_no_write(), event.closed_no_write, "closed_no_write");
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.closed(), event.closed, "closed");
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.opened(), event.opened, "opened");
         assert_eq!(self.deleted(), event.deleted, "deleted");
         assert_eq!(self.moved(), event.moved, "moved");
         assert_eq!(self.unmounted(), event.unmounted, "unmounted");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved_from(), event.file_moved_from, "file_moved_from");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved_into(), event.file_moved_into, "file_moved_into");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved(), event.file_moved, "file_moved");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_created(), event.file_created, "file_created");
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_deleted(), event.file_deleted, "file_deleted");
         true
     }

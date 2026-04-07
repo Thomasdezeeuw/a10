@@ -4,8 +4,15 @@
 //!
 //! # Implementation Notes
 //!
-//! This implementation is based on [`inotify(7)`], which has a number of
-//! caveats. Most of them are straight from the manual.
+//! The underlying implementation on which the `Watcher` is build work
+//! differently. A10 tries to provide a usable cross-platform interface, but
+//! it's worth reading the implementation notes below to be aware of the
+//! differences.
+//!
+//! ## Notes for inotify Implementation
+//!
+//! The implementation based on [`inotify(7)`] has a number of caveats. Most of
+//! them are straight from the manual.
 //!
 //! Events are not generated for files inside a watched directory that are
 //! performed via a symbolic link that lies outside the watched directory.
@@ -37,6 +44,34 @@
 //! that this has a number of gotchas, see its documentation for more.
 //!
 //! [`inotify(7)`]: https://man7.org/linux/man-pages/man7/inotify.7.html
+//!
+//! ## Notes for kqueue Implementation
+//!
+//! The implementation based on [`kqueue(2)`] also has a number of caveats.
+//!
+//! Unlike the `inotify` based implementation a new file descriptor has to be
+//! opened for each watched file and directory, including each file within a
+//! watched directory. Meaning that if a directory with a lot of files is
+//! watched it's possible to run out of file descriptors. The maximum number of
+//! opened file descriptor can be increased by using [`setrlimit(2)`] with
+//! `RLIMIT_NOFILE`.
+//!
+//! Not all interests are supported. Events for opening or closing a file, and
+//! reading from a file are only supported on FreeBSD & NetBSD, not on e.g.
+//! OpenBSD or macOS. Events for moving a file out of a directory don't work,
+//! only for moving the directory itself.
+//!
+//! For watched directories it's not possible to determine *what* happened to
+//! the directory. For example if a file is created in the directory we can
+//! differentiate that from a file being deleted. This means the
+//! `Event::file_*`, such as [`Event::file_moved`], functions don't work. Only
+//! [`Event::modified`] will be triggered. Furthermore the events don't carry
+//! information about *which* file within a watched directory is affected.
+//!
+//! Events don't support [`Event::is_dir`].
+//!
+//! [`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
+//! [`setrlimit(2)`]: https://man.freebsd.org/cgi/man.cgi?query=setrlimit&sektion=2
 
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
@@ -56,7 +91,7 @@ use crate::{AsyncFd, SubmissionQueue, new_flag};
 /// [module documentation]: crate::fs::notify
 #[derive(Debug)]
 pub struct Watcher {
-    /// `inotify(7)` file descriptor.
+    /// `inotify(7)` or `kqueue(2)` file descriptor.
     pub(crate) fd: AsyncFd,
     /// Implementation specific state of the files/directories we're watching.
     pub(crate) watching: Watching,
@@ -136,26 +171,33 @@ new_flag!(
         /// Watch everything.
         ALL = sys::INTEREST_ALL,
         /// File was accessed, e.g. read.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         ACCESS = sys::INTEREST_ACCESS,
         /// File was modified, e.g. written.
         MODIFY = sys::INTEREST_MODIFY,
         /// Metadata or attribute changed, e.g. permissions where changed.
         METADATA = sys::INTEREST_METADATA,
         /// File opened for writing was closed.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         CLOSE_WRITE = sys::INTEREST_CLOSE_WRITE,
         /// File or directory not opened for writing was closed.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         CLOSE_NOWRITE = sys::INTEREST_CLOSE_NOWRITE,
         /// Combination of [`Interest::CLOSE_WRITE`] and
         /// [`Interest::CLOSE_NOWRITE`] to get all closing events.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         CLOSE = sys::INTEREST_CLOSE,
         /// File or directory was opened.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         OPEN = sys::INTEREST_OPEN,
-        /// A file was moved out of the watched directory was renamed.
+        /// A file was moved out of the watched directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_FROM = sys::INTEREST_MOVE_FROM,
         /// A file was moved into the watched directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_INTO = sys::INTEREST_MOVE_INTO,
-        /// Combination of [`Interest::MOVE_FROM`] and [`Interest::MOVE_INTO`]
-        /// to get all moving events.
+        /// The watched file or directory itself was moved. Or a file was moved
+        /// into or out of the watched directory (`inotify` only).
         MOVE = sys::INTEREST_MOVE,
         /// File or directory was created in a watched directory.
         CREATE = sys::INTEREST_CREATE,
@@ -311,6 +353,9 @@ impl Event {
     /// watched directories. It be empty for events on watched files and
     /// directories themselves. See [`Events::path_for`] to the get the full
     /// path for watched files and directories.
+    #[deprecated(
+        note = "this doesn't work for the kqueue implementation, use `Events::path_for` instead"
+    )]
     pub fn file_path(&self) -> &Path {
         self.0.file_path()
     }
@@ -318,10 +363,12 @@ impl Event {
     // Getters for the events.
     bit_checks!(
         /// Return true if the subject of this event is a directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         is_dir, sys::EVENT_IS_DIR;
         /// Returns true if:
         ///  * the watched file was accessed, or
         ///  * a file within a watched directory was accessed.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         accessed, sys::EVENT_ACCESSED;
         /// Returns true if:
         ///  * the watched file was modified, or
@@ -342,6 +389,7 @@ impl Event {
         ///  was opened for writing or not.
         ///
         ///  [`closed`]: Self::closed
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         closed_write, sys::EVENT_CLOSED_WRITE;
         /// Returns true if:
         ///  * the watched file, not opened for writing, was closed, or
@@ -354,16 +402,19 @@ impl Event {
         ///  was opened for writing or not.
         ///
         ///  [`closed`]: Self::closed
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         closed_no_write, sys::EVENT_CLOSED_NO_WRITE;
         /// Returns true if:
         ///  * the watched file was closed, or
         ///  * a file within a watched directory was closed.
         ///  * the watched directory was closed.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         closed, sys::EVENT_CLOSED;
         /// Returns true if:
         ///  * the watched file was opened.
         ///  * a file within a watched directory was opened, or
         ///  * the watched directory was opened.
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         opened, sys::EVENT_OPENED;
         /// Returns true if:
         ///  * the watched file was deleted.
@@ -388,18 +439,23 @@ impl Event {
 
         /// Returns true if:
         ///  * a file within a watched directory was moved out of the watched directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         file_moved_from, sys::EVENT_FILE_MOVED_FROM;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         file_moved_into, sys::EVENT_FILE_MOVED_INTO;
         /// Returns true if:
         ///  * a file within a watched directory was moved (into or of out of the watched directory).
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         file_moved, sys::EVENT_FILE_MOVED;
         /// Returns true if:
         ///  * a file within a watched directory was created.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         file_created, sys::EVENT_FILE_CREATED;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         file_deleted, sys::EVENT_FILE_DELETED;
     );
 
@@ -423,9 +479,11 @@ macro_rules! bit_checks {
             struct Events<'a>(&'a Event);
 
             impl<'a> fmt::Debug for Events<'a> {
+                #[allow(unused_doc_comments)]
                 fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                     let mut f = f.debug_list();
                     $(
+                    $( #[$meta] )*
                     if self.0.$fn_name() {
                         _ = f.entry(&stringify!($fn_name));
                     }
@@ -445,10 +503,6 @@ use bit_checks;
 impl fmt::Debug for Event {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut f = f.debug_struct("Event");
-        self.0
-            .fmt(&mut f)
-            .field("file_path", &self.file_path())
-            .field("events", &self.events())
-            .finish()
+        self.0.fmt(&mut f).field("events", &self.events()).finish()
     }
 }

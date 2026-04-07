@@ -230,9 +230,12 @@ pub(crate) struct Event(libc::kevent);
 unsafe impl Send for Event {}
 unsafe impl Sync for Event {}
 
-impl fmt::Debug for Event {
+impl Event {
     #[allow(clippy::too_many_lines)] // The helper types and cfg attributes make this long.
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    pub(crate) fn fmt<'a, 'b, 'f>(
+        &self,
+        f: &'f mut fmt::DebugStruct<'a, 'b>,
+    ) -> &'f mut fmt::DebugStruct<'a, 'b> {
         debug_detail!(
             match FilterDetails(libc::c_short),
             libc::EVFILT_READ,
@@ -569,13 +572,18 @@ impl fmt::Debug for Event {
         let udata = self.0.udata;
         let ident = self.0.ident;
         let data = self.0.data;
-        f.debug_struct("kqueue::Event")
-            .field("udata", &udata)
+        f.field("udata", &udata)
             .field("ident", &ident)
             .field("filter", &FilterDetails(self.0.filter))
             .field("flags", &FlagsDetails(self.0.flags))
             .field("fflags", &FflagsDetails(self.0.fflags))
             .field("data", &data)
-            .finish()
+    }
+}
+
+impl fmt::Debug for Event {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut f = f.debug_struct("kqueue::Event");
+        self.fmt(&mut f).finish()
     }
 }
