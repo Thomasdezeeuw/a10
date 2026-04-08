@@ -245,15 +245,14 @@ pub(crate) const INTEREST_MOVE_SELF: u32 = libc::NOTE_RENAME;
 
 #[derive(Debug)]
 pub(crate) struct EventsState<'w> {
-    state: kqueue::op::State<Evented, Event, ()>,
+    state: kqueue::op::State<Evented, (Vec<Event>, usize), ()>,
     _unused: PhantomData<&'w ()>,
 }
 
 impl<'w> EventsState<'w> {
     pub(crate) fn new(_: &'w AsyncFd) -> EventsState<'w> {
         EventsState {
-            // SAFETY: all zeros is valid for `libc::kevent`.
-            state: kqueue::op::State::new(Event(unsafe { mem::zeroed() }), ()),
+            state: kqueue::op::State::new((Vec::with_capacity(8), 0), ()),
             _unused: PhantomData,
         }
     }
@@ -289,7 +288,7 @@ pub(crate) struct NotifyOp<'a>(PhantomData<&'a ()>);
 
 impl<'a> FdIter for NotifyOp<'a> {
     type Output = &'a notify::Event;
-    type Resources = Event;
+    type Resources = (Vec<Event>, usize);
     type Args = ();
     type OperationOutput = ();
 
@@ -297,9 +296,15 @@ impl<'a> FdIter for NotifyOp<'a> {
 
     fn try_run(
         kq: &AsyncFd,
-        event: &mut Self::Resources,
+        (events, processed): &mut Self::Resources,
         (): &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
+        if !events.is_empty() && events.len() > (*processed + 1) {
+            // Got another event ready to be processed, return it to the user.
+            *processed += 1;
+            return Ok(());
+        }
+
         // No blocking.
         let timeout = libc::timespec {
             tv_sec: 0,
@@ -309,16 +314,16 @@ impl<'a> FdIter for NotifyOp<'a> {
             kq.fd(),
             ptr::null(),
             0,
-            &raw mut event.0,
-            1,
+            events.as_mut_ptr().cast::<libc::kevent>(),
+            events.capacity() as _,
             &raw const timeout,
         ))?;
         if n == 0 {
             // Wait for another readiness event.
             Err(io::ErrorKind::WouldBlock.into())
         } else {
-            debug_assert!(n == 1);
-            debug_assert_eq!(event.0.filter, libc::EVFILT_VNODE);
+            unsafe { events.set_len(n as _) };
+            *processed = 0;
             Ok(())
         }
     }
@@ -327,7 +332,13 @@ impl<'a> FdIter for NotifyOp<'a> {
         false
     }
 
-    fn map_next(_: &AsyncFd, event: &Self::Resources, (): Self::OperationOutput) -> Self::Output {
+    fn map_next(
+        _: &AsyncFd,
+        (events, processed): &Self::Resources,
+        (): Self::OperationOutput,
+    ) -> Self::Output {
+        let event = &events[*processed];
+        debug_assert_eq!(event.0.filter, libc::EVFILT_VNODE);
         // SAFETY: cast is safe due to repr(transparent) on notify::Event.
         unsafe { &*ptr::from_ref(event).cast::<notify::Event>() }
     }
