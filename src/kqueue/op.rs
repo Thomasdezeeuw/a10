@@ -480,7 +480,9 @@ impl<T: FdIter> crate::op::FdIter for T {
                     let resources = unsafe { state.resources.assume_init_read() };
                     r.insert(resources)
                 } else {
-                    state.status = Evented::ToSubmit;
+                    // Need to try the operation again and hit a would block
+                    // error before we can wait for another readiness event.
+                    state.status = Evented::Waiting;
                     // SAFETY: the old status was not Complete, which means that the
                     // resources are initialised, so we can safely return a
                     // reference to it.
