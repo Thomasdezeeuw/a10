@@ -328,10 +328,6 @@ impl<'a> FdIter for NotifyOp<'a> {
         }
     }
 
-    fn is_complete((): &Self::OperationOutput) -> bool {
-        false
-    }
-
     fn map_next(
         _: &AsyncFd,
         (events, processed): &Self::Resources,
