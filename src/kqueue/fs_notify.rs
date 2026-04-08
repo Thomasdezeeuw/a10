@@ -13,7 +13,7 @@ use std::{fmt, io, mem, ptr};
 
 use crate::fs::notify::{self, Events, Interest, Recursive, Watcher};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{Evented, FdIter};
+use crate::kqueue::op::FdIter;
 use crate::kqueue::{self, kqueue};
 use crate::op::{FdIter as _, OpState};
 use crate::{AsyncFd, SubmissionQueue, syscall};
@@ -244,17 +244,11 @@ pub(crate) const INTEREST_DELETE_SELF: u32 = libc::NOTE_DELETE;
 pub(crate) const INTEREST_MOVE_SELF: u32 = libc::NOTE_RENAME;
 
 #[derive(Debug)]
-pub(crate) struct EventsState<'w> {
-    state: kqueue::op::State<Evented, (Vec<Event>, usize), ()>,
-    _unused: PhantomData<&'w ()>,
-}
+pub(crate) struct EventsState<'w>(<NotifyOp<'w> as crate::op::FdIter>::State);
 
 impl<'w> EventsState<'w> {
     pub(crate) fn new(_: &'w AsyncFd) -> EventsState<'w> {
-        EventsState {
-            state: kqueue::op::State::new((Vec::with_capacity(8), 0), ()),
-            _unused: PhantomData,
-        }
+        EventsState(kqueue::op::State::new((Vec::with_capacity(8), 0), ()))
     }
 }
 
@@ -277,7 +271,7 @@ impl<'w> Events<'w> {
     ) -> Poll<Option<io::Result<&'w notify::Event>>> {
         let Events {
             fd: kq,
-            state: EventsState { state, .. },
+            state: EventsState(state),
             ..
         } = &mut *self;
         NotifyOp::poll_next(state, ctx, kq)
