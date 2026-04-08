@@ -97,27 +97,7 @@ pub(crate) fn watch_recursive(
     recursive: Recursive,
     dir_only: bool,
 ) -> io::Result<()> {
-    match std::fs::read_dir(&dir) {
-        Ok(read_dir) => {
-            for result in read_dir {
-                let entry = result?;
-                let path = entry.path();
-                if let Recursive::All = recursive
-                    && entry.file_type()?.is_dir()
-                {
-                    watch_recursive(kq, watching, path, interest, Recursive::All, true)?;
-                } else {
-                    watch_path(kq, watching, path, interest)?;
-                }
-            }
-        }
-        Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
-            // Ignore the error.
-        }
-        Err(err) => return Err(err),
-    }
-
-    watch_path(kq, watching, dir, interest)
+    watch_path(kq, watching, dir, interest, recursive, dir_only, None, None)
 }
 
 pub(crate) fn watch(
@@ -126,9 +106,8 @@ pub(crate) fn watch(
     path: PathBuf,
     interest: Interest,
 ) -> io::Result<()> {
-    // To minic inotify we need to watch all files and directories within a
-    // watched directory, so we use watch_recursive to do that for us.
-    watch_recursive(kq, watching, path, interest, Recursive::No, false)
+    let recursive = Recursive::No;
+    watch_path(kq, watching, path, interest, recursive, false, None, None)
 }
 
 fn watch_path(
@@ -136,15 +115,78 @@ fn watch_path(
     watching: &mut Watching,
     path: PathBuf,
     interest: Interest,
+    recursive: Recursive,
+    dir_only: bool,
+    is_dir: Option<bool>,
+    parent: Option<RawFd>,
 ) -> io::Result<()> {
+    // To minic inotify we need to watch all files and directories within a
+    // watched directory.
+
     let path =
         unsafe { PathBufWithNull::from_vec_unchecked(OsString::from(path).into_encoded_bytes()) };
     let fd = WatchedFd::open(&path)?;
+
+    let is_dir = if let Some(false) = is_dir {
+        false
+    } else {
+        let path = unsafe { Path::new(OsStr::from_encoded_bytes_unchecked(path.as_bytes())) };
+        let parent = fd.0.as_raw_fd();
+        match std::fs::read_dir(path) {
+            Ok(read_dir) => {
+                for result in read_dir {
+                    let entry = result?;
+                    let path = entry.path();
+                    let is_dir = entry.file_type()?.is_dir();
+                    watch_path(
+                        kq,
+                        watching,
+                        path,
+                        interest,
+                        recursive,
+                        false, // dir_only is only for parent dir, so set to false.
+                        Some(is_dir),
+                        Some(parent),
+                    )?;
+                }
+                true // Is a directory.
+            }
+            Err(ref err) if !dir_only && err.kind() == io::ErrorKind::NotADirectory => {
+                // Ignore the error.
+                false // Not a directory.
+            }
+            Err(err) => return Err(err),
+        }
+    };
+
+    watch_fd(kq, watching, fd, path, interest, is_dir, parent)
+}
+
+fn watch_fd(
+    kq: &AsyncFd,
+    watching: &mut Watching,
+    fd: WatchedFd,
+    path: PathBufWithNull,
+    interest: Interest,
+    is_dir: bool,
+    parent: Option<RawFd>,
+) -> io::Result<()> {
+    // User data passed to decode the events:
+    // * lowest 1 bit indicates if the fd is a directory.
+    // * the upper 32 bits, excluding the sign bit, represent the parent fd. Or
+    //   zero if the root of the watched path.
+    let mut udata: isize = if is_dir { 1 } else { 0 };
+    if let Some(fd) = parent {
+        udata |= (fd as isize) << 32;
+    }
+
+    //dbg!(&fd, &path, &is_dir, &parent, &udata);
     let change = Event(libc::kevent {
         ident: fd.0.as_raw_fd().cast_unsigned() as _,
         filter: libc::EVFILT_VNODE,
         flags: libc::EV_ADD | libc::EV_CLEAR,
         fflags: interest.0,
+        udata: udata as _,
         // SAFETY: all zeros is valid for `kevent`.
         ..unsafe { mem::zeroed() }
     });
@@ -160,6 +202,7 @@ fn watch_path(
         0,
         ptr::null(),
     ))?;
+
     // NOTE: it's possible the `wd` is already watched, we'll overwrite the
     // path, the watched interested is combined (within the kernel).
     _ = watching.insert(fd, path);
@@ -302,6 +345,15 @@ impl Event {
 
     pub(crate) const fn mask(&self) -> u32 {
         self.0.fflags
+    }
+
+    pub(crate) fn is_dir(&self) -> bool {
+        (self.0.udata as isize) & 0b1 == 1
+    }
+
+    pub(crate) fn parent_fd(&self) -> Option<RawFd> {
+        let fd = (self.0.udata as isize) >> 32;
+        if fd == 0 { None } else { Some(fd as RawFd) }
     }
 }
 
