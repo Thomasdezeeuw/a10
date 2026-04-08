@@ -467,12 +467,9 @@ impl Event {
 /// Macro to create functions to check bits set and include them in the
 /// fmt::Debug impl.
 macro_rules! bit_checks {
-    ( $( $(#[$meta: meta])* $fn_name: ident, $libc: ident :: $bit: ident ; )* ) => {
+    ( $( $(#[$meta: meta])* $fn_name: ident $(, $libc: ident :: $bit: ident)? ; )* ) => {
         $(
-        $( #[$meta] )*
-        pub fn $fn_name(&self) -> bool {
-            self.mask() & $libc::$bit != 0
-        }
+        $crate::fs::notify::bit_checks!(__fn $( #[$meta] )* $fn_name $(, $libc :: $bit )?);
         )*
 
         fn events(&self) -> impl fmt::Debug {
@@ -493,6 +490,18 @@ macro_rules! bit_checks {
             }
 
             Events(self)
+        }
+    };
+    (__fn $(#[$meta: meta])* $fn_name: ident) => {
+        $( #[$meta] )*
+        pub fn $fn_name(&self) -> bool {
+            self.0.$fn_name()
+        }
+    };
+    (__fn $(#[$meta: meta])* $fn_name: ident, $libc: ident :: $bit: ident ) => {
+        $( #[$meta] )*
+        pub fn $fn_name(&self) -> bool {
+            self.mask() & $libc::$bit != 0
         }
     };
 }
