@@ -214,7 +214,6 @@ pub(crate) const INTEREST_ALL: u32 = INTEREST_ACCESS
     | INTEREST_METADATA
     | INTEREST_CLOSE
     | INTEREST_OPEN
-    | INTEREST_MOVE
     | INTEREST_CREATE
     | INTEREST_DELETE
     | INTEREST_DELETE_SELF
@@ -237,7 +236,6 @@ const INTEREST_CLOSE: u32 = 0; // Not supported.
 pub(crate) const INTEREST_OPEN: u32 = libc::NOTE_OPEN;
 #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
 const INTEREST_OPEN: u32 = 0; // Not supported.
-pub(crate) const INTEREST_MOVE: u32 = libc::NOTE_RENAME;
 pub(crate) const INTEREST_CREATE: u32 = libc::NOTE_WRITE;
 pub(crate) const INTEREST_DELETE: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
 pub(crate) const INTEREST_DELETE_SELF: u32 = libc::NOTE_DELETE;

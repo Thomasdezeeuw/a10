@@ -196,8 +196,8 @@ new_flag!(
         /// A file was moved into the watched directory.
         #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_INTO = sys::INTEREST_MOVE_INTO,
-        /// The watched file or directory itself was moved. Or a file was moved
-        /// into or out of the watched directory (`inotify` only).
+        /// A file was moved into or out of the watched directory.
+        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE = sys::INTEREST_MOVE,
         /// File or directory was created in a watched directory.
         CREATE = sys::INTEREST_CREATE,
