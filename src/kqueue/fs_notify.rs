@@ -400,6 +400,18 @@ impl Event {
         }
     }
 
+    pub(crate) fn file_moved_from(&self) -> bool {
+        false // Not supported.
+    }
+
+    pub(crate) fn file_moved_into(&self) -> bool {
+        false // Not supported.
+    }
+
+    pub(crate) fn file_moved(&self) -> bool {
+        false // Not supported.
+    }
+
     pub(crate) fn file_created(&self) -> bool {
         if self.is_dir() {
             self.mask() & EVENT_FILE_CREATED != 0

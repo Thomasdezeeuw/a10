@@ -284,6 +284,18 @@ impl Event {
         self.mask() & EVENT_DELETED != 0
     }
 
+    pub(crate) fn file_moved_from(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED_FROM != 0
+    }
+
+    pub(crate) fn file_moved_into(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED_INTO != 0
+    }
+
+    pub(crate) fn file_moved(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED != 0
+    }
+
     pub(crate) fn file_created(&self) -> bool {
         self.mask() & EVENT_FILE_CREATED != 0
     }

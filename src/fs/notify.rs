@@ -439,16 +439,25 @@ impl Event {
 
         /// Returns true if:
         ///  * a file within a watched directory was moved out of the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved_from, sys::EVENT_FILE_MOVED_FROM;
+        ///
+        /// This is not supported on kqueue (and will always return false) as it
+        /// can't differentiate between file moved out of the watched directory
+        /// and a file deleted.
+        file_moved_from;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved_into, sys::EVENT_FILE_MOVED_INTO;
+        ///
+        /// This is not supported on kqueue (and will always return false) as it
+        /// can't differentiate between file moved into the watched directory
+        /// and a file created.
+        file_moved_into;
         /// Returns true if:
         ///  * a file within a watched directory was moved (into or of out of the watched directory).
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved, sys::EVENT_FILE_MOVED;
+        ///
+        /// This is not supported on kqueue (and will always return false) as it
+        /// can't differentiate between file moved into/out of the watched
+        /// directory and a file created/deleted.
+        file_moved;
         /// Returns true if:
         ///  * a file within a watched directory was created.
         ///
