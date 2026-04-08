@@ -34,7 +34,6 @@ fn event_is_send_and_sync() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -58,7 +57,6 @@ fn watched_directory_file_created() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -1129,7 +1127,6 @@ impl PartialEq<ExpectEvent> for Event {
         assert_eq!(self.file_moved_into(), event.file_moved_into, "file_moved_into");
         #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved(), event.file_moved, "file_moved");
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_created(), event.file_created, "file_created");
         assert_eq!(self.file_deleted(), event.file_deleted, "file_deleted");
         true

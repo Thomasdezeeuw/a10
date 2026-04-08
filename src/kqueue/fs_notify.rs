@@ -238,7 +238,7 @@ pub(crate) const INTEREST_OPEN: u32 = libc::NOTE_OPEN;
 #[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
 const INTEREST_OPEN: u32 = 0; // Not supported.
 pub(crate) const INTEREST_MOVE: u32 = libc::NOTE_RENAME;
-pub(crate) const INTEREST_CREATE: u32 = libc::NOTE_EXTEND;
+pub(crate) const INTEREST_CREATE: u32 = libc::NOTE_WRITE;
 pub(crate) const INTEREST_DELETE: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
 pub(crate) const INTEREST_DELETE_SELF: u32 = libc::NOTE_DELETE;
 pub(crate) const INTEREST_MOVE_SELF: u32 = libc::NOTE_RENAME;
@@ -386,11 +386,27 @@ impl Event {
         if fd == 0 { None } else { Some(fd as RawFd) }
     }
 
+    pub(crate) fn modified(&self) -> bool {
+        if self.is_dir() {
+            false // File changes are returned via the events on the file watch.
+        } else {
+            self.mask() & EVENT_MODIFIED != 0
+        }
+    }
+
     pub(crate) fn deleted(&self) -> bool {
         if self.parent_fd().is_some() {
             false
         } else {
             self.mask() & EVENT_DELETED != 0
+        }
+    }
+
+    pub(crate) fn file_created(&self) -> bool {
+        if self.is_dir() {
+            self.mask() & EVENT_FILE_CREATED != 0
+        } else {
+            false
         }
     }
 
@@ -421,5 +437,6 @@ pub(crate) const EVENT_OPENED: u32 = libc::NOTE_OPEN;
 pub(crate) const EVENT_DELETED: u32 = libc::NOTE_DELETE;
 pub(crate) const EVENT_MOVED: u32 = libc::NOTE_RENAME;
 pub(crate) const EVENT_UNMOUNTED: u32 = libc::NOTE_REVOKE;
+pub(crate) const EVENT_FILE_CREATED: u32 = libc::NOTE_WRITE;
 pub(crate) const EVENT_FILE_DELETED: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
 const EVENT_DIR_IN_DIR_DELETED: u32 = libc::NOTE_WRITE | libc::NOTE_LINK;

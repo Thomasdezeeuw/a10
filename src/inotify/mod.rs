@@ -276,8 +276,16 @@ impl Event {
         self.event.mask
     }
 
+    pub(crate) fn modified(&self) -> bool {
+        self.mask() & EVENT_MODIFIED != 0
+    }
+
     pub(crate) fn deleted(&self) -> bool {
         self.mask() & EVENT_DELETED != 0
+    }
+
+    pub(crate) fn file_created(&self) -> bool {
+        self.mask() & EVENT_FILE_CREATED != 0
     }
 
     pub(crate) fn file_deleted(&self) -> bool {

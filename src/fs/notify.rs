@@ -373,7 +373,7 @@ impl Event {
         /// Returns true if:
         ///  * the watched file was modified, or
         ///  * a file within a watched directory was modified.
-        modified, sys::EVENT_MODIFIED;
+        modified;
         /// Returns true if:
         ///  * the watched file had its metadata (attributes) changed,
         ///  * a file within a watched directory had its metadata changed, or
@@ -451,8 +451,14 @@ impl Event {
         file_moved, sys::EVENT_FILE_MOVED;
         /// Returns true if:
         ///  * a file within a watched directory was created.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_created, sys::EVENT_FILE_CREATED;
+        ///
+        /// # Notes
+        ///
+        /// For the kqueue implementation the path returned is the directory,
+        /// where as inotify returns the path of the file/directory that is
+        /// created.
+        // TODO: fix the above.
+        file_created;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
         file_deleted;
