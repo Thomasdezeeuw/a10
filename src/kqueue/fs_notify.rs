@@ -293,10 +293,39 @@ impl<'a> FdIter for NotifyOp<'a> {
         (events, processed): &mut Self::Resources,
         (): &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
-        if !events.is_empty() && events.len() > (*processed + 1) {
-            // Got another event ready to be processed, return it to the user.
-            *processed += 1;
-            return Ok(());
+        let prev_idx = *processed;
+        *processed += 1;
+        if events.len() > *processed {
+            let prev_event = &events[prev_idx];
+
+            // For deletion of a directory (not file) in a watched directory it
+            // will trigger two events, one for the child directory and one for
+            // the parent directory. To match with the inotify generated events
+            // we ignore the event for the parent directory.
+            if prev_event.mask() & EVENT_DELETED != 0
+                && let Some(parent) = prev_event.parent_fd()
+                && let Some(idx) = events[*processed..]
+                    .iter()
+                    .position(|e| e.0.ident == parent as _)
+            {
+                let next_event = &mut events[*processed + idx];
+                if next_event.mask() == EVENT_DIR_IN_DIR_DELETED {
+                    // The entire event only contain info about the deletion.
+                    if idx == 0 {
+                        *processed += 1; // Skip the event.
+                    } else {
+                        events.remove(*processed + idx); // Remove the event.
+                    }
+                } else {
+                    // Event contains more than just the deletion.
+                    next_event.0.fflags &= !EVENT_DIR_IN_DIR_DELETED;
+                }
+            }
+
+            if events.len() > *processed {
+                // Got another event ready to be processed, return it to the user.
+                return Ok(());
+            }
         }
 
         // No blocking.
@@ -356,6 +385,22 @@ impl Event {
         let fd = (self.0.udata as isize) >> 32;
         if fd == 0 { None } else { Some(fd as RawFd) }
     }
+
+    pub(crate) fn deleted(&self) -> bool {
+        if self.parent_fd().is_some() {
+            false
+        } else {
+            self.mask() & EVENT_DELETED != 0
+        }
+    }
+
+    pub(crate) fn file_deleted(&self) -> bool {
+        if self.parent_fd().is_some() {
+            self.mask() & EVENT_FILE_DELETED != 0
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
@@ -376,3 +421,5 @@ pub(crate) const EVENT_OPENED: u32 = libc::NOTE_OPEN;
 pub(crate) const EVENT_DELETED: u32 = libc::NOTE_DELETE;
 pub(crate) const EVENT_MOVED: u32 = libc::NOTE_RENAME;
 pub(crate) const EVENT_UNMOUNTED: u32 = libc::NOTE_REVOKE;
+pub(crate) const EVENT_FILE_DELETED: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
+const EVENT_DIR_IN_DIR_DELETED: u32 = libc::NOTE_WRITE | libc::NOTE_LINK;

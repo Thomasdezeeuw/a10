@@ -276,6 +276,14 @@ impl Event {
         self.event.mask
     }
 
+    pub(crate) fn deleted(&self) -> bool {
+        self.mask() & EVENT_DELETED != 0
+    }
+
+    pub(crate) fn file_deleted(&self) -> bool {
+        self.mask() & EVENT_FILE_DELETED != 0
+    }
+
     pub(crate) fn fmt<'a, 'b, 'f>(
         &self,
         f: &'f mut fmt::DebugStruct<'a, 'b>,

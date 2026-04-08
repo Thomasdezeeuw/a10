@@ -419,7 +419,7 @@ impl Event {
         /// Returns true if:
         ///  * the watched file was deleted.
         ///  * the watched directory was deleted.
-        deleted, sys::EVENT_DELETED;
+        deleted;
         /// Returns true if:
         ///  * the watched file was moved.
         ///  * the watched directory was moved.
@@ -455,8 +455,7 @@ impl Event {
         file_created, sys::EVENT_FILE_CREATED;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_deleted, sys::EVENT_FILE_DELETED;
+        file_deleted;
     );
 
     const fn mask(&self) -> u32 {

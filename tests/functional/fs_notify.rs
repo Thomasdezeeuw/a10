@@ -550,7 +550,6 @@ fn watched_directory_file_closed_write() {
 // NOTE: no close_write event can be generated for directories.
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_deleted() {
     test_fs_watcher(
         |watcher, dir| {
@@ -576,7 +575,6 @@ fn watched_directory_dir_deleted() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_deleted() {
     test_fs_watcher(
         |watcher, dir| {
@@ -1133,7 +1131,6 @@ impl PartialEq<ExpectEvent> for Event {
         assert_eq!(self.file_moved(), event.file_moved, "file_moved");
         #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_created(), event.file_created, "file_created");
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_deleted(), event.file_deleted, "file_deleted");
         true
     }
