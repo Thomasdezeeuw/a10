@@ -11,6 +11,7 @@ use std::pin::Pin;
 use std::task::{self, Poll};
 use std::{fmt, io, mem, ptr};
 
+use crate::fs::Metadata;
 use crate::fs::notify::{self, Events, Interest, Recursive, Watcher};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::FdIter;
@@ -130,6 +131,16 @@ fn watch_path(
 
     let is_dir = if let Some(false) = is_dir {
         false
+    } else if parent.is_some()
+        && let Recursive::No = recursive
+    {
+        // We need to watch all files inside of a watched directory regardless
+        // of the recursion requested. If recursion is not requested and the
+        // parent is some we stop here.
+        // SAFETY: fully zeroed `libc::stat` is valid.
+        let mut metadata: Metadata = unsafe { mem::zeroed() };
+        syscall!(fstat(fd.0.as_raw_fd(), &raw mut metadata.0))?;
+        metadata.is_dir()
     } else {
         let path = unsafe { Path::new(OsStr::from_encoded_bytes_unchecked(path.as_bytes())) };
         let parent = fd.0.as_raw_fd();
