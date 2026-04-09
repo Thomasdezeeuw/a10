@@ -110,6 +110,7 @@ pub(crate) fn watch(
     watch_path(kq, watching, path, interest, recursive, false, None, None)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn watch_path(
     kq: &AsyncFd,
     watching: &mut Watching,
@@ -183,6 +184,7 @@ fn watch_fd(
     } else {
         0
     };
+    #[allow(clippy::cast_sign_loss)] // fd are never negative.
     if let Some(fd) = parent {
         udata |= (fd as usize) << 32;
     }
@@ -355,6 +357,7 @@ impl<'a> FdIter for NotifyOp<'a> {
 
     const OP_KIND: OpKind = OpKind::Read;
 
+    #[allow(clippy::cast_possible_wrap, clippy::cast_sign_loss)]
     fn try_run(
         kq: &AsyncFd,
         (events, processed): &mut Self::Resources,
@@ -404,10 +407,10 @@ impl<'a> FdIter for NotifyOp<'a> {
                         // directory we get two events with the following flags:
                         // [0] NOTE_WRITE   on the watched directory.
                         // [1] NOTE_RENAME  on the moved file/directory.
-                        drop(events.remove(i)); // Remove the event for the directory.
+                        _ = events.remove(i); // Remove the event for the directory.
                         let event = &mut events[i + idx];
                         event.0.udata =
-                            (event.0.udata as u64 | EVENT_EXTRA_FILE_MOVED_FROM as u64) as _;
+                            (event.0.udata as u64 | u64::from(EVENT_EXTRA_FILE_MOVED_FROM)) as _;
                         event.0.fflags &= !libc::NOTE_RENAME; // Don't trigger Event::moved.
                         continue; // NOTE: don't increment i as we've removed an event.
                     } else if head.iter().any(|e| {
@@ -426,7 +429,7 @@ impl<'a> FdIter for NotifyOp<'a> {
                         //
                         // In this case we remove the event for the directory,
                         // the deletion event doesn't have to be modified.
-                        drop(events.remove(i)); // Remove the event for the directory.
+                        _ = events.remove(i); // Remove the event for the directory.
                     } else {
                         // When a file/directory is create in a watched
                         // directory we get one event with the following flags:
@@ -434,7 +437,7 @@ impl<'a> FdIter for NotifyOp<'a> {
                         let event = &mut head[i];
                         event.0.fflags &= !libc::NOTE_WRITE; // Don't trigger Event::modified.
                         event.0.udata =
-                            (event.0.udata as u64 | EVENT_EXTRA_FILE_CREATED as u64) as _;
+                            (event.0.udata as u64 | u64::from(EVENT_EXTRA_FILE_CREATED)) as _;
                         // TODO: get the path of the new file/directory.
                         // TODO: determine if the new file is a file or
                         // directory and set EVENT_EXTRA_IS_DIR.
@@ -505,6 +508,7 @@ impl Event {
         self.mask_extra() & EVENT_EXTRA_FILE_MOVED_FROM != 0
     }
 
+    #[allow(clippy::unused_self)]
     pub(crate) fn file_moved_into(&self) -> bool {
         false // Not supported.
     }
