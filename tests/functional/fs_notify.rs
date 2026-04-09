@@ -47,7 +47,7 @@ fn watched_directory_file_created() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: kqueue_path_file_created_workaround(path),
+                full_path: path,
                 file_path: FILE_NAME,
                 file_created: true,
                 ..Default::default()
@@ -70,7 +70,7 @@ fn watched_directory_dir_created() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: kqueue_path_file_created_workaround(path),
+                full_path: path,
                 file_path: DIR_NAME,
                 is_dir: true,
                 file_created: true,
@@ -380,7 +380,7 @@ fn watched_directory_file_moved_to() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: kqueue_path_file_created_workaround(path),
+                full_path: path,
                 file_path: FILE_NAME,
                 file_moved_into: true,
                 file_moved: true,
@@ -423,7 +423,7 @@ fn watched_directory_dir_moved_to() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: kqueue_path_file_created_workaround(path),
+                full_path: path,
                 file_path: DIR_NAME,
                 is_dir: true,
                 file_moved_into: true,
@@ -1160,20 +1160,4 @@ impl PartialEq<ExpectEvent> for Event {
         assert_eq!(self.file_deleted(), event.file_deleted, "file_deleted");
         true
     }
-}
-
-fn kqueue_path_file_created_workaround(mut path: PathBuf) -> PathBuf {
-    #[cfg(any(
-        target_os = "dragonfly",
-        target_os = "freebsd",
-        target_os = "ios",
-        target_os = "macos",
-        target_os = "netbsd",
-        target_os = "openbsd",
-        target_os = "tvos",
-        target_os = "visionos",
-        target_os = "watchos",
-    ))]
-    path.pop();
-    path
 }
