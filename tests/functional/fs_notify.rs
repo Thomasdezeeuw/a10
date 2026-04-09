@@ -519,6 +519,7 @@ fn watched_directory_moved() {
         |path, ()| {
             vec![ExpectEvent {
                 full_path: path.clone(),
+                is_dir: true,
                 moved: true,
                 ..Default::default()
             }]
