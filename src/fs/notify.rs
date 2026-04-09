@@ -58,17 +58,9 @@
 //!
 //! Not all interests are supported. Events for opening or closing a file, and
 //! reading from a file are only supported on FreeBSD & NetBSD, not on e.g.
-//! OpenBSD or macOS. Events for moving a file out of a directory don't work,
-//! only for moving the directory itself.
-//!
-//! For watched directories it's not possible to determine *what* happened to
-//! the directory. For example if a file is created in the directory we can
-//! differentiate that from a file being deleted. This means the
-//! `Event::file_*`, such as [`Event::file_moved`], functions don't work. Only
-//! [`Event::modified`] will be triggered. Furthermore the events don't carry
-//! information about *which* file within a watched directory is affected.
-//!
-//! Events don't support [`Event::is_dir`].
+//! OpenBSD or macOS. Events for moving a file/directory into a watched a
+//! directory don't work ([`Event::file_moved_into`]), [`Event::file_created`]
+//! will be triggered.
 //!
 //! [`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
 //! [`setrlimit(2)`]: https://man.freebsd.org/cgi/man.cgi?query=setrlimit&sektion=2
@@ -191,13 +183,10 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         OPEN = sys::INTEREST_OPEN,
         /// A file was moved out of the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_FROM = sys::INTEREST_MOVE_FROM,
         /// A file was moved into the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_INTO = sys::INTEREST_MOVE_INTO,
         /// A file was moved into or out of the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE = sys::INTEREST_MOVE,
         /// File or directory was created in a watched directory.
         CREATE = sys::INTEREST_CREATE,
@@ -363,8 +352,7 @@ impl Event {
     // Getters for the events.
     bit_checks!(
         /// Return true if the subject of this event is a directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        is_dir, sys::EVENT_IS_DIR;
+        is_dir;
         /// Returns true if:
         ///  * the watched file was accessed, or
         ///  * a file within a watched directory was accessed.
@@ -439,24 +427,21 @@ impl Event {
 
         /// Returns true if:
         ///  * a file within a watched directory was moved out of the watched directory.
-        ///
-        /// This is not supported on kqueue (and will always return false) as it
-        /// can't differentiate between file moved out of the watched directory
-        /// and a file deleted.
         file_moved_from;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
         ///
         /// This is not supported on kqueue (and will always return false) as it
         /// can't differentiate between file moved into the watched directory
-        /// and a file created.
+        /// and a new file created. When using this method also consider using
+        /// [`Event::file_created`] to ensure events are created for newly
+        /// created files.
         file_moved_into;
         /// Returns true if:
         ///  * a file within a watched directory was moved (into or of out of the watched directory).
         ///
-        /// This is not supported on kqueue (and will always return false) as it
-        /// can't differentiate between file moved into/out of the watched
-        /// directory and a file created/deleted.
+        /// The limitation documented in [`Event::file_moved_into`] also applies
+        /// here.
         file_moved;
         /// Returns true if:
         ///  * a file within a watched directory was created.

@@ -47,7 +47,7 @@ fn watched_directory_file_created() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: path.clone(),
+                full_path: kqueue_path_file_created_workaround(path),
                 file_path: FILE_NAME,
                 file_created: true,
                 ..Default::default()
@@ -70,7 +70,7 @@ fn watched_directory_dir_created() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: path.clone(),
+                full_path: kqueue_path_file_created_workaround(path),
                 file_path: DIR_NAME,
                 is_dir: true,
                 file_created: true,
@@ -302,7 +302,6 @@ fn watched_directory_dir_metadata_changed() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_moved_from() {
     test_fs_watcher(
         |watcher, dir| {
@@ -334,7 +333,6 @@ fn watched_directory_file_moved_from() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_moved_from() {
     test_fs_watcher(
         |watcher, dir| {
@@ -367,7 +365,6 @@ fn watched_directory_dir_moved_from() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_file_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
@@ -383,10 +380,24 @@ fn watched_directory_file_moved_to() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: path.clone(),
+                full_path: kqueue_path_file_created_workaround(path),
                 file_path: FILE_NAME,
                 file_moved_into: true,
                 file_moved: true,
+                // Event::file_moved_into is not supported by kqueue, but it
+                // will trigger file_created.
+                #[cfg(any(
+                    target_os = "dragonfly",
+                    target_os = "freebsd",
+                    target_os = "ios",
+                    target_os = "macos",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                    target_os = "tvos",
+                    target_os = "visionos",
+                    target_os = "watchos",
+                ))]
+                file_created: true,
                 ..Default::default()
             }]
         },
@@ -394,7 +405,6 @@ fn watched_directory_file_moved_to() {
 }
 
 #[test]
-#[cfg(any(target_os = "android", target_os = "linux"))]
 fn watched_directory_dir_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
@@ -413,11 +423,25 @@ fn watched_directory_dir_moved_to() {
         },
         |path, ()| {
             vec![ExpectEvent {
-                full_path: path.clone(),
+                full_path: kqueue_path_file_created_workaround(path),
                 file_path: DIR_NAME,
                 is_dir: true,
                 file_moved_into: true,
                 file_moved: true,
+                // Event::file_moved_into is not supported by kqueue, but it
+                // will trigger file_created.
+                #[cfg(any(
+                    target_os = "dragonfly",
+                    target_os = "freebsd",
+                    target_os = "ios",
+                    target_os = "macos",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                    target_os = "tvos",
+                    target_os = "visionos",
+                    target_os = "watchos",
+                ))]
+                file_created: true,
                 ..Default::default()
             }]
         },
@@ -610,6 +634,7 @@ fn watched_directory_deleted() {
         |path, ()| {
             vec![ExpectEvent {
                 full_path: path.clone(),
+                is_dir: true,
                 deleted: true,
                 ..Default::default()
             }]
@@ -1104,7 +1129,6 @@ impl PartialEq<ExpectEvent> for Event {
         // the field that differs.
         #[cfg(any(target_os = "android", target_os = "linux"))] // Panics for kqueue.
         assert_eq!(self.file_path(), std::path::Path::new(event.file_path), "file_path");
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.is_dir(), event.is_dir, "is_dir");
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         assert_eq!(self.accessed(), event.accessed, "accessed");
@@ -1121,14 +1145,35 @@ impl PartialEq<ExpectEvent> for Event {
         assert_eq!(self.deleted(), event.deleted, "deleted");
         assert_eq!(self.moved(), event.moved, "moved");
         assert_eq!(self.unmounted(), event.unmounted, "unmounted");
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved_from(), event.file_moved_from, "file_moved_from");
+        // Not supported with kqueue.
         #[cfg(any(target_os = "android", target_os = "linux"))]
         assert_eq!(self.file_moved_into(), event.file_moved_into, "file_moved_into");
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        // Event::file_moved_into is not supported by kqueue, so if file_moved_from is false file_moved will also be false.
+        #[cfg(any(target_os = "dragonfly", target_os = "freebsd", target_os = "ios", target_os = "macos", target_os = "netbsd", target_os = "openbsd", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
+        if self.file_moved_from() {
+            assert_eq!(self.file_moved(), event.file_moved, "file_moved");
+        }
+        #[cfg(not(any(target_os = "dragonfly", target_os = "freebsd", target_os = "ios", target_os = "macos", target_os = "netbsd", target_os = "openbsd", target_os = "tvos", target_os = "visionos", target_os = "watchos")))]
         assert_eq!(self.file_moved(), event.file_moved, "file_moved");
         assert_eq!(self.file_created(), event.file_created, "file_created");
         assert_eq!(self.file_deleted(), event.file_deleted, "file_deleted");
         true
     }
+}
+
+fn kqueue_path_file_created_workaround(mut path: PathBuf) -> PathBuf {
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    path.pop();
+    path
 }

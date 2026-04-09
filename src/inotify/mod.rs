@@ -276,6 +276,10 @@ impl Event {
         self.event.mask
     }
 
+    pub(crate) fn is_dir(&self) -> bool {
+        self.mask() & EVENT_IS_DIR != 0
+    }
+
     pub(crate) fn modified(&self) -> bool {
         self.mask() & EVENT_MODIFIED != 0
     }

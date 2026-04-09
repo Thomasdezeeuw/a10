@@ -172,20 +172,95 @@ fn watch_fd(
     parent: Option<RawFd>,
 ) -> io::Result<()> {
     // User data passed to decode the events:
-    // * lowest 1 bit indicates if the fd is a directory.
+    // * the lower 32 bits are used to create additional event data from
+    //   multiple events, see the EVENT_EXTRA_* constants.
+    //   The first bit we set here, which is an indication if the fd is a file
+    //   or directory.
     // * the upper 32 bits, excluding the sign bit, represent the parent fd. Or
     //   zero if the root of the watched path.
-    let mut udata: isize = if is_dir { 1 } else { 0 };
+    let mut udata: usize = if is_dir {
+        EVENT_EXTRA_IS_DIR as usize
+    } else {
+        0
+    };
     if let Some(fd) = parent {
-        udata |= (fd as isize) << 32;
+        udata |= (fd as usize) << 32;
     }
 
-    //dbg!(&fd, &path, &is_dir, &parent, &udata);
+    // Map the interest to the correct fflags.
+    let mut flags = 0;
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    if interest.0 & INTEREST_ACCESS != 0 {
+        flags |= libc::NOTE_READ;
+    }
+    if interest.0 & INTEREST_MODIFY != 0 {
+        flags |= libc::NOTE_WRITE | libc::NOTE_EXTEND;
+        #[cfg(target_os = "openbsd")]
+        {
+            flags |= libc::NOTE_TRUNCATE;
+        }
+    }
+    if interest.0 & INTEREST_METADATA != 0 {
+        flags |= libc::NOTE_ATTRIB;
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    if interest.0 & INTEREST_CLOSE_WRITE != 0 {
+        flags |= libc::NOTE_CLOSE_WRITE;
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    if interest.0 & INTEREST_CLOSE_NOWRITE != 0 {
+        flags |= libc::NOTE_CLOSE;
+    }
+    #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+    if interest.0 & INTEREST_OPEN != 0 {
+        flags |= libc::NOTE_OPEN;
+    }
+    if interest.0 & INTEREST_MOVE_INTO != 0 {
+        // We can't determine if a file/directory is created or moved into a
+        // watched directory, kqueue simply doesn't give us enough information.
+        // Best we can do it trigger an event that a file/directory is created.
+        flags |= libc::NOTE_WRITE;
+    }
+    if interest.0 & INTEREST_MOVE_FROM != 0 {
+        // When a file/directory is moved we get two events with the following
+        // flags:
+        // [0] NOTE_WRITE   on watched directory.
+        // [1] NOTE_RENAME  on moved file/directory.
+        if is_dir {
+            flags |= libc::NOTE_WRITE;
+        }
+        if parent.is_some() {
+            flags |= libc::NOTE_RENAME;
+        }
+    }
+    if interest.0 & INTEREST_CREATE != 0 && is_dir {
+        // When a file/directory is created we only get one event:
+        // [0] NOTE_WRITE   on watched directory.
+        //
+        // Since we aren't watching the newly created we don't know what file is
+        // actually created.
+        flags |= libc::NOTE_WRITE;
+    }
+    if interest.0 & INTEREST_DELETE != 0 && parent.is_some() {
+        // On each file file inside a watched directory watch for deletion events.
+        flags |= libc::NOTE_DELETE;
+    }
+    if parent.is_none() {
+        // The *_SELF interests only apply to the fd that watch was called on,
+        // so if the fd has a parent ignore it.
+        if interest.0 & INTEREST_DELETE_SELF != 0 {
+            flags |= libc::NOTE_DELETE;
+        }
+        if interest.0 & INTEREST_MOVE_SELF != 0 {
+            flags |= libc::NOTE_RENAME;
+        }
+    }
+
     let change = Event(libc::kevent {
         ident: fd.0.as_raw_fd().cast_unsigned() as _,
         filter: libc::EVFILT_VNODE,
         flags: libc::EV_ADD | libc::EV_CLEAR,
-        fflags: interest.0,
+        fflags: flags,
         udata: udata as _,
         // SAFETY: all zeros is valid for `kevent`.
         ..unsafe { mem::zeroed() }
@@ -209,37 +284,31 @@ fn watch_fd(
     Ok(())
 }
 
+// Custom bitset, mapped in `watch_fd`.
 pub(crate) const INTEREST_ALL: u32 = INTEREST_ACCESS
     | INTEREST_MODIFY
     | INTEREST_METADATA
     | INTEREST_CLOSE
     | INTEREST_OPEN
+    | INTEREST_MOVE
     | INTEREST_CREATE
     | INTEREST_DELETE
     | INTEREST_DELETE_SELF
     | INTEREST_MOVE_SELF;
-#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-pub(crate) const INTEREST_ACCESS: u32 = libc::NOTE_READ;
-#[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
-const INTEREST_ACCESS: u32 = 0; // Not supported.
-pub(crate) const INTEREST_MODIFY: u32 = libc::NOTE_WRITE;
-pub(crate) const INTEREST_METADATA: u32 = libc::NOTE_ATTRIB;
-#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-pub(crate) const INTEREST_CLOSE_WRITE: u32 = libc::NOTE_CLOSE_WRITE;
-#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-pub(crate) const INTEREST_CLOSE_NOWRITE: u32 = libc::NOTE_CLOSE;
-#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
+pub(crate) const INTEREST_ACCESS: u32 = 1 << 0;
+pub(crate) const INTEREST_MODIFY: u32 = 1 << 1;
+pub(crate) const INTEREST_METADATA: u32 = 1 << 2;
+pub(crate) const INTEREST_CLOSE_WRITE: u32 = 1 << 3;
+pub(crate) const INTEREST_CLOSE_NOWRITE: u32 = 1 << 4;
 pub(crate) const INTEREST_CLOSE: u32 = INTEREST_CLOSE_WRITE | INTEREST_CLOSE_NOWRITE;
-#[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
-const INTEREST_CLOSE: u32 = 0; // Not supported.
-#[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
-pub(crate) const INTEREST_OPEN: u32 = libc::NOTE_OPEN;
-#[cfg(not(any(target_os = "freebsd", target_os = "netbsd")))]
-const INTEREST_OPEN: u32 = 0; // Not supported.
-pub(crate) const INTEREST_CREATE: u32 = libc::NOTE_WRITE;
-pub(crate) const INTEREST_DELETE: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
-pub(crate) const INTEREST_DELETE_SELF: u32 = libc::NOTE_DELETE;
-pub(crate) const INTEREST_MOVE_SELF: u32 = libc::NOTE_RENAME;
+pub(crate) const INTEREST_OPEN: u32 = 1 << 5;
+pub(crate) const INTEREST_MOVE_INTO: u32 = 1 << 6;
+pub(crate) const INTEREST_MOVE_FROM: u32 = 1 << 7;
+pub(crate) const INTEREST_MOVE: u32 = INTEREST_MOVE_INTO | INTEREST_MOVE_FROM;
+pub(crate) const INTEREST_CREATE: u32 = 1 << 8;
+pub(crate) const INTEREST_DELETE: u32 = 1 << 9;
+pub(crate) const INTEREST_DELETE_SELF: u32 = 1 << 10;
+pub(crate) const INTEREST_MOVE_SELF: u32 = 1 << 11;
 
 #[derive(Debug)]
 pub(crate) struct EventsState<'w>(<NotifyOp<'w> as crate::op::FdIter>::State);
@@ -291,39 +360,10 @@ impl<'a> FdIter for NotifyOp<'a> {
         (events, processed): &mut Self::Resources,
         (): &mut Self::Args,
     ) -> io::Result<Self::OperationOutput> {
-        let prev_idx = *processed;
         *processed += 1;
         if events.len() > *processed {
-            let prev_event = &events[prev_idx];
-
-            // For deletion of a directory (not file) in a watched directory it
-            // will trigger two events, one for the child directory and one for
-            // the parent directory. To match with the inotify generated events
-            // we ignore the event for the parent directory.
-            if prev_event.mask() & EVENT_DELETED != 0
-                && let Some(parent) = prev_event.parent_fd()
-                && let Some(idx) = events[*processed..]
-                    .iter()
-                    .position(|e| e.0.ident == parent as _)
-            {
-                let next_event = &mut events[*processed + idx];
-                if next_event.mask() == EVENT_DIR_IN_DIR_DELETED {
-                    // The entire event only contain info about the deletion.
-                    if idx == 0 {
-                        *processed += 1; // Skip the event.
-                    } else {
-                        events.remove(*processed + idx); // Remove the event.
-                    }
-                } else {
-                    // Event contains more than just the deletion.
-                    next_event.0.fflags &= !EVENT_DIR_IN_DIR_DELETED;
-                }
-            }
-
-            if events.len() > *processed {
-                // Got another event ready to be processed, return it to the user.
-                return Ok(());
-            }
+            // Got another event ready to be processed, return it to the user.
+            return Ok(());
         }
 
         // No blocking.
@@ -345,6 +385,64 @@ impl<'a> FdIter for NotifyOp<'a> {
         } else {
             unsafe { events.set_len(n as _) };
             *processed = 0;
+            log::trace!(events:?; "got fs events");
+            let mut i = 0;
+            while let Some((head, tail)) = events.split_at_mut_checked(i + 1) {
+                let event = &head[i];
+
+                if event.is_dir() && (event.0.fflags & libc::NOTE_WRITE != 0) {
+                    // NOTE_WRITE on a directory means *something* happened
+                    // within the directory, e.g. a file/directory was created
+                    // or deleted. But kqueue doesn't tell us what, so we have
+                    // to figure that out here.
+
+                    if let Some(idx) = tail.iter().position(|e| {
+                        e.parent_fd() == Some(event.0.ident as _)
+                            && e.0.fflags & libc::NOTE_RENAME != 0
+                    }) {
+                        // When a file/directory is moved out of a watched
+                        // directory we get two events with the following flags:
+                        // [0] NOTE_WRITE   on the watched directory.
+                        // [1] NOTE_RENAME  on the moved file/directory.
+                        drop(events.remove(i)); // Remove the event for the directory.
+                        let event = &mut events[i + idx];
+                        event.0.udata =
+                            (event.0.udata as u64 | EVENT_EXTRA_FILE_MOVED_FROM as u64) as _;
+                        event.0.fflags &= !libc::NOTE_RENAME; // Don't trigger Event::moved.
+                        continue; // NOTE: don't increment i as we've removed an event.
+                    } else if head.iter().any(|e| {
+                        e.parent_fd() == Some(event.0.ident as _)
+                            && e.0.fflags & libc::NOTE_DELETE != 0
+                    }) {
+                        // When Interest::DELETE is used alone we get a single
+                        // event:
+                        // [0] NOTE_DELETE  on the deleted file/directory.
+                        //
+                        // We don't get an event for the directory. However,
+                        // when used in combination with CREATE or MOVE_FROM it
+                        // will trigger a second event:
+                        // [0] NOTE_DELETE  on the deleted file/directory.
+                        // [1] NOTE_WRITE   on the watched directory.
+                        //
+                        // In this case we remove the event for the directory,
+                        // the deletion event doesn't have to be modified.
+                        drop(events.remove(i)); // Remove the event for the directory.
+                    } else {
+                        // When a file/directory is create in a watched
+                        // directory we get one event with the following flags:
+                        // [0] NOTE_WRITE   on the watched directory.
+                        let event = &mut head[i];
+                        event.0.fflags &= !libc::NOTE_WRITE; // Don't trigger Event::modified.
+                        event.0.udata = ((event.0.udata as u64 | EVENT_EXTRA_FILE_CREATED as u64)
+                            & !EVENT_EXTRA_IS_DIR as u64)
+                            as _;
+                        // TODO: get the path of the new file/directory.
+                        // TODO: determine if the new file is a file or
+                        // directory and set EVENT_EXTRA_IS_DIR.
+                    }
+                }
+                i += 1;
+            }
             Ok(())
         }
     }
@@ -375,13 +473,17 @@ impl Event {
         self.0.fflags
     }
 
-    pub(crate) fn is_dir(&self) -> bool {
-        (self.0.udata as isize) & 0b1 == 1
-    }
-
-    pub(crate) fn parent_fd(&self) -> Option<RawFd> {
+    fn parent_fd(&self) -> Option<RawFd> {
         let fd = (self.0.udata as isize) >> 32;
         if fd == 0 { None } else { Some(fd as RawFd) }
+    }
+
+    fn mask_extra(&self) -> u32 {
+        ((self.0.udata as usize) & !((u32::MAX as usize) << 32)) as u32
+    }
+
+    pub(crate) fn is_dir(&self) -> bool {
+        self.mask_extra() & EVENT_EXTRA_IS_DIR != 0
     }
 
     pub(crate) fn modified(&self) -> bool {
@@ -396,12 +498,12 @@ impl Event {
         if self.parent_fd().is_some() {
             false
         } else {
-            self.mask() & EVENT_DELETED != 0
+            self.mask() & libc::NOTE_DELETE != 0
         }
     }
 
     pub(crate) fn file_moved_from(&self) -> bool {
-        false // Not supported.
+        self.mask_extra() & EVENT_EXTRA_FILE_MOVED_FROM != 0
     }
 
     pub(crate) fn file_moved_into(&self) -> bool {
@@ -409,20 +511,16 @@ impl Event {
     }
 
     pub(crate) fn file_moved(&self) -> bool {
-        false // Not supported.
+        self.mask_extra() & EVENT_EXTRA_FILE_MOVED != 0
     }
 
     pub(crate) fn file_created(&self) -> bool {
-        if self.is_dir() {
-            self.mask() & EVENT_FILE_CREATED != 0
-        } else {
-            false
-        }
+        self.mask_extra() & EVENT_EXTRA_FILE_CREATED != 0
     }
 
     pub(crate) fn file_deleted(&self) -> bool {
         if self.parent_fd().is_some() {
-            self.mask() & EVENT_FILE_DELETED != 0
+            self.mask() & libc::NOTE_DELETE != 0
         } else {
             false
         }
@@ -444,9 +542,10 @@ pub(crate) const EVENT_CLOSED_NO_WRITE: u32 = libc::NOTE_CLOSE;
 pub(crate) const EVENT_CLOSED: u32 = libc::NOTE_CLOSE_WRITE | libc::NOTE_CLOSE;
 #[cfg(any(target_os = "freebsd", target_os = "netbsd"))]
 pub(crate) const EVENT_OPENED: u32 = libc::NOTE_OPEN;
-pub(crate) const EVENT_DELETED: u32 = libc::NOTE_DELETE;
 pub(crate) const EVENT_MOVED: u32 = libc::NOTE_RENAME;
 pub(crate) const EVENT_UNMOUNTED: u32 = libc::NOTE_REVOKE;
-pub(crate) const EVENT_FILE_CREATED: u32 = libc::NOTE_WRITE;
-pub(crate) const EVENT_FILE_DELETED: u32 = libc::NOTE_DELETE | libc::NOTE_LINK;
-const EVENT_DIR_IN_DIR_DELETED: u32 = libc::NOTE_WRITE | libc::NOTE_LINK;
+
+const EVENT_EXTRA_IS_DIR: u32 = 1 << 0; // NOTE: set on registering the event.
+const EVENT_EXTRA_FILE_MOVED_FROM: u32 = 1 << 1;
+const EVENT_EXTRA_FILE_MOVED: u32 = EVENT_EXTRA_FILE_MOVED_FROM;
+const EVENT_EXTRA_FILE_CREATED: u32 = 1 << 3;
