@@ -433,9 +433,8 @@ impl<'a> FdIter for NotifyOp<'a> {
                         // [0] NOTE_WRITE   on the watched directory.
                         let event = &mut head[i];
                         event.0.fflags &= !libc::NOTE_WRITE; // Don't trigger Event::modified.
-                        event.0.udata = ((event.0.udata as u64 | EVENT_EXTRA_FILE_CREATED as u64)
-                            & !EVENT_EXTRA_IS_DIR as u64)
-                            as _;
+                        event.0.udata =
+                            (event.0.udata as u64 | EVENT_EXTRA_FILE_CREATED as u64) as _;
                         // TODO: get the path of the new file/directory.
                         // TODO: determine if the new file is a file or
                         // directory and set EVENT_EXTRA_IS_DIR.

@@ -62,6 +62,11 @@
 //! directory don't work ([`Event::file_moved_into`]), [`Event::file_created`]
 //! will be triggered.
 //!
+//! For events that set [`Event::file_created`] the following methods return
+//! incorrect results:
+//!  * [`Event::is_dir`] -- always true.
+//!  * [`Events::path_for`] -- only contains the parent directory.
+//!
 //! [`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
 //! [`setrlimit(2)`]: https://man.freebsd.org/cgi/man.cgi?query=setrlimit&sektion=2
 
@@ -451,7 +456,10 @@ impl Event {
         /// For the kqueue implementation the path returned is the directory,
         /// where as inotify returns the path of the file/directory that is
         /// created.
-        // TODO: fix the above.
+        ///
+        /// Furthermore, for the kqueue implementation if this returns true the
+        /// [`Event::is_dir`] method will also always return true, even if a
+        /// file was created.
         file_created;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
