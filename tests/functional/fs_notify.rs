@@ -1089,6 +1089,9 @@ async fn expect_events(watcher: &mut fs::Watcher, expected: &[ExpectEvent]) {
             .await
             .expect("missing expected event")
             .expect("failed to read events");
+        println!("Got event: {event:#?}");
+        println!("Path: {}", events.path_for(&event).display());
+        println!("Expected: {expected:#?}");
         assert_eq!(event, expected);
         let full_path = events.path_for(&event);
         assert_eq!(full_path, expected.full_path);
