@@ -190,6 +190,14 @@ new_flag!(
         /// A file was moved out of the watched directory.
         MOVE_FROM = sys::INTEREST_MOVE_FROM,
         /// A file was moved into the watched directory.
+        ///
+        /// # Notes
+        ///
+        /// This is not supported on kqueue as it can't differentiate between
+        /// file moved into the watched directory and a new file created.
+        /// Instead this will trigger events with [`Event::file_created`]
+        /// instead of [`Event::file_moved_into`]. Implementations should check
+        /// both methods.
         MOVE_INTO = sys::INTEREST_MOVE_INTO,
         /// A file was moved into or out of the watched directory.
         MOVE = sys::INTEREST_MOVE,
@@ -435,6 +443,8 @@ impl Event {
         file_moved_from;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
+        ///
+        /// # Notes
         ///
         /// This is not supported on kqueue (and will always return false) as it
         /// can't differentiate between file moved into the watched directory
