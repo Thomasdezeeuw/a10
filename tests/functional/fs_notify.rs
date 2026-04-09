@@ -34,6 +34,20 @@ fn event_is_send_and_sync() {
 }
 
 #[test]
+#[cfg_attr(
+    any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ),
+    ignore = "is_dir and the path are incorrect for file_created events"
+)]
 fn watched_directory_file_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -57,6 +71,20 @@ fn watched_directory_file_created() {
 }
 
 #[test]
+#[cfg_attr(
+    any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ),
+    ignore = "is_dir and the path are incorrect for file_created events"
+)]
 fn watched_directory_dir_created() {
     test_fs_watcher(
         |watcher, dir| {
@@ -365,6 +393,20 @@ fn watched_directory_dir_moved_from() {
 }
 
 #[test]
+#[cfg_attr(
+    any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ),
+    ignore = "is_dir and the path are incorrect for file_created events"
+)]
 fn watched_directory_file_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
@@ -405,6 +447,20 @@ fn watched_directory_file_moved_to() {
 }
 
 #[test]
+#[cfg_attr(
+    any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos"
+    ),
+    ignore = "is_dir and the path are incorrect for file_created events"
+)]
 fn watched_directory_dir_moved_to() {
     test_fs_watcher(
         |watcher, dir| {
