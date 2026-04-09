@@ -519,6 +519,7 @@ fn watched_directory_moved() {
         |path, ()| {
             vec![ExpectEvent {
                 full_path: path.clone(),
+                #[cfg(not(any(target_os = "android", target_os = "linux")))] // Not set using inotify.
                 is_dir: true,
                 moved: true,
                 ..Default::default()
@@ -691,6 +692,7 @@ fn watched_directory_deleted() {
         |path, ()| {
             vec![ExpectEvent {
                 full_path: path.clone(),
+                #[cfg(not(any(target_os = "android", target_os = "linux")))] // Not set using inotify.
                 is_dir: true,
                 deleted: true,
                 ..Default::default()
