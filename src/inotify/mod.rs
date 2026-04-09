@@ -276,6 +276,38 @@ impl Event {
         self.event.mask
     }
 
+    pub(crate) fn is_dir(&self) -> bool {
+        self.mask() & EVENT_IS_DIR != 0
+    }
+
+    pub(crate) fn modified(&self) -> bool {
+        self.mask() & EVENT_MODIFIED != 0
+    }
+
+    pub(crate) fn deleted(&self) -> bool {
+        self.mask() & EVENT_DELETED != 0
+    }
+
+    pub(crate) fn file_moved_from(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED_FROM != 0
+    }
+
+    pub(crate) fn file_moved_into(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED_INTO != 0
+    }
+
+    pub(crate) fn file_moved(&self) -> bool {
+        self.mask() & EVENT_FILE_MOVED != 0
+    }
+
+    pub(crate) fn file_created(&self) -> bool {
+        self.mask() & EVENT_FILE_CREATED != 0
+    }
+
+    pub(crate) fn file_deleted(&self) -> bool {
+        self.mask() & EVENT_FILE_DELETED != 0
+    }
+
     pub(crate) fn fmt<'a, 'b, 'f>(
         &self,
         f: &'f mut fmt::DebugStruct<'a, 'b>,

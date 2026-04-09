@@ -58,17 +58,14 @@
 //!
 //! Not all interests are supported. Events for opening or closing a file, and
 //! reading from a file are only supported on FreeBSD & NetBSD, not on e.g.
-//! OpenBSD or macOS. Events for moving a file out of a directory don't work,
-//! only for moving the directory itself.
+//! OpenBSD or macOS. Events for moving a file/directory into a watched a
+//! directory don't work ([`Event::file_moved_into`]), [`Event::file_created`]
+//! will be triggered.
 //!
-//! For watched directories it's not possible to determine *what* happened to
-//! the directory. For example if a file is created in the directory we can
-//! differentiate that from a file being deleted. This means the
-//! `Event::file_*`, such as [`Event::file_moved`], functions don't work. Only
-//! [`Event::modified`] will be triggered. Furthermore the events don't carry
-//! information about *which* file within a watched directory is affected.
-//!
-//! Events don't support [`Event::is_dir`].
+//! For events that set [`Event::file_created`] the following methods return
+//! incorrect results:
+//!  * [`Event::is_dir`] -- always true.
+//!  * [`Events::path_for`] -- only contains the parent directory.
 //!
 //! [`kqueue(2)`]: https://man.freebsd.org/cgi/man.cgi?query=kqueue&sektion=2
 //! [`setrlimit(2)`]: https://man.freebsd.org/cgi/man.cgi?query=setrlimit&sektion=2
@@ -191,13 +188,18 @@ new_flag!(
         #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         OPEN = sys::INTEREST_OPEN,
         /// A file was moved out of the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
         MOVE_FROM = sys::INTEREST_MOVE_FROM,
         /// A file was moved into the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
+        ///
+        /// # Notes
+        ///
+        /// This is not supported on kqueue as it can't differentiate between
+        /// file moved into the watched directory and a new file created.
+        /// Instead this will trigger events with [`Event::file_created`]
+        /// instead of [`Event::file_moved_into`]. Implementations should check
+        /// both methods.
         MOVE_INTO = sys::INTEREST_MOVE_INTO,
-        /// The watched file or directory itself was moved. Or a file was moved
-        /// into or out of the watched directory (`inotify` only).
+        /// A file was moved into or out of the watched directory.
         MOVE = sys::INTEREST_MOVE,
         /// File or directory was created in a watched directory.
         CREATE = sys::INTEREST_CREATE,
@@ -363,8 +365,7 @@ impl Event {
     // Getters for the events.
     bit_checks!(
         /// Return true if the subject of this event is a directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        is_dir, sys::EVENT_IS_DIR;
+        is_dir;
         /// Returns true if:
         ///  * the watched file was accessed, or
         ///  * a file within a watched directory was accessed.
@@ -373,7 +374,7 @@ impl Event {
         /// Returns true if:
         ///  * the watched file was modified, or
         ///  * a file within a watched directory was modified.
-        modified, sys::EVENT_MODIFIED;
+        modified;
         /// Returns true if:
         ///  * the watched file had its metadata (attributes) changed,
         ///  * a file within a watched directory had its metadata changed, or
@@ -419,7 +420,7 @@ impl Event {
         /// Returns true if:
         ///  * the watched file was deleted.
         ///  * the watched directory was deleted.
-        deleted, sys::EVENT_DELETED;
+        deleted;
         /// Returns true if:
         ///  * the watched file was moved.
         ///  * the watched directory was moved.
@@ -439,24 +440,40 @@ impl Event {
 
         /// Returns true if:
         ///  * a file within a watched directory was moved out of the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved_from, sys::EVENT_FILE_MOVED_FROM;
+        file_moved_from;
         /// Returns true if:
         ///  * a file within a watched directory was moved into the watched directory.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved_into, sys::EVENT_FILE_MOVED_INTO;
+        ///
+        /// # Notes
+        ///
+        /// This is not supported on kqueue (and will always return false) as it
+        /// can't differentiate between file moved into the watched directory
+        /// and a new file created. When using this method also consider using
+        /// [`Event::file_created`] to ensure events are created for newly
+        /// created files.
+        file_moved_into;
         /// Returns true if:
         ///  * a file within a watched directory was moved (into or of out of the watched directory).
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_moved, sys::EVENT_FILE_MOVED;
+        ///
+        /// The limitation documented in [`Event::file_moved_into`] also applies
+        /// here.
+        file_moved;
         /// Returns true if:
         ///  * a file within a watched directory was created.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_created, sys::EVENT_FILE_CREATED;
+        ///
+        /// # Notes
+        ///
+        /// For the kqueue implementation the path returned is the directory,
+        /// where as inotify returns the path of the file/directory that is
+        /// created.
+        ///
+        /// Furthermore, for the kqueue implementation if this returns true the
+        /// [`Event::is_dir`] method will also always return true, even if a
+        /// file was created.
+        file_created;
         /// Returns true if:
         ///  * a file within a watched directory was deleted.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        file_deleted, sys::EVENT_FILE_DELETED;
+        file_deleted;
     );
 
     const fn mask(&self) -> u32 {
@@ -467,12 +484,9 @@ impl Event {
 /// Macro to create functions to check bits set and include them in the
 /// fmt::Debug impl.
 macro_rules! bit_checks {
-    ( $( $(#[$meta: meta])* $fn_name: ident, $libc: ident :: $bit: ident ; )* ) => {
+    ( $( $(#[$meta: meta])* $fn_name: ident $(, $libc: ident :: $bit: ident)? ; )* ) => {
         $(
-        $( #[$meta] )*
-        pub fn $fn_name(&self) -> bool {
-            self.mask() & $libc::$bit != 0
-        }
+        $crate::fs::notify::bit_checks!(__fn $( #[$meta] )* $fn_name $(, $libc :: $bit )?);
         )*
 
         fn events(&self) -> impl fmt::Debug {
@@ -493,6 +507,18 @@ macro_rules! bit_checks {
             }
 
             Events(self)
+        }
+    };
+    (__fn $(#[$meta: meta])* $fn_name: ident) => {
+        $( #[$meta] )*
+        pub fn $fn_name(&self) -> bool {
+            self.0.$fn_name()
+        }
+    };
+    (__fn $(#[$meta: meta])* $fn_name: ident, $libc: ident :: $bit: ident ) => {
+        $( #[$meta] )*
+        pub fn $fn_name(&self) -> bool {
+            self.mask() & $libc::$bit != 0
         }
     };
 }
