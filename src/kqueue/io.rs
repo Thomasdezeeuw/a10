@@ -239,10 +239,6 @@ impl FdIter for MultishotReadOp {
         }
     }
 
-    fn is_complete((_, n): &Self::OperationOutput) -> bool {
-        *n == 0
-    }
-
     fn next(buf_pool: &Self::Resources, (_, n): &Self::OperationOutput) -> Next {
         match *n {
             // Read of zero means we hit the end of the file (EOF).

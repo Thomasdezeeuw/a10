@@ -431,15 +431,6 @@ pub(crate) trait FdIter {
         args: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput>;
 
-    /// Returns true if the operation is finished based on `output`.
-    ///
-    /// Default implementation returns false, meaning it will never stop unless
-    /// an error is hit.
-    fn is_complete(output: &Self::OperationOutput) -> bool {
-        _ = output;
-        false
-    }
-
     /// Determine what to do next.
     fn next(resources: &Self::Resources, output: &Self::OperationOutput) -> Next;
 
