@@ -143,38 +143,10 @@ impl Shared {
         for event in events.iter() {
             log::trace!(event:?; "got event");
 
-            if event.0.flags & libc::EV_ERROR != 0 {
-                // Check for the error flag, the actual error will be in the `data`
-                // field.
-                //
+            if event.0.flags & libc::EV_ERROR != 0 && event.0.data == 0 {
                 // If the error number (event.data) is zero it means the event
                 // was succesfully submitted and can be safely ignored.
-                //
-                // Older versions of macOS (OS X 10.11 and 10.10 have been
-                // witnessed) can return EPIPE when registering a pipe file
-                // descriptor where the other end has already disappeared. For
-                // example code that creates a pipe, closes a file descriptor,
-                // and then registers the other end will see an EPIPE returned
-                // from `register`.
-                //
-                // It also turns out that kevent will still report events on the
-                // file descriptor, telling us that it's readable/hup at least
-                // after we've done this registration. As a result we just
-                // ignore `EPIPE` here instead of propagating it.
-                //
-                // More info can be found at https://github.com/tokio-rs/mio#582.
-                //
-                // The ENOENT error informs us that a filter we're trying to remove
-                // wasn't there in first place, but we don't really care since our goal
-                // is accomplished.
-                let errno = event.0.data as i32;
-                if errno == 0 {
-                    continue;
-                } else if !matches!(errno, libc::EPIPE | libc::ENOENT) {
-                    let err = io::Error::from_raw_os_error(errno);
-                    log::warn!(event:?; "submitted change has an error: {err}, dropping it");
-                    continue;
-                }
+                continue;
             }
 
             match event.0.filter {
