@@ -5,7 +5,7 @@ use std::{io, slice};
 
 use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, impl_fd_op};
+use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
     RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
@@ -244,7 +244,7 @@ impl FdIter for MultishotRecvOp {
     type Output = ReadBuf;
     type Resources = ReadBufPool;
     type Args = RecvFlag;
-    type OperationOutput = (NonNull<u8>, libc::ssize_t);
+    type OperationOutput = (NonNull<u8>, libc::size_t);
 
     const OP_KIND: OpKind = OpKind::Read;
 
@@ -259,7 +259,7 @@ impl FdIter for MultishotRecvOp {
         };
         let pptr = ptr.as_ptr().cast();
         match syscall!(recv(fd.fd(), pptr, len as _, flags.0.cast_signed())) {
-            Ok(n) => Ok((ptr, n)),
+            Ok(n) => Ok((ptr, n.cast_unsigned())),
             Err(err) => {
                 let ptr = NonNull::slice_from_raw_parts(ptr, 0);
                 unsafe { buf_pool.shared.release(ptr) }
@@ -272,6 +272,18 @@ impl FdIter for MultishotRecvOp {
         *n == 0
     }
 
+    fn next(buf_pool: &Self::Resources, (_, n): &Self::OperationOutput) -> Next {
+        match *n {
+            // Read of zero means we hit the end of the file (EOF).
+            0 => Next::Complete,
+            // If we've didn't fill the buffer we've drained the readiness and
+            // we don't need to register the fd for reading again.
+            n if n < buf_pool.buf_capacity() => Next::Submit,
+            // Potentially more data available, so need to read again.
+            _ => Next::TryRun,
+        }
+    }
+
     fn map_next(
         _: &AsyncFd,
         buf_pool: &Self::Resources,
@@ -279,7 +291,7 @@ impl FdIter for MultishotRecvOp {
     ) -> Self::Output {
         // SAFETY: we got the pointer from the buffer pool in try_run and the
         // kernel initialised n bytes for us.
-        unsafe { buf_pool.new_buffer(ptr, n.cast_unsigned()) }
+        unsafe { buf_pool.new_buffer(ptr, n) }
     }
 }
 
@@ -609,6 +621,14 @@ impl FdIter for MultishotAcceptOp {
     ) -> io::Result<Self::OperationOutput> {
         let mut address = AddressStorage((MaybeUninit::uninit(), 0));
         AcceptOp::<NoAddress>::try_run(fd, &mut address, flags)
+    }
+
+    fn next((): &Self::Resources, _: &Self::OperationOutput) -> Next {
+        // We always need to check if we can accept another connection, so
+        // always run again.
+        // TODO: kqueue gives us the number of connections that can be accepted
+        // in the kevent.data field, can we use that to improve this?
+        Next::TryRun
     }
 
     fn map_next(_: &AsyncFd, (): &Self::Resources, fd: Self::OperationOutput) -> Self::Output {

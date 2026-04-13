@@ -440,6 +440,9 @@ pub(crate) trait FdIter {
         false
     }
 
+    /// Determine what to do next.
+    fn next(resources: &Self::Resources, output: &Self::OperationOutput) -> Next;
+
     /// Similar to [`FdOp::map_ok`], but this processes one of the results.
     /// Meaning it only have a reference to the resources and doesn't take
     /// ownership of it.
@@ -448,6 +451,16 @@ pub(crate) trait FdIter {
         resources: &Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output;
+}
+
+/// Returned by [`FdIter::next`].
+pub(crate) enum Next {
+    /// Call [`FdIter::try_run`] again.
+    TryRun,
+    /// Submit and wait for another event.
+    Submit,
+    /// Operation is complete.
+    Complete,
 }
 
 impl<T: FdIter> crate::op::FdIter for T {
