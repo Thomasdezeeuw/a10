@@ -1,7 +1,9 @@
+use std::pin::pin;
+
 use a10::fd;
 use a10::pipe::{Pipe, pipe};
 
-use crate::util::{Waker, cancel, is_send, is_sync, start_op, test_queue};
+use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
 
 const DATA1: &[u8] = b"Hello from the other side";
 
@@ -17,6 +19,7 @@ fn pipe_file_descriptor() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn pipe_direct_descriptor() {
     test_pipe(fd::Kind::Direct)
 }
@@ -44,8 +47,8 @@ fn test_pipe(fd_kind: fd::Kind) {
 #[test]
 fn cancel_pipe() {
     let sq = test_queue();
-    let waker = Waker::new();
 
-    let mut pipe = pipe(sq);
-    cancel(&waker, &mut pipe, start_op);
+    let mut pipe = pin!(pipe(sq));
+    _ = poll_nop(pipe.as_mut());
+    drop(pipe);
 }
