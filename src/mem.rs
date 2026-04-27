@@ -99,7 +99,6 @@ new_flag!(
         /// munlock(2) or the application quits).
         #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
         ZERO_WIRED_PAGES = libc::MADV_ZERO_WIRED_PAGES,
-        /* TODO: needs https://github.com/rust-lang/libc/pull/4924.
         /// Zero out the pages in the address range without causing unnecessary
         /// memory accesses.
         ///
@@ -107,7 +106,6 @@ new_flag!(
         /// caller should fall back to zeroing the range themselves.
         #[cfg(any(target_os = "ios", target_os = "macos", target_os = "tvos", target_os = "visionos", target_os = "watchos"))]
         ZERO = libc::MADV_ZERO,
-        */
         /// Don't flush the data associated with this map to physical backing
         /// store unless it needs to.
         #[cfg(target_os = "freebsd")]
