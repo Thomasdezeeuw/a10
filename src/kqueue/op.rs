@@ -431,14 +431,8 @@ pub(crate) trait FdIter {
         args: &mut Self::Args,
     ) -> io::Result<Self::OperationOutput>;
 
-    /// Returns true if the operation is finished based on `output`.
-    ///
-    /// Default implementation returns false, meaning it will never stop unless
-    /// an error is hit.
-    fn is_complete(output: &Self::OperationOutput) -> bool {
-        _ = output;
-        false
-    }
+    /// Determine what to do next.
+    fn next(resources: &Self::Resources, output: &Self::OperationOutput) -> Next;
 
     /// Similar to [`FdOp::map_ok`], but this processes one of the results.
     /// Meaning it only have a reference to the resources and doesn't take
@@ -448,6 +442,16 @@ pub(crate) trait FdIter {
         resources: &Self::Resources,
         output: Self::OperationOutput,
     ) -> Self::Output;
+}
+
+/// Returned by [`FdIter::next`].
+pub(crate) enum Next {
+    /// Call [`FdIter::try_run`] again.
+    TryRun,
+    /// Submit and wait for another event.
+    Submit,
+    /// Operation is complete.
+    Complete,
 }
 
 impl<T: FdIter> crate::op::FdIter for T {
@@ -471,22 +475,31 @@ impl<T: FdIter> crate::op::FdIter for T {
             T::try_run,
             |state, output| {
                 debug_assert!(!matches!(state.status, Evented::Complete));
-                if T::is_complete(output) {
-                    state.status = Evented::Complete;
-                    // SAFETY: the old status was not Complete, which means that the
-                    // resources are initialised. Since we've just set the status to
-                    // complete is safe to read the resources and leave the old place
-                    // unitialised.
-                    let resources = unsafe { state.resources.assume_init_read() };
-                    r.insert(resources)
-                } else {
-                    // Need to try the operation again and hit a would block
-                    // error before we can wait for another readiness event.
-                    state.status = Evented::Waiting;
-                    // SAFETY: the old status was not Complete, which means that the
-                    // resources are initialised, so we can safely return a
-                    // reference to it.
-                    unsafe { state.resources.assume_init_ref() }
+                // SAFETY: the old status was not Complete, which means that the
+                // resources are initialised, so we can safely return a
+                // reference to it.
+                let resources = unsafe { state.resources.assume_init_ref() };
+                match T::next(resources, output) {
+                    Next::TryRun => {
+                        // Need to try the operation again and hit a would block
+                        // error before we can wait for another readiness event.
+                        state.status = Evented::Waiting;
+                        resources
+                    }
+                    Next::Submit => {
+                        // Need to submit and wait for another event.
+                        state.status = Evented::ToSubmit;
+                        resources
+                    }
+                    Next::Complete => {
+                        state.status = Evented::Complete;
+                        // SAFETY: the old status was not Complete, which means
+                        // that the resources are initialised. Since we've just
+                        // set the status to complete is safe to read the
+                        // resources and leave the old place unitialised.
+                        let resources = unsafe { state.resources.assume_init_read() };
+                        r.insert(resources)
+                    }
                 }
             },
             T::map_next,

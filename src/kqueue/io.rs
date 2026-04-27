@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::io::{Buf, BufMut, BufMutParts, BufMutSlice, BufSlice, NO_OFFSET, ReadBuf};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::{DirectOp, FdIter, FdOp, FdOpExtract};
+use crate::kqueue::op::{DirectOp, FdIter, FdOp, FdOpExtract, Next};
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
 // Re-export so we don't have to worry about import `std::io` and `crate::io`.
@@ -217,7 +217,7 @@ impl FdIter for MultishotReadOp {
     type Output = crate::io::ReadBuf;
     type Resources = crate::io::ReadBufPool;
     type Args = ();
-    type OperationOutput = (NonNull<u8>, libc::ssize_t);
+    type OperationOutput = (NonNull<u8>, libc::size_t);
 
     const OP_KIND: OpKind = OpKind::Read;
 
@@ -230,7 +230,7 @@ impl FdIter for MultishotReadOp {
             return Err(io::Error::from_raw_os_error(libc::ENOBUFS));
         };
         match syscall!(read(fd.fd(), ptr.as_ptr().cast(), len as _)) {
-            Ok(n) => Ok((ptr, n)),
+            Ok(n) => Ok((ptr, n.cast_unsigned())),
             Err(err) => {
                 let ptr = NonNull::slice_from_raw_parts(ptr, 0);
                 unsafe { buf_pool.shared.release(ptr) }
@@ -239,8 +239,16 @@ impl FdIter for MultishotReadOp {
         }
     }
 
-    fn is_complete((_, n): &Self::OperationOutput) -> bool {
-        *n == 0
+    fn next(buf_pool: &Self::Resources, (_, n): &Self::OperationOutput) -> Next {
+        match *n {
+            // Read of zero means we hit the end of the file (EOF).
+            0 => Next::Complete,
+            // If we've didn't fill the buffer we've drained the readiness and
+            // we don't need to register the fd for reading again.
+            n if n < buf_pool.buf_capacity() => Next::Submit,
+            // Potentially more data available, so need to read again.
+            _ => Next::TryRun,
+        }
     }
 
     fn map_next(
@@ -250,7 +258,7 @@ impl FdIter for MultishotReadOp {
     ) -> Self::Output {
         // SAFETY: we got the pointer from the buffer pool in try_run and the
         // kernel initialised n bytes for us.
-        unsafe { buf_pool.new_buffer(ptr, n.cast_unsigned()) }
+        unsafe { buf_pool.new_buffer(ptr, n) }
     }
 }
 

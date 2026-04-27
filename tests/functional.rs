@@ -18,6 +18,8 @@ mod mem;
 mod net;
 #[path = "functional/net_options.rs"]
 mod net_options;
+#[path = "functional/pipe.rs"]
+mod pipe;
 #[path = "functional/process.rs"]
 mod process;
 #[path = "functional/read_buf.rs"]

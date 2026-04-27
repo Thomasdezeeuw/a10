@@ -14,7 +14,7 @@ use std::{fmt, io, mem, ptr};
 use crate::fs::Metadata;
 use crate::fs::notify::{self, Events, Interest, Recursive, Watcher};
 use crate::kqueue::fd::OpKind;
-use crate::kqueue::op::FdIter;
+use crate::kqueue::op::{FdIter, Next};
 use crate::kqueue::{self, kqueue};
 use crate::op::{FdIter as _, OpState};
 use crate::{AsyncFd, SubmissionQueue, syscall};
@@ -458,6 +458,13 @@ impl<'a> FdIter for NotifyOp<'a> {
             }
             Ok(())
         }
+    }
+
+    fn next(_: &Self::Resources, (): &Self::OperationOutput) -> Next {
+        // If we have unprocessed events we need to run again. If we processed
+        // all events we need to check if more events are ready to read. So, we
+        // always want to run again.
+        Next::TryRun
     }
 
     fn map_next(
