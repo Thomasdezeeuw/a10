@@ -221,7 +221,7 @@ impl Ring {
     /// # }
     /// ```
     pub fn pollable(&self, sq: SubmissionQueue) -> poll::Pollable {
-        debug_assert!(
+        assert!(
             self.sq != sq.0,
             "can't wait on pollable with sq of the same ring"
         );
