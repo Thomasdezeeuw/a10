@@ -21,11 +21,13 @@ unsafe extern "C" {
 
 /// Mark a memory region as fully initialized.
 pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
+    /*
     #[cfg_attr(feature = "nightly", cfg(sanitize = "memory"))]
     #[cfg_attr(not(feature = "nightly"), cfg(false))]
     unsafe {
         __msan_unpoison(addr, size);
     }
+    */
 }
 
 /// Mark the first `n` bytes of iovecs as fully initialized.

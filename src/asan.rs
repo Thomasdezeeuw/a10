@@ -23,11 +23,13 @@ unsafe extern "C" {
 
 /// Mark a memory region as unaddressable.
 pub(crate) fn poison_region(addr: *const c_void, size: c_size_t) {
+    /*
     #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
     #[cfg_attr(not(feature = "nightly"), cfg(false))]
     unsafe {
         __asan_poison_memory_region(addr, size);
     }
+    */
 }
 
 /// Mark memory storing `T` as unaddressable.
@@ -60,11 +62,13 @@ pub(crate) fn poison_cstring(value: &CString) {
 
 /// Mark a memory region as addressable.
 pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
+    /*
     #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
     #[cfg_attr(not(feature = "nightly"), cfg(false))]
     unsafe {
         __asan_unpoison_memory_region(addr, size);
     }
+    */
 }
 
 /// Mark memory storing `T` as addressable.
