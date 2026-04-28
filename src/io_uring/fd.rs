@@ -84,7 +84,7 @@ impl<M: DirectFdMapper> FdOp for ToDirectOp<M> {
     fn fallback(
         fd: &AsyncFd,
         _: Self::Resources,
-        _: &mut Self::Args,
+        (): &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         if let fd::Kind::Direct = fd.kind() {
@@ -178,8 +178,8 @@ impl FdOp for ToFdOp {
 
     fn fallback(
         fd: &AsyncFd,
-        _: Self::Resources,
-        _: &mut Self::Args,
+        (): Self::Resources,
+        (): &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
         if let fd::Kind::File = fd.kind() {
