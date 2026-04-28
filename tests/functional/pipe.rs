@@ -73,7 +73,7 @@ fn writing_to_closed_pipe() {
 
     let [receiver, sender] = waker.block_on(pipe(sq)).expect("failed to create pipe");
 
-    drop(receiver); // Close the fd.
+    waker.block_on(receiver.close()).unwrap(); // Close the fd.
 
     let res = waker.block_on(sender.write_all(DATA1));
     expect_io_error_kind(res, io::ErrorKind::BrokenPipe);
@@ -88,7 +88,7 @@ fn reading_from_closed_pipe() {
 
     let [receiver, sender] = waker.block_on(pipe(sq)).expect("failed to create pipe");
 
-    drop(sender); // Close the fd.
+    waker.block_on(sender.close()).unwrap(); // Close the fd.
 
     let buf = waker
         .block_on(receiver.read(Vec::with_capacity(8)))
