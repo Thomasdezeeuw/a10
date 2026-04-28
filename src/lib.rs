@@ -71,9 +71,9 @@
 )))]
 compile_error!("OS not supported");
 
-use std::fmt;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
+use std::{fmt, ptr};
 
 // This must come before the other modules for the documentation.
 pub mod fd;
@@ -261,6 +261,12 @@ impl SubmissionQueue {
 
     pub(crate) fn submissions(&self) -> &sys::Submissions {
         &self.0
+    }
+
+    pub(crate) fn from_ref<'a>(submissions: &'a sys::Submissions) -> &'a SubmissionQueue {
+        // SAFETY: `SubmissionQueue` and `sys::Submissions` have the same layout
+        // due to `repr(transparent)`.
+        unsafe { &*ptr::from_ref(submissions).cast::<SubmissionQueue>() }
     }
 
     /// Returns itself.

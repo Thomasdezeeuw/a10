@@ -208,9 +208,7 @@ impl<'r> crate::Config<'r> {
     /// Uses `IORING_SETUP_ATTACH_WQ`, added in Linux kernel 5.6.
     #[doc(alias = "IORING_SETUP_ATTACH_WQ")]
     pub fn attach(self, other_ring: &'r Ring) -> Self {
-        // SAFETY: this is safe because `SubmissionQueue` and `sys::Submissions`
-        // have the same layout due to `repr(transparent)`.
-        self.attach_queue(unsafe { &*ptr::from_ref(&other_ring.sq).cast() })
+        self.attach_queue(SubmissionQueue::from_ref(&other_ring.sq))
     }
 
     /// Same as [`Config::attach`], but accepts a [`SubmissionQueue`].
