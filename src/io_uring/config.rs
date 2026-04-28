@@ -263,11 +263,9 @@ impl<'r> crate::Config<'r> {
             parameters.flags |= libc::IORING_SETUP_ATTACH_WQ;
         }
 
-        let rfd = match syscall!(io_uring_setup(parameters.sq_entries, &raw mut parameters)) {
+        let rfd = syscall!(io_uring_setup(parameters.sq_entries, &raw mut parameters))
             // SAFETY: just created the fd (and checked the error).
-            Ok(rfd) => unsafe { OwnedFd::from_raw_fd(rfd) },
-            Err(err) => return Err(err),
-        };
+            .map(|rfd| unsafe { OwnedFd::from_raw_fd(rfd) })?;
         check_feature!(parameters.features, IORING_FEAT_NODROP); // Never drop completions.
         check_feature!(parameters.features, IORING_FEAT_SUBMIT_STABLE); // All data for async offload must be consumed.
         check_feature!(parameters.features, IORING_FEAT_RW_CUR_POS); // Allow -1 as current position.
