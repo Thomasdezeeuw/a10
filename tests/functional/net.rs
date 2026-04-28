@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Barrier, OnceLock};
 use std::thread;
 
 use a10::io::ReadBufPool;
@@ -499,20 +499,22 @@ fn multishot_recv_large_send() {
 fn multishot_recv_all_buffers_used() {
     const BUF_SIZE: usize = 512;
     const BUFS: usize = 2;
-    const N: usize = 2 + 10;
+    const N: usize = BUFS + 10;
     const DATA: &[u8] = &[255; BUF_SIZE];
 
     let listener = TcpListener::bind("127.0.0.1:0").expect("failed to bind listener");
     let local_addr = listener.local_addr().unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let b = barrier.clone();
 
     conn_test(
         move || {
             let (mut client, _) = listener.accept().expect("failed to accept connection");
             // Write some much data that all buffers are used.
-            for _ in 0..N {
+            for _ in 0..=BUFS {
                 client.write_all(DATA).expect("failed to write");
+                barrier.wait();
             }
-            client.shutdown(Shutdown::Write).unwrap();
             let mut buf = [0; 1];
             let res = client.read(&mut buf);
             match res {
@@ -530,19 +532,21 @@ fn multishot_recv_all_buffers_used() {
 
             let mut stream_recv = stream.multishot_recv(buf_pool);
 
-            for i in 0..N {
+            let mut received = Vec::with_capacity(BUFS + 1);
+            for i in 0..=N {
                 let result = next(&mut stream_recv).await.unwrap();
                 match result {
-                    Ok(buf) => assert_eq!(&*buf, DATA),
-                    Err(err) => {
-                        // Should have at least read `BUFS` times, after that we should
-                        // get a `ENOBUFS` error.
-                        // However depending on the timing and internal ordering (with
-                        // regards to other operation/processes/etc.) it's possible we
-                        // get more than `BUFS` buffers as they are put back into the
-                        // pool.
-                        assert!(i >= BUFS);
-                        expect_io_errno(io::Result::<()>::Err(err), libc::ENOBUFS);
+                    Ok(buf) => {
+                        assert_eq!(&*buf, DATA);
+                        received.push(buf);
+                        b.wait();
+                    }
+                    res @ Err(_) => {
+                        // Should have at least read `BUFS` times, after that we
+                        // should get a `ENOBUFS` error.
+                        assert!(i == BUFS);
+                        expect_io_errno(res, libc::ENOBUFS);
+                        b.wait();
                         break;
                     }
                 }
