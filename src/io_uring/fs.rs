@@ -82,9 +82,8 @@ impl Op for CreateDirOp {
         submission.0.len = 0o777; // Same as used by the standard library.
     }
 
-    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_cstring(&path);
-        debug_assert!(n == 0);
+    fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(sq, resources, ret);
     }
 }
 
@@ -128,10 +127,8 @@ impl Op for RenameOp {
         submission.0.len = libc::AT_FDCWD as u32;
     }
 
-    fn map_ok(_: &SubmissionQueue, (from, to): Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_cstring(&from);
-        asan::unpoison_cstring(&to);
-        debug_assert!(n == 0);
+    fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(sq, resources, ret);
     }
 }
 
@@ -178,9 +175,8 @@ impl Op for DeleteOp {
         };
     }
 
-    fn map_ok(_: &SubmissionQueue, path: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_cstring(&path);
-        debug_assert!(n == 0);
+    fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
+        Self::map_ok_extract(sq, resources, ret);
     }
 }
 
