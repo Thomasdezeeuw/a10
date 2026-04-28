@@ -130,8 +130,12 @@ impl ReadBufPool {
         }
         ring_tail.store(pool_size, Ordering::Release);
 
+        // NOTE: unpoisioned in ReadBufPool::release before usage and finally in
+        // the Drop impl.
         asan::poison_region(ptr::from_ref(ring_addr).cast(), ring_layout.size());
-        asan::unpoison(ring_tail); // Overlaps with `ring_addr`.
+        // NOTE: poisoned in the line above as it overlaps with `ring_addr`.
+        asan::unpoison(ring_tail);
+        // NOTE: unpoisoned in ReadBufPool::init_buffer.
         asan::poison_region(pool.bufs_addr.cast(), bufs_layout.size());
         Ok(pool)
     }
@@ -152,6 +156,7 @@ impl ReadBufPool {
         // NOTE: unpoising the entire buffer, not just the written part.
         // If/once we support increment buffer consumption (IOU_PBUF_RING_INC)
         // this needs to be changed.
+        // NOTE: initially all buffers were poisoned in ReadBufPool::new.
         asan::unpoison_region(addr.as_ptr().cast(), self.buf_size());
         msan::unpoison_region(addr.as_ptr().cast(), n as usize);
         NonNull::slice_from_raw_parts(addr, n as usize)
@@ -183,6 +188,7 @@ impl ReadBufPool {
                 .cast::<MaybeUninit<libc::io_uring_buf>>()
                 .add(ring_idx as usize))
         };
+        // NOTE: initially poisoned in ReadBufPool::new.
         asan::unpoison(ring_buf);
         log::trace!(buffer_group = self.id, buffer = buf_id, addr:? = ptr; "reregistering buffer");
         ring_buf.write(libc::io_uring_buf {
@@ -191,18 +197,19 @@ impl ReadBufPool {
             bid: buf_id,
             resv: 0,
         });
+        // NOTE: unpoisoned above.
         asan::poison_region(
             ring_buf.as_ptr().cast(),
             // Don't poison the `resv` field, which overlaps with the ring tail
             // for the first buffer.
             size_of::<libc::io_uring_buf>()
-                - if ring_buf.as_ptr() == self.ring_addr.cast() {
+                - if ptr::eq(ring_buf.as_ptr(), self.ring_addr.cast()) {
                     size_of::<u16>()
                 } else {
                     0
                 },
         );
-        // NOTE: poising the buffer again.
+        // NOTE: poising the buffer again, unpoisoned in ReadBufPool::init_buffer.
         asan::poison_region(ptr.as_ptr().cast(), self.buf_size());
         ring_tail.store(tail.wrapping_add(1), Ordering::Release);
         unlock(guard);
@@ -256,6 +263,7 @@ impl Drop for ReadBufPool {
             // SAFETY: created this layout in `new` and didn't fail, so it's
             // still valid here.
             let ring_layout = alloc_layout_ring(self.pool_size, page_size).unwrap();
+            // NOTE: initially poisoned in ReadBufPool::new.
             asan::unpoison_region(self.ring_addr.cast(), ring_layout.size());
             // SAFETY: we allocated this in `new`, so it's safe to deallocate
             // for us.
@@ -269,6 +277,7 @@ impl Drop for ReadBufPool {
                 // so it's still valid here.
                 let layout =
                     alloc_layout_buffers(self.pool_size, self.buf_size, page_size).unwrap();
+                // NOTE: initially poisoned in ReadBufPool::new.
                 asan::unpoison_region(self.bufs_addr.cast(), layout.size());
                 // SAFETY: we allocated this in `new`, so it's safe to
                 // deallocate for us.
@@ -331,6 +340,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
                     addr: ptr.addr() as u64,
                 };
                 submission.0.len = len;
+                // NOTE: unpoisoned in map_ok.
                 asan::poison_region(ptr.cast(), len as usize);
             }
             BufMutParts::Pool(PoolBufParts(buf_group)) => {
@@ -346,6 +356,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            // NOTE: poisoned in fill_submission.
             asan::unpoison_region(ptr.cast(), len as usize);
             msan::unpoison_region(ptr.cast(), n as usize);
             unsafe { buf.set_init(n as usize) };
@@ -405,11 +416,13 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok.
         asan::poison_iovecs_mut(iovecs);
         submission.0.len = iovecs.len() as u32;
     }
 
     fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // SAFETY: kernel just initialised the buffers for us.
@@ -438,6 +451,7 @@ impl<B: Buf> FdOp for WriteOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_region(ptr.cast(), len as usize);
         submission.0.len = len;
     }
@@ -452,6 +466,7 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
 
     fn map_ok_extract(_: &AsyncFd, buf: Self::Resources, (_, n): OpReturn) -> Self::ExtractOutput {
         let (ptr, len) = unsafe { buf.parts() };
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_region(ptr.cast(), len as usize);
         (buf, n as usize)
     }

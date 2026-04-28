@@ -52,6 +52,7 @@ impl Submissions {
         // ensure of unique access to the submission.
         let index = (tail & (len - 1)) as usize;
         let submission = unsafe { &mut *shared.submissions.add(index).as_ptr() };
+        // NOTE: initally poisoned in io_uring::Shared::new.
         asan::unpoison(submission);
 
         // Reset and fill the submission.
@@ -70,6 +71,7 @@ impl Submissions {
         unsafe { (*shared.submissions_tail.as_ptr()).store(new_tail, Ordering::Release) }
 
         log::trace!(submission:?, index, tail, new_tail; "queueing submission");
+        // NOTE: poisoned above.
         asan::poison(submission);
         unlock(submissions_guard);
 

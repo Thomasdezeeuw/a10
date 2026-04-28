@@ -113,6 +113,7 @@ impl Shared {
         })?;
         // Same as what we did for the submission array, but this time with the
         // actual submissions.
+        // NOTE: unpoisoned in Drop impl.
         asan::poison_region(submissions_ptr.cast().as_ptr(), submissions_len);
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
@@ -261,6 +262,7 @@ impl Drop for Shared {
     fn drop(&mut self) {
         let ptr = self.submissions.cast();
         let len = (self.submissions_len as usize) * size_of::<sq::Submission>();
+        // NOTE: posioned in Shared::new.
         asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
             log::warn!(ptr:?, len; "error unmapping io_uring submissions: {err}");
@@ -268,7 +270,6 @@ impl Drop for Shared {
 
         let ptr = self.submission_ring;
         let len = self.submission_ring_len as usize;
-        asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
             log::warn!(ptr:?, len; "error unmapping io_uring submission ring: {err}");
         }

@@ -137,13 +137,12 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
 
     fn fill_submission(
         fd: &AsyncFd,
-        resources: &mut Self::Resources,
+        AddressStorage((addr, addr_len)): &mut Self::Resources,
         name: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
-        let address_length = &mut (resources.0).1;
-        *address_length = length;
+        let (ptr, length) = unsafe { A::as_mut_ptr(addr) };
+        *addr_len = length;
         submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
@@ -163,20 +162,24 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             __bindgen_anon_1: ManuallyDrop::new(libc::io_uring_sqe__bindgen_ty_6__bindgen_ty_1 {
-                addr3: ptr::from_mut(address_length).addr() as u64,
+                addr3: ptr::from_mut(addr_len).addr() as u64,
                 __pad2: [0; 1],
             }),
         };
     }
 
-    fn map_ok(_: &AsyncFd, resources: Self::Resources, _: OpReturn) -> Self::Output {
+    fn map_ok(
+        _: &AsyncFd,
+        AddressStorage((addr, addr_len)): Self::Resources,
+        _: OpReturn,
+    ) -> Self::Output {
         msan::unpoison_region(
-            ptr::from_ref(&(resources.0).1).cast(),
+            ptr::from_ref(&addr_len).cast(),
             size_of::<libc::socklen_t>(),
         );
-        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
+        msan::unpoison_region(addr.as_ptr().cast(), addr_len as usize);
         // SAFETY: the kernel has written the address for us.
-        unsafe { A::init((resources.0).0, (resources.0).1) }
+        unsafe { A::init(addr, addr_len) }
     }
 
     fn fallback(
@@ -225,6 +228,7 @@ impl<B: BufMut> FdOp for RecvOp<B> {
                     addr: ptr.addr() as u64,
                 };
                 submission.0.len = len;
+                // NOTE: unpoisoned in map_ok.
                 asan::poison_region(ptr.cast(), len as usize);
             }
             BufMutParts::Pool(PoolBufParts(buf_group)) => {
@@ -235,11 +239,12 @@ impl<B: BufMut> FdOp for RecvOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.parts_mut() };
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            let (ptr, len) = unsafe { buf.parts_mut() };
+            // NOTE: poisoned in fill_submission.
             asan::unpoison_region(ptr.cast(), len as usize);
             msan::unpoison_region(ptr.cast(), n as usize);
             unsafe { buf.set_init(n as usize) };
@@ -305,6 +310,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
         (mut bufs, msg, iovecs): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::Output {
+        // NOTE: poisoned in fill_recvmsg_submission.
         asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         // NOTE: don't need to unpoison the address as we didn't use one.
@@ -332,6 +338,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
         fill_recvmsg_submission::<A>(fd.fd(), msg, iovecs, address, *flags, submission);
         match buf.parts() {
             BufMutParts::Buf { ptr, len } => {
+                // NOTE: unpoisoned in map_ok.
                 asan::poison_region(ptr.cast(), len as usize);
                 /* Using iovec in submission. */
             }
@@ -353,6 +360,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            // NOTE: poisoned in fill_recvmsg_submission.
             asan::unpoison_iovecs_mut(slice::from_ref(&iovec));
             msan::unpoison_iovecs_mut(slice::from_ref(&iovec), n as usize);
             unsafe { buf.set_init(n as usize) };
@@ -389,6 +397,7 @@ impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVecto
         (mut bufs, msg, iovecs, address): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::Output {
+        // NOTE: poisoned in fill_recvmsg_submission.
         asan::unpoison_iovecs_mut(&iovecs);
         msan::unpoison_iovecs_mut(&iovecs, n as usize);
         msan::unpoison_region(address.as_ptr().cast(), msg.address_len() as usize);
@@ -418,6 +427,7 @@ fn fill_recvmsg_submission<A: SocketAddress>(
     submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
         addr: ptr.addr() as u64,
     };
+    // NOTE: unpoisoned in map_ok implementations of the callers.
     asan::poison_iovecs_mut(iovecs);
     submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
     submission.0.len = 1;
@@ -446,6 +456,7 @@ impl<B: Buf> FdOp for SendOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_region(buf_ptr.cast(), buf_len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = buf_len;
@@ -461,6 +472,7 @@ impl<B: Buf> FdOpExtract for SendOp<B> {
 
     fn map_ok_extract(_: &AsyncFd, buf: Self::Resources, (_, n): OpReturn) -> Self::ExtractOutput {
         let (ptr, len) = unsafe { buf.parts() };
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_region(ptr.cast(), len as usize);
         (buf, n as usize)
     }
@@ -491,6 +503,7 @@ impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: buf_ptr.addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_region(buf_ptr.cast(), buf_len as usize);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.__bindgen_anon_5.__bindgen_anon_1.addr_len = address_length as u16;
@@ -511,6 +524,7 @@ impl<B: Buf, A: SocketAddress> FdOpExtract for SendToOp<B, A> {
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
         let (buf_ptr, buf_len) = unsafe { buf.parts() };
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_region(buf_ptr.cast(), buf_len as usize);
         (buf, n as usize)
     }
@@ -546,6 +560,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_iovecs(iovecs);
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 { msg_flags: flags.0 };
         submission.0.len = 1;
@@ -564,6 +579,7 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOpExtract for SendMsgOp
         (buf, _, iovecs, _): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_iovecs(&iovecs);
         (buf, n as usize)
     }
@@ -579,18 +595,17 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission(
         fd: &AsyncFd,
-        resources: &mut Self::Resources,
+        AddressStorage((addr, addr_len)): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         let fd_kind = fd.kind();
-        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
-        let address_length = &mut (resources.0).1;
-        *address_length = length;
+        let (ptr, length) = unsafe { A::as_mut_ptr(addr) };
+        *addr_len = length;
         submission.0.opcode = libc::IORING_OP_ACCEPT as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: ptr::from_mut(address_length).addr() as u64,
+            off: ptr::from_mut(addr_len).addr() as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
@@ -603,17 +618,21 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): OpReturn) -> Self::Output {
+    fn map_ok(
+        lfd: &AsyncFd,
+        AddressStorage((addr, addr_len)): Self::Resources,
+        (_, fd): OpReturn,
+    ) -> Self::Output {
         msan::unpoison_region(
-            ptr::from_ref(&(resources.0).1).cast(),
+            ptr::from_ref(&addr_len).cast(),
             size_of::<libc::socklen_t>(),
         );
-        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
+        msan::unpoison_region(addr.as_ptr().cast(), addr_len as usize);
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
         // SAFETY: the kernel has written the address for us.
-        let address = unsafe { A::init((resources.0).0, (resources.0).1) };
+        let address = unsafe { A::init(addr, addr_len) };
         (socket, address)
     }
 }
@@ -685,12 +704,13 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(optval.addr() as u64),
         };
-        asan::poison_region(optval.cast_const().cast(), optlen as usize);
+        // NOTE: unpoisoned in map_ok.
+        asan::poison(optval.cast_const());
     }
 
-    fn map_ok(_: &AsyncFd, mut value: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        let (_, optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
-        asan::unpoison_region(value.0.as_ptr().cast(), optlen as usize);
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison(value.0.as_ptr());
         msan::unpoison_region(value.0.as_ptr().cast(), n as usize);
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -732,11 +752,13 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
-        asan::poison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
+        // NOTE: unpoisoned in map_ok.
+        asan::poison(ptr::from_ref(&value.0));
     }
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        asan::unpoison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison(ptr::from_ref(&value.0));
         debug_assert!(n == 0);
     }
 }

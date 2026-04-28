@@ -23,19 +23,19 @@ unsafe extern "C" {
 
 /// Mark a memory region as unaddressable.
 pub(crate) fn poison_region(addr: *const c_void, size: c_size_t) {
-    #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
-    #[cfg_attr(not(feature = "nightly"), cfg(false))]
-    unsafe {
-        __asan_poison_memory_region(addr, size);
+    // Don't poison zero sized types.
+    if size != 0 && !addr.is_null() {
+        #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
+        #[cfg_attr(not(feature = "nightly"), cfg(false))]
+        unsafe {
+            __asan_poison_memory_region(addr, size);
+        }
     }
 }
 
 /// Mark memory storing `T` as unaddressable.
 pub(crate) fn poison<T: Sized>(addr: *const T) {
-    if mem::size_of::<T>() != 0 && !addr.is_null() {
-        // Don't poison zero sized types.
-        poison_region(addr.cast(), mem::size_of::<T>());
-    }
+    poison_region(addr.cast(), mem::size_of::<T>());
 }
 
 /// Mark the bytes of iovecs as addressable.
@@ -60,19 +60,19 @@ pub(crate) fn poison_cstring(value: &CString) {
 
 /// Mark a memory region as addressable.
 pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
-    #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
-    #[cfg_attr(not(feature = "nightly"), cfg(false))]
-    unsafe {
-        __asan_unpoison_memory_region(addr, size);
+    // We don't poison zero sized types, so don't unpoison them
+    if size != 0 && !addr.is_null() {
+        #[cfg_attr(feature = "nightly", cfg(sanitize = "address"))]
+        #[cfg_attr(not(feature = "nightly"), cfg(false))]
+        unsafe {
+            __asan_unpoison_memory_region(addr, size);
+        }
     }
 }
 
 /// Mark memory storing `T` as addressable.
 pub(crate) fn unpoison<T: Sized>(addr: *const T) {
-    if mem::size_of::<T>() != 0 && !addr.is_null() {
-        // We don't poison zero sized types, so don't unpoison them
-        unpoison_region(addr.cast(), mem::size_of::<T>());
-    }
+    unpoison_region(addr.cast(), mem::size_of::<T>());
 }
 
 /// Mark the bytes of iovecs as addressable.

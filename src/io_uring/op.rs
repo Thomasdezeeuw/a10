@@ -232,6 +232,7 @@ unsafe fn drop_state<T, R, A>(ptr: *mut ()) {
         let data = unsafe { &mut *ptr };
         let shared = get_mut(&mut data.shared);
         if !matches!(shared.status, Status::Complete) {
+            // NOTE: this is poisoned in poll_inner below.
             asan::unpoison(data.tail.resources.get());
             // SAFETY: Resources must always be initialise if the status is not
             // Complete, which we checked above.
@@ -769,6 +770,9 @@ where
                         // In singleshot operation we can't access the resources
                         // while the kernel has access to them. E.g. the kernel
                         // might be writing into a buffer.
+                        // NOTE: this is unpoisoned below if the operation
+                        // completes, or in drop_state if it's dropped before
+                        // completion.
                         asan::poison(resources);
                         submission.0.user_data |= SINGLESHOT_TAG as u64;
                     }
@@ -846,6 +850,8 @@ where
                     // SAFETY: now that the kernel is Done with the operation and
                     // we've marked it as Complete we can safely access the
                     // resources again.
+                    // NOTE: this is poisoned in poll_inner in the
+                    // Status::NotStarted branch above.
                     asan::unpoison(data.tail.resources.get());
                 }
 
