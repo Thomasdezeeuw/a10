@@ -219,10 +219,7 @@ fn pollable() {
 }
 
 #[test]
-#[cfg_attr(
-    debug_assertions,
-    should_panic = "can't wait on pollable with sq of the same ring"
-)]
+#[should_panic = "can't wait on pollable with sq of the same ring"]
 fn pollable_self() {
     let ring = Ring::new().unwrap();
     let _ = ring.pollable(ring.sq());
