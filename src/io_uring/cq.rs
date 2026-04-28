@@ -40,6 +40,7 @@ impl Completions {
         // The entries are written by the kernel and can only be read based on
         // the `tail` (also written by the kernel), see `poll` below.
         let entries = unsafe { ring.add(parameters.cq_off.cqes as usize).cast() };
+        // NOTE: unpoisoned in Drop impl.
         asan::poison_region(entries.cast().as_ptr(), entries_len as usize);
 
         // SAFETY: we do a whole bunch of pointer manipulations, the kernel
@@ -78,14 +79,16 @@ impl Completions {
             let index = (head & (self.entries_len - 1)) as usize;
             // SAFETY: see below.
             let ptr = unsafe { self.entries.add(index).as_ptr() };
-            asan::unpoison_region(ptr.cast(), size_of::<Completion>());
+            // NOTE: initially poisoned in Completions::new.
+            asan::unpoison(ptr);
             // SAFETY: the pointer is valid and we've ensured above that the
             // kernel has written a new completion.
             let completion = unsafe { &*ptr };
             log::trace!(completion:?, index, head; "dequeued completion");
             // SAFETY: we're only processing the completion once.
             unsafe { completion.process() };
-            asan::poison_region(ptr.cast(), size_of::<Completion>());
+            // NOTE: poisoned before the processing above.
+            asan::poison(ptr);
             head += 1;
         }
 
@@ -103,6 +106,7 @@ unsafe impl Sync for Completions {}
 impl Drop for Completions {
     fn drop(&mut self) {
         let entries_len = (self.entries_len as usize) * size_of::<Completion>();
+        // NOTE: poisoned in Completions::new.
         asan::poison_region(self.entries.as_ptr().cast(), entries_len);
 
         let ptr = self.ring;

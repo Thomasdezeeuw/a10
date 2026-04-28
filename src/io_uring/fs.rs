@@ -30,6 +30,7 @@ impl Op for OpenOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_cstring(path);
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
@@ -53,6 +54,7 @@ impl OpExtract for OpenOp {
         (path, fd_kind): Self::Resources,
         (_, fd): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_cstring(&path);
         // SAFETY: kernel ensures that `fd` is valid.
         let fd = unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) };
@@ -78,6 +80,7 @@ impl Op for CreateDirOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_cstring(path);
         submission.0.len = 0o777; // Same as used by the standard library.
     }
@@ -95,6 +98,7 @@ impl OpExtract for CreateDirOp {
         path: Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
@@ -119,10 +123,11 @@ impl Op for RenameOp {
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
             off: to.as_ptr().addr() as u64,
         };
-        asan::poison_cstring(to);
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: from.as_ptr().addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
+        asan::poison_cstring(to);
         asan::poison_cstring(from);
         submission.0.len = libc::AT_FDCWD as u32;
     }
@@ -140,6 +145,7 @@ impl OpExtract for RenameOp {
         (from, to): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_cstring(&from);
         asan::unpoison_cstring(&to);
         debug_assert!(n == 0);
@@ -165,6 +171,7 @@ impl Op for DeleteOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
+        // NOTE: unpoisoned in map_ok_extract.
         asan::poison_cstring(path);
         let flags = match flags {
             RemoveFlag::File => 0,
@@ -188,6 +195,7 @@ impl OpExtract for DeleteOp {
         path: Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
