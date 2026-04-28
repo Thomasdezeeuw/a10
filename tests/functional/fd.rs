@@ -5,7 +5,7 @@ use a10::fd::{ToDirect, ToFd};
 use a10::fs::OpenOptions;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use crate::util::{LOREM_IPSUM_5, Waker, expect_io_errno, test_queue};
+use crate::util::{LOREM_IPSUM_5, Waker, expect_io_error_kind, test_queue};
 use crate::util::{is_send, is_sync};
 
 #[test]
@@ -132,7 +132,7 @@ fn direct_to_direct_descriptor() {
     assert_eq!(direct_fd.kind(), fd::Kind::Direct);
     // This should panic.
     let res = waker.block_on(direct_fd.to_direct_descriptor());
-    expect_io_errno(res, libc::EINVAL);
+    expect_io_error_kind(res, std::io::ErrorKind::Unsupported);
 }
 
 #[test]
@@ -150,5 +150,5 @@ fn file_to_file_descriptor() {
     assert_eq!(regular_fd.kind(), fd::Kind::File);
     // This should panic.
     let res = waker.block_on(regular_fd.to_file_descriptor());
-    expect_io_errno(res, libc::EBADF);
+    expect_io_error_kind(res, std::io::ErrorKind::Unsupported);
 }

@@ -80,6 +80,22 @@ impl<M: DirectFdMapper> FdOp for ToDirectOp<M> {
     fn map_ok(ofd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         <Self as Op>::map_ok(ofd.sq(), resources, ret)
     }
+
+    fn fallback(
+        fd: &AsyncFd,
+        _: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if let fd::Kind::Direct = fd.kind() {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "can't covert a direct descriptor to a different direct descriptor",
+            ))
+        } else {
+            Err(err)
+        }
+    }
 }
 
 impl<M: DirectFdMapper> Op for ToDirectOp<M> {
@@ -158,6 +174,22 @@ impl FdOp for ToFdOp {
         let sq = ofd.sq.clone();
         // SAFETY: the kernel ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw(fd as RawFd, fd::Kind::File, sq) }
+    }
+
+    fn fallback(
+        fd: &AsyncFd,
+        _: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if let fd::Kind::File = fd.kind() {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "can't covert a file descriptor to a different file descriptor",
+            ))
+        } else {
+            Err(err)
+        }
     }
 }
 
