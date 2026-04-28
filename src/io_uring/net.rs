@@ -239,11 +239,11 @@ impl<B: BufMut> FdOp for RecvOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.parts_mut() };
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            let (ptr, len) = unsafe { buf.parts_mut() };
             // NOTE: poisoned in fill_submission.
             asan::unpoison_region(ptr.cast(), len as usize);
             msan::unpoison_region(ptr.cast(), n as usize);
@@ -705,13 +705,12 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
             optval: ManuallyDrop::new(optval.addr() as u64),
         };
         // NOTE: unpoisoned in map_ok.
-        asan::poison_region(optval.cast_const().cast(), optlen as usize);
+        asan::poison(optval.cast_const());
     }
 
-    fn map_ok(_: &AsyncFd, mut value: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        let (_, optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
         // NOTE: poisoned in fill_submission.
-        asan::unpoison_region(value.0.as_ptr().cast(), optlen as usize);
+        asan::unpoison(value.0.as_ptr());
         msan::unpoison_region(value.0.as_ptr().cast(), n as usize);
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -754,12 +753,12 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
             optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
         // NOTE: unpoisoned in map_ok.
-        asan::poison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
+        asan::poison(ptr::from_ref(&value.0));
     }
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
         // NOTE: poisoned in fill_submission.
-        asan::unpoison_region(ptr::from_ref(&value.0).cast(), size_of::<T::Storage>());
+        asan::unpoison(ptr::from_ref(&value.0));
         debug_assert!(n == 0);
     }
 }
