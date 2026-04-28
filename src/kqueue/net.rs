@@ -195,8 +195,8 @@ impl<A: SocketAddress> DirectFdOp for SocketNameOp<A> {
     ) -> io::Result<Self::Output> {
         let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut addr) };
         match name {
-            Name::Local => syscall!(getsockname(fd.fd(), ptr.cast(), &mut length))?,
-            Name::Peer => syscall!(getpeername(fd.fd(), ptr.cast(), &mut length))?,
+            Name::Local => syscall!(getsockname(fd.fd(), ptr.cast(), &raw mut length))?,
+            Name::Peer => syscall!(getpeername(fd.fd(), ptr.cast(), &raw mut length))?,
         };
         // SAFETY: the kernel has written the address for us.
         Ok(unsafe { A::init(addr, length) })
