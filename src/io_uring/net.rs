@@ -137,13 +137,12 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
 
     fn fill_submission(
         fd: &AsyncFd,
-        resources: &mut Self::Resources,
+        AddressStorage((addr, addr_len)): &mut Self::Resources,
         name: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
-        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
-        let address_length = &mut (resources.0).1;
-        *address_length = length;
+        let (ptr, length) = unsafe { A::as_mut_ptr(addr) };
+        *addr_len = length;
         submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
@@ -163,20 +162,24 @@ impl<A: SocketAddress> FdOp for SocketNameOp<A> {
         };
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             __bindgen_anon_1: ManuallyDrop::new(libc::io_uring_sqe__bindgen_ty_6__bindgen_ty_1 {
-                addr3: ptr::from_mut(address_length).addr() as u64,
+                addr3: ptr::from_mut(addr_len).addr() as u64,
                 __pad2: [0; 1],
             }),
         };
     }
 
-    fn map_ok(_: &AsyncFd, resources: Self::Resources, _: OpReturn) -> Self::Output {
+    fn map_ok(
+        _: &AsyncFd,
+        AddressStorage((addr, addr_len)): Self::Resources,
+        _: OpReturn,
+    ) -> Self::Output {
         msan::unpoison_region(
-            ptr::from_ref(&(resources.0).1).cast(),
+            ptr::from_ref(&addr_len).cast(),
             size_of::<libc::socklen_t>(),
         );
-        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
+        msan::unpoison_region(addr.as_ptr().cast(), addr_len as usize);
         // SAFETY: the kernel has written the address for us.
-        unsafe { A::init((resources.0).0, (resources.0).1) }
+        unsafe { A::init(addr, addr_len) }
     }
 
     fn fallback(
@@ -579,18 +582,17 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     #[allow(clippy::cast_sign_loss)] // For flags as u32.
     fn fill_submission(
         fd: &AsyncFd,
-        resources: &mut Self::Resources,
+        AddressStorage((addr, addr_len)): &mut Self::Resources,
         flags: &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         let fd_kind = fd.kind();
-        let (ptr, length) = unsafe { A::as_mut_ptr(&mut (resources.0).0) };
-        let address_length = &mut (resources.0).1;
-        *address_length = length;
+        let (ptr, length) = unsafe { A::as_mut_ptr(addr) };
+        *addr_len = length;
         submission.0.opcode = libc::IORING_OP_ACCEPT as u8;
         submission.0.fd = fd.fd();
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: ptr::from_mut(address_length).addr() as u64,
+            off: ptr::from_mut(addr_len).addr() as u64,
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
@@ -603,17 +605,21 @@ impl<A: SocketAddress> FdOp for AcceptOp<A> {
     }
 
     #[allow(clippy::cast_possible_wrap)]
-    fn map_ok(lfd: &AsyncFd, resources: Self::Resources, (_, fd): OpReturn) -> Self::Output {
+    fn map_ok(
+        lfd: &AsyncFd,
+        AddressStorage((addr, addr_len)): Self::Resources,
+        (_, fd): OpReturn,
+    ) -> Self::Output {
         msan::unpoison_region(
-            ptr::from_ref(&(resources.0).1).cast(),
+            ptr::from_ref(&addr_len).cast(),
             size_of::<libc::socklen_t>(),
         );
-        msan::unpoison_region((resources.0).0.as_ptr().cast(), (resources.0).1 as usize);
+        msan::unpoison_region(addr.as_ptr().cast(), addr_len as usize);
         let sq = lfd.sq.clone();
         // SAFETY: the accept operation ensures that `fd` is valid.
         let socket = unsafe { AsyncFd::from_raw(fd as RawFd, lfd.kind(), sq) };
         // SAFETY: the kernel has written the address for us.
-        let address = unsafe { A::init((resources.0).0, (resources.0).1) };
+        let address = unsafe { A::init(addr, addr_len) };
         (socket, address)
     }
 }
