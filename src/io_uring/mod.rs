@@ -268,7 +268,6 @@ impl Drop for Shared {
 
         let ptr = self.submission_ring;
         let len = self.submission_ring_len as usize;
-        asan::unpoison_region(ptr.as_ptr(), len);
         if let Err(err) = munmap(ptr, len) {
             log::warn!(ptr:?, len; "error unmapping io_uring submission ring: {err}");
         }
