@@ -62,6 +62,7 @@ clippy:
 		--allow clippy::doc-markdown \
 		--allow clippy::elidable-lifetime-names \
 		--allow clippy::equatable-if-let \
+		--allow clippy::manual_assert_eq \
 		--allow clippy::missing-const-for-fn \
 		--allow clippy::missing-errors-doc \
 		--allow clippy::missing-panics-doc \
