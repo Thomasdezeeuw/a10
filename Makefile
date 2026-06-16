@@ -1,5 +1,6 @@
 # Command to run in `dev` target, e.g. `make RUN=check dev`.
 RUN ?= test
+RUST_TARGET ?= $(shell rustc -vV | sed -n 's/host: //p')
 
 # NOTE: when using this command you might want to change the `test` target to
 # only run a subset of the tests you're actively working on.
@@ -21,7 +22,7 @@ test_sanitizer:
 	RUSTDOCFLAGS=-Zsanitizer=$(sanitizer) RUSTFLAGS=-Zsanitizer=$(sanitizer) \
 	ASAN_OPTIONS=poison_history_size=1000 \
 	TSAN_OPTIONS='suppressions=tsan_suppressions.txt' \
-	cargo test -Zbuild-std --target x86_64-unknown-linux-gnu --features nightly
+	cargo test -Zbuild-std --target $(RUST_TARGET) --features nightly
 
 check:
 	cargo check --all-targets
