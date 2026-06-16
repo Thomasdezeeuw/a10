@@ -234,7 +234,7 @@ impl Kind {
     pub(crate) fn cloexec_flag(self) -> libc::c_int {
         #[cfg(any(target_os = "android", target_os = "linux"))]
         if let Kind::Direct = self {
-            return 0; // Direct descriptor always have (the equivalant of) `O_CLOEXEC` set.
+            return 0; // Direct descriptors always have (the equivalant of) `O_CLOEXEC` set.
         }
         // We also use `O_CLOEXEC` when we technically should use
         // `SOCK_CLOEXEC`, so ensure the value is the same so it works as
