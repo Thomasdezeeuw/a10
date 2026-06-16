@@ -121,12 +121,24 @@ jobs:
     - name: Check formatting
       run: cargo fmt --all -- --check
   Sanitizer:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-24.04, macos-26, macos-15]
         sanitizer: [address, thread, memory, leak]
+        exclude:
+          # The MemorySanitizer is not supported on macOS (arm).
+          - os: macos-26
+            sanitizer: memory
+          - os: macos-15
+            sanitizer: memory
+          # The LeakSanitizer is not supported on macOS (arm).
+          - os: macos-26
+            sanitizer: leak
+          - os: macos-15
+            sanitizer: leak
     steps:
     - uses: actions/checkout@v6
     - uses: Swatinem/rust-cache@v2
@@ -138,6 +150,9 @@ jobs:
       with:
         components: rust-src
     - name: Install llvm-symbolizer
-      run: sudo apt install -y llvm-20
+      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      run: |
+        sudo apt install -y llvm-20
+        echo "ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer-20)" >> $GITHUB_ENV
     - name: Run tests with sanitizer
-      run: ASAN_SYMBOLIZER_PATH=$(which llvm-symbolizer-20) make test_sanitizer sanitizer=${{ matrix.sanitizer }}
+      run:  make test_sanitizer sanitizer=${{ matrix.sanitizer }}
