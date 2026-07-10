@@ -367,7 +367,7 @@ impl AsyncFd {
     #[doc(alias = "getsockopt")]
     pub fn socket_option<'fd, T: option::Get>(&'fd self) -> SocketOption<'fd, T> {
         let value = OptionStorage(MaybeUninit::uninit());
-        SocketOption::new(self, value, (T::LEVEL, T::OPT))
+        SocketOption::new(self, value, ())
     }
 
     /// Set socket option.
@@ -381,7 +381,7 @@ impl AsyncFd {
         value: T::Value,
     ) -> SetSocketOption<'fd, T> {
         let value = OptionStorage(T::as_storage(value));
-        SetSocketOption::new(self, value, (T::LEVEL, T::OPT))
+        SetSocketOption::new(self, value, ())
     }
 
     /// Shuts down the read, write, or both halves of this connection.

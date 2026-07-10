@@ -7,8 +7,8 @@ use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
-    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
+    SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -638,18 +638,14 @@ pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 impl<T: option::Get> DirectFdOp for SocketOptionOp<T> {
     type Output = T::Output;
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
-    type Args = (Level, Opt);
+    type Args = ();
 
-    fn run(
-        fd: &AsyncFd,
-        mut value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::Output> {
+    fn run(fd: &AsyncFd, mut value: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
         let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
         syscall!(getsockopt(
             fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
+            T::LEVEL.0.cast_signed(),
+            T::OPT.0.cast_signed(),
             optval,
             &raw mut optlen,
         ))?;
@@ -666,17 +662,13 @@ pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 impl<T: option::Set> DirectFdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = OptionStorage<T::Storage>;
-    type Args = (Level, Opt);
+    type Args = ();
 
-    fn run(
-        fd: &AsyncFd,
-        value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::Output> {
+    fn run(fd: &AsyncFd, value: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
         syscall!(setsockopt(
             fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
+            T::LEVEL.0.cast_signed(),
+            T::OPT.0.cast_signed(),
             ptr::from_ref(&value.0).cast(),
             size_of::<T::Storage>() as _,
         ))?;

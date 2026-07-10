@@ -8,8 +8,8 @@ use crate::io_uring::io::PoolBufParts;
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
-    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
+    AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
+    SendCall, SendFlag, SocketAddress, Type, option,
 };
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
 
@@ -675,13 +675,13 @@ pub(crate) struct SocketOptionOp<T>(PhantomData<*const T>);
 impl<T: option::Get> FdOp for SocketOptionOp<T> {
     type Output = T::Output;
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
-    type Args = (Level, Opt);
+    type Args = ();
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission(
         fd: &AsyncFd,
         value: &mut Self::Resources,
-        (level, optname): &mut Self::Args,
+        (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
@@ -694,8 +694,8 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
-                level: level.0,
-                optname: optname.0,
+                level: T::LEVEL.0,
+                optname: T::OPT.0,
             },
         };
         // SAFETY: the kernel will initiase the value for us.
@@ -723,13 +723,13 @@ pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
 impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
     type Output = ();
     type Resources = OptionStorage<T::Storage>;
-    type Args = (Level, Opt);
+    type Args = ();
 
     #[allow(clippy::cast_sign_loss)] // For level and optname as u32.
     fn fill_submission(
         fd: &AsyncFd,
         value: &mut Self::Resources,
-        (level, optname): &mut Self::Args,
+        (): &mut Self::Args,
         submission: &mut sq::Submission,
     ) {
         submission.0.opcode = libc::IORING_OP_URING_CMD as u8;
@@ -742,8 +742,8 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
         };
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             __bindgen_anon_1: libc::io_uring_sqe__bindgen_ty_2__bindgen_ty_1 {
-                level: level.0,
-                optname: optname.0,
+                level: T::LEVEL.0,
+                optname: T::OPT.0,
             },
         };
         submission.0.__bindgen_anon_5 = libc::io_uring_sqe__bindgen_ty_5 {
