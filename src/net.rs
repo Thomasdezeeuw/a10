@@ -43,6 +43,8 @@ pub fn socket(
 
 /// Synchronous version of [`socket`].
 ///
+/// Also see [`sync_bind`].
+///
 /// # Notes
 ///
 /// This does not support direct descriptors, only regular file descriptors.
@@ -453,6 +455,22 @@ impl AsyncFd {
     pub fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
         Shutdown::new(self, (), how)
     }
+}
+
+/// Synchronous version of [`AsyncFd::bind`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_bind<A: SocketAddress>(fd: &AsyncFd, address: A) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    let address_storage = address.into_storage();
+    let (ptr, length) = unsafe { A::as_ptr(&address_storage) };
+    syscall!(bind(fd.fd(), ptr.cast(), length))?;
+    Ok(())
 }
 
 #[derive(Copy, Clone, Debug)]
