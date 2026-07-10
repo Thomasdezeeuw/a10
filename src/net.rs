@@ -43,7 +43,7 @@ pub fn socket(
 
 /// Synchronous version of [`socket`].
 ///
-/// Also see [`sync_bind`].
+/// Also see [`sync_bind`] and [`sync_listen`].
 ///
 /// # Notes
 ///
@@ -470,6 +470,20 @@ pub fn sync_bind<A: SocketAddress>(fd: &AsyncFd, address: A) -> io::Result<()> {
     let address_storage = address.into_storage();
     let (ptr, length) = unsafe { A::as_ptr(&address_storage) };
     syscall!(bind(fd.fd(), ptr.cast(), length))?;
+    Ok(())
+}
+
+/// Synchronous version of [`AsyncFd::listen`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_listen(fd: &AsyncFd, backlog: u32) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    syscall!(listen(fd.fd(), backlog.cast_signed()))?;
     Ok(())
 }
 
