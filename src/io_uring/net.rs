@@ -31,7 +31,7 @@ impl Op for SocketOp {
         submission.0.opcode = libc::IORING_OP_SOCKET as u8;
         submission.0.fd = domain.0;
         submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-            off: r#type.0.into(),
+            off: (r#type.0 | fd_kind.cloexec_flag().cast_unsigned()).into(),
         };
         submission.0.len = protocol.0;
         // Must currently always be set to zero per the manual.
