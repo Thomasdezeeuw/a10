@@ -8,7 +8,8 @@ use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
-    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option, sync_socket,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2,
+    sync_socket, sync_socket_option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -596,22 +597,8 @@ impl<T: option::Get> DirectFdOp for SocketOptionOp<T> {
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
     type Args = (Level, Opt);
 
-    fn run(
-        fd: &AsyncFd,
-        mut value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::Output> {
-        let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
-        syscall!(getsockopt(
-            fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
-            optval,
-            &raw mut optlen,
-        ))?;
-        // SAFETY: the kernel initialised the value for us as part of the
-        // getsockopt call.
-        Ok(unsafe { T::init(value.0, optlen) })
+    fn run(fd: &AsyncFd, _: Self::Resources, (_, _): Self::Args) -> io::Result<Self::Output> {
+        sync_socket_option::<T>(fd)
     }
 }
 
@@ -624,19 +611,8 @@ impl<T: option::Set> DirectFdOp for SetSocketOptionOp<T> {
     type Resources = OptionStorage<T::Storage>;
     type Args = (Level, Opt);
 
-    fn run(
-        fd: &AsyncFd,
-        value: Self::Resources,
-        (level, optname): Self::Args,
-    ) -> io::Result<Self::Output> {
-        syscall!(setsockopt(
-            fd.fd(),
-            level.0.cast_signed(),
-            optname.0.cast_signed(),
-            ptr::from_ref(&value.0).cast(),
-            size_of::<T::Storage>() as _,
-        ))?;
-        Ok(())
+    fn run(fd: &AsyncFd, value: Self::Resources, (_, _): Self::Args) -> io::Result<Self::Output> {
+        sync_set_socket_option2::<T>(fd, &value.0)
     }
 }
 

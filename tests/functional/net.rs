@@ -9,8 +9,8 @@ use a10::io::ReadBufPool;
 use a10::net::socket;
 use a10::net::{
     Accept, Bind, Connect, Domain, MultishotAccept, MultishotRecv, NoAddress, Protocol, Recv,
-    RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type,
-    sync_bind, sync_listen, sync_socket,
+    RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type, option,
+    sync_bind, sync_listen, sync_set_socket_option, sync_socket, sync_socket_option,
 };
 use a10::{Extract, SubmissionQueue};
 
@@ -43,6 +43,12 @@ fn sync_socket_listener() {
     let address: SocketAddr = ([127, 0, 0, 1], 0).into();
     let domain = Domain::for_address(&address);
     let listener = sync_socket(sq, domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+
+    sync_set_socket_option::<option::ReuseAddress>(&listener, true).unwrap();
+    assert_eq!(
+        sync_socket_option::<option::ReuseAddress>(&listener).unwrap(),
+        true,
+    );
 
     sync_bind(&listener, address).unwrap();
     sync_listen(&listener, 1).unwrap();

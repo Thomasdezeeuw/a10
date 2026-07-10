@@ -1014,6 +1014,59 @@ macro_rules! impl_from {
 
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 
+/// Synchronous version of [`AsyncFd::socket_option`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_socket_option<T: option::Get>(fd: &AsyncFd) -> io::Result<<T as option::Get>::Output> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    let mut value = OptionStorage(MaybeUninit::uninit());
+    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+    syscall!(getsockopt(
+        fd.fd(),
+        T::LEVEL.0.cast_signed(),
+        T::OPT.0.cast_signed(),
+        optval,
+        &raw mut optlen,
+    ))?;
+    // SAFETY: the kernel initialised the value for us as part of the getsockopt
+    // call.
+    Ok(unsafe { T::init(value.0, optlen) })
+}
+
+/// Synchronous version of [`AsyncFd::set_socket_option`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_set_socket_option<T: option::Set>(fd: &AsyncFd, value: T::Value) -> io::Result<()> {
+    let storage = T::as_storage(value);
+    sync_set_socket_option2::<T>(fd, &storage)
+}
+
+// NOTE: used by kqueue impl (with T::Storage, instead of T::Value).
+pub(crate) fn sync_set_socket_option2<T: option::Set>(
+    fd: &AsyncFd,
+    storage: &T::Storage,
+) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    syscall!(setsockopt(
+        fd.fd(),
+        T::LEVEL.0.cast_signed(),
+        T::OPT.0.cast_signed(),
+        ptr::from_ref(storage).cast(),
+        size_of::<T::Storage>() as _,
+    ))?;
+    Ok(())
+}
+
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::bind`].
     pub struct Bind<A: SocketAddress>(sys::net::BindOp<A>) -> io::Result<()>;
