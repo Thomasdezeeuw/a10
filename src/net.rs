@@ -2,6 +2,9 @@
 //!
 //! To create a new socket ([`AsyncFd`]) use the [`socket`] function, which
 //! issues a non-blocking `socket(2)` call.
+//!
+//! If you're looking for a synchronous version of the `socket` function (for
+//! easier creation in non-async setup code) see [`sync_socket`].
 
 use std::ffi::{OsStr, c_void};
 use std::future::Future;
@@ -22,7 +25,7 @@ use crate::io::{
 };
 use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
-use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
 
 pub mod option;
 
@@ -36,6 +39,67 @@ pub fn socket(
 ) -> Socket {
     let args = (domain, r#type, protocol.unwrap_or(Protocol(0)));
     Socket::new(sq, fd::Kind::File, args)
+}
+
+/// Synchronous version of [`socket`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_socket(
+    sq: SubmissionQueue,
+    domain: Domain,
+    r#type: Type,
+    protocol: Option<Protocol>,
+) -> io::Result<AsyncFd> {
+    let r#type = r#type.0.cast_signed();
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    let r#type = r#type | libc::SOCK_CLOEXEC;
+    // NOTE: io_uring doesn't need SOCK_NONBLOCK.
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    let r#type = r#type | libc::SOCK_NONBLOCK;
+
+    let protocol = protocol.unwrap_or(Protocol(0));
+    let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
+    // SAFETY: just created the socket above.
+    let fd = unsafe { AsyncFd::from_raw_fd(socket, sq) };
+
+    // For OS that don't support SOCK_{NONBLOCK,CLOEXEC}, we set them after
+    // opening.
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    {
+        syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
+
+        // Mimic std lib and set SO_NOSIGPIPE on Apple systems.
+        syscall!(setsockopt(
+            socket,
+            libc::SOL_SOCKET,
+            libc::SO_NOSIGPIPE,
+            ptr::from_ref(&1).cast(),
+            size_of::<libc::c_int>() as libc::socklen_t
+        ))?;
+    }
+
+    Ok(fd)
 }
 
 new_flag!(
