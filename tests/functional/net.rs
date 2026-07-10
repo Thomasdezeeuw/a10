@@ -5,12 +5,13 @@ use std::sync::{Arc, Barrier, OnceLock};
 use std::thread;
 
 use a10::io::ReadBufPool;
-use a10::net::{
-    Accept, Bind, Connect, MultishotAccept, MultishotRecv, NoAddress, Recv, RecvN, RecvNVectored,
-    Send, SendAll, SendAllVectored, SendTo, Socket, SocketName,
-};
 #[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::net::{Domain, Type, socket};
+use a10::net::socket;
+use a10::net::{
+    Accept, Bind, Connect, Domain, MultishotAccept, MultishotRecv, NoAddress, Protocol, Recv,
+    RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type,
+    sync_socket,
+};
 use a10::{Extract, SubmissionQueue};
 
 use crate::util::{
@@ -32,6 +33,49 @@ fn socket_is_send_and_sync() {
 fn bind_is_send_and_sync() {
     is_send::<Bind<SocketAddr>>();
     is_sync::<Bind<SocketAddr>>();
+}
+
+#[test]
+fn sync_socket_listener() {
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let address: SocketAddr = ([127, 0, 0, 1], 0).into();
+    let domain = Domain::for_address(&address);
+    let listener = sync_socket(sq, domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+
+    waker.block_on(listener.bind(address)).unwrap();
+    waker.block_on(listener.listen(1)).unwrap();
+    let local_addr = waker.block_on(listener.local_addr()).unwrap();
+
+    // Accept a connection.
+    let mut stream = TcpStream::connect(local_addr).unwrap();
+    let accept = listener.accept::<SocketAddr>();
+    let (client, address) = waker.block_on(accept).unwrap();
+    assert_eq!(stream.peer_addr().unwrap(), local_addr);
+    assert_eq!(stream.local_addr().unwrap(), address.into());
+
+    // Read some data.
+    stream.write(DATA1).expect("failed to write");
+    let mut buf = waker
+        .block_on(client.read(Vec::with_capacity(DATA1.len() + 1)))
+        .expect("failed to read");
+    assert_eq!(buf, DATA1);
+
+    // Write some data.
+    let n = waker
+        .block_on(client.write(DATA2))
+        .expect("failed to write");
+    assert_eq!(n, DATA2.len());
+    buf.resize(DATA2.len() + 1, 0);
+    let n = stream.read(&mut buf).expect("failed to read");
+    assert_eq!(&buf[..n], DATA2);
+
+    // Closing the client should get a result.
+    drop(stream);
+    buf.clear();
+    let buf = waker.block_on(client.read(buf)).expect("failed to read");
+    assert!(buf.is_empty());
 }
 
 #[test]

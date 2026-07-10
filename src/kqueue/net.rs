@@ -8,7 +8,7 @@ use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Level, Name, NoAddress, Opt, OptionStorage, Protocol,
-    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option, sync_socket,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -23,54 +23,10 @@ impl DirectOp for SocketOp {
 
     fn run(
         sq: &SubmissionQueue,
-        kind: Self::Resources,
+        fd::Kind::File: Self::Resources,
         (domain, r#type, protocol): Self::Args,
     ) -> io::Result<Self::Output> {
-        let fd::Kind::File = kind;
-
-        let r#type = r#type.0.cast_signed();
-        #[cfg(any(
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd",
-            target_os = "openbsd",
-        ))]
-        let r#type = r#type | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
-
-        let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
-        // SAFETY: just created the socket above.
-        let fd = unsafe { AsyncFd::from_raw_fd(socket, sq.clone()) };
-
-        // Mimic std lib and set SO_NOSIGPIPE on apple systems.
-        #[cfg(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-            target_os = "visionos",
-            target_os = "watchos",
-        ))]
-        syscall!(setsockopt(
-            socket,
-            libc::SOL_SOCKET,
-            libc::SO_NOSIGPIPE,
-            ptr::from_ref(&1).cast(),
-            size_of::<libc::c_int>() as libc::socklen_t
-        ))?;
-
-        // Apple systems don't have SOCK_NONBLOCK or SOCK_CLOEXEC.
-        #[cfg(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-            target_os = "visionos",
-            target_os = "watchos",
-        ))]
-        {
-            syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
-            syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
-        }
-
-        Ok(fd)
+        sync_socket(sq.clone(), domain, r#type, Some(protocol))
     }
 }
 
