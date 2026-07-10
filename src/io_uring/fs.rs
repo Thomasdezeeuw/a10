@@ -34,7 +34,7 @@ impl Op for OpenOp {
         asan::poison_cstring(path);
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
-            open_flags: *flags as u32,
+            open_flags: *flags as u32, // NOTE: O_CLOEXEC is already set.
         };
         fd_kind.create_flags(submission);
     }
