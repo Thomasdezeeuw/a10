@@ -8,7 +8,8 @@ use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option,
+    SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2, sync_socket,
+    sync_socket_option,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -23,54 +24,10 @@ impl DirectOp for SocketOp {
 
     fn run(
         sq: &SubmissionQueue,
-        kind: Self::Resources,
+        fd::Kind::File: Self::Resources,
         (domain, r#type, protocol): Self::Args,
     ) -> io::Result<Self::Output> {
-        let fd::Kind::File = kind;
-
-        let r#type = r#type.0.cast_signed();
-        #[cfg(any(
-            target_os = "dragonfly",
-            target_os = "freebsd",
-            target_os = "netbsd",
-            target_os = "openbsd",
-        ))]
-        let r#type = r#type | libc::SOCK_NONBLOCK | libc::SOCK_CLOEXEC;
-
-        let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
-        // SAFETY: just created the socket above.
-        let fd = unsafe { AsyncFd::from_raw_fd(socket, sq.clone()) };
-
-        // Mimic std lib and set SO_NOSIGPIPE on apple systems.
-        #[cfg(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-            target_os = "visionos",
-            target_os = "watchos",
-        ))]
-        syscall!(setsockopt(
-            socket,
-            libc::SOL_SOCKET,
-            libc::SO_NOSIGPIPE,
-            ptr::from_ref(&1).cast(),
-            size_of::<libc::c_int>() as libc::socklen_t
-        ))?;
-
-        // Apple systems don't have SOCK_NONBLOCK or SOCK_CLOEXEC.
-        #[cfg(any(
-            target_os = "ios",
-            target_os = "macos",
-            target_os = "tvos",
-            target_os = "visionos",
-            target_os = "watchos",
-        ))]
-        {
-            syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
-            syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
-        }
-
-        Ok(fd)
+        sync_socket(sq.clone(), domain, r#type, Some(protocol))
     }
 }
 
@@ -640,18 +597,8 @@ impl<T: option::Get> DirectFdOp for SocketOptionOp<T> {
     type Resources = OptionStorage<MaybeUninit<T::Storage>>;
     type Args = ();
 
-    fn run(fd: &AsyncFd, mut value: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
-        let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
-        syscall!(getsockopt(
-            fd.fd(),
-            T::LEVEL.0.cast_signed(),
-            T::OPT.0.cast_signed(),
-            optval,
-            &raw mut optlen,
-        ))?;
-        // SAFETY: the kernel initialised the value for us as part of the
-        // getsockopt call.
-        Ok(unsafe { T::init(value.0, optlen) })
+    fn run(fd: &AsyncFd, _: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
+        sync_socket_option::<T>(fd)
     }
 }
 
@@ -665,14 +612,7 @@ impl<T: option::Set> DirectFdOp for SetSocketOptionOp<T> {
     type Args = ();
 
     fn run(fd: &AsyncFd, value: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
-        syscall!(setsockopt(
-            fd.fd(),
-            T::LEVEL.0.cast_signed(),
-            T::OPT.0.cast_signed(),
-            ptr::from_ref(&value.0).cast(),
-            size_of::<T::Storage>() as _,
-        ))?;
-        Ok(())
+        sync_set_socket_option2::<T>(fd, &value.0)
     }
 }
 

@@ -2,6 +2,9 @@
 //!
 //! To create a new socket ([`AsyncFd`]) use the [`socket`] function, which
 //! issues a non-blocking `socket(2)` call.
+//!
+//! If you're looking for a synchronous version of the `socket` function (for
+//! easier creation in non-async setup code) see [`sync_socket`].
 
 use std::ffi::{OsStr, c_void};
 use std::future::Future;
@@ -22,7 +25,7 @@ use crate::io::{
 };
 use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
-use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys};
+use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
 
 pub mod option;
 
@@ -36,6 +39,69 @@ pub fn socket(
 ) -> Socket {
     let args = (domain, r#type, protocol.unwrap_or(Protocol(0)));
     Socket::new(sq, fd::Kind::File, args)
+}
+
+/// Synchronous version of [`socket`].
+///
+/// Also see [`sync_bind`] and [`sync_listen`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_socket(
+    sq: SubmissionQueue,
+    domain: Domain,
+    r#type: Type,
+    protocol: Option<Protocol>,
+) -> io::Result<AsyncFd> {
+    let r#type = r#type.0.cast_signed();
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    let r#type = r#type | libc::SOCK_CLOEXEC;
+    // NOTE: io_uring doesn't need SOCK_NONBLOCK.
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    let r#type = r#type | libc::SOCK_NONBLOCK;
+
+    let protocol = protocol.unwrap_or(Protocol(0));
+    let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
+    // SAFETY: just created the socket above.
+    let fd = unsafe { AsyncFd::from_raw_fd(socket, sq) };
+
+    // For OS that don't support SOCK_{NONBLOCK,CLOEXEC}, we set them after
+    // opening.
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    {
+        syscall!(fcntl(socket, libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(socket, libc::F_SETFD, libc::FD_CLOEXEC))?;
+
+        // Mimic std lib and set SO_NOSIGPIPE on Apple systems.
+        syscall!(setsockopt(
+            socket,
+            libc::SOL_SOCKET,
+            libc::SO_NOSIGPIPE,
+            ptr::from_ref(&1).cast(),
+            size_of::<libc::c_int>() as libc::socklen_t
+        ))?;
+    }
+
+    Ok(fd)
 }
 
 new_flag!(
@@ -389,6 +455,36 @@ impl AsyncFd {
     pub fn shutdown<'fd>(&'fd self, how: std::net::Shutdown) -> Shutdown<'fd> {
         Shutdown::new(self, (), how)
     }
+}
+
+/// Synchronous version of [`AsyncFd::bind`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_bind<A: SocketAddress>(fd: &AsyncFd, address: A) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    let address_storage = address.into_storage();
+    let (ptr, length) = unsafe { A::as_ptr(&address_storage) };
+    syscall!(bind(fd.fd(), ptr.cast(), length))?;
+    Ok(())
+}
+
+/// Synchronous version of [`AsyncFd::listen`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_listen(fd: &AsyncFd, backlog: u32) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    syscall!(listen(fd.fd(), backlog.cast_signed()))?;
+    Ok(())
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -917,6 +1013,59 @@ macro_rules! impl_from {
 }
 
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
+
+/// Synchronous version of [`AsyncFd::socket_option`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_socket_option<T: option::Get>(fd: &AsyncFd) -> io::Result<<T as option::Get>::Output> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    let mut value = OptionStorage(MaybeUninit::uninit());
+    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+    syscall!(getsockopt(
+        fd.fd(),
+        T::LEVEL.0.cast_signed(),
+        T::OPT.0.cast_signed(),
+        optval,
+        &raw mut optlen,
+    ))?;
+    // SAFETY: the kernel initialised the value for us as part of the getsockopt
+    // call.
+    Ok(unsafe { T::init(value.0, optlen) })
+}
+
+/// Synchronous version of [`AsyncFd::set_socket_option`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_set_socket_option<T: option::Set>(fd: &AsyncFd, value: T::Value) -> io::Result<()> {
+    let storage = T::as_storage(value);
+    sync_set_socket_option2::<T>(fd, &storage)
+}
+
+// NOTE: used by kqueue impl (with T::Storage, instead of T::Value).
+pub(crate) fn sync_set_socket_option2<T: option::Set>(
+    fd: &AsyncFd,
+    storage: &T::Storage,
+) -> io::Result<()> {
+    if !matches!(fd.kind(), fd::Kind::File) {
+        return Err(io::ErrorKind::Unsupported.into());
+    }
+
+    syscall!(setsockopt(
+        fd.fd(),
+        T::LEVEL.0.cast_signed(),
+        T::OPT.0.cast_signed(),
+        ptr::from_ref(storage).cast(),
+        size_of::<T::Storage>() as _,
+    ))?;
+    Ok(())
+}
 
 fd_operation! {
     /// [`Future`] behind [`AsyncFd::bind`].
