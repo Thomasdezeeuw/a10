@@ -2,12 +2,16 @@
 //!
 //! To create a new pipe use the [`pipe`] function. It will return two
 //! [`AsyncFd`]s, the sending and receiving side.
+//!
+//! If you're looking for a synchronous version of the `pipe` function (for
+//! easier creation in non-async setup code) see [`sync_pipe`] and
+//! [`sync_pipe2`].
 
-use std::io;
+use std::{io, ptr};
 
 use crate::fd::{self, AsyncFd};
 use crate::op::{OpState, operation};
-use crate::{SubmissionQueue, man_link, new_flag, sys};
+use crate::{SubmissionQueue, man_link, new_flag, sys, syscall};
 
 /// Create a new Unix pipe.
 ///
@@ -82,4 +86,74 @@ impl Pipe {
         }
         self
     }
+}
+
+/// Synchronous version of [`pipe`].
+///
+/// See [`sync_pipe2`] for more.
+pub fn sync_pipe(sq: SubmissionQueue) -> io::Result<[AsyncFd; 2]> {
+    sync_pipe2(sq, PipeFlag(0))
+}
+
+/// Synchronous version of [`pipe`].
+///
+/// # Notes
+///
+/// This does not support direct descriptors, only regular file descriptors.
+pub fn sync_pipe2(sq: SubmissionQueue, flags: PipeFlag) -> io::Result<[AsyncFd; 2]> {
+    let mut fds = [-1, -1];
+
+    let flags = flags.0 as libc::c_int | libc::O_CLOEXEC;
+    // NOTE: io_uring doesn't need NON_BLOCK.
+    #[cfg(any(
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    let flags = flags | libc::O_NONBLOCK;
+
+    #[cfg(any(
+        target_os = "android",
+        target_os = "dragonfly",
+        target_os = "freebsd",
+        target_os = "linux",
+        target_os = "netbsd",
+        target_os = "openbsd",
+    ))]
+    syscall!(pipe2(ptr::from_mut(&mut fds).cast(), flags))?;
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    syscall!(pipe(ptr::from_mut(&mut fds).cast()))?;
+
+    // SAFETY: created the pipe fds above.
+    let fds = unsafe {
+        [
+            AsyncFd::from_raw(fds[0], fd::Kind::File, sq.clone()),
+            AsyncFd::from_raw(fds[1], fd::Kind::File, sq),
+        ]
+    };
+
+    // OS that don't support pipe2, we set NONBLOCK and CLOEXEC after opening.
+    #[cfg(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "tvos",
+        target_os = "visionos",
+        target_os = "watchos",
+    ))]
+    {
+        syscall!(fcntl(fds[0].fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(fds[0].fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+        syscall!(fcntl(fds[1].fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(fds[1].fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+        let _ = flags;
+    }
+
+    Ok(fds)
 }

@@ -1,8 +1,8 @@
 use std::io;
 use std::pin::pin;
 
-use a10::fd;
-use a10::pipe::{Pipe, pipe};
+use a10::fd::{self, AsyncFd};
+use a10::pipe::{Pipe, pipe, sync_pipe};
 
 use crate::util::{Waker, expect_io_error_kind, is_send, is_sync, poll_nop, test_queue};
 
@@ -16,22 +16,30 @@ fn pipe_is_send_and_sync() {
 
 #[test]
 fn pipe_file_descriptor() {
-    test_pipe(fd::Kind::File)
+    test_pipe(create_async(fd::Kind::File))
 }
 
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn pipe_direct_descriptor() {
-    test_pipe(fd::Kind::Direct)
+    test_pipe(create_async(fd::Kind::Direct))
 }
 
-fn test_pipe(fd_kind: fd::Kind) {
+#[test]
+fn sync_pipe_file_descriptor() {
     let sq = test_queue();
-    let waker = Waker::new();
+    test_pipe(sync_pipe(sq).expect("failed to create pipe"))
+}
 
-    let [receiver, sender] = waker
+fn create_async(fd_kind: fd::Kind) -> [AsyncFd; 2] {
+    let sq = test_queue();
+    Waker::new()
         .block_on(pipe(sq).kind(fd_kind))
-        .expect("failed to create pipe");
+        .expect("failed to create pipe")
+}
+
+fn test_pipe([receiver, sender]: [AsyncFd; 2]) {
+    let waker = Waker::new();
 
     // Send some data.
     waker
