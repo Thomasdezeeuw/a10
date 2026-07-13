@@ -459,18 +459,10 @@ impl AsyncFd {
 }
 
 /// Synchronous version of [`AsyncFd::bind`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_bind<A: SocketAddress>(fd: &AsyncFd, address: A) -> io::Result<()> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
-
+pub fn sync_bind<A: SocketAddress>(fd: impl AsFd, address: A) -> io::Result<()> {
     let address_storage = address.into_storage();
     let (ptr, length) = unsafe { A::as_ptr(&address_storage) };
-    syscall!(bind(fd.fd(), ptr.cast(), length))?;
+    syscall!(bind(fd.as_fd().as_raw_fd(), ptr.cast(), length))?;
     Ok(())
 }
 
