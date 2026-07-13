@@ -10,7 +10,8 @@ use a10::net::socket;
 use a10::net::{
     Accept, Bind, Connect, Domain, MultishotAccept, MultishotRecv, NoAddress, Protocol, Recv,
     RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type, option,
-    sync_bind, sync_listen, sync_set_socket_option, sync_socket, sync_socket_option,
+    sync_bind, sync_listen, sync_local_addr, sync_set_socket_option, sync_socket,
+    sync_socket_option,
 };
 use a10::{AsyncFd, Extract, SubmissionQueue};
 
@@ -52,8 +53,8 @@ fn sync_socket_listener() {
 
     sync_bind(&listener, address).unwrap();
     sync_listen(&listener, 1).unwrap();
+    let local_addr = sync_local_addr(&listener).unwrap();
     let listener = AsyncFd::new(listener, sq);
-    let local_addr = waker.block_on(listener.local_addr()).unwrap();
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).unwrap();

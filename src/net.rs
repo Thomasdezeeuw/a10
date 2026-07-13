@@ -472,6 +472,19 @@ pub fn sync_listen(fd: impl AsFd, backlog: u32) -> io::Result<()> {
     Ok(())
 }
 
+/// Synchronous version of [`AsyncFd::local_addr`].
+pub fn sync_local_addr<A: SocketAddress>(fd: impl AsFd) -> io::Result<A> {
+    let mut addr = MaybeUninit::uninit();
+    let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut addr) };
+    syscall!(getsockname(
+        fd.as_fd().as_raw_fd(),
+        ptr.cast(),
+        &raw mut length
+    ))?;
+    // SAFETY: the kernel has written the address for us.
+    Ok(unsafe { A::init(addr, length) })
+}
+
 #[derive(Copy, Clone, Debug)]
 pub(crate) enum Name {
     Local,
