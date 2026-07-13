@@ -51,8 +51,8 @@ fn sync_socket_listener() {
     );
 
     sync_bind(&listener, address).unwrap();
-    let listener = AsyncFd::new(listener, sq);
     sync_listen(&listener, 1).unwrap();
+    let listener = AsyncFd::new(listener, sq);
     let local_addr = waker.block_on(listener.local_addr()).unwrap();
 
     // Accept a connection.
