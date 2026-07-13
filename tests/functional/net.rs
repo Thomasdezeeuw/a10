@@ -12,7 +12,7 @@ use a10::net::{
     RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type, option,
     sync_bind, sync_listen, sync_set_socket_option, sync_socket, sync_socket_option,
 };
-use a10::{Extract, SubmissionQueue};
+use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
@@ -42,7 +42,8 @@ fn sync_socket_listener() {
 
     let address: SocketAddr = ([127, 0, 0, 1], 0).into();
     let domain = Domain::for_address(&address);
-    let listener = sync_socket(sq, domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let listener = sync_socket(domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let listener = AsyncFd::new(listener, sq);
 
     sync_set_socket_option::<option::ReuseAddress>(&listener, true).unwrap();
     assert_eq!(

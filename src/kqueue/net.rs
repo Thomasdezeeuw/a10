@@ -27,7 +27,7 @@ impl DirectOp for SocketOp {
         fd::Kind::File: Self::Resources,
         (domain, r#type, protocol): Self::Args,
     ) -> io::Result<Self::Output> {
-        sync_socket(sq.clone(), domain, r#type, Some(protocol))
+        sync_socket(domain, r#type, Some(protocol)).map(|fd| AsyncFd::new(fd, sq.clone()))
     }
 }
 
