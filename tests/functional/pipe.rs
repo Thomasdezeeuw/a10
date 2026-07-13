@@ -28,7 +28,11 @@ fn pipe_direct_descriptor() {
 #[test]
 fn sync_pipe_file_descriptor() {
     let sq = test_queue();
-    test_pipe(sync_pipe(sq).expect("failed to create pipe"))
+    test_pipe(
+        sync_pipe()
+            .map(|[r, s]| [AsyncFd::new(r, sq.clone()), AsyncFd::new(s, sq.clone())])
+            .expect("failed to create pipe"),
+    )
 }
 
 fn create_async(fd_kind: fd::Kind) -> [AsyncFd; 2] {
