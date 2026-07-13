@@ -467,16 +467,8 @@ pub fn sync_bind<A: SocketAddress>(fd: impl AsFd, address: A) -> io::Result<()> 
 }
 
 /// Synchronous version of [`AsyncFd::listen`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_listen(fd: &AsyncFd, backlog: u32) -> io::Result<()> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
-
-    syscall!(listen(fd.fd(), backlog.cast_signed()))?;
+pub fn sync_listen(fd: impl AsFd, backlog: u32) -> io::Result<()> {
+    syscall!(listen(fd.as_fd().as_raw_fd(), backlog.cast_signed()))?;
     Ok(())
 }
 
