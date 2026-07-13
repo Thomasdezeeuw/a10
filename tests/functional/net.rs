@@ -43,7 +43,6 @@ fn sync_socket_listener() {
     let address: SocketAddr = ([127, 0, 0, 1], 0).into();
     let domain = Domain::for_address(&address);
     let listener = sync_socket(domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
-    let listener = AsyncFd::new(listener, sq);
 
     sync_set_socket_option::<option::ReuseAddress>(&listener, true).unwrap();
     assert_eq!(
@@ -51,6 +50,7 @@ fn sync_socket_listener() {
         true,
     );
 
+    let listener = AsyncFd::new(listener, sq);
     sync_bind(&listener, address).unwrap();
     sync_listen(&listener, 1).unwrap();
     let local_addr = waker.block_on(listener.local_addr()).unwrap();
