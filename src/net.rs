@@ -10,6 +10,7 @@ use std::ffi::{OsStr, c_void};
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::os::fd::{FromRawFd, OwnedFd};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix;
@@ -47,13 +48,13 @@ pub fn socket(
 ///
 /// # Notes
 ///
-/// This does not support direct descriptors, only regular file descriptors.
+/// The returned fd is setup such that it can be converted into an [`AsyncFd`]
+/// without any further changes required to it.
 pub fn sync_socket(
-    sq: SubmissionQueue,
     domain: Domain,
     r#type: Type,
     protocol: Option<Protocol>,
-) -> io::Result<AsyncFd> {
+) -> io::Result<OwnedFd> {
     let r#type = r#type.0.cast_signed();
     #[cfg(any(
         target_os = "android",
@@ -76,7 +77,7 @@ pub fn sync_socket(
     let protocol = protocol.unwrap_or(Protocol(0));
     let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
     // SAFETY: just created the socket above.
-    let fd = unsafe { AsyncFd::from_raw_fd(socket, sq) };
+    let fd = unsafe { OwnedFd::from_raw_fd(socket) };
 
     // For OS that don't support SOCK_{NONBLOCK,CLOEXEC}, we set them after
     // opening.
