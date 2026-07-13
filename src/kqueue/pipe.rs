@@ -17,6 +17,6 @@ impl DirectOp for PipeOp {
         (_, fd::Kind::File): Self::Resources,
         flags: Self::Args,
     ) -> io::Result<Self::Output> {
-        sync_pipe2(sq.clone(), flags)
+        sync_pipe2(flags).map(|[r, s]| [AsyncFd::new(r, sq.clone()), AsyncFd::new(s, sq.clone())])
     }
 }

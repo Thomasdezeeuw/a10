@@ -7,6 +7,7 @@
 //! easier creation in non-async setup code) see [`sync_pipe`] and
 //! [`sync_pipe2`].
 
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::{io, ptr};
 
 use crate::fd::{self, AsyncFd};
@@ -91,16 +92,17 @@ impl Pipe {
 /// Synchronous version of [`pipe`].
 ///
 /// See [`sync_pipe2`] for more.
-pub fn sync_pipe(sq: SubmissionQueue) -> io::Result<[AsyncFd; 2]> {
-    sync_pipe2(sq, PipeFlag(0))
+pub fn sync_pipe() -> io::Result<[OwnedFd; 2]> {
+    sync_pipe2(PipeFlag(0))
 }
 
 /// Synchronous version of [`pipe`].
 ///
 /// # Notes
 ///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_pipe2(sq: SubmissionQueue, flags: PipeFlag) -> io::Result<[AsyncFd; 2]> {
+/// The returned fd is setup such that it can be converted into an [`AsyncFd`]
+/// without any further changes required to it.
+pub fn sync_pipe2(flags: PipeFlag) -> io::Result<[OwnedFd; 2]> {
     let mut fds = [-1, -1];
 
     let flags = flags.0.cast_signed() | libc::O_CLOEXEC;
@@ -132,12 +134,7 @@ pub fn sync_pipe2(sq: SubmissionQueue, flags: PipeFlag) -> io::Result<[AsyncFd; 
     syscall!(pipe(ptr::from_mut(&mut fds).cast()))?;
 
     // SAFETY: created the pipe fds above.
-    let fds = unsafe {
-        [
-            AsyncFd::from_raw(fds[0], fd::Kind::File, sq.clone()),
-            AsyncFd::from_raw(fds[1], fd::Kind::File, sq),
-        ]
-    };
+    let owned_fds = unsafe { [OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])] };
 
     // OS that don't support pipe2, we set NONBLOCK and CLOEXEC after opening.
     #[cfg(any(
@@ -148,12 +145,12 @@ pub fn sync_pipe2(sq: SubmissionQueue, flags: PipeFlag) -> io::Result<[AsyncFd; 
         target_os = "watchos",
     ))]
     {
-        syscall!(fcntl(fds[0].fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
-        syscall!(fcntl(fds[0].fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
-        syscall!(fcntl(fds[1].fd(), libc::F_SETFL, libc::O_NONBLOCK))?;
-        syscall!(fcntl(fds[1].fd(), libc::F_SETFD, libc::FD_CLOEXEC))?;
+        syscall!(fcntl(fds[0], libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(fds[0], libc::F_SETFD, libc::FD_CLOEXEC))?;
+        syscall!(fcntl(fds[1], libc::F_SETFL, libc::O_NONBLOCK))?;
+        syscall!(fcntl(fds[1], libc::F_SETFD, libc::FD_CLOEXEC))?;
         let _ = flags;
     }
 
-    Ok(fds)
+    Ok(owned_fds)
 }
