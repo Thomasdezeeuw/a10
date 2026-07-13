@@ -5,7 +5,7 @@ RUST_TARGET ?= $(shell rustc -vV | sed -n 's/host: //p')
 # NOTE: when using this command you might want to change the `test` target to
 # only run a subset of the tests you're actively working on.
 dev:
-	find src/ tests/ examples/ Makefile Cargo.toml | entr -d -c $(MAKE) $(RUN)
+	find src/ tests/ examples/ Makefile Cargo.toml | entr -d -cc $(MAKE) $(RUN)
 
 test:
 	cargo test -- --quiet
