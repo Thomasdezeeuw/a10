@@ -1,3 +1,5 @@
+//! Pollable operations.
+
 use std::io;
 
 use crate::op::iter_operation;
