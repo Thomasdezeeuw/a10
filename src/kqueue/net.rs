@@ -9,7 +9,7 @@ use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, i
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
     SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2, sync_socket,
-    sync_socket_option,
+    sync_socket_option2,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -598,7 +598,7 @@ impl<T: option::Get> DirectFdOp for SocketOptionOp<T> {
     type Args = ();
 
     fn run(fd: &AsyncFd, _: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
-        sync_socket_option::<T>(fd)
+        sync_socket_option2::<T>(fd.fd())
     }
 }
 
@@ -612,7 +612,7 @@ impl<T: option::Set> DirectFdOp for SetSocketOptionOp<T> {
     type Args = ();
 
     fn run(fd: &AsyncFd, value: Self::Resources, (): Self::Args) -> io::Result<Self::Output> {
-        sync_set_socket_option2::<T>(fd, &value.0)
+        sync_set_socket_option2::<T>(fd.fd(), &value.0)
     }
 }
 
