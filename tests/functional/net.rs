@@ -10,9 +10,10 @@ use a10::net::socket;
 use a10::net::{
     Accept, Bind, Connect, Domain, MultishotAccept, MultishotRecv, NoAddress, Protocol, Recv,
     RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type, option,
-    sync_bind, sync_listen, sync_set_socket_option, sync_socket, sync_socket_option,
+    sync_bind, sync_listen, sync_local_addr, sync_set_socket_option, sync_socket,
+    sync_socket_option,
 };
-use a10::{Extract, SubmissionQueue};
+use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
@@ -42,7 +43,7 @@ fn sync_socket_listener() {
 
     let address: SocketAddr = ([127, 0, 0, 1], 0).into();
     let domain = Domain::for_address(&address);
-    let listener = sync_socket(sq, domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    let listener = sync_socket(domain, Type::STREAM, Some(Protocol::TCP)).unwrap();
 
     sync_set_socket_option::<option::ReuseAddress>(&listener, true).unwrap();
     assert_eq!(
@@ -52,7 +53,8 @@ fn sync_socket_listener() {
 
     sync_bind(&listener, address).unwrap();
     sync_listen(&listener, 1).unwrap();
-    let local_addr = waker.block_on(listener.local_addr()).unwrap();
+    let local_addr = sync_local_addr(&listener).unwrap();
+    let listener = AsyncFd::new(listener, sq);
 
     // Accept a connection.
     let mut stream = TcpStream::connect(local_addr).unwrap();

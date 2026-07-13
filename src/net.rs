@@ -10,6 +10,7 @@ use std::ffi::{OsStr, c_void};
 use std::future::Future;
 use std::mem::{self, MaybeUninit};
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd};
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix;
@@ -47,13 +48,13 @@ pub fn socket(
 ///
 /// # Notes
 ///
-/// This does not support direct descriptors, only regular file descriptors.
+/// The returned fd is setup such that it can be converted into an [`AsyncFd`]
+/// without any further changes required to it.
 pub fn sync_socket(
-    sq: SubmissionQueue,
     domain: Domain,
     r#type: Type,
     protocol: Option<Protocol>,
-) -> io::Result<AsyncFd> {
+) -> io::Result<OwnedFd> {
     let r#type = r#type.0.cast_signed();
     #[cfg(any(
         target_os = "android",
@@ -76,7 +77,7 @@ pub fn sync_socket(
     let protocol = protocol.unwrap_or(Protocol(0));
     let socket = syscall!(socket(domain.0, r#type, protocol.0.cast_signed()))?;
     // SAFETY: just created the socket above.
-    let fd = unsafe { AsyncFd::from_raw_fd(socket, sq) };
+    let fd = unsafe { OwnedFd::from_raw_fd(socket) };
 
     // For OS that don't support SOCK_{NONBLOCK,CLOEXEC}, we set them after
     // opening.
@@ -458,33 +459,30 @@ impl AsyncFd {
 }
 
 /// Synchronous version of [`AsyncFd::bind`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_bind<A: SocketAddress>(fd: &AsyncFd, address: A) -> io::Result<()> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
-
+pub fn sync_bind<A: SocketAddress>(fd: impl AsFd, address: A) -> io::Result<()> {
     let address_storage = address.into_storage();
     let (ptr, length) = unsafe { A::as_ptr(&address_storage) };
-    syscall!(bind(fd.fd(), ptr.cast(), length))?;
+    syscall!(bind(fd.as_fd().as_raw_fd(), ptr.cast(), length))?;
     Ok(())
 }
 
 /// Synchronous version of [`AsyncFd::listen`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_listen(fd: &AsyncFd, backlog: u32) -> io::Result<()> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
-
-    syscall!(listen(fd.fd(), backlog.cast_signed()))?;
+pub fn sync_listen(fd: impl AsFd, backlog: u32) -> io::Result<()> {
+    syscall!(listen(fd.as_fd().as_raw_fd(), backlog.cast_signed()))?;
     Ok(())
+}
+
+/// Synchronous version of [`AsyncFd::local_addr`].
+pub fn sync_local_addr<A: SocketAddress>(fd: impl AsFd) -> io::Result<A> {
+    let mut addr = MaybeUninit::uninit();
+    let (ptr, mut length) = unsafe { A::as_mut_ptr(&mut addr) };
+    syscall!(getsockname(
+        fd.as_fd().as_raw_fd(),
+        ptr.cast(),
+        &raw mut length
+    ))?;
+    // SAFETY: the kernel has written the address for us.
+    Ok(unsafe { A::init(addr, length) })
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1015,19 +1013,18 @@ macro_rules! impl_from {
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 
 /// Synchronous version of [`AsyncFd::socket_option`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_socket_option<T: option::Get>(fd: &AsyncFd) -> io::Result<<T as option::Get>::Output> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
+pub fn sync_socket_option<T: option::Get>(fd: impl AsFd) -> io::Result<<T as option::Get>::Output> {
+    sync_socket_option2::<T>(fd.as_fd().as_raw_fd())
+}
 
+// NOTE: used by kqueue impl.
+pub(crate) fn sync_socket_option2<T: option::Get>(
+    fd: RawFd,
+) -> io::Result<<T as option::Get>::Output> {
     let mut value = OptionStorage(MaybeUninit::uninit());
     let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
     syscall!(getsockopt(
-        fd.fd(),
+        fd,
         T::LEVEL.0.cast_signed(),
         T::OPT.0.cast_signed(),
         optval,
@@ -1039,26 +1036,18 @@ pub fn sync_socket_option<T: option::Get>(fd: &AsyncFd) -> io::Result<<T as opti
 }
 
 /// Synchronous version of [`AsyncFd::set_socket_option`].
-///
-/// # Notes
-///
-/// This does not support direct descriptors, only regular file descriptors.
-pub fn sync_set_socket_option<T: option::Set>(fd: &AsyncFd, value: T::Value) -> io::Result<()> {
+pub fn sync_set_socket_option<T: option::Set>(fd: impl AsFd, value: T::Value) -> io::Result<()> {
     let storage = T::as_storage(value);
-    sync_set_socket_option2::<T>(fd, &storage)
+    sync_set_socket_option2::<T>(fd.as_fd().as_raw_fd(), &storage)
 }
 
 // NOTE: used by kqueue impl (with T::Storage, instead of T::Value).
 pub(crate) fn sync_set_socket_option2<T: option::Set>(
-    fd: &AsyncFd,
+    fd: RawFd,
     storage: &T::Storage,
 ) -> io::Result<()> {
-    if !matches!(fd.kind(), fd::Kind::File) {
-        return Err(io::ErrorKind::Unsupported.into());
-    }
-
     syscall!(setsockopt(
-        fd.fd(),
+        fd,
         T::LEVEL.0.cast_signed(),
         T::OPT.0.cast_signed(),
         ptr::from_ref(storage).cast(),
