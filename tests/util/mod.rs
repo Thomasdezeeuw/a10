@@ -54,7 +54,37 @@ fn test_ring<'a>() -> &'a (RwLock<Ring>, SubmissionQueue) {
     })
 }
 
-fn poll_test_ring(timeout: Option<Duration>) {
+fn poll_test_ring() {
+    let (lock, _) = test_ring();
+    let mut ring = match lock.try_write() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(err)) => {
+            lock.clear_poison();
+            err.into_inner()
+        }
+        Err(TryLockError::WouldBlock) => {
+            // If we can't lock the ring it means another thread is currently
+            // polling, that is fine we wait until it unlock before we return.
+            let guard = match lock.read() {
+                Ok(guard) => guard,
+                Err(err) => {
+                    lock.clear_poison();
+                    err.into_inner()
+                }
+            };
+            drop(guard);
+            return;
+        }
+    };
+
+    if let Err(err) = ring.poll(None) {
+        drop(ring);
+        panic!("unexpected error polling: {err}");
+    }
+}
+
+/// Ensure all submissions are submitted to the kernel.
+pub(crate) fn ensure_submitted() {
     let (lock, sq) = test_ring();
     let mut ring = match lock.try_write() {
         Ok(guard) => guard,
@@ -63,21 +93,16 @@ fn poll_test_ring(timeout: Option<Duration>) {
             err.into_inner()
         }
         Err(TryLockError::WouldBlock) => {
+            // Wake the polling thread so that we submit the new operations.
             sq.wake();
             return;
         }
     };
 
-    if let Err(err) = ring.poll(timeout) {
+    if let Err(err) = ring.poll(Some(Duration::ZERO)) {
         drop(ring);
         panic!("unexpected error polling: {err}");
     }
-}
-
-/// Wake up the thread that polls the shared ring to ensure all submissions are
-/// actuall submitted to the kernel.
-pub(crate) fn ensure_submitted() {
-    poll_test_ring(Some(Duration::ZERO));
 }
 
 pub(crate) fn test_queue() -> SubmissionQueue {
@@ -156,13 +181,19 @@ impl Waker {
         let mut future = pin!(future.into_future());
         let task_waker = thread_waker::new(thread::current());
         let mut task_ctx = task::Context::from_waker(&task_waker);
+        if let Poll::Ready(output) = Future::poll(future.as_mut(), &mut task_ctx) {
+            task_waker.wake(); // Don't drop it as it will panic.
+            return output;
+        } else {
+            ensure_submitted();
+        }
         loop {
             match Future::poll(future.as_mut(), &mut task_ctx) {
                 Poll::Ready(res) => {
                     task_waker.wake(); // Don't drop it as it will panic.
                     return res;
                 }
-                Poll::Pending => poll_test_ring(None),
+                Poll::Pending => poll_test_ring(),
             }
         }
     }
