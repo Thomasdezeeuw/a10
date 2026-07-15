@@ -97,6 +97,11 @@ fn socket_option_recv_buf() {
     test_get_set_socket_option::<option::RecvBuf>(None, 4096, 8192);
 }
 
+#[test]
+fn socket_option_send_buf() {
+    test_get_set_socket_option::<option::SendBuf>(None, 4096, 8192);
+}
+
 fn test_get_set_socket_option<T>(
     expected_initial: Option<T::Output>,
     set: T::Value,
