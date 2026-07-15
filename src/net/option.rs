@@ -338,6 +338,23 @@ new_option! {
             value.cast_signed()
         }
     }
+
+    /// The time (in seconds) between individual keepalive probes.
+    #[doc(alias = "TCP_KEEPIDLE")]
+    pub TcpKeepAliveInterval {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_INTVL;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(

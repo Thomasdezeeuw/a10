@@ -138,6 +138,11 @@ fn socket_option_tcp_keep_alive_idle() {
     test_get_set_socket_option::<option::TcpKeepAliveIdle>(None, 1, 1);
 }
 
+#[test]
+fn socket_option_tcp_keep_alive_interval() {
+    test_get_set_socket_option::<option::TcpKeepAliveInterval>(None, 1, 1);
+}
+
 fn test_get_set_socket_option<T>(
     expected_initial: Option<T::Output>,
     set: T::Value,
