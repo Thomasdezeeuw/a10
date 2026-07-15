@@ -569,23 +569,19 @@ new_flag!(
         /// IPv4.
         ///
         /// See [`IPv4Opt`] for the options.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        IPV4 = libc::SOL_IP,
+        IPV4 = libc::IPPROTO_IP,
         /// IPv6.
         ///
         /// See [`IPv6Opt`] for the options.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        IPV6 = libc::SOL_IPV6,
+        IPV6 = libc::IPPROTO_IPV6,
         /// Transmission Control Protocol.
         ///
         /// See [`TcpOpt`] for the options.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        TCP = libc::SOL_TCP,
+        TCP = libc::IPPROTO_TCP,
         /// User Datagram Protocol.
         ///
         /// See [`UdpOpt`] for the options.
-        #[cfg(any(target_os = "android", target_os = "linux"))]
-        UDP = libc::SOL_UDP,
+        UDP = libc::IPPROTO_UDP,
     }
 
     /// Socket option.
@@ -905,7 +901,7 @@ new_flag!(
         KEEP_CNT = libc::TCP_KEEPCNT,
         /// The time (in seconds) the connection needs to remain idle before TCP
         /// starts sending keepalive probes.
-        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         KEEP_IDLE = libc::TCP_KEEPIDLE,
         /// The time (in seconds) between individual keepalive probes.
         #[cfg(not(target_os = "openbsd"))]

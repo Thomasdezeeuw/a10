@@ -8,7 +8,7 @@
 use std::io;
 use std::mem::MaybeUninit;
 
-use crate::net::{self, Level, Opt, SocketOpt};
+use crate::net::{self, Level, Opt, SocketOpt, TcpOpt};
 
 /// Trait that defines how get the value of a socket option.
 ///
@@ -190,6 +190,133 @@ new_option! {
             unsafe { net::Type(storage.assume_init()) }
         }
     }
+
+    /// Maximum receive buffer in bytes.
+    ///
+    /// Linux doubles this value (to allow space for bookkeeping overhead) when
+    /// it is set, and this doubled value is returned.
+    #[doc(alias = "SO_RCVBUF")]
+    pub RecvBuf {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::RECV_BUF;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
+
+    /// Maximum send buffer in bytes.
+    ///
+    /// Linux doubles this value (to allow space for bookkeeping overhead) when
+    /// it is set, and this doubled value is returned.
+    #[doc(alias = "SO_SNDBUF")]
+    pub SendBuf {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::SEND_BUF;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
+
+    /// Minimum number of bytes in the buffer until the socket layer will pass
+    /// the data to the user.
+    #[doc(alias = "RECV_LOW_WATER")]
+    pub RecvLowWater {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::RECV_LOW_WATER;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
+
+    /// Minimum number of bytes in the buffer until the socket layer will pass
+    /// the data to the protocol.
+    #[doc(alias = "SEND_LOW_WATER")]
+    pub SendLowWater {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::SEND_LOW_WATER;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+    }
+
+    /// Disable the Nagle algorithm.
+    #[doc(alias = "TCP_NODELAY")]
+    pub TcpNoDelay {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::NO_DELAY;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
+        }
+    }
+}
+
+#[cfg(not(target_os = "openbsd"))]
+new_option! {
+    /// The maximum number of keepalive probes TCP should send before dropping
+    /// the connection.
+    #[doc(alias = "TCP_KEEPCNT")]
+    pub TcpKeepAliveCount {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_CNT;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
+
+    /// The time (in seconds) between individual keepalive probes.
+    #[doc(alias = "TCP_KEEPINTVL")]
+    pub TcpKeepAliveInterval {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_INTVL;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(
@@ -238,6 +365,25 @@ new_option! {
             unsafe { storage.assume_init() >= 1 }
         }
     }
+
+    /// The time (in seconds) the connection needs to remain idle before TCP
+    /// starts sending keepalive probes, if the socket option [`KeepAlive`] has
+    /// been set on this socket.
+    #[doc(alias = "TCP_KEEPIDLE")]
+    pub TcpKeepAliveIdle {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_IDLE;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -257,6 +403,24 @@ new_option! {
 
         fn as_storage(value: u32) -> Self::Storage {
             value.cast_signed()
+        }
+    }
+
+    /// Don't send out partial frames. All queued partial frames are sent when
+    /// the option is cleared again.
+    #[doc(alias = "TCP_CORK")]
+    pub TcpCork {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::CORK;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
         }
     }
 }

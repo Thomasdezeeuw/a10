@@ -69,31 +69,94 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_incoming_cpu() {
-    test_get_set_socket_option::<option::IncomingCpu>(None, 0, Some(0));
+    test_get_set_socket_option::<option::IncomingCpu>(Some(None), 0, Some(0));
 }
 
 #[test]
 fn socket_option_reuse_address() {
-    test_get_set_socket_option::<option::ReuseAddress>(false, true, true);
+    test_get_set_socket_option::<option::ReuseAddress>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_reuse_port() {
-    test_get_set_socket_option::<option::ReusePort>(false, true, true);
+    test_get_set_socket_option::<option::ReusePort>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_keep_alive() {
-    test_get_set_socket_option::<option::KeepAlive>(false, true, true);
+    test_get_set_socket_option::<option::KeepAlive>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_linger() {
-    test_get_set_socket_option::<option::Linger>(None, Some(10), Some(10));
+    test_get_set_socket_option::<option::Linger>(Some(None), Some(10), Some(10));
 }
 
-fn test_get_set_socket_option<T>(expected_initial: T::Output, set: T::Value, expected: T::Output)
-where
+#[test]
+fn socket_option_recv_buf() {
+    let expected = 4096;
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    let expected = expected * 2;
+    test_get_set_socket_option::<option::RecvBuf>(None, 4096, expected);
+}
+
+#[test]
+fn socket_option_send_buf() {
+    let expected = 4096;
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    let expected = expected * 2;
+    test_get_set_socket_option::<option::SendBuf>(None, 4096, expected);
+}
+
+#[test]
+fn socket_option_recv_low_water() {
+    test_get_set_socket_option::<option::RecvLowWater>(None, 4096, 4096);
+}
+
+#[test]
+fn socket_option_send_low_water() {
+    test_socket_option::<option::SendLowWater, _>(|got| assert!(got >= 1));
+}
+
+#[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn socket_option_tcp_cork() {
+    test_get_set_socket_option::<option::TcpCork>(Some(false), true, true);
+}
+
+#[test]
+fn socket_option_tcp_no_delay() {
+    test_get_set_socket_option::<option::TcpNoDelay>(Some(false), true, true);
+}
+
+#[test]
+#[cfg(not(target_os = "openbsd"))]
+fn socket_option_tcp_keep_alive_count() {
+    test_get_set_socket_option::<option::TcpKeepAliveCount>(None, 10, 10);
+}
+
+#[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
+fn socket_option_tcp_keep_alive_idle() {
+    test_get_set_socket_option::<option::TcpKeepAliveIdle>(None, 1, 1);
+}
+
+#[test]
+#[cfg(not(target_os = "openbsd"))]
+fn socket_option_tcp_keep_alive_interval() {
+    test_get_set_socket_option::<option::TcpKeepAliveInterval>(None, 1, 1);
+}
+
+fn test_get_set_socket_option<T>(
+    expected_initial: Option<T::Output>,
+    set: T::Value,
+    expected: T::Output,
+) where
     T: option::Get + option::Set,
     T::Output: Eq + fmt::Debug,
 {
@@ -102,10 +165,12 @@ where
 
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
-    let got_initial = waker
-        .block_on(socket.socket_option::<T>())
-        .expect("failed to get initial socket option");
-    assert_eq!(got_initial, expected_initial);
+    if let Some(expected_initial) = expected_initial {
+        let got_initial = waker
+            .block_on(socket.socket_option::<T>())
+            .expect("failed to get initial socket option");
+        assert_eq!(got_initial, expected_initial);
+    }
 
     waker
         .block_on(socket.set_socket_option::<T>(set))

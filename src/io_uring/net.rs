@@ -9,7 +9,7 @@ use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
 use crate::io_uring::{libc, sq};
 use crate::net::{
     AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option,
+    SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2, sync_socket_option2,
 };
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
 
@@ -716,6 +716,21 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
         // getsockopt call.
         unsafe { T::init(value.0, n) }
     }
+
+    fn fallback(
+        fd: &AsyncFd,
+        _: Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if err.kind() == io::ErrorKind::Unsupported {
+            // io_uring doesn't support set any other level than SOL_SOCKET at
+            // the time of writing, so fallback to the synchronous version.
+            sync_socket_option2::<T>(fd.fd())
+        } else {
+            Err(err)
+        }
+    }
 }
 
 pub(crate) struct SetSocketOptionOp<T>(PhantomData<*const T>);
@@ -760,6 +775,21 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
         // NOTE: poisoned in fill_submission.
         asan::unpoison(ptr::from_ref(&value.0));
         debug_assert!(n == 0);
+    }
+
+    fn fallback(
+        fd: &AsyncFd,
+        value: Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if err.kind() == io::ErrorKind::Unsupported {
+            // io_uring doesn't support set any other level than SOL_SOCKET at
+            // the time of writing, so fallback to the synchronous version.
+            sync_set_socket_option2::<T>(fd.fd(), &value.0)
+        } else {
+            Err(err)
+        }
     }
 }
 
