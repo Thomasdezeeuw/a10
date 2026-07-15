@@ -190,6 +190,26 @@ new_option! {
             unsafe { net::Type(storage.assume_init()) }
         }
     }
+
+    /// Maximum receive buffer in bytes.
+    ///
+    /// Linux doubles this value (to allow space for bookkeeping overhead) when
+    /// it is set, and this doubled value is returned.
+    #[doc(alias = "SO_RCVBUF")]
+    pub RecvBuf {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::RECV_BUF;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(
