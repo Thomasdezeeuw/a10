@@ -128,6 +128,11 @@ fn socket_option_tcp_no_delay() {
     test_get_set_socket_option::<option::TcpNoDelay>(Some(false), true, true);
 }
 
+#[test]
+fn socket_option_tcp_keep_alive_count() {
+    test_get_set_socket_option::<option::TcpKeepAliveCount>(None, 10, 10);
+}
+
 fn test_get_set_socket_option<T>(
     expected_initial: Option<T::Output>,
     set: T::Value,

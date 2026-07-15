@@ -301,6 +301,24 @@ new_option! {
             value.into()
         }
     }
+
+    /// The maximum number of keepalive probes TCP should send before dropping
+    /// the connection.
+    #[doc(alias = "TCP_KEEPCNT")]
+    pub TcpKeepAliveCount {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_CNT;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(
