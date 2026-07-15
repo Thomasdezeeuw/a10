@@ -230,6 +230,24 @@ new_option! {
             value.cast_signed()
         }
     }
+
+    /// Minimum number of bytes in the buffer until the socket layer will pass
+    /// the data to the user.
+    #[doc(alias = "RECV_LOW_WATER")]
+    pub RecvLowWater {
+        type Storage = libc::c_int;
+        const LEVEL = Level::SOCKET;
+        const OPT = SocketOpt::RECV_LOW_WATER;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(

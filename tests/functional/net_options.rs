@@ -102,6 +102,11 @@ fn socket_option_send_buf() {
     test_get_set_socket_option::<option::SendBuf>(None, 4096, 8192);
 }
 
+#[test]
+fn socket_option_recv_low_water() {
+    test_get_set_socket_option::<option::RecvLowWater>(None, 4096, 4096);
+}
+
 fn test_get_set_socket_option<T>(
     expected_initial: Option<T::Output>,
     set: T::Value,
