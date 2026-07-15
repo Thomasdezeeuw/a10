@@ -107,6 +107,11 @@ fn socket_option_recv_low_water() {
     test_get_set_socket_option::<option::RecvLowWater>(None, 4096, 4096);
 }
 
+#[test]
+fn socket_option_send_low_water() {
+    test_socket_option::<option::SendLowWater, _>(|got| assert_eq!(got, 1));
+}
+
 fn test_get_set_socket_option<T>(
     expected_initial: Option<T::Output>,
     set: T::Value,
