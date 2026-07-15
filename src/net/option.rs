@@ -81,7 +81,6 @@ pub trait Set {
     fn as_storage(value: Self::Value) -> Self::Storage;
 }
 
-// Socket level options.
 new_option! {
     /// Get and clear the pending socket error.
     #[doc(alias = "SO_ERROR")]
@@ -263,27 +262,6 @@ new_option! {
             unsafe { storage.assume_init().cast_unsigned() }
         }
     }
-}
-
-// TCP level options.
-new_option! {
-    /// Don't send out partial frames. All queued partial frames are sent when
-    /// the option is cleared again.
-    #[doc(alias = "TCP_CORK")]
-    pub TcpCork {
-        type Storage = libc::c_int;
-        const LEVEL = Level::TCP;
-        const OPT = TcpOpt::CORK;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { storage.assume_init() >= 1 }
-        }
-
-        fn as_storage(value: bool) -> Self::Storage {
-            value.into()
-        }
-    }
 
     /// Disable the Nagle algorithm.
     #[doc(alias = "TCP_NODELAY")]
@@ -301,7 +279,10 @@ new_option! {
             value.into()
         }
     }
+}
 
+#[cfg(not(target_os = "openbsd"))]
+new_option! {
     /// The maximum number of keepalive probes TCP should send before dropping
     /// the connection.
     #[doc(alias = "TCP_KEEPCNT")]
@@ -320,27 +301,8 @@ new_option! {
         }
     }
 
-    /// The time (in seconds) the connection needs to remain idle before TCP
-    /// starts sending keepalive probes, if the socket option [`KeepAlive`] has
-    /// been set on this socket.
-    #[doc(alias = "TCP_KEEPIDLE")]
-    pub TcpKeepAliveIdle {
-        type Storage = libc::c_int;
-        const LEVEL = Level::TCP;
-        const OPT = TcpOpt::KEEP_IDLE;
-
-        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
-            assert!(length == size_of::<Self::Storage>() as u32);
-            unsafe { storage.assume_init().cast_unsigned() }
-        }
-
-        fn as_storage(value: u32) -> Self::Storage {
-            value.cast_signed()
-        }
-    }
-
     /// The time (in seconds) between individual keepalive probes.
-    #[doc(alias = "TCP_KEEPIDLE")]
+    #[doc(alias = "TCP_KEEPINTVL")]
     pub TcpKeepAliveInterval {
         type Storage = libc::c_int;
         const LEVEL = Level::TCP;
@@ -403,6 +365,25 @@ new_option! {
             unsafe { storage.assume_init() >= 1 }
         }
     }
+
+    /// The time (in seconds) the connection needs to remain idle before TCP
+    /// starts sending keepalive probes, if the socket option [`KeepAlive`] has
+    /// been set on this socket.
+    #[doc(alias = "TCP_KEEPIDLE")]
+    pub TcpKeepAliveIdle {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_IDLE;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -422,6 +403,24 @@ new_option! {
 
         fn as_storage(value: u32) -> Self::Storage {
             value.cast_signed()
+        }
+    }
+
+    /// Don't send out partial frames. All queued partial frames are sent when
+    /// the option is cleared again.
+    #[doc(alias = "TCP_CORK")]
+    pub TcpCork {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::CORK;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
         }
     }
 }

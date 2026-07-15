@@ -119,6 +119,7 @@ fn socket_option_send_low_water() {
 }
 
 #[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_tcp_cork() {
     test_get_set_socket_option::<option::TcpCork>(Some(false), true, true);
 }
@@ -129,16 +130,24 @@ fn socket_option_tcp_no_delay() {
 }
 
 #[test]
+#[cfg(not(target_os = "openbsd"))]
 fn socket_option_tcp_keep_alive_count() {
     test_get_set_socket_option::<option::TcpKeepAliveCount>(None, 10, 10);
 }
 
 #[test]
+#[cfg(any(
+    target_os = "android",
+    target_os = "freebsd",
+    target_os = "linux",
+    target_os = "netbsd"
+))]
 fn socket_option_tcp_keep_alive_idle() {
     test_get_set_socket_option::<option::TcpKeepAliveIdle>(None, 1, 1);
 }
 
 #[test]
+#[cfg(not(target_os = "openbsd"))]
 fn socket_option_tcp_keep_alive_interval() {
     test_get_set_socket_option::<option::TcpKeepAliveInterval>(None, 1, 1);
 }
