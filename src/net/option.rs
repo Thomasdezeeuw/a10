@@ -319,6 +319,25 @@ new_option! {
             value.cast_signed()
         }
     }
+
+    /// The time (in seconds) the connection needs to remain idle before TCP
+    /// starts sending keepalive probes, if the socket option [`KeepAlive`] has
+    /// been set on this socket.
+    #[doc(alias = "TCP_KEEPIDLE")]
+    pub TcpKeepAliveIdle {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::KEEP_IDLE;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init().cast_unsigned() }
+        }
+
+        fn as_storage(value: u32) -> Self::Storage {
+            value.cast_signed()
+        }
+    }
 }
 
 #[cfg(any(
