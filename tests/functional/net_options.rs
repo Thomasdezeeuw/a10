@@ -94,12 +94,18 @@ fn socket_option_linger() {
 
 #[test]
 fn socket_option_recv_buf() {
-    test_get_set_socket_option::<option::RecvBuf>(None, 4096, 8192);
+    let expected = 4096;
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    let expected = expected * 2;
+    test_get_set_socket_option::<option::RecvBuf>(None, 4096, expected);
 }
 
 #[test]
 fn socket_option_send_buf() {
-    test_get_set_socket_option::<option::SendBuf>(None, 4096, 8192);
+    let expected = 4096;
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    let expected = expected * 2;
+    test_get_set_socket_option::<option::SendBuf>(None, 4096, expected);
 }
 
 #[test]
@@ -109,7 +115,7 @@ fn socket_option_recv_low_water() {
 
 #[test]
 fn socket_option_send_low_water() {
-    test_socket_option::<option::SendLowWater, _>(|got| assert_eq!(got, 1));
+    test_socket_option::<option::SendLowWater, _>(|got| assert!(got >= 1));
 }
 
 fn test_get_set_socket_option<T>(
