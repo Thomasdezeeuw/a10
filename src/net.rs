@@ -901,7 +901,7 @@ new_flag!(
         KEEP_CNT = libc::TCP_KEEPCNT,
         /// The time (in seconds) the connection needs to remain idle before TCP
         /// starts sending keepalive probes.
-        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux"))]
+        #[cfg(any(target_os = "android", target_os = "freebsd", target_os = "linux", target_os = "netbsd"))]
         KEEP_IDLE = libc::TCP_KEEPIDLE,
         /// The time (in seconds) between individual keepalive probes.
         #[cfg(not(target_os = "openbsd"))]
