@@ -8,7 +8,7 @@
 use std::io;
 use std::mem::MaybeUninit;
 
-use crate::net::{self, Level, Opt, SocketOpt};
+use crate::net::{self, Level, Opt, SocketOpt, TcpOpt};
 
 /// Trait that defines how get the value of a socket option.
 ///
@@ -81,6 +81,7 @@ pub trait Set {
     fn as_storage(value: Self::Value) -> Self::Storage;
 }
 
+// Socket level options.
 new_option! {
     /// Get and clear the pending socket error.
     #[doc(alias = "SO_ERROR")]
@@ -260,6 +261,27 @@ new_option! {
         unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> u32 {
             assert!(length == size_of::<Self::Storage>() as u32);
             unsafe { storage.assume_init().cast_unsigned() }
+        }
+    }
+}
+
+// TCP level options.
+new_option! {
+    /// Don't send out partial frames. All queued partial frames are sent when
+    /// the option is cleared again.
+    #[doc(alias = "TCP_CORK")]
+    pub TcpCork {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::CORK;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
         }
     }
 }
