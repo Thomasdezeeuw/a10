@@ -284,6 +284,23 @@ new_option! {
             value.into()
         }
     }
+
+    /// Disable the Nagle algorithm.
+    #[doc(alias = "TCP_NODELAY")]
+    pub TcpNoDelay {
+        type Storage = libc::c_int;
+        const LEVEL = Level::TCP;
+        const OPT = TcpOpt::NO_DELAY;
+
+        unsafe fn init(storage: MaybeUninit<Self::Storage>, length: u32) -> bool {
+            assert!(length == size_of::<Self::Storage>() as u32);
+            unsafe { storage.assume_init() >= 1 }
+        }
+
+        fn as_storage(value: bool) -> Self::Storage {
+            value.into()
+        }
+    }
 }
 
 #[cfg(any(
