@@ -69,31 +69,34 @@ fn test_socket_option<T: option::Get, F: FnOnce(T::Output)>(assert: F) {
 #[test]
 #[cfg(any(target_os = "android", target_os = "linux"))]
 fn socket_option_incoming_cpu() {
-    test_get_set_socket_option::<option::IncomingCpu>(None, 0, Some(0));
+    test_get_set_socket_option::<option::IncomingCpu>(Some(None), 0, Some(0));
 }
 
 #[test]
 fn socket_option_reuse_address() {
-    test_get_set_socket_option::<option::ReuseAddress>(false, true, true);
+    test_get_set_socket_option::<option::ReuseAddress>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_reuse_port() {
-    test_get_set_socket_option::<option::ReusePort>(false, true, true);
+    test_get_set_socket_option::<option::ReusePort>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_keep_alive() {
-    test_get_set_socket_option::<option::KeepAlive>(false, true, true);
+    test_get_set_socket_option::<option::KeepAlive>(Some(false), true, true);
 }
 
 #[test]
 fn socket_option_linger() {
-    test_get_set_socket_option::<option::Linger>(None, Some(10), Some(10));
+    test_get_set_socket_option::<option::Linger>(Some(None), Some(10), Some(10));
 }
 
-fn test_get_set_socket_option<T>(expected_initial: T::Output, set: T::Value, expected: T::Output)
-where
+fn test_get_set_socket_option<T>(
+    expected_initial: Option<T::Output>,
+    set: T::Value,
+    expected: T::Output,
+) where
     T: option::Get + option::Set,
     T::Output: Eq + fmt::Debug,
 {
@@ -102,10 +105,12 @@ where
 
     let socket = waker.block_on(new_socket(sq, Domain::IPV4, Type::STREAM, None));
 
-    let got_initial = waker
-        .block_on(socket.socket_option::<T>())
-        .expect("failed to get initial socket option");
-    assert_eq!(got_initial, expected_initial);
+    if let Some(expected_initial) = expected_initial {
+        let got_initial = waker
+            .block_on(socket.socket_option::<T>())
+            .expect("failed to get initial socket option");
+        assert_eq!(got_initial, expected_initial);
+    }
 
     waker
         .block_on(socket.set_socket_option::<T>(set))
