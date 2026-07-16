@@ -7,7 +7,7 @@ use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::{self, libc, sq};
 use crate::op::operation;
 use crate::process::{Signal, SignalSet, Signals, WaitInfo, WaitOn, WaitOption};
-use crate::{AsyncFd, SubmissionQueue, fd, syscall};
+use crate::{AsyncFd, SubmissionQueue, fd, msan, syscall};
 
 pub(crate) struct WaitIdOp;
 
@@ -124,7 +124,8 @@ impl FdOp for ReceiveSignalOp {
 
     fn map_ok(_: &AsyncFd, info: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == size_of::<libc::signalfd_siginfo>() as u32);
-        // SAFETY: initialised the info above.
+        // SAFETY: kernel initialised the info for us.
+        msan::unpoison_region(ptr::from_ref(&info).cast(), n as usize);
         unsafe { info.assume_init() }
     }
 }
