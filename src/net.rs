@@ -1781,7 +1781,7 @@ impl SocketAddress for unix::net::SocketAddr {
         let family = unsafe { ptr::addr_of!((*storage.as_ptr()).sun_family).read() };
         debug_assert!(family == libc::AF_UNIX as libc::sa_family_t);
         let path_ptr = unsafe { ptr::addr_of!((*storage.as_ptr()).sun_path) };
-        let length = length as usize - (storage.as_ptr().addr() - path_ptr.addr());
+        let length = length as usize - (path_ptr.addr() - storage.as_ptr().addr());
         // SAFETY: the kernel ensures that at least `length` bytes are
         // initialised.
         let path = unsafe { slice::from_raw_parts::<u8>(path_ptr.cast(), length) };
