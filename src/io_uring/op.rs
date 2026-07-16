@@ -145,7 +145,7 @@ impl<T, R, A> OpState for State<T, R, A> {
     }
 
     fn resources_mut(&mut self) -> Option<&mut Self::Resources> {
-        // SAFETY: when the operation hasn't started we're ensure that we have
+        // SAFETY: when the operation hasn't started we're ensured that we have
         // unique access to all the state date.
         let data = unsafe { self.data.as_ref() };
         if let Status::NotStarted = lock(&data.shared).status {
@@ -168,7 +168,7 @@ impl<T, R, A> OpState for State<T, R, A> {
     }
 
     fn args_mut(&mut self) -> Option<&mut Self::Args> {
-        // SAFETY: when the operation hasn't started we're ensure that we have
+        // SAFETY: when the operation hasn't started we're ensured that we have
         // unique access to all the state date.
         let data = unsafe { self.data.as_ref() };
         if let Status::NotStarted = lock(&data.shared).status {

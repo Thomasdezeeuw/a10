@@ -64,7 +64,7 @@ impl IoSlice {
     }
 
     pub(crate) const fn as_bytes(&self) -> &[u8] {
-        // SAFETY: on creation we've ensure that `iov_base` and `iov_len` are
+        // SAFETY: on creation we've ensured that `iov_base` and `iov_len` are
         // valid.
         unsafe { std::slice::from_raw_parts(self.0.iov_base.cast(), self.0.iov_len) }
     }

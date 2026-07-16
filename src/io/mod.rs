@@ -282,7 +282,7 @@ impl AsyncFd {
         // We deconstruct `self` without dropping it to avoid closing the fd
         // twice.
         let this = ManuallyDrop::new(self);
-        // SAFETY: this is safe because we're ensure the pointers are valid and
+        // SAFETY: this is safe because we're ensured the pointers are valid and
         // not touching `this` after reading the fields.
         let fd = this.fd();
         let kind = this.kind();

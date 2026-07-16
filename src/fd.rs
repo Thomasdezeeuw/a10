@@ -64,7 +64,7 @@ impl AsyncFd {
     ///
     /// `fd` is expected to be a regular file descriptor.
     pub fn new(fd: OwnedFd, sq: SubmissionQueue) -> AsyncFd {
-        // SAFETY: OwnedFd ensure that `fd` is valid.
+        // SAFETY: OwnedFd ensures that `fd` is valid.
         unsafe { AsyncFd::from_raw_fd(fd.into_raw_fd(), sq) }
     }
 

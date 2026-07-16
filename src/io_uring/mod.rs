@@ -292,7 +292,7 @@ fn mmap(
 ) -> io::Result<ptr::NonNull<libc::c_void>> {
     let addr = match unsafe { libc::mmap(ptr::null_mut(), len, prot, flags, fd, offset) } {
         libc::MAP_FAILED => return Err(io::Error::last_os_error()),
-        // SAFETY: mmap ensure the pointer is not null.
+        // SAFETY: mmap ensures the pointer is not null.
         addr => unsafe { ptr::NonNull::new_unchecked(addr) },
     };
 

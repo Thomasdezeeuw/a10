@@ -321,8 +321,8 @@ impl ReadBuf {
     /// This is automatically called in the `Drop` implementation.
     pub fn release(&mut self) {
         if let Some(ptr) = self.owned.take() {
-            // SAFETY: this is safe because we're taking the address ensure we
-            // can't call this method again.
+            // SAFETY: this is safe because we're taking the address to ensure
+            // we can't call this method again.
             unsafe { self.shared.release(ptr) }
         }
     }

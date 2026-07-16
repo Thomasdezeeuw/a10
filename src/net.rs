@@ -315,7 +315,7 @@ impl AsyncFd {
         &'fd self,
         mut buf: B,
     ) -> RecvFrom<'fd, B, A> {
-        // SAFETY: we're ensure that `iovec` doesn't outlive the `buf`fer.
+        // SAFETY: we're ensured that `iovec` doesn't outlive the `buf`fer.
         let iovec = unsafe { IoMutSlice::new(&mut buf) };
         let resources = (buf, MsgHeader::empty(), iovec, MaybeUninit::uninit());
         RecvFrom::new(self, resources, RecvFlag(0))
