@@ -10,7 +10,7 @@ use std::{io, slice};
 use crate::io::{
     Buf, BufId, BufMut, BufMutParts, BufMutSlice, BufSlice, ReadBuf, SpliceDirection, SpliceFlag,
 };
-use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn};
+use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn, fallback};
 use crate::io_uring::{self, libc, sq};
 use crate::{AsyncFd, SubmissionQueue, asan, fd, lock, msan};
 
@@ -340,7 +340,7 @@ impl<B: BufMut> FdOp for ReadOp<B> {
                     addr: ptr.addr() as u64,
                 };
                 submission.0.len = len;
-                // NOTE: unpoisoned in map_ok.
+                // NOTE: unpoisoned in map_ok or fallback.
                 asan::poison_region(ptr.cast(), len as usize);
             }
             BufMutParts::Pool(PoolBufParts(buf_group)) => {
@@ -362,6 +362,19 @@ impl<B: BufMut> FdOp for ReadOp<B> {
             unsafe { buf.set_init(n as usize) };
         }
         buf
+    }
+
+    fn fallback(
+        _: &AsyncFd,
+        mut buf: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        if let BufMutParts::Buf { ptr, len } = buf.parts() {
+            // NOTE: poisoned in fill_submission.
+            asan::unpoison_region(ptr.cast(), len as usize);
+        }
+        Err(fallback(err))
     }
 }
 
@@ -416,9 +429,9 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: iovecs.as_mut_ptr().addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok.
-        asan::poison_iovecs_mut(iovecs);
         submission.0.len = iovecs.len() as u32;
+        // NOTE: unpoisoned in map_ok or fallback.
+        asan::poison_iovecs_mut(iovecs);
     }
 
     fn map_ok(_: &AsyncFd, (mut bufs, iovecs): Self::Resources, (_, n): OpReturn) -> Self::Output {
@@ -428,6 +441,17 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for ReadVectoredOp<B, N> {
         // SAFETY: kernel just initialised the buffers for us.
         unsafe { bufs.set_init(n as usize) };
         bufs
+    }
+
+    fn fallback(
+        _: &AsyncFd,
+        (_, iovecs): Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_iovecs_mut(&iovecs);
+        Err(fallback(err))
     }
 }
 
@@ -451,13 +475,25 @@ impl<B: Buf> FdOp for WriteOp<B> {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: ptr.addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok_extract.
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
         asan::poison_region(ptr.cast(), len as usize);
         submission.0.len = len;
     }
 
     fn map_ok(fd: &AsyncFd, buf: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(fd, buf, ret).1
+    }
+
+    fn fallback(
+        _: &AsyncFd,
+        buf: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        let (ptr, len) = unsafe { buf.parts() };
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_region(ptr.cast(), len as usize);
+        Err(fallback(err))
     }
 }
 
@@ -469,6 +505,18 @@ impl<B: Buf> FdOpExtract for WriteOp<B> {
         // NOTE: poisoned in fill_submission.
         asan::unpoison_region(ptr.cast(), len as usize);
         (buf, n as usize)
+    }
+
+    fn fallback_extract(
+        _: &AsyncFd,
+        buf: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        let (ptr, len) = unsafe { buf.parts() };
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_region(ptr.cast(), len as usize);
+        Err(fallback(err))
     }
 }
 
@@ -492,10 +540,23 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
             addr: iovecs.as_ptr().addr() as u64,
         };
         submission.0.len = iovecs.len() as u32;
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
+        asan::poison_iovecs(iovecs);
     }
 
     fn map_ok(fd: &AsyncFd, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(fd, resources, ret).1
+    }
+
+    fn fallback(
+        _: &AsyncFd,
+        (_, iovecs): Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_iovecs(&iovecs);
+        Err(fallback(err))
     }
 }
 
@@ -504,10 +565,23 @@ impl<B: BufSlice<N>, const N: usize> FdOpExtract for WriteVectoredOp<B, N> {
 
     fn map_ok_extract(
         _: &AsyncFd,
-        (buf, _): Self::Resources,
+        (buf, iovecs): Self::Resources,
         (_, n): OpReturn,
     ) -> Self::ExtractOutput {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_iovecs(&iovecs);
         (buf, n as usize)
+    }
+
+    fn fallback_extract(
+        _: &AsyncFd,
+        (_, iovecs): Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_iovecs(&iovecs);
+        Err(fallback(err))
     }
 }
 

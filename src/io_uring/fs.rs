@@ -1,14 +1,14 @@
 use std::ffi::CString;
 use std::os::fd::RawFd;
 use std::path::PathBuf;
-use std::ptr;
 use std::time::{Duration, SystemTime};
+use std::{io, ptr};
 
 use crate::fs::{
     AdviseFlag, AllocateMode, FileType, Metadata, MetadataInterest, Permissions, RemoveFlag,
     SyncDataFlag, path_from_cstring,
 };
-use crate::io_uring::op::{FdOp, Op, OpExtract, OpReturn};
+use crate::io_uring::op::{FdOp, Op, OpExtract, OpReturn, fallback};
 use crate::io_uring::{libc, sq};
 use crate::{AsyncFd, SubmissionQueue, asan, fd};
 
@@ -30,7 +30,7 @@ impl Op for OpenOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok_extract.
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
         asan::poison_cstring(path);
         submission.0.len = *mode;
         submission.0.__bindgen_anon_3 = libc::io_uring_sqe__bindgen_ty_3 {
@@ -42,6 +42,17 @@ impl Op for OpenOp {
     #[allow(clippy::cast_possible_wrap)]
     fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(sq, resources, ret).0
+    }
+
+    fn fallback(
+        _: &SubmissionQueue,
+        (path, _): Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 
@@ -60,6 +71,17 @@ impl OpExtract for OpenOp {
         let fd = unsafe { AsyncFd::from_raw(fd as RawFd, fd_kind, sq.clone()) };
         let path = path_from_cstring(path);
         (fd, path)
+    }
+
+    fn fallback_extract(
+        _: &SubmissionQueue,
+        (path, _): Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 
@@ -80,13 +102,24 @@ impl Op for CreateDirOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok_extract.
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
         asan::poison_cstring(path);
         submission.0.len = 0o777; // Same as used by the standard library.
     }
 
     fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(sq, resources, ret);
+    }
+
+    fn fallback(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 
@@ -102,6 +135,17 @@ impl OpExtract for CreateDirOp {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
+    }
+
+    fn fallback_extract(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 
@@ -126,7 +170,7 @@ impl Op for RenameOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: from.as_ptr().addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok_extract.
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
         asan::poison_cstring(to);
         asan::poison_cstring(from);
         submission.0.len = libc::AT_FDCWD as u32;
@@ -134,6 +178,18 @@ impl Op for RenameOp {
 
     fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(sq, resources, ret);
+    }
+
+    fn fallback(
+        _: &SubmissionQueue,
+        (from, to): Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&from);
+        asan::unpoison_cstring(&to);
+        Err(fallback(err))
     }
 }
 
@@ -150,6 +206,18 @@ impl OpExtract for RenameOp {
         asan::unpoison_cstring(&to);
         debug_assert!(n == 0);
         (path_from_cstring(from), path_from_cstring(to))
+    }
+
+    fn fallback_extract(
+        _: &SubmissionQueue,
+        (from, to): Self::Resources,
+        (): &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&from);
+        asan::unpoison_cstring(&to);
+        Err(fallback(err))
     }
 }
 
@@ -171,7 +239,7 @@ impl Op for DeleteOp {
         submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
             addr: path.as_ptr().addr() as u64,
         };
-        // NOTE: unpoisoned in map_ok_extract.
+        // NOTE: unpoisoned in map_ok_extract or fallback(_extract).
         asan::poison_cstring(path);
         let flags = match flags {
             RemoveFlag::File => 0,
@@ -184,6 +252,17 @@ impl Op for DeleteOp {
 
     fn map_ok(sq: &SubmissionQueue, resources: Self::Resources, ret: OpReturn) -> Self::Output {
         Self::map_ok_extract(sq, resources, ret);
+    }
+
+    fn fallback(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 
@@ -199,6 +278,17 @@ impl OpExtract for DeleteOp {
         asan::unpoison_cstring(&path);
         debug_assert!(n == 0);
         path_from_cstring(path)
+    }
+
+    fn fallback_extract(
+        _: &SubmissionQueue,
+        path: Self::Resources,
+        _: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        // NOTE: poisoned in fill_submission.
+        asan::unpoison_cstring(&path);
+        Err(fallback(err))
     }
 }
 

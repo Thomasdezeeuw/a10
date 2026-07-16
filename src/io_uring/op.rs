@@ -524,6 +524,20 @@ pub(crate) trait OpExtract: Op {
         resources: Self::Resources,
         op_return: OpReturn,
     ) -> Self::ExtractOutput;
+
+    /// Same as [`Op::fallback`], returning the extract output.
+    fn fallback_extract(
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        _ = sq;
+        _ = resources;
+        _ = args;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: Op + OpExtract> crate::op::OpExtract for T {
@@ -540,7 +554,7 @@ impl<T: Op + OpExtract> crate::op::OpExtract for T {
             ctx,
             |_, resources, args, submission| T::fill_submission(resources, args, submission),
             T::map_ok_extract,
-            |_, _, _, err| Err(fallback(err)),
+            T::fallback_extract,
         )
     }
 }
@@ -594,12 +608,26 @@ impl<T: FdOp> crate::op::FdOp for T {
 pub(crate) trait FdOpExtract: FdOp {
     type ExtractOutput;
 
-    /// Same as [`Op::map_ok`], returning the extract output.
+    /// Same as [`FdOp::map_ok`], returning the extract output.
     fn map_ok_extract(
         fd: &AsyncFd,
         resources: Self::Resources,
         op_return: OpReturn,
     ) -> Self::ExtractOutput;
+
+    /// Same as [`FdOp::fallback`], returning the extract output.
+    fn fallback_extract(
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::ExtractOutput> {
+        _ = fd;
+        _ = resources;
+        _ = args;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
@@ -616,7 +644,7 @@ impl<T: FdOp + FdOpExtract> crate::op::FdOpExtract for T {
             ctx,
             T::fill_submission,
             T::map_ok_extract,
-            |_, _, _, err| Err(fallback(err)),
+            T::fallback_extract,
         )
     }
 }
@@ -638,6 +666,20 @@ pub(crate) trait FdIter {
     /// Meaning it only have a reference to the resources and doesn't take
     /// ownership of it.
     fn map_next(fd: &AsyncFd, resources: &Self::Resources, op_return: OpReturn) -> Self::Output;
+
+    /// Same as [`FdOp::fallback`].
+    fn fallback(
+        fd: &AsyncFd,
+        resources: &Self::Resources,
+        args: &mut Self::Args,
+        err: io::Error,
+    ) -> io::Result<Self::Output> {
+        _ = fd;
+        _ = resources;
+        _ = args;
+        _ = err;
+        Err(fallback(err))
+    }
 }
 
 impl<T: FdIter> crate::op::FdIter for T {
@@ -651,14 +693,7 @@ impl<T: FdIter> crate::op::FdIter for T {
         ctx: &mut task::Context<'_>,
         fd: &AsyncFd,
     ) -> Poll<Option<Self::Output>> {
-        poll_next(
-            fd,
-            state,
-            ctx,
-            T::fill_submission,
-            T::map_next,
-            |_, _, _, err| Err(fallback(err)),
-        )
+        poll_next(fd, state, ctx, T::fill_submission, T::map_next, T::fallback)
     }
 }
 
