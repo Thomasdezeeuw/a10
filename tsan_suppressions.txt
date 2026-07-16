@@ -42,3 +42,22 @@ race:a10::io_uring::op::State*new
 # No idea why this function is causing false positive as it's only using stack
 # memory.
 race:functional::util::raw_pipe
+
+# Another weird case, which I think is a false positive. Both the mmap and pipe2
+# functions/system calls only use stack memory, but somehow a data race is
+# detected.
+#
+# WARNING: ThreadSanitizer: data race (pid=555539)
+#   Read of size 8 at 0x72b000000140 by thread T227:
+#     #0 mmap <null> (functional-0dcdd2faa0241176+0x2d32fb) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #1 a10::io_uring::mmap /home/thomas/src/a10/src/io_uring/mod.rs:293:31 (functional-0dcdd2faa0241176+0x774cac) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #2 <a10::io_uring::Shared>::new /home/thomas/src/a10/src/io_uring/mod.rs:95:31 (functional-0dcdd2faa0241176+0x773752) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #3 <a10::config::Config>::build_sys /home/thomas/src/a10/src/io_uring/config.rs:274:22 (functional-0dcdd2faa0241176+0x790286) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #4 <a10::config::Config>::build /home/thomas/src/a10/src/config.rs:22:29 (functional-0dcdd2faa0241176+0x78f4e0) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #5 <a10::Ring>::new /home/thomas/src/a10/src/lib.rs:168:24 (functional-0dcdd2faa0241176+0x79821a) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#
+#   Previous write of size 8 at 0x72b000000140 by thread T214:
+#     #0 pipe2 <null> (functional-0dcdd2faa0241176+0x2a0aa9) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #1 a10::pipe::sync_pipe2 /home/thomas/src/a10/src/lib.rs:286:28 (functional-0dcdd2faa0241176+0x77a7cb) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+#     #2 a10::pipe::sync_pipe /home/thomas/src/a10/src/pipe.rs:96:5 (functional-0dcdd2faa0241176+0x77aa97) (BuildId: 39f64565ad8fcf78b360d3e161c8f5400bab0d13)
+race:a10::pipe::sync_pipe2
