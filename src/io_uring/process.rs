@@ -41,6 +41,8 @@ impl Op for WaitIdOp {
 
     fn map_ok(_: &SubmissionQueue, info: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
+        // SAFETY: kernel initialised the info for us.
+        msan::unpoison_region(ptr::from_ref(&info).cast(), size_of::<WaitInfo>());
         info
     }
 }
