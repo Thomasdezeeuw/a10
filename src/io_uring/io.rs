@@ -351,11 +351,11 @@ impl<B: BufMut> FdOp for ReadOp<B> {
     }
 
     fn map_ok(_: &AsyncFd, mut buf: Self::Resources, (flags, n): OpReturn) -> Self::Output {
-        let (ptr, len) = unsafe { buf.parts_mut() };
         // SAFETY: kernel just initialised the bytes for us.
         if let Some(buf_id) = flags.buf_id() {
             unsafe { buf.buffer_init(buf_id, n) };
         } else {
+            let (ptr, len) = unsafe { buf.parts_mut() };
             // NOTE: poisoned in fill_submission.
             asan::unpoison_region(ptr.cast(), len as usize);
             msan::unpoison_region(ptr.cast(), n as usize);
@@ -485,15 +485,12 @@ impl<B: Buf> FdOp for WriteOp<B> {
     }
 
     fn fallback(
-        _: &AsyncFd,
-        buf: Self::Resources,
-        _: &mut Self::Args,
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        let (ptr, len) = unsafe { buf.parts() };
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_region(ptr.cast(), len as usize);
-        Err(fallback(err))
+        Self::fallback_extract(fd, resources, args, err).map(|(_, n)| n)
     }
 }
 
@@ -549,14 +546,12 @@ impl<B: BufSlice<N>, const N: usize> FdOp for WriteVectoredOp<B, N> {
     }
 
     fn fallback(
-        _: &AsyncFd,
-        (_, iovecs): Self::Resources,
-        _: &mut Self::Args,
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_iovecs(&iovecs);
-        Err(fallback(err))
+        Self::fallback_extract(fd, resources, args, err).map(|(_, n)| n)
     }
 }
 

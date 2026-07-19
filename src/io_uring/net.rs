@@ -520,15 +520,12 @@ impl<B: Buf> FdOp for SendOp<B> {
     }
 
     fn fallback(
-        _: &AsyncFd,
-        buf: Self::Resources,
-        _: &mut Self::Args,
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        let (ptr, len) = unsafe { buf.parts() };
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_region(ptr.cast(), len as usize);
-        Err(fallback(err))
+        Self::fallback_extract(fd, resources, args, err).map(|(_, n)| n)
     }
 }
 
@@ -592,15 +589,12 @@ impl<B: Buf, A: SocketAddress> FdOp for SendToOp<B, A> {
     }
 
     fn fallback(
-        _: &AsyncFd,
-        (buf, _): Self::Resources,
-        _: &mut Self::Args,
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        let (buf_ptr, buf_len) = unsafe { buf.parts() };
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_region(buf_ptr.cast(), buf_len as usize);
-        Err(fallback(err))
+        Self::fallback_extract(fd, resources, args, err).map(|(_, n)| n)
     }
 }
 
@@ -672,14 +666,12 @@ impl<B: BufSlice<N>, A: SocketAddress, const N: usize> FdOp for SendMsgOp<B, A, 
     }
 
     fn fallback(
-        _: &AsyncFd,
-        (_, _, iovecs, _): Self::Resources,
-        _: &mut Self::Args,
+        fd: &AsyncFd,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_iovecs(&iovecs);
-        Err(fallback(err))
+        Self::fallback_extract(fd, resources, args, err).map(|(_, n)| n)
     }
 }
 

@@ -45,14 +45,12 @@ impl Op for OpenOp {
     }
 
     fn fallback(
-        _: &SubmissionQueue,
-        (path, _): Self::Resources,
-        _: &mut Self::Args,
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_cstring(&path);
-        Err(fallback(err))
+        Self::fallback_extract(sq, resources, args, err).map(|(fd, _)| fd)
     }
 }
 
@@ -112,14 +110,13 @@ impl Op for CreateDirOp {
     }
 
     fn fallback(
-        _: &SubmissionQueue,
-        path: Self::Resources,
-        (): &mut Self::Args,
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_cstring(&path);
-        Err(fallback(err))
+        Self::fallback_extract(sq, resources, args, err)?;
+        Ok(())
     }
 }
 
@@ -181,15 +178,13 @@ impl Op for RenameOp {
     }
 
     fn fallback(
-        _: &SubmissionQueue,
-        (from, to): Self::Resources,
-        (): &mut Self::Args,
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_cstring(&from);
-        asan::unpoison_cstring(&to);
-        Err(fallback(err))
+        Self::fallback_extract(sq, resources, args, err)?;
+        Ok(())
     }
 }
 
@@ -255,14 +250,13 @@ impl Op for DeleteOp {
     }
 
     fn fallback(
-        _: &SubmissionQueue,
-        path: Self::Resources,
-        _: &mut Self::Args,
+        sq: &SubmissionQueue,
+        resources: Self::Resources,
+        args: &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison_cstring(&path);
-        Err(fallback(err))
+        Self::fallback_extract(sq, resources, args, err)?;
+        Ok(())
     }
 }
 
