@@ -87,8 +87,6 @@ pub(super) struct Shared<T> {
     status: Status<T>,
     /// Waker to wake when the operation is done or made actionable progress.
     waker: Option<task::Waker>,
-    /// Function to drop [`Data`], see `Data` docs for safety.
-    drop: unsafe fn(*mut ()),
 }
 
 #[derive(Debug)]
@@ -101,7 +99,11 @@ enum Status<T> {
     Done { results: T },
     /// The connected `Future`/`AsyncIterator` is dropped and thus no longer
     /// will retrieve the result.
-    Dropped,
+    Dropped {
+        /// Type erased version of [`drop_state`] to drop [`Data`]. See the
+        /// documentation at the start of the module.
+        drop: unsafe fn(*mut ()),
+    },
     /// Last state where the operation was fully cleaned up.
     Complete,
 }
@@ -132,7 +134,6 @@ impl<T, R, A> OpState for State<T, R, A> {
             shared: Mutex::new(Shared {
                 status: Status::<T>::NotStarted,
                 waker: None,
-                drop: drop_state::<T, R, A>,
             }),
             tail: Tail {
                 resources: UnsafeCell::new(MaybeUninit::new(resources)),
@@ -190,7 +191,9 @@ impl<T, R, A> OpState for State<T, R, A> {
                 // Operation is still running, mark the status as dropped and
                 // delay the dropping until the operation is done. This is done
                 // in [`Shared::update`].
-                shared.status = Status::Dropped;
+                shared.status = Status::Dropped {
+                    drop: drop_state::<T, R, A>,
+                };
                 unlock(shared);
                 return;
             }
@@ -280,11 +283,11 @@ impl<T: OpResult> Shared<T> {
                     StatusUpdate::Ok
                 }
             }
-            Status::Dropped => {
+            Status::Dropped { drop } => {
                 if completion.complete() {
                     // Future is dropped and the operation is complete, we can
                     // safely drop the state.
-                    StatusUpdate::Drop { drop: self.drop }
+                    StatusUpdate::Drop { drop: *drop }
                 } else {
                     // More completions are coming, so we can't deallocate yet.
                     StatusUpdate::Ok
@@ -926,7 +929,7 @@ where
             }
             // Only the Future sets the Dropped status, which is also the only one
             // that calls this function, so this should be unreachable.
-            Status::Dropped => {
+            Status::Dropped { drop: _ } => {
                 unlock(shared);
                 unreachable!()
             }
