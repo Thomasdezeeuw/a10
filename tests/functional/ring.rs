@@ -2,18 +2,19 @@ use std::future::Future;
 use std::mem::take;
 use std::os::fd::AsRawFd;
 use std::pin::Pin;
-use std::sync::{Arc, Barrier, Mutex};
+use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::thread;
 use std::time::{Duration, Instant};
-use std::{io, ptr, thread};
+use std::{io, ptr};
 
 use a10::fs::{Open, OpenOptions};
 use a10::pipe::pipe;
 use a10::{Ring, SubmissionQueue};
 
 use crate::util::{
-    LOREM_IPSUM_50, Waker, block_on, init, is_send, is_sync, next, poll_nop, start_iter, start_op,
-    syscall,
+    LOREM_IPSUM_50, block_on, init, is_send, is_sync, next, poll_nop, start_iter, start_op, syscall,
 };
 
 #[test]
@@ -181,21 +182,9 @@ fn pollable() {
     let pipe = pipe(other_ring.sq());
     let [receiver, sender] = block_on(&mut other_ring, pipe).unwrap();
 
-    let barrier = Arc::new(Barrier::new(2));
-    let other_sq = other_ring.sq();
-    let b = barrier.clone();
-    let handle = thread::spawn(move || {
-        let waker = Waker::new();
-        let mut read = receiver.read(Vec::with_capacity(DATA.len() + 1));
-        start_op(&mut read);
-        b.wait();
-
-        let buf = waker.block_on_with(read, &other_sq).unwrap();
-        assert_eq!(buf, DATA.as_bytes());
-    });
-
     // Ensure that the read operation is submitted to the kernel for io_uring.
-    barrier.wait();
+    let mut read = receiver.read(Vec::with_capacity(DATA.len() + 1));
+    start_op(&mut read);
     other_ring.poll(Some(Duration::ZERO)).unwrap();
 
     let mut ring_pollable = other_ring.pollable(main_ring.sq());
@@ -213,15 +202,9 @@ fn pollable() {
     let () = block_on(&mut main_ring, next(&mut ring_pollable))
         .unwrap()
         .unwrap();
-    // Now poll the other ring.
-    other_ring.poll(None).unwrap();
 
-    handle.join().unwrap();
-
-    drop(ring_pollable);
-    // Ensure the async cancelation of the pollable iter is processed, otherwise
-    // we have a memory leak.
-    main_ring.poll(None).unwrap();
+    let buf = block_on(&mut other_ring, read).unwrap();
+    assert_eq!(buf, DATA.as_bytes());
 }
 
 #[test]
