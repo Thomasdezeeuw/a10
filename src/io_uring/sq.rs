@@ -210,7 +210,7 @@ impl Submission {
     /// [`reset`]: Submission::reset
     #[cfg(debug_assertions)]
     const fn is_unchanged(&self) -> bool {
-        self.0.opcode == libc::IORING_OP_NOP as u8
+        self.0.opcode == libc::IORING_OP_NOP as u8 || self.0.user_data == 0
     }
 
     /// Don't attempt to do the operation non-blocking first, always execute it
