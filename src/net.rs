@@ -433,6 +433,14 @@ impl AsyncFd {
     #[doc = man_link!(getsockopt(2))]
     #[doc(alias = "getsockopt")]
     pub fn socket_option<'fd, T: option::Get>(&'fd self) -> SocketOption<'fd, T> {
+        // MemorySanitizer find a use-of-uninitialized-value here because
+        // it doesn't understand io_uring. And eventhough SocketOptionOp has an
+        // explicit unpoisoning of the region it's still not happy. As a work
+        // around zero the memory instead before hand.
+        #[cfg_attr(feature = "nightly", cfg(sanitize = "memory"))]
+        #[cfg_attr(not(feature = "nightly"), cfg(false))]
+        let value = OptionStorage(MaybeUninit::zeroed());
+        #[cfg_attr(feature = "nightly", cfg(not(sanitize = "memory")))]
         let value = OptionStorage(MaybeUninit::uninit());
         SocketOption::new(self, value, ())
     }
@@ -1017,8 +1025,8 @@ pub fn sync_socket_option<T: option::Get>(fd: impl AsFd) -> io::Result<<T as opt
 pub(crate) fn sync_socket_option2<T: option::Get>(
     fd: RawFd,
 ) -> io::Result<<T as option::Get>::Output> {
-    let mut value = OptionStorage(MaybeUninit::uninit());
-    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+    let mut value = MaybeUninit::uninit();
+    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value) };
     syscall!(getsockopt(
         fd,
         T::LEVEL.0.cast_signed(),
@@ -1028,7 +1036,7 @@ pub(crate) fn sync_socket_option2<T: option::Get>(
     ))?;
     // SAFETY: the kernel initialised the value for us as part of the getsockopt
     // call.
-    Ok(unsafe { T::init(value.0, optlen) })
+    Ok(unsafe { T::init(value, optlen) })
 }
 
 /// Synchronous version of [`AsyncFd::set_socket_option`].

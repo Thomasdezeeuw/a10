@@ -20,15 +20,23 @@ unsafe extern "C" {
 }
 
 /// Mark a memory region as fully initialized.
+#[track_caller]
 pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
     #[cfg_attr(feature = "nightly", cfg(sanitize = "memory"))]
     #[cfg_attr(not(feature = "nightly"), cfg(false))]
     unsafe {
         __msan_unpoison(addr, size);
+        /*
+        log::trace!(
+            "unpoisoned {addr:?}+{size}, from: {:?}",
+            std::thread::current().id(),
+        );
+        */
     }
 }
 
 /// Mark the first `n` bytes of iovecs as fully initialized.
+#[track_caller]
 pub(crate) fn unpoison_iovecs_mut(iovecs: &[IoMutSlice], n: usize) {
     let mut left = n;
     for iovec in iovecs {
