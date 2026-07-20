@@ -237,6 +237,22 @@ where
     );
 }
 
+/// Start an A10 iterator operation, assumes `iter` is a A10 `AsyncIterator`.
+#[track_caller]
+pub(crate) fn start_iter<I>(iter: Pin<&mut I>)
+where
+    I: AsyncIterator,
+    I::Item: fmt::Debug,
+{
+    let task_waker = task::Waker::noop();
+    let mut task_ctx = task::Context::from_waker(task_waker);
+    let result = AsyncIterator::poll_next(iter, &mut task_ctx);
+    assert!(
+        result.is_pending(),
+        "unexpected result: {result:?}, expected it to return Poll::Pending"
+    );
+}
+
 /// Poll the `future` once with a no-op waker.
 pub(crate) fn poll_nop<Fut>(future: Pin<&mut Fut>) -> Poll<Fut::Output>
 where

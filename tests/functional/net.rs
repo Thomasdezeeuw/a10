@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::io::{self, Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream, UdpSocket};
+use std::pin::Pin;
 use std::sync::{Arc, Barrier, OnceLock};
 use std::thread;
 
@@ -17,8 +18,8 @@ use a10::{AsyncFd, Extract, SubmissionQueue};
 
 use crate::util::{
     BadBuf, BadBufSlice, BadReadBuf, BadReadBufSlice, Waker, bind_and_listen_ipv4, bind_ipv4,
-    ensure_submitted, expect_io_errno, expect_io_error_kind, is_send, is_sync, next,
-    tcp_ipv4_socket, test_queue, udp_ipv4_socket,
+    block_on, ensure_submitted, expect_io_errno, expect_io_error_kind, init, is_send, is_sync,
+    next, start_iter, tcp_ipv4_socket, test_queue, udp_ipv4_socket,
 };
 
 const DATA1: &[u8] = b"Hello, World!";
@@ -260,6 +261,51 @@ fn multishot_accept_incorrect_usage() {
     let res = waker.block_on(next(&mut accept_stream)).unwrap();
     assert!(res.is_err(), "unexpected ok result: {:?}", res);
     assert!(waker.block_on(next(&mut accept_stream)).is_none());
+}
+
+#[test]
+fn multishot_accept_drop_accept_before_close_leak_test() {
+    // Test that dropping the multishot accept future before closing the fd
+    // cancels the operation and drops the state.
+
+    init();
+    let mut ring = a10::Ring::new().unwrap();
+    let sq = ring.sq();
+
+    let listener = block_on(&mut ring, tcp_ipv4_socket(sq));
+    {
+        let mut accept = listener.multishot_accept();
+        start_iter(Pin::new(&mut accept));
+        drop(accept);
+    }
+
+    // We need this poll to ensure we process the asynchronous cancelation of
+    // the multishot accept (done on drop).
+    ring.poll(None).unwrap();
+
+    drop(listener);
+}
+
+#[test]
+fn multishot_accept_drop_accept_leak_test() {
+    // Test that dropping the multishot accept future and then closing the fd
+    // before submitting the cancelation submission works as expceted.
+
+    init();
+    let mut ring = a10::Ring::new().unwrap();
+    let sq = ring.sq();
+
+    {
+        let listener = block_on(&mut ring, tcp_ipv4_socket(sq));
+        let mut accept = listener.multishot_accept();
+        start_iter(Pin::new(&mut accept));
+        drop(accept);
+        drop(listener);
+    }
+
+    // We need this poll to ensure we process the asynchronous cancelation of
+    // the multishot accept (done on drop).
+    ring.poll(None).unwrap();
 }
 
 #[test]
