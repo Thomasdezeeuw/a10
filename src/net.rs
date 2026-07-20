@@ -1025,8 +1025,8 @@ pub fn sync_socket_option<T: option::Get>(fd: impl AsFd) -> io::Result<<T as opt
 pub(crate) fn sync_socket_option2<T: option::Get>(
     fd: RawFd,
 ) -> io::Result<<T as option::Get>::Output> {
-    let mut value = OptionStorage(MaybeUninit::uninit());
-    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value.0) };
+    let mut value = MaybeUninit::uninit();
+    let (optval, mut optlen) = unsafe { T::as_mut_ptr(&mut value) };
     syscall!(getsockopt(
         fd,
         T::LEVEL.0.cast_signed(),
@@ -1036,7 +1036,7 @@ pub(crate) fn sync_socket_option2<T: option::Get>(
     ))?;
     // SAFETY: the kernel initialised the value for us as part of the getsockopt
     // call.
-    Ok(unsafe { T::init(value.0, optlen) })
+    Ok(unsafe { T::init(value, optlen) })
 }
 
 /// Synchronous version of [`AsyncFd::set_socket_option`].
