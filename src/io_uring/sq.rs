@@ -376,7 +376,9 @@ impl fmt::Debug for Submission {
                     f.field("fd", &self.0.fd)
                         .field("cancel_flags", &cancel_flags);
                 } else {
-                    f.field("addr", unsafe { &self.0.__bindgen_anon_2.addr });
+                    f.field("addr", &unsafe {
+                        self.0.__bindgen_anon_2.addr as *const ()
+                    });
                 }
             }
             libc::IORING_OP_OPENAT => {
