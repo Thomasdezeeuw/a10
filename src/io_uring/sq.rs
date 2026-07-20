@@ -5,7 +5,8 @@ use std::sync::atomic::{self, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::{Shared, cq, libc, load_kernel_shared};
+use crate::io_uring::cq::{self, MULTISHOT_TAG};
+use crate::io_uring::{Shared, libc, load_kernel_shared};
 use crate::{asan, lock, syscall};
 
 #[derive(Clone, Debug)]
@@ -508,8 +509,10 @@ impl fmt::Debug for Submission {
                     .field("personality", &self.0.personality);
             }
         }
+        let user_data = self.0.user_data as usize;
         f.field("flags", &self.0.flags)
-            .field("user_data", &(self.0.user_data as *const ()))
+            .field("user_data", &(user_data as *const ()))
+            .field("user_data (ptr)", &((user_data & TAG_MASK) as *const ()))
             .finish()
     }
 }

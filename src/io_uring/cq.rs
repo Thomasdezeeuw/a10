@@ -194,11 +194,10 @@ impl fmt::Debug for Completion {
             libc::IORING_CQE_F_BUF_MORE,
         );
 
+        let user_data = self.0.user_data as usize;
         f.debug_struct("io_uring::Completion")
-            .field(
-                "user_data",
-                &ptr::with_exposed_provenance::<()>(self.0.user_data as usize),
-            )
+            .field("user_data", &(user_data as *const ()))
+            .field("user_data (ptr)", &((user_data & TAG_MASK) as *const ()))
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.0.res)
