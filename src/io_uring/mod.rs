@@ -206,7 +206,8 @@ impl Shared {
     /// Wake any futures that were blocked on a submission slot.
     pub(crate) fn wake_blocked_futures(&self) {
         // Only wake up futures if a submission slot is available for them.
-        let available = (self.submissions_len - self.unsubmitted_submissions()) as usize;
+        let unsubmitted = self.unsubmitted_submissions();
+        let available = self.submissions_len.saturating_sub(unsubmitted) as usize;
         if available == 0 {
             return;
         }
@@ -246,7 +247,7 @@ impl Shared {
         // underflow.
         let head = load_kernel_shared(self.submissions_head);
         let tail = load_kernel_shared(self.submissions_tail);
-        tail - head
+        tail.saturating_sub(head)
     }
 
     fn ring_fd(&self) -> RawFd {
