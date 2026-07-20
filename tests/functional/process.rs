@@ -1,6 +1,6 @@
 //! NOTE: see `tests/signals.rs` for testing of signal handling.
 
-use std::pin::{Pin, pin};
+use std::pin::pin;
 use std::process::Command;
 
 #[cfg(any(target_os = "android", target_os = "linux"))]
@@ -10,7 +10,7 @@ use a10::process::{
     WaitOption,
 };
 
-use crate::util::{Waker, ensure_submitted, is_send, is_sync, poll_nop, test_queue};
+use crate::util::{Waker, ensure_submitted, is_send, is_sync, poll_nop, start_op, test_queue};
 
 #[test]
 fn signal_is_send_and_sync() {
@@ -93,10 +93,7 @@ fn process_wait_on_drop_before_complete() {
     let process = Command::new("sleep").arg("1000").spawn().unwrap();
 
     let mut future = process::wait_on(sq, &process).flags(WaitOption::EXITED);
-    let result = poll_nop(Pin::new(&mut future));
-    if !result.is_pending() {
-        panic!("unexpected result, expected it to return Poll::Pending");
-    }
+    start_op(&mut future);
     drop(future);
 
     // Ensure the cancelation (on drop) is completed.
@@ -108,12 +105,11 @@ fn send_signal() {
     let sq = test_queue();
     let waker = Waker::new();
 
-    let process = Command::new("sleep").arg("10000").spawn().unwrap();
+    let process = Command::new("/bin/sleep").arg("10000").spawn().unwrap();
     let pid = process.id();
 
     let mut wait_on = pin!(process::wait_on(sq, &process).flags(WaitOption::EXITED));
-    let res = poll_nop(wait_on.as_mut());
-    assert!(res.is_pending(), "unexpected poll result: {res:?}");
+    start_op(&mut *wait_on);
 
     process::send_signal(To::child(&process), Signal::TERMINATION).unwrap();
 
