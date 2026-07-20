@@ -819,13 +819,9 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(optval.addr() as u64),
         };
-        // NOTE: unpoisoned in map_ok or fallback.
-        asan::poison(optval.cast_const());
     }
 
     fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison(value.0.as_ptr());
         msan::unpoison_region(value.0.as_ptr().cast(), n as usize);
         // SAFETY: the kernel initialised the value for us as part of the
         // getsockopt call.
@@ -834,12 +830,10 @@ impl<T: option::Get> FdOp for SocketOptionOp<T> {
 
     fn fallback(
         fd: &AsyncFd,
-        value: Self::Resources,
+        _: Self::Resources,
         (): &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison(ptr::from_ref(&value.0));
         if err.kind() == io::ErrorKind::Unsupported {
             // io_uring doesn't support set any other level than SOL_SOCKET at
             // the time of writing, so fallback to the synchronous version.
@@ -884,13 +878,9 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
         submission.0.__bindgen_anon_6 = libc::io_uring_sqe__bindgen_ty_6 {
             optval: ManuallyDrop::new(ptr::from_ref(&value.0).addr() as u64),
         };
-        // NOTE: unpoisoned in map_ok or fallback.
-        asan::poison(ptr::from_ref(&value.0));
     }
 
-    fn map_ok(_: &AsyncFd, value: Self::Resources, (_, n): OpReturn) -> Self::Output {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison(ptr::from_ref(&value.0));
+    fn map_ok(_: &AsyncFd, _: Self::Resources, (_, n): OpReturn) -> Self::Output {
         debug_assert!(n == 0);
     }
 
@@ -900,8 +890,6 @@ impl<T: option::Set> FdOp for SetSocketOptionOp<T> {
         (): &mut Self::Args,
         err: io::Error,
     ) -> io::Result<Self::Output> {
-        // NOTE: poisoned in fill_submission.
-        asan::unpoison(ptr::from_ref(&value.0));
         if err.kind() == io::ErrorKind::Unsupported {
             // io_uring doesn't support set any other level than SOL_SOCKET at
             // the time of writing, so fallback to the synchronous version.
