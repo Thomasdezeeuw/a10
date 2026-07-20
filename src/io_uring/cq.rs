@@ -125,11 +125,10 @@ pub(super) const SINGLESHOT_TAG: usize = 0b00;
 pub(super) const MULTISHOT_TAG: usize = 0b01;
 pub(super) const TAG_MASK: usize = !MULTISHOT_TAG;
 
-/// User data set for completions that can be ignored. For example when we're
-/// only interested in waking the polling thread.
-const NO_PROCESS: usize = 0;
-
-pub(super) const WAKE_USER_DATA: u64 = NO_PROCESS as u64;
+pub(super) const NO_USER_DATA: u64 = 0;
+pub(super) const WAKE_USER_DATA: u64 = 1;
+pub(super) const CANCEL_USER_DATA: u64 = 2;
+pub(super) const CLOSE_USER_DATA: u64 = 3;
 
 impl Completion {
     /// Process the completion event.
@@ -144,12 +143,35 @@ impl Completion {
             return;
         }
 
-        let user_data = self.0.user_data as usize;
-        if user_data == NO_PROCESS {
-            return;
+        let user_data = self.0.user_data;
+        match user_data {
+            // No user data set, shouldn't happen.
+            NO_USER_DATA => {
+                log::warn!(completion:? = self; "unexpected completion");
+                return;
+            }
+            // Only need to wake up.
+            WAKE_USER_DATA => return,
+            // Operation was not found (ENOENT), likely already completed, or
+            // the operation was already completing (EALREADY). Either way we
+            // can ignore it as the kernel will complete the operation soon.
+            CANCEL_USER_DATA if self.0.res == -libc::ENOENT || self.0.res == -libc::EALREADY => {
+                return;
+            }
+            // Other cancelation errors we log.
+            CANCEL_USER_DATA => {
+                log::warn!(completion:? = self; "unexpected cancelation completion");
+                return;
+            }
+            // Unexpected closing error.
+            CLOSE_USER_DATA => {
+                log::warn!(completion:? = self; "failed to close fd");
+                return;
+            }
+            _ => { /* Process completion below. */ }
         }
 
-        let ptr: *const () = ptr::with_exposed_provenance(user_data);
+        let ptr: *const () = ptr::with_exposed_provenance(user_data as usize);
         let is_singleshot = ptr.addr() & MULTISHOT_TAG == 0;
         let ptr = ptr.map_addr(|addr| addr & TAG_MASK);
         let update = if is_singleshot {

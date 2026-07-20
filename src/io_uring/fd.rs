@@ -3,6 +3,7 @@ use std::os::fd::RawFd;
 use std::{io, ptr};
 
 use crate::fd::{self, AsyncFd, Kind};
+use crate::io_uring::cq::CLOSE_USER_DATA;
 use crate::io_uring::op::{FdOp, Op, OpReturn};
 use crate::io_uring::sq::{self, Submission};
 use crate::io_uring::{self, libc};
@@ -213,6 +214,8 @@ impl Drop for AsyncFd {
     fn drop(&mut self) {
         let res = self.sq.submissions().add(|submission| {
             io_uring::io::close_file_fd(self.fd(), self.kind(), submission);
+            submission.0.user_data = CLOSE_USER_DATA;
+            submission.no_success_event();
         });
         if let Ok(()) = res {
             return;
