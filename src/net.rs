@@ -433,6 +433,14 @@ impl AsyncFd {
     #[doc = man_link!(getsockopt(2))]
     #[doc(alias = "getsockopt")]
     pub fn socket_option<'fd, T: option::Get>(&'fd self) -> SocketOption<'fd, T> {
+        // MemorySanitizer find a use-of-uninitialized-value here because
+        // it doesn't understand io_uring. And eventhough SocketOptionOp has an
+        // explicit unpoisoning of the region it's still not happy. As a work
+        // around zero the memory instead before hand.
+        #[cfg_attr(feature = "nightly", cfg(sanitize = "memory"))]
+        #[cfg_attr(not(feature = "nightly"), cfg(false))]
+        let value = OptionStorage(MaybeUninit::zeroed());
+        #[cfg_attr(feature = "nightly", cfg(not(sanitize = "memory")))]
         let value = OptionStorage(MaybeUninit::uninit());
         SocketOption::new(self, value, ())
     }
