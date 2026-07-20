@@ -5,7 +5,7 @@ use std::sync::atomic::{self, Ordering};
 use std::time::Duration;
 use std::{fmt, io, ptr, task};
 
-use crate::io_uring::cq::{self, MULTISHOT_TAG, TAG_MASK};
+use crate::io_uring::cq::{self, CANCEL_USER_DATA, MULTISHOT_TAG, TAG_MASK, WAKE_USER_DATA};
 use crate::io_uring::{Shared, libc, load_kernel_shared};
 use crate::{asan, lock, syscall};
 
@@ -84,6 +84,7 @@ impl Submissions {
         self.add(|submission| {
             submission.0.opcode = libc::IORING_OP_ASYNC_CANCEL as u8;
             submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 { addr: user_data };
+            submission.0.user_data = CANCEL_USER_DATA;
             // We'll get a canceled completion event if we succeeded, which is
             // sufficient to cleanup the operation.
             submission.no_success_event();
@@ -107,6 +108,7 @@ impl Submissions {
             submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
                 off: cq::WAKE_USER_DATA,
             };
+            submission.0.user_data = WAKE_USER_DATA;
         };
 
         if self.shared.single_issuer {
