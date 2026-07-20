@@ -10,7 +10,7 @@ use a10::process::{
     WaitOption,
 };
 
-use crate::util::{Waker, is_send, is_sync, poll_nop, test_queue};
+use crate::util::{Waker, ensure_submitted, is_send, is_sync, poll_nop, test_queue};
 
 #[test]
 fn signal_is_send_and_sync() {
@@ -98,6 +98,9 @@ fn process_wait_on_drop_before_complete() {
         panic!("unexpected result, expected it to return Poll::Pending");
     }
     drop(future);
+
+    // Ensure the cancelation (on drop) is completed.
+    ensure_submitted();
 }
 
 #[test]

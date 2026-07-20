@@ -125,7 +125,7 @@ struct Tail<R, A> {
     args: A,
 }
 
-impl<T, R, A> OpState for State<T, R, A> {
+impl<T: OpResult, R, A> OpState for State<T, R, A> {
     type Resources = R;
     type Args = A;
 
@@ -183,7 +183,7 @@ impl<T, R, A> OpState for State<T, R, A> {
         {
             let mut shared = unsafe { lock(&self.data.as_ref().shared) };
             if matches!(&shared.status, Status::Running { .. }) {
-                let user_data = self.data.expose_provenance().get() as u64;
+                let user_data = self.user_data();
                 if let Err(err) = sq.submissions().cancel(user_data) {
                     log::debug!("failed to cancel operation, will wait on result: {err}");
                 }
@@ -212,6 +212,20 @@ impl<T, R, A> OpState for State<T, R, A> {
         data.tail.resources = UnsafeCell::new(MaybeUninit::new(resources));
         data.tail.args = args;
         drop(shared);
+    }
+}
+
+impl<T, R, A> State<T, R, A> {
+    fn user_data(&self) -> u64
+    where
+        T: OpResult,
+    {
+        let user_data = self.data.expose_provenance().get() as u64;
+        if T::IS_MULTISHOT {
+            user_data | MULTISHOT_TAG as u64
+        } else {
+            user_data | SINGLESHOT_TAG as u64
+        }
     }
 }
 
@@ -797,13 +811,11 @@ where
                     let args = &mut data.tail.args;
                     fill_submission(target, resources, args, submission);
                     target.set_flags(submission);
-
-                    submission.0.user_data = state.data.expose_provenance().get() as u64;
+                    submission.0.user_data = state.user_data();
                     if O::IS_MULTISHOT {
                         // For multishot operations we do NOT poison the resources
                         // as we need read only access to them while the kernel is
                         // also reading them.
-                        submission.0.user_data |= MULTISHOT_TAG as u64;
                     } else {
                         // In singleshot operation we can't access the resources
                         // while the kernel has access to them. E.g. the kernel
@@ -812,7 +824,6 @@ where
                         // completes, or in drop_state if it's dropped before
                         // completion.
                         asan::poison(resources);
-                        submission.0.user_data |= SINGLESHOT_TAG as u64;
                     }
                 });
                 match result {

@@ -12,7 +12,8 @@ use a10::pipe::pipe;
 use a10::{Ring, SubmissionQueue};
 
 use crate::util::{
-    LOREM_IPSUM_50, Waker, block_on, init, is_send, is_sync, next, poll_nop, start_op, syscall,
+    LOREM_IPSUM_50, Waker, block_on, init, is_send, is_sync, next, poll_nop, start_iter, start_op,
+    syscall,
 };
 
 #[test]
@@ -216,6 +217,28 @@ fn pollable() {
     other_ring.poll(None).unwrap();
 
     handle.join().unwrap();
+
+    drop(ring_pollable);
+    // Ensure the async cancelation of the pollable iter is processed, otherwise
+    // we have a memory leak.
+    main_ring.poll(None).unwrap();
+}
+
+#[test]
+fn pollable_drop_leak_test() {
+    init();
+    let mut main_ring = Ring::new().unwrap();
+    let other_ring = Ring::new().unwrap();
+
+    {
+        let mut ring_pollable = other_ring.pollable(main_ring.sq());
+        start_iter(Pin::new(&mut ring_pollable));
+        drop(ring_pollable);
+    }
+
+    // We need this poll to ensure we process the asynchronous cancelation of
+    // the pollable iter (done on drop).
+    main_ring.poll(None).unwrap();
 }
 
 #[test]
