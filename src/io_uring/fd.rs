@@ -215,6 +215,7 @@ impl Drop for AsyncFd {
         let res = self.sq.submissions().add(|submission| {
             io_uring::io::close_file_fd(self.fd(), self.kind(), submission);
             submission.0.user_data = CLOSE_USER_DATA;
+            submission.no_success_event();
         });
         if let Ok(()) = res {
             return;
