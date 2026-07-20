@@ -45,8 +45,7 @@ pub(crate) fn poison_region(addr: *const c_void, size: c_size_t) {
         unsafe {
             __asan_poison_memory_region(addr, size);
             log::trace!(
-                "poisoned {addr:?}+{size}, from: {:?}@{}",
-                std::thread::current().id(),
+                "poisoned {addr:?}+{size}, from: {:?}",
                 std::panic::Location::caller(),
             );
         }
@@ -93,10 +92,9 @@ pub(crate) fn unpoison_region(addr: *const c_void, size: c_size_t) {
         #[cfg_attr(not(feature = "nightly"), cfg(false))]
         unsafe {
             __asan_unpoison_memory_region(addr, size);
-            log::error!(
-                "unpoisoned {addr:?}+{size}, from: {:?}@{}",
+            log::trace!(
+                "unpoisoned {addr:?}+{size}, from: {:?}",
                 std::thread::current().id(),
-                std::panic::Location::caller(),
             );
         }
     }
