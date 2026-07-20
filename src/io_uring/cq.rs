@@ -123,7 +123,7 @@ pub(crate) struct Completion(pub(super) libc::io_uring_cqe);
 
 pub(super) const SINGLESHOT_TAG: usize = 0b00;
 pub(super) const MULTISHOT_TAG: usize = 0b01;
-const TAG_MASK: usize = !MULTISHOT_TAG;
+pub(super) const TAG_MASK: usize = !MULTISHOT_TAG;
 
 /// User data set for completions that can be ignored. For example when we're
 /// only interested in waking the polling thread.
@@ -150,9 +150,9 @@ impl Completion {
         }
 
         let ptr: *const () = ptr::with_exposed_provenance(user_data);
-        let is_multishot = ptr.addr() & MULTISHOT_TAG == 0;
+        let is_singleshot = ptr.addr() & MULTISHOT_TAG == 0;
         let ptr = ptr.map_addr(|addr| addr & TAG_MASK);
-        let update = if is_multishot {
+        let update = if is_singleshot {
             const _ALIGNMENT_CHECK: () = assert!(align_of::<op::SingleShared>() > 1);
             let head: &op::SingleShared = unsafe { &*ptr.cast() };
             lock(head).update(self)
@@ -198,6 +198,8 @@ impl fmt::Debug for Completion {
         f.debug_struct("io_uring::Completion")
             .field("user_data", &(user_data as *const ()))
             .field("user_data (ptr)", &((user_data & TAG_MASK) as *const ()))
+            .field("is_singleshot", &(user_data & MULTISHOT_TAG == 0))
+            .field("is_multishot", &(user_data & MULTISHOT_TAG == 1))
             // NOTE this this isn't always an errno, so we can't use
             // `io::Error::from_raw_os_error` without being misleading.
             .field("res", &self.0.res)
