@@ -56,21 +56,6 @@
 
 #![cfg_attr(feature = "nightly", feature(async_iterator, cfg_sanitize))]
 
-#[cfg(not(any(
-    target_os = "android",
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "ios",
-    target_os = "linux",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "tvos",
-    target_os = "visionos",
-    target_os = "watchos",
-)))]
-compile_error!("OS not supported");
-
 use std::fmt;
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::Duration;
@@ -94,28 +79,17 @@ pub mod pipe;
 pub mod poll;
 pub mod process;
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-mod io_uring;
-#[cfg(any(
-    target_os = "dragonfly",
-    target_os = "freebsd",
-    target_os = "ios",
-    target_os = "macos",
-    target_os = "netbsd",
-    target_os = "openbsd",
-    target_os = "tvos",
-    target_os = "visionos",
-    target_os = "watchos",
-))]
-mod kqueue;
+cfg_select! {
+    any(target_os = "android", target_os = "linux") => {
+        mod io_uring;
+        mod inotify;
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-mod inotify;
-
-mod sys {
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub(crate) use crate::io_uring::*;
-    #[cfg(any(
+        mod sys {
+            pub(crate) use crate::io_uring::*;
+            pub(crate) use crate::inotify as fs_notify;
+        }
+    }
+    any(
         target_os = "dragonfly",
         target_os = "freebsd",
         target_os = "ios",
@@ -125,11 +99,17 @@ mod sys {
         target_os = "tvos",
         target_os = "visionos",
         target_os = "watchos",
-    ))]
-    pub(crate) use crate::kqueue::*;
+    ) => {
+        mod kqueue;
 
-    #[cfg(any(target_os = "android", target_os = "linux"))]
-    pub(crate) use crate::inotify as fs_notify;
+        mod sys {
+            // NOTE: kqueue has an fs_notify implementation.
+            pub(crate) use crate::kqueue::*;
+        }
+    }
+    _ => {
+        compile_error!("OS not supported");
+    }
 }
 
 #[doc(inline)]
