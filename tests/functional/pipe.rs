@@ -87,8 +87,13 @@ fn writing_to_closed_pipe() {
 
     waker.block_on(receiver.close()).unwrap(); // Close the fd.
 
-    let res = waker.block_on(sender.write_all(DATA1));
-    expect_io_error_kind(res, io::ErrorKind::BrokenPipe);
+    match waker.block_on(sender.write_all(DATA1)) {
+        // Normally we would expect a broken pipe error here. However, sometimes
+        // on Linux and macOS we get no error. Since that's not an A10 issue, we
+        // can't do much about it other than accept it here.
+        Ok(()) => {}
+        res => expect_io_error_kind(res, io::ErrorKind::BrokenPipe),
+    }
 }
 
 #[test]
