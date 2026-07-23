@@ -273,17 +273,9 @@ fn multishot_accept_drop_accept_before_close_leak_test() {
     let sq = ring.sq();
 
     let listener = block_on(&mut ring, tcp_ipv4_socket(sq));
-    {
-        let mut accept = listener.multishot_accept();
-        start_iter(Pin::new(&mut accept));
-        drop(accept);
-    }
-
-    // We need this poll to ensure we process the asynchronous cancelation of
-    // the multishot accept (done on drop).
-    ring.poll(None).unwrap();
-
-    drop(listener);
+    let mut accept = listener.multishot_accept();
+    start_iter(Pin::new(&mut accept));
+    drop(accept);
 }
 
 #[test]
@@ -295,17 +287,11 @@ fn multishot_accept_drop_accept_leak_test() {
     let mut ring = a10::Ring::new().unwrap();
     let sq = ring.sq();
 
-    {
-        let listener = block_on(&mut ring, tcp_ipv4_socket(sq));
-        let mut accept = listener.multishot_accept();
-        start_iter(Pin::new(&mut accept));
-        drop(accept);
-        drop(listener);
-    }
-
-    // We need this poll to ensure we process the asynchronous cancelation of
-    // the multishot accept (done on drop).
-    ring.poll(None).unwrap();
+    let listener = block_on(&mut ring, tcp_ipv4_socket(sq));
+    let mut accept = listener.multishot_accept();
+    start_iter(Pin::new(&mut accept));
+    drop(accept);
+    drop(listener);
 }
 
 #[test]
