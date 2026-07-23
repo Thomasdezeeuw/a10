@@ -170,7 +170,7 @@ impl Shared {
                     let ptr = event.0.udata as *mut fd::SharedState;
                     debug_assert!(!ptr.is_null());
                     // SAFETY: see fd::State::drop.
-                    unsafe { ptr::drop_in_place(ptr) };
+                    drop(unsafe { Box::from_raw(ptr) });
                 }
                 libc::EVFILT_READ | libc::EVFILT_WRITE => {
                     let ptr = event.0.udata.cast::<fd::SharedState>();
