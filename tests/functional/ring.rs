@@ -165,10 +165,6 @@ fn submission_queue_full_is_handled_internally() {
 
         ring.poll(None).unwrap();
     }
-
-    // NOTE: this is here to deallocate the resources in the Future that was
-    // stalled.
-    ring.poll(Some(Duration::ZERO)).unwrap();
 }
 
 #[test]
@@ -210,7 +206,7 @@ fn pollable() {
 #[test]
 fn pollable_drop_leak_test() {
     init();
-    let mut main_ring = Ring::new().unwrap();
+    let main_ring = Ring::new().unwrap();
     let other_ring = Ring::new().unwrap();
 
     {
@@ -218,10 +214,6 @@ fn pollable_drop_leak_test() {
         start_iter(Pin::new(&mut ring_pollable));
         drop(ring_pollable);
     }
-
-    // We need this poll to ensure we process the asynchronous cancelation of
-    // the pollable iter (done on drop).
-    main_ring.poll(None).unwrap();
 }
 
 #[test]

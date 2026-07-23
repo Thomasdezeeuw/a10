@@ -1,7 +1,7 @@
 use std::os::fd::RawFd;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
-use std::{fmt, io, ptr};
+use std::{fmt, io, mem, ptr};
 
 use crate::io_uring::{Shared, libc, load_kernel_shared, mmap, munmap, op};
 use crate::{asan, debug_detail, lock};
@@ -96,6 +96,46 @@ impl Completions {
         unsafe { (&*self.entries_head.as_ptr()).store(head, Ordering::Release) };
 
         Ok(())
+    }
+
+    pub(crate) fn drop(&mut self, shared: &Shared) {
+        // Submit any pending operations, mainly aiming to submit clean up
+        // operations such as asynchronously closing fds, etc.
+        let mut flags = 0; // Only submit.
+        if shared.kernel_thread {
+            flags |= libc::IORING_ENTER_SQ_WAIT;
+        }
+        if let Err(err) = shared.enter(libc::c_uint::MAX, flags, Some(Duration::from_secs(1))) {
+            log::warn!("error flushing submissions: {err}");
+        }
+
+        // Hopefully at this point the clean up operations have been completed,
+        // but we're not guaranteed that. Cancel any remaining operations, as
+        // they'll never make progress once we drop the completions.
+        let cancel = libc::io_uring_sync_cancel_reg {
+            addr: 0, // Unused.
+            fd: -1,  // Unused.
+            flags: libc::IORING_ASYNC_CANCEL_ANY | libc::IORING_ASYNC_CANCEL_ALL,
+            timeout: libc::__kernel_timespec {
+                tv_sec: 1,
+                tv_nsec: 0,
+            },
+            ..unsafe { mem::zeroed() }
+        };
+        let cancel_ptr = ptr::from_ref(&cancel).cast();
+        if let Err(err) = shared.register(libc::IORING_REGISTER_SYNC_CANCEL, cancel_ptr, 1) {
+            log::warn!("error cancelling operations: {err}");
+        }
+
+        // Process the remaining completions events that are ready.
+        // NOTE: we explitly enter here to ensure we get the latests completions
+        // from the kernel, poll doesn't guarantee that.
+        if let Err(err) = shared.enter(1, libc::IORING_ENTER_GETEVENTS, Some(Duration::ZERO)) {
+            log::warn!("error getting last completions: {err}");
+        }
+        if let Err(err) = self.poll(shared, Some(Duration::ZERO)) {
+            log::warn!("error processing last completions: {err}");
+        }
     }
 }
 

@@ -212,12 +212,7 @@ impl Ring {
 
 impl Drop for Ring {
     fn drop(&mut self) {
-        // Poll the ring one last time to ensure that any asynchronous
-        // operations such as closing of fds or canceling of multishot
-        // operations is processed. This allows us to clean up resources.
-        if let Err(err) = self.poll(Some(Duration::ZERO)) {
-            log::warn!("error polling Ring before drop: {err}");
-        }
+        self.cq.drop(self.sq.shared());
     }
 }
 
