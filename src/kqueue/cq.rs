@@ -1,6 +1,6 @@
 use std::mem::{drop as unlock, take};
 use std::time::Duration;
-use std::{cmp, io, ptr};
+use std::{io, ptr};
 
 use crate::kqueue::{Event, Shared, UseEvents};
 use crate::lock;
@@ -30,15 +30,6 @@ impl Completions {
             timeout
         };
 
-        let ts = timeout.map(|to| libc::timespec {
-            tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64).cast_signed(),
-            // `Duration::subsec_nanos` is guaranteed to be less than one
-            // billion (the number of nanoseconds in a second), making the
-            // cast to i32 safe. The cast itself is needed for platforms
-            // where C's long is only 32 bits.
-            tv_nsec: libc::c_long::from(to.subsec_nanos().cast_signed()),
-        });
-
         // Submit any submissions (changes) to the kernel.
         let mut change_list = lock(&shared.change_list);
         let mut changes = if change_list.is_empty() {
@@ -49,7 +40,7 @@ impl Completions {
         unlock(change_list); // Unlock, to not block others.
 
         log::trace!(submissions = changes.len(), timeout:?; "waiting for events");
-        shared.kevent(&mut changes, UseEvents::Some(&mut self.events), ts.as_ref());
+        shared.kevent(&mut changes, UseEvents::Some(&mut self.events), timeout);
         shared.polling.set_polling(false);
         shared.reuse_change_list(changes);
         Ok(())

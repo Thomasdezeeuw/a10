@@ -9,7 +9,8 @@
 use std::mem::{drop as unlock, swap};
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::sync::Mutex;
-use std::{fmt, ptr, task};
+use std::time::Duration;
+use std::{cmp, fmt, ptr, task};
 
 use crate::{PollingState, debug_detail, lock, syscall};
 
@@ -77,7 +78,7 @@ impl Shared {
         &self,
         changes: &mut Vec<Event>,
         mut events: UseEvents<'_>,
-        timeout: Option<&libc::timespec>,
+        timeout: Option<Duration>,
     ) {
         // SAFETY: casting `Event` to `libc::kevent` is safe due to
         // `repr(transparent)` on `Event`.
@@ -103,13 +104,21 @@ impl Shared {
                 (changes.as_mut_ptr().cast(), (changes.len() - 1) as _)
             }
         };
+        let ts = timeout.map(|to| libc::timespec {
+            tv_sec: cmp::min(to.as_secs(), libc::time_t::MAX as u64).cast_signed(),
+            // `Duration::subsec_nanos` is guaranteed to be less than one
+            // billion (the number of nanoseconds in a second), making the
+            // cast to i32 safe. The cast itself is needed for platforms
+            // where C's long is only 32 bits.
+            tv_nsec: libc::c_long::from(to.subsec_nanos().cast_signed()),
+        });
         let result = syscall!(kevent(
             self.kq.as_raw_fd(),
             changes.as_ptr().cast(),
             changes.len() as _,
             events_ptr,
             events_len,
-            timeout.map_or(ptr::null_mut(), ptr::from_ref),
+            ts.as_ref().map_or(ptr::null_mut(), ptr::from_ref),
         ));
         let events = match result {
             // SAFETY: `kevent` ensures that `n` events are written.

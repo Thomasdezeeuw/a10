@@ -2,6 +2,7 @@ use std::io;
 use std::mem::{self, drop as unlock, take};
 use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::kqueue::{Event, Shared, UseEvents, cq};
 use crate::lock;
@@ -56,16 +57,12 @@ impl Submissions {
         unlock(change_list); // Unlock, to not block others.
 
         // Submit the all changes to the kernel.
-        let ts = libc::timespec {
-            tv_sec: 0,
-            tv_nsec: 0,
-        };
         log::trace!(changes = changes.len(); "submitting changes");
         let events = match force_submit {
             ForceSubmit::Normal => UseEvents::UseChangeList,
             ForceSubmit::Wakeup => UseEvents::UseChangeListWithWakeUp,
         };
-        shared.kevent(&mut changes, events, Some(&ts));
+        shared.kevent(&mut changes, events, Some(Duration::ZERO));
         shared.reuse_change_list(changes);
     }
 
