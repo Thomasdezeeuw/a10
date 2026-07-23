@@ -54,4 +54,13 @@ impl Completions {
         shared.reuse_change_list(changes);
         Ok(())
     }
+
+    pub(crate) fn drop(&mut self, shared: &Shared) {
+        // Poll one last time to finish of any asynchronous operations such as
+        // canceling multishot operations, allowing for resources to be cleaned
+        // up.
+        if let Err(err) = self.poll(shared, Some(Duration::ZERO)) {
+            log::warn!("error processing last completions: {err}");
+        }
+    }
 }
