@@ -35,6 +35,10 @@ pub(crate) use sq::Submissions;
 /// `EVFILT_USER` identifier to wake from polling.
 pub(super) const WAKE_USER_DATA: usize = 1;
 
+/// `EVFILT_USER` identifier to drop `SharedState`.
+/// See Drop impl for AsyncFd and event handling in Shared::kevent.
+pub(super) const DROP_FD_STATE: usize = 2;
+
 fn kqueue() -> io::Result<OwnedFd> {
     // SAFETY: `kqueue(2)` ensures the fd is valid.
     let kq = unsafe { OwnedFd::from_raw_fd(syscall!(kqueue())?) };
@@ -162,7 +166,7 @@ impl Shared {
             match event.0.filter {
                 // Just need to wake up from polling.
                 libc::EVFILT_USER if event.0.ident == WAKE_USER_DATA => continue,
-                libc::EVFILT_USER => {
+                libc::EVFILT_USER if event.0.ident == DROP_FD_STATE => {
                     let ptr = event.0.udata as *mut fd::SharedState;
                     debug_assert!(!ptr.is_null());
                     // SAFETY: see fd::State::drop.

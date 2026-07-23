@@ -3,7 +3,8 @@ use std::sync::{Mutex, MutexGuard};
 use std::{ptr, task};
 
 use crate::fd::{self, AsyncFd};
-use crate::{kqueue, lock, syscall};
+use crate::kqueue::{self, DROP_FD_STATE};
+use crate::{lock, syscall};
 
 /// State of a file descriptor.
 #[derive(Debug)]
@@ -110,23 +111,23 @@ impl OpState {
 
 impl Drop for AsyncFd {
     fn drop(&mut self) {
-        self.sq.submissions().remove_unsubmitted_events(self.fd());
-
-        let result = match self.kind() {
-            fd::Kind::File => syscall!(close(self.fd())).map(|_| ()),
-        };
-        if let Err(err) = result {
-            log::warn!("error closing a10::AsyncFd: {err}");
-        }
-
         let ptr = *self.state.shared.get_mut();
         if ptr.is_null() {
             // Never started any operations, so we don't have to clean anything up.
             //
             // NOTE: we can not apply this optimisation when the fd state is
-            // initialised as we can still get a readiness event even if the
+            // not initialised as we can still get a readiness event even if the
             // waker list is empty.
             return;
+        }
+
+        self.sq.submissions().remove_unsubmitted_events(self.fd());
+
+        let result = match self.kind() {
+            fd::Kind::File => syscall!(close(self.fd())),
+        };
+        if let Err(err) = result {
+            log::warn!("error closing a10::AsyncFd: {err}");
         }
 
         // Because polling for events is done via a different type (not
@@ -139,8 +140,11 @@ impl Drop for AsyncFd {
         // We do this by sending an event to the polling thread to deallocate
         // the operation state for us.
         self.sq.submissions().add(|event| {
-            event.0.ident = ptr as _;
+            event.0.ident = DROP_FD_STATE;
             event.0.filter = libc::EVFILT_USER;
+            event.0.flags = libc::EV_ONESHOT | libc::EV_ADD; // No EV_RECEIPT.
+            event.0.fflags = libc::NOTE_TRIGGER;
+            event.0.udata = ptr as _;
         });
     }
 }
