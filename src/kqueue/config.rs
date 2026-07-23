@@ -1,12 +1,11 @@
 //! kqueue configuration.
 
+use std::io;
 use std::marker::PhantomData;
-use std::os::fd::AsRawFd;
 use std::sync::Mutex;
-use std::{io, mem, ptr};
 
-use crate::kqueue::{Completions, Shared, Submissions, cq, kqueue};
-use crate::{PollingState, syscall};
+use crate::PollingState;
+use crate::kqueue::{Completions, Shared, Submissions, kqueue};
 
 #[derive(Debug, Clone)]
 pub(crate) struct Config<'r> {
@@ -56,28 +55,6 @@ impl<'r> crate::Config<'r> {
             "a10::kqueue::Config: max_change_list_size larger than max_events"
         );
         let kq = kqueue()?;
-
-        // Set up waking.
-        let mut kevent = libc::kevent {
-            ident: 0,
-            filter: libc::EVFILT_USER,
-            flags: libc::EV_ADD | libc::EV_CLEAR | libc::EV_RECEIPT,
-            udata: cq::WAKE_USER_DATA,
-            // SAFETY: all zeros is valid for `libc::kevent`.
-            ..unsafe { mem::zeroed() }
-        };
-        syscall!(kevent(
-            kq.as_raw_fd(),
-            &raw const kevent,
-            1,
-            &raw mut kevent,
-            1,
-            ptr::null()
-        ))?;
-        if (kevent.flags & libc::EV_ERROR) != 0 && kevent.data != 0 {
-            return Err(io::Error::from_raw_os_error(kevent.data as i32));
-        }
-
         let shared = Shared {
             max_change_list_size: self.sys.max_change_list_size,
             change_list: Mutex::new(Vec::new()),

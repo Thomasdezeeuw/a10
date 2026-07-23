@@ -32,7 +32,8 @@ pub(crate) use config::Config;
 pub(crate) use cq::Completions;
 pub(crate) use sq::Submissions;
 
-use cq::WAKE_USER_DATA;
+/// `EVFILT_USER` identifier to wake from polling.
+pub(super) const WAKE_USER_DATA: usize = 1;
 
 fn kqueue() -> io::Result<OwnedFd> {
     // SAFETY: `kqueue(2)` ensures the fd is valid.
@@ -99,7 +100,7 @@ impl Shared {
                 //
                 // Make sure the last event is a wakeup event.
                 debug_assert!(
-                    matches!(changes.last(), Some(e) if e.0.filter == libc::EVFILT_USER && e.0.udata == cq::WAKE_USER_DATA)
+                    matches!(changes.last(), Some(e) if e.0.filter == libc::EVFILT_USER && e.0.ident == WAKE_USER_DATA)
                 );
                 (changes.as_mut_ptr().cast(), (changes.len() - 1) as _)
             }
@@ -159,9 +160,10 @@ impl Shared {
             }
 
             match event.0.filter {
-                libc::EVFILT_USER if event.0.udata == WAKE_USER_DATA => {}
+                // Just need to wake up from polling.
+                libc::EVFILT_USER if event.0.ident == WAKE_USER_DATA => continue,
                 libc::EVFILT_USER => {
-                    let ptr = event.0.udata.cast::<fd::SharedState>();
+                    let ptr = event.0.udata as *mut fd::SharedState;
                     debug_assert!(!ptr.is_null());
                     // SAFETY: see fd::State::drop.
                     unsafe { ptr::drop_in_place(ptr) };

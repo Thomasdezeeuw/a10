@@ -4,7 +4,7 @@ use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::kqueue::{Event, Shared, UseEvents, cq};
+use crate::kqueue::{Event, Shared, UseEvents, WAKE_USER_DATA};
 use crate::lock;
 
 #[derive(Clone, Debug)]
@@ -85,10 +85,10 @@ impl Submissions {
         }
 
         self.submit(ForceSubmit::Wakeup, |kevent| {
+            kevent.0.ident = WAKE_USER_DATA;
             kevent.0.filter = libc::EVFILT_USER;
-            kevent.0.flags = libc::EV_ADD;
+            kevent.0.flags = libc::EV_ONESHOT | libc::EV_ADD; // No EV_RECEIPT.
             kevent.0.fflags = libc::NOTE_TRIGGER;
-            kevent.0.udata = cq::WAKE_USER_DATA;
         });
         Ok(())
     }

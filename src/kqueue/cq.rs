@@ -1,12 +1,9 @@
+use std::io;
 use std::mem::{drop as unlock, take};
 use std::time::Duration;
-use std::{io, ptr};
 
 use crate::kqueue::{Event, Shared, UseEvents};
 use crate::lock;
-
-/// User data to wake up the polling thread.
-pub(super) const WAKE_USER_DATA: *mut libc::c_void = ptr::null_mut();
 
 #[derive(Debug)]
 pub(crate) struct Completions {
