@@ -165,9 +165,9 @@ impl Shared {
 
             match event.0.filter {
                 // Just need to wake up from polling.
-                libc::EVFILT_USER if event.0.ident == WAKE_USER_DATA => continue,
+                libc::EVFILT_USER if event.0.ident == WAKE_USER_DATA => {}
                 libc::EVFILT_USER if event.0.ident == DROP_FD_STATE => {
-                    let ptr = event.0.udata as *mut fd::SharedState;
+                    let ptr = event.0.udata.cast::<fd::SharedState>();
                     debug_assert!(!ptr.is_null());
                     // SAFETY: see fd::State::drop.
                     drop(unsafe { Box::from_raw(ptr) });

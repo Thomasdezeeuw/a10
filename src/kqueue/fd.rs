@@ -144,7 +144,7 @@ impl Drop for AsyncFd {
             event.0.filter = libc::EVFILT_USER;
             event.0.flags = libc::EV_ONESHOT | libc::EV_ADD; // No EV_RECEIPT.
             event.0.fflags = libc::NOTE_TRIGGER;
-            event.0.udata = ptr as _;
+            event.0.udata = ptr.cast();
         });
     }
 }
