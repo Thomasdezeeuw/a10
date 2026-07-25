@@ -93,6 +93,14 @@ impl Submissions {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
+    pub(crate) fn wake_other(&self, other: &Submissions) -> io::Result<()> {
+        // kqueue doesn't have the ability to send a message from one queue to
+        // another, so the best we can do it adding the wake event to the queue
+        // that needs to be woken up, i.e. the same as wake.
+        other.wake()
+    }
+
     pub(crate) fn shared(&self) -> &Shared {
         &self.shared
     }

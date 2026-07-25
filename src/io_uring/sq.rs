@@ -100,15 +100,7 @@ impl Submissions {
         }
 
         let fill_submission = |submission: &mut Submission| {
-            submission.0.opcode = libc::IORING_OP_MSG_RING as u8;
-            submission.0.fd = self.ring_fd();
-            submission.0.__bindgen_anon_2 = libc::io_uring_sqe__bindgen_ty_2 {
-                addr: u64::from(libc::IORING_MSG_DATA),
-            };
-            submission.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
-                off: cq::WAKE_USER_DATA,
-            };
-            submission.0.user_data = WAKE_USER_DATA;
+            submission.wake(self.ring_fd());
         };
 
         if self.shared.single_issuer {
@@ -141,6 +133,20 @@ impl Submissions {
                 return Ok(());
             }
         }
+    }
+
+    pub(crate) fn wake_other(&self, other: &Submissions) -> io::Result<()> {
+        if !other.shared.polling.wake() {
+            // If it's not polling we don't need to wake up.
+            log::trace!("skipping ring message as it's not polling");
+            return Ok(());
+        }
+
+        self.add(|submission: &mut Submission| {
+            submission.wake(other.ring_fd());
+            submission.no_success_event();
+        })?;
+        Ok(())
     }
 
     /// Wait for a submission slot, waking `waker` once one is available.
@@ -222,6 +228,16 @@ impl Submission {
     /// Don't return a completion event for this submission if it succeeds.
     pub(super) fn no_success_event(&mut self) {
         self.0.flags |= libc::IOSQE_CQE_SKIP_SUCCESS;
+    }
+
+    /// Send a message to wake up the receiving ring.
+    fn wake(&mut self, ring_fd: RawFd) {
+        self.0.opcode = libc::IORING_OP_MSG_RING as u8;
+        self.0.fd = ring_fd;
+        self.0.__bindgen_anon_1 = libc::io_uring_sqe__bindgen_ty_1 {
+            off: cq::WAKE_USER_DATA,
+        };
+        self.0.user_data = WAKE_USER_DATA;
     }
 }
 

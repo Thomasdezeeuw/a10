@@ -4,10 +4,8 @@ use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::task::{self, Poll, Wake};
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use std::thread;
 use std::time::{Duration, Instant};
-use std::{io, ptr};
+use std::{io, ptr, thread};
 
 use a10::fs::{Open, OpenOptions};
 use a10::pipe::pipe;
@@ -221,6 +219,42 @@ fn pollable_drop_leak_test() {
 fn pollable_self() {
     let ring = Ring::new().unwrap();
     let _ = ring.pollable(ring.sq());
+}
+
+#[test]
+fn wake() {
+    init();
+    let mut ring = Ring::new().unwrap();
+    let sq = ring.sq();
+
+    let handle = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(10));
+        sq.wake();
+    });
+
+    // Should be awoken by the wake call above.
+    ring.poll(None).unwrap();
+    handle.join().unwrap();
+}
+
+#[test]
+fn wake_other() {
+    init();
+    let mut main_ring = Ring::new().unwrap();
+    let mut other_ring = Ring::new().unwrap();
+    let main_sq = main_ring.sq();
+    let other_sq = other_ring.sq();
+
+    let handle = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(10));
+        other_sq.wake_other(&main_sq);
+        // We need to poll to submit the wakeup to the kernel.
+        other_ring.poll(Some(Duration::ZERO)).unwrap();
+    });
+
+    // Should be awoken by the wake call above.
+    main_ring.poll(None).unwrap();
+    handle.join().unwrap();
 }
 
 #[test]

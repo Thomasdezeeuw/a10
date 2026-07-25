@@ -245,6 +245,38 @@ impl SubmissionQueue {
         }
     }
 
+    /// Asynchronously wake the [`Ring`] connected to `other`.
+    ///
+    /// This is not the same as calling `other.wake()`. When calling
+    /// [`SubmissionQueue::wake`] it's guaranteed that an event to wake up the
+    /// connected `Ring` is delivered (if needed) when the function returns. In
+    /// other words, a call to [`Ring::poll`] will return once
+    /// [`SubmissionQueue::wake`] has returned. This is not the case for this
+    /// function.
+    ///
+    /// If needed, this function asynchronously delivers an event to the `Ring`
+    /// connected to `other` to wake up. However, that event is not submitted to
+    /// the kernel when this function returns. For that the `Ring` connected to
+    /// `self` must first be polled.
+    ///
+    /// Similar to `wake` this function does nothing if the `Ring` connected to
+    /// `other` currently isn't polling.
+    ///
+    /// The benefit of this over `wake` is that it doesn't call into the kernel,
+    /// potentially improving performance.
+    pub fn wake_other(&self, other: &SubmissionQueue) {
+        assert!(
+            self != other,
+            "Calling sq.wake_other(sq) doesn't work as expected"
+        );
+        if let Err(err) = self.0.wake_other(&other.0) {
+            log::info!(
+                "failed to asynchronously wake a10::Ring: {err}, falling back to synchronous waking"
+            );
+            other.wake();
+        }
+    }
+
     pub(crate) fn submissions(&self) -> &sys::Submissions {
         &self.0
     }
