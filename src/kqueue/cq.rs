@@ -2,7 +2,7 @@ use std::io;
 use std::mem::{drop as unlock, take};
 use std::time::Duration;
 
-use crate::kqueue::{Event, Shared, UseEvents};
+use crate::kqueue::{Event, Shared, Submissions, UseEvents, WAKE_USER_DATA};
 use crate::lock;
 
 #[derive(Debug)]
@@ -11,8 +11,17 @@ pub(crate) struct Completions {
 }
 
 impl Completions {
-    pub(crate) fn new(events_capacity: u32) -> Completions {
+    pub(crate) fn new(events_capacity: u32, submissions: &Submissions) -> Completions {
         let events = Vec::with_capacity(events_capacity as usize);
+        // Establish the mechanism for waking.
+        // This is needed on FreeBSD, but not needed on Darwin (macOS, iOS,
+        // etc.) Not tested on DragonflyBSD, NetBSD and OpenBSD, so it's enabled
+        // in case it's needed.
+        submissions.add(|event| {
+            event.0.ident = WAKE_USER_DATA;
+            event.0.filter = libc::EVFILT_USER;
+            event.0.flags = libc::EV_CLEAR | libc::EV_ENABLE | libc::EV_ADD | libc::EV_RECEIPT;
+        });
         Completions { events }
     }
 

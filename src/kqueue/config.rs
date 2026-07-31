@@ -62,7 +62,7 @@ impl<'r> crate::Config<'r> {
             kq,
         };
         let submissions = Submissions::new(shared);
-        let completions = Completions::new(self.sys.max_events);
+        let completions = Completions::new(self.sys.max_events, &submissions);
         Ok((completions, submissions))
     }
 }
