@@ -8,8 +8,9 @@ use crate::io_uring::io::PoolBufParts;
 use crate::io_uring::op::{FdIter, FdOp, FdOpExtract, Op, OpReturn, fallback};
 use crate::io_uring::{libc, sq};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2, sync_socket_option2,
+    AcceptFlag, AddressStorage, Domain, MsgFlag, Name, NoAddress, OptionStorage, Protocol,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2,
+    sync_socket_option2,
 };
 use crate::{AsyncFd, SubmissionQueue, asan, fd, msan, syscall};
 
@@ -304,7 +305,7 @@ impl FdIter for MultishotRecvOp {
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
-    type Output = (B, libc::c_int);
+    type Output = (B, MsgFlag);
     type Resources = (B, MsgHeader, [crate::io::IoMutSlice; N]);
     type Args = RecvFlag;
 
@@ -347,7 +348,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
 pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
 
 impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
-    type Output = (B, A, libc::c_int);
+    type Output = (B, A, MsgFlag);
     type Resources = (B, MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>);
     type Args = RecvFlag;
 
@@ -415,7 +416,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
 pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
 impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVectoredOp<B, A, N> {
-    type Output = (B, A, libc::c_int);
+    type Output = (B, A, MsgFlag);
     type Resources = (
         B,
         MsgHeader,

@@ -26,7 +26,7 @@ use crate::io::{
 };
 use crate::op::{OpState, fd_iter_operation, fd_operation, operation};
 use crate::sys::net::MsgHeader;
-use crate::{AsyncFd, SubmissionQueue, fd, man_link, new_flag, sys, syscall};
+use crate::{AsyncFd, SubmissionQueue, debug_detail, fd, man_link, new_flag, sys, syscall};
 
 pub mod option;
 
@@ -1016,6 +1016,51 @@ macro_rules! impl_from {
 
 impl_from!(Opt <- SocketOpt, IPv4Opt, IPv6Opt, TcpOpt, UdpOpt, UnixOpt);
 
+/// Flags returned by `recvmsg(2)` calls.
+#[derive(Copy, Clone, Eq, PartialEq)]
+#[repr(transparent)]
+pub struct MsgFlag(pub(crate) i32);
+
+impl MsgFlag {
+    /// End-of-record; the data returned completed a record.
+    pub const EOR: MsgFlag = MsgFlag(libc::MSG_EOR);
+
+    /// Trailing portion of a datagram was discarded because the datagram was
+    /// larger than the buffer supplied.
+    pub const TRUNC: MsgFlag = MsgFlag(libc::MSG_TRUNC);
+
+    /// Some control data was discarded due to lack of space in the buffer for
+    /// ancillary data.
+    pub const CONTROL_TRUNC: MsgFlag = MsgFlag(libc::MSG_CTRUNC);
+
+    /// Expedited or out-of-band data was received.
+    pub const OOB: MsgFlag = MsgFlag(libc::MSG_OOB);
+
+    /// Returns true if no flags are set.
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    /// Returns true if `self` has `flag` set.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use a10::net::MsgFlag;
+    ///
+    /// let msg_flags: MsgFlag = // ...
+    /// # unsafe { std::mem::zeroed() };
+    /// if msg_flags.has(MsgFlag::TRUNC) {
+    ///     println!("truncated");
+    /// }
+    /// ```
+    pub const fn has(self, flag: MsgFlag) -> bool {
+        self.0 & flag.0 != 0
+    }
+}
+
+debug_detail!(impl bitset for MsgFlag(i32), libc::MSG_EOR, libc::MSG_TRUNC, libc::MSG_CTRUNC, libc::MSG_OOB);
+
 /// Synchronous version of [`AsyncFd::socket_option`].
 pub fn sync_socket_option<T: option::Get>(fd: impl AsFd) -> io::Result<<T as option::Get>::Output> {
     sync_socket_option2::<T>(fd.as_fd().as_raw_fd())
@@ -1077,13 +1122,13 @@ fd_operation! {
     pub struct Recv<B: BufMut>(sys::net::RecvOp<B>) -> io::Result<B>;
 
     /// [`Future`] behind [`AsyncFd::recv_vectored`].
-    pub struct RecvVectored<B: BufMutSlice<N>; const N: usize>(sys::net::RecvVectoredOp<B, N>) -> io::Result<(B, libc::c_int)>;
+    pub struct RecvVectored<B: BufMutSlice<N>; const N: usize>(sys::net::RecvVectoredOp<B, N>) -> io::Result<(B, MsgFlag)>;
 
     /// [`Future`] behind [`AsyncFd::recv_from`].
-    pub struct RecvFrom<B: BufMut, A: SocketAddress>(sys::net::RecvFromOp<B, A>) -> io::Result<(B, A, libc::c_int)>;
+    pub struct RecvFrom<B: BufMut, A: SocketAddress>(sys::net::RecvFromOp<B, A>) -> io::Result<(B, A, MsgFlag)>;
 
     /// [`Future`] behind [`AsyncFd::recv_from_vectored`].
-    pub struct RecvFromVectored<B: BufMutSlice<N>, A: SocketAddress; const N: usize>(sys::net::RecvFromVectoredOp<B, A, N>) -> io::Result<(B, A, libc::c_int)>;
+    pub struct RecvFromVectored<B: BufMutSlice<N>, A: SocketAddress; const N: usize>(sys::net::RecvFromVectoredOp<B, A, N>) -> io::Result<(B, A, MsgFlag)>;
 
     /// [`Future`] behind [`AsyncFd::send`].
     pub struct Send<B: Buf>(sys::net::SendOp<B>) -> io::Result<usize>,

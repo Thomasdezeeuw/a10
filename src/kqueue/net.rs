@@ -7,9 +7,9 @@ use crate::io::{Buf, BufMut, BufMutSlice, BufSlice, ReadBuf, ReadBufPool};
 use crate::kqueue::fd::OpKind;
 use crate::kqueue::op::{DirectFdOp, DirectOp, FdIter, FdOp, FdOpExtract, Next, impl_fd_op};
 use crate::net::{
-    AcceptFlag, AddressStorage, Domain, Name, NoAddress, OptionStorage, Protocol, RecvFlag,
-    SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2, sync_socket,
-    sync_socket_option2,
+    AcceptFlag, AddressStorage, Domain, MsgFlag, Name, NoAddress, OptionStorage, Protocol,
+    RecvFlag, SendCall, SendFlag, SocketAddress, Type, option, sync_set_socket_option2,
+    sync_socket, sync_socket_option2,
 };
 use crate::{AsyncFd, SubmissionQueue, fd, syscall};
 
@@ -249,7 +249,7 @@ impl FdIter for MultishotRecvOp {
 pub(crate) struct RecvVectoredOp<B, const N: usize>(PhantomData<*const B>);
 
 impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
-    type Output = (B, libc::c_int);
+    type Output = (B, MsgFlag);
     type Resources = (B, MsgHeader, [crate::io::IoMutSlice; N]);
     type Args = RecvFlag;
     type OperationOutput = libc::ssize_t;
@@ -281,7 +281,7 @@ impl<B: BufMutSlice<N>, const N: usize> FdOp for RecvVectoredOp<B, N> {
 pub(crate) struct RecvFromOp<B, A>(PhantomData<*const (B, A)>);
 
 impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
-    type Output = (B, A, libc::c_int);
+    type Output = (B, A, MsgFlag);
     type Resources = (B, MsgHeader, crate::io::IoMutSlice, MaybeUninit<A::Storage>);
     type Args = RecvFlag;
     type OperationOutput = libc::ssize_t;
@@ -322,7 +322,7 @@ impl<B: BufMut, A: SocketAddress> FdOp for RecvFromOp<B, A> {
 pub(crate) struct RecvFromVectoredOp<B, A, const N: usize>(PhantomData<*const (B, A)>);
 
 impl<B: BufMutSlice<N>, A: SocketAddress, const N: usize> FdOp for RecvFromVectoredOp<B, A, N> {
-    type Output = (B, A, libc::c_int);
+    type Output = (B, A, MsgFlag);
     type Resources = (
         B,
         MsgHeader,

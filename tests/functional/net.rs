@@ -9,9 +9,9 @@ use a10::io::ReadBufPool;
 #[cfg(any(target_os = "android", target_os = "linux"))]
 use a10::net::socket;
 use a10::net::{
-    Accept, Bind, Connect, Domain, MultishotAccept, MultishotRecv, NoAddress, Protocol, Recv,
-    RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type, option,
-    sync_bind, sync_listen, sync_local_addr, sync_set_socket_option, sync_socket,
+    Accept, Bind, Connect, Domain, MsgFlag, MultishotAccept, MultishotRecv, NoAddress, Protocol,
+    Recv, RecvN, RecvNVectored, Send, SendAll, SendAllVectored, SendTo, Socket, SocketName, Type,
+    option, sync_bind, sync_listen, sync_local_addr, sync_set_socket_option, sync_socket,
     sync_socket_option,
 };
 use a10::{AsyncFd, Extract, SubmissionQueue};
@@ -699,7 +699,7 @@ fn recv_vectored() {
             assert_eq!(&bufs[0], b"Hello");
             assert_eq!(&bufs[1], b", ");
             assert_eq!(&bufs[2], b"World!");
-            assert_eq!(flags, 0);
+            assert!(flags.is_empty());
 
             // We should detect the peer closing the stream.
             for buf in bufs.iter_mut() {
@@ -709,7 +709,7 @@ fn recv_vectored() {
             assert!(bufs[0].is_empty());
             assert!(bufs[1].is_empty());
             assert!(bufs[2].is_empty());
-            assert_eq!(flags, 0);
+            assert!(flags.is_empty());
         },
     );
 }
@@ -742,7 +742,7 @@ fn recv_vectored_truncated() {
         .expect("failed to receive");
     assert_eq!(&bufs[0], b"Hello");
     assert_eq!(&bufs[1], b", ");
-    assert_eq!(flags, libc::MSG_TRUNC);
+    assert!(flags.has(MsgFlag::TRUNC));
 }
 
 #[test]
@@ -806,7 +806,7 @@ fn recv_from() {
         .expect("failed to receive");
     assert_eq!(buf, DATA1);
     assert_eq!(address, local_addr);
-    assert_eq!(flags, 0);
+    assert!(flags.is_empty());
 }
 
 #[test]
@@ -836,7 +836,7 @@ fn recv_from_read_buf_pool() {
         .expect("failed to receive");
     assert_eq!(&*buf, DATA1);
     assert_eq!(address, local_addr);
-    assert_eq!(flags, 0);
+    assert!(flags.is_empty());
 }
 
 #[test]
@@ -868,7 +868,7 @@ fn recv_from_vectored() {
     assert_eq!(&bufs[1], b", ");
     assert_eq!(&bufs[2], b"World!");
     assert_eq!(address, local_addr);
-    assert_eq!(flags, 0);
+    assert!(flags.is_empty());
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::fmt;
 use std::mem::{self, MaybeUninit};
 
 use crate::io::{Buf, BufMut};
-use crate::net::SocketAddress;
+use crate::net::{MsgFlag, SocketAddress};
 
 #[repr(transparent)] // Needed for I/O.
 pub(crate) struct IoMutSlice(libc::iovec);
@@ -149,8 +149,8 @@ impl MsgHeader {
         self.0.msg_namelen
     }
 
-    pub(crate) const fn flags(&self) -> libc::c_int {
-        self.0.msg_flags
+    pub(crate) const fn flags(&self) -> MsgFlag {
+        MsgFlag(self.0.msg_flags)
     }
 }
 
@@ -168,7 +168,7 @@ impl fmt::Debug for MsgHeader {
             .field("msg_iovlen", &self.0.msg_iovlen)
             .field("msg_control", &self.0.msg_control)
             .field("msg_controllen", &self.0.msg_controllen)
-            .field("msg_flags", &self.0.msg_flags)
+            .field("msg_flags", &self.flags())
             .finish()
     }
 }
