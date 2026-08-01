@@ -3,12 +3,12 @@
 use std::pin::pin;
 use std::process::Command;
 
-#[cfg(any(target_os = "android", target_os = "linux"))]
-use a10::process::ToDirect;
 use a10::process::{
     self, ChildStatus, ReceiveSignal, Signal, SignalInfo, SignalSet, Signals, To, WaitId,
     WaitOption,
 };
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use a10::process::{ToDirect, WaitOn};
 
 use crate::util::{Waker, ensure_submitted, is_send, is_sync, poll_nop, start_op, test_queue};
 
@@ -98,6 +98,28 @@ fn process_wait_on_drop_before_complete() {
 
     // Ensure the cancelation (on drop) is completed.
     ensure_submitted();
+}
+
+#[test]
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn process_wait_on_fd() {
+    use std::os::fd::AsRawFd;
+    use std::os::linux::process::{ChildExt, CommandExt};
+
+    let sq = test_queue();
+    let waker = Waker::new();
+
+    let process = Command::new("true").create_pidfd(true).spawn().unwrap();
+    let fd = process.pidfd().unwrap().as_raw_fd();
+
+    let info = waker
+        .block_on(process::wait(sq, WaitOn::Fd(fd)).flags(WaitOption::EXITED))
+        .expect("failed wait");
+
+    assert_eq!(info.signal(), Signal::CHILD);
+    assert_eq!(info.code(), ChildStatus::EXITED);
+    //assert_eq!(info.pid(), pid as i32);
+    assert_eq!(info.status().code(), Some(libc::EXIT_SUCCESS));
 }
 
 #[test]

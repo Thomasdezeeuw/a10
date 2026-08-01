@@ -4,6 +4,8 @@
 //! [`Signals`] can be used for process signal handling.
 
 use std::mem::{self, ManuallyDrop, MaybeUninit};
+#[cfg(any(target_os = "android", target_os = "linux"))]
+use std::os::fd::RawFd;
 use std::os::unix::process::ExitStatusExt;
 use std::pin::Pin;
 use std::process::{Child, ExitStatus};
@@ -43,6 +45,10 @@ pub enum WaitOn {
     /// Wait for the child process.
     #[doc(alias = "P_PID")]
     Process(u32),
+    /// Wait for the child referred by PID file descriptor.
+    #[doc(alias = "P_PIDFD")]
+    #[cfg(any(target_os = "android", target_os = "linux"))]
+    Fd(RawFd),
     /// Wait for any child process in the process group with ID.
     #[doc(alias = "P_PGID")]
     #[cfg(any(target_os = "android", target_os = "linux"))]

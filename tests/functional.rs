@@ -1,4 +1,6 @@
 #![cfg_attr(feature = "nightly", feature(async_iterator))]
+// Needed for process::process_wait_on_fd test.
+#![feature(linux_pidfd)]
 
 mod util;
 

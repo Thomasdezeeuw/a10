@@ -25,6 +25,7 @@ impl Op for WaitIdOp {
     ) {
         let (id_type, pid) = match *wait {
             WaitOn::Process(pid) => (libc::P_PID, pid),
+            WaitOn::Fd(fd) => (libc::P_PIDFD, fd.cast_unsigned()),
             WaitOn::Group(pid) => (libc::P_PGID, pid),
             WaitOn::All => (libc::P_ALL, 0), // NOTE: id is ignored.
         };
