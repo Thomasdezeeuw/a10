@@ -18,44 +18,29 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-26, macos-15]
+        os: [ubuntu-26.04, macos-26]
+        rust: [1.95, stable, nightly]
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@1.95
+    - name: Setup Rust
+      run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
     - name: Run Tests
       run: cargo test
-    - name: Run Tests (release build)
-      run: cargo test --release
-  Nightly:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-26, macos-15]
-    steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: A10
-        cache-on-failure: true
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-    - name: Run Tests
-      run: cargo test
-    - name: Run Tests (nightly feature)
+    - name: Run Tests with nightly feature
       run: cargo test --features nightly
+      if: ${{ matrix.rust == 'nightly' }}
     - name: Run Tests (release build)
       run: cargo test --release
-    - name: Run Tests (nightly feature, release build)
+    - name: Run Tests with nightly feature (release build
       run: cargo test --features nightly --release
+      if: ${{ matrix.rust == 'nightly' }}
   Check:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -67,15 +52,14 @@ jobs:
         - aarch64-apple-watchos
         - x86_64-unknown-openbsd
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rust-src
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add rust-src
     - name: Check build
       run: cargo check --target ${{ matrix.target }} -Zbuild-std --all-targets
   Clippy:
@@ -84,40 +68,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-26, macos-15]
+        os: [ubuntu-26.04, macos-26]
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: clippy
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
     - name: Run Clippy
       run: make clippy
   Docs:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
     - name: Check docs
       run: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
   Rustfmt:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v6
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Setup Rust
+      run: rustup toolchain add ${RUST_STABLE_VERSION} && rustup default ${RUST_STABLE_VERSION} && rustup component add rustfmt
     - name: Check formatting
       run: cargo fmt --all -- --check
   Sanitizer:
@@ -126,7 +109,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-26, macos-15]
+        os: [ubuntu-26.04, macos-26]
         sanitizer: [address, thread, memory, leak]
         exclude:
           # The MemorySanitizer is not supported on macOS (arm).
@@ -140,15 +123,14 @@ jobs:
           - os: macos-15
             sanitizer: leak
     steps:
-    - uses: actions/checkout@v6
-    - uses: Swatinem/rust-cache@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rust-src
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add rust-src
     - name: Install llvm-symbolizer
       if: ${{ startsWith(matrix.os, 'ubuntu') }}
       run: |
