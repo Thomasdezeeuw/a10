@@ -20,6 +20,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-26.04, macos-26]
+        rust: [${RUST_STABLE_VERSION}, nightly]
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
     - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -28,35 +29,17 @@ jobs:
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - name: Setup Rust
-      run: rustup toolchain add ${RUST_STABLE_VERSION} && rustup default ${RUST_STABLE_VERSION}
+      run: rustup toolchain add ${{ matrix.rust }} && rustup default ${{ matrix.rust }}
     - name: Run Tests
       run: cargo test
-    - name: Run Tests (release build)
-      run: cargo test --release
-  Nightly:
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-26.04, macos-26]
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-      with:
-        prefix-key: A10
-        cache-on-failure: true
-        save-if: ${{ github.ref == 'refs/heads/main' }}
-    - name: Setup Rust
-      run: rustup toolchain add nightly && rustup default nightly
-    - name: Run Tests
-      run: cargo test
-    - name: Run Tests (nightly feature)
+    - name: Run Tests with nightly feature
       run: cargo test --features nightly
+      if: ${{ matrix.rust == 'nightly' }}
     - name: Run Tests (release build)
       run: cargo test --release
-    - name: Run Tests (nightly feature, release build)
+    - name: Run Tests with nightly feature (release build
       run: cargo test --features nightly --release
+      if: ${{ matrix.rust == 'nightly' }}
   Check:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
