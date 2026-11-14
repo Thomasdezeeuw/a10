@@ -48,6 +48,8 @@ $(TARGETS):
 # * `redundant-pub-crate`: useless lint.
 # * `single-match-else`: prefer match statements over if statements.
 # * `use-self`: strongly disagree.
+# * `clippy::multiple_crate_versions` caused by zerocopy, see
+#   https://github.com/google/zerocopy/issues/3495.
 # TODO: resolve the lints after the empty line.
 lint: clippy
 clippy:
@@ -76,6 +78,7 @@ clippy:
 		--allow clippy::use-self \
 		\
 		--allow clippy::cast-possible-truncation \
+		--allow clippy::multiple_crate_versions \
 
 doc:
 	cargo doc --all-features
