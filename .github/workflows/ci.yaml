@@ -7,6 +7,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: full
+  RUST_STABLE_VERSION: 1.100
 
 permissions:
   contents: read
@@ -26,7 +27,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@1.95
+    - name: Setup Rust
+      run: rustup toolchain add ${RUST_STABLE_VERSION} && rustup default ${RUST_STABLE_VERSION}
     - name: Run Tests
       run: cargo test
     - name: Run Tests (release build)
@@ -45,7 +47,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly
     - name: Run Tests
       run: cargo test
     - name: Run Tests (nightly feature)
@@ -73,9 +76,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rust-src
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add rust-src
     - name: Check build
       run: cargo check --target ${{ matrix.target }} -Zbuild-std --all-targets
   Clippy:
@@ -92,9 +94,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: clippy
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
     - name: Run Clippy
       run: make clippy
   Docs:
@@ -107,7 +108,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add clippy
     - name: Check docs
       run: RUSTDOCFLAGS='-D warnings' cargo doc --no-deps
   Rustfmt:
@@ -115,9 +117,8 @@ jobs:
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-    - uses: dtolnay/rust-toolchain@stable
-      with:
-        components: rustfmt
+    - name: Setup Rust
+      run: rustup toolchain add ${RUST_STABLE_VERSION} && rustup default ${RUST_STABLE_VERSION} && rustup component add rustfmt
     - name: Check formatting
       run: cargo fmt --all -- --check
   Sanitizer:
@@ -146,9 +147,8 @@ jobs:
         prefix-key: A10
         cache-on-failure: true
         save-if: ${{ github.ref == 'refs/heads/main' }}
-    - uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rust-src
+    - name: Setup Rust
+      run: rustup toolchain add nightly && rustup default nightly && rustup component add rust-src
     - name: Install llvm-symbolizer
       if: ${{ startsWith(matrix.os, 'ubuntu') }}
       run: |
