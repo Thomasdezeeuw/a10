@@ -452,7 +452,7 @@ macro_rules! new_option {
     ) => {
         $(
         $(#[$type_meta])*
-        #[allow(missing_debug_implementations)]
+        #[allow(missing_debug_implementations, clippy::empty_enums)]
         pub enum $type_name {}
 
         $(

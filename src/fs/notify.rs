@@ -356,7 +356,8 @@ impl Event {
     /// directories themselves. See [`Events::path_for`] to the get the full
     /// path for watched files and directories.
     #[deprecated(
-        note = "this doesn't work for the kqueue implementation, use `Events::path_for` instead"
+        note = "this doesn't work for the kqueue implementation, use `Events::path_for` instead",
+        since = "0.4.3"
     )]
     pub fn file_path(&self) -> &Path {
         self.0.file_path()

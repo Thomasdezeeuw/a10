@@ -540,11 +540,7 @@ impl Event {
     }
 
     pub(crate) fn file_deleted(&self) -> bool {
-        if self.parent_fd().is_some() {
-            self.mask() & libc::NOTE_DELETE != 0
-        } else {
-            false
-        }
+        self.parent_fd().is_some() && (self.mask() & libc::NOTE_DELETE != 0)
     }
 }
 
